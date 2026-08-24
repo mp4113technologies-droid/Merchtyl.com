@@ -229,7 +229,6 @@ com/merchtyl/inventory/StockAdjustmentType.class
 com/merchtyl/platform/testing/TestUserProvisioningDtos$CleanupResponse.class
 com/merchtyl/reports/InventoryReportController.class
 com/merchtyl/email/EmailMessage.class
-com/merchtyl/product/ProductCapabilityAssignmentRepository.class
 com/merchtyl/supplier/ProductSupplierSearchRequest.class
 com/merchtyl/security/UserStoreAssignmentResponse.class
 com/merchtyl/cash/CashLedgerSourceBreakdownResponse.class
@@ -500,7 +499,6 @@ com/merchtyl/lottery/LotteryCommissionRuleValues.class
 com/merchtyl/reports/RegisterReportRequest.class
 com/merchtyl/sales/SaleItemHandlerRegistry.class
 com/merchtyl/platform/persistence/BaseUuidEntity.class
-com/merchtyl/sales/SaleItemRepository.class
 com/merchtyl/tax/CountryStatusRequest.class
 com/merchtyl/tax/ProductTaxCategoryAssignmentController.class
 com/merchtyl/refunds/RefundPaymentRepository.class
@@ -601,7 +599,6 @@ com/merchtyl/tax/ProductTaxCategoryAssignment.class
 com/merchtyl/eod/BusinessDayService.class
 com/merchtyl/sales/PaymentMethod.class
 com/merchtyl/returns/Return.class
-com/merchtyl/refunds/RefundItemTaxRepository.class
 com/merchtyl/inventory/InventoryTransaction.class
 com/merchtyl/catalogue/CatalogueReferenceFactory.class
 com/merchtyl/platform/admin/PlatformDtos$PlatformUserResponse.class

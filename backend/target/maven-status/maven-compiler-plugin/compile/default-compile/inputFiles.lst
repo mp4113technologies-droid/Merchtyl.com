@@ -332,7 +332,6 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductBarcodeValues.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductCapability.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductCapabilityAssignment.java
-/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductCapabilityAssignmentRepository.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductController.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductRepository.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/product/ProductRequest.java
@@ -388,7 +387,6 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundController.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundCreateRequest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundItemTax.java
-/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundItemTaxRepository.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundItemTaxResponse.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundPayment.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/refunds/RefundPaymentRepository.java
@@ -483,7 +481,6 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SaleItem.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SaleItemHandler.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SaleItemHandlerRegistry.java
-/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SaleItemRepository.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SaleItemRequest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SaleItemResponse.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/sales/SalePaymentRequest.java

@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.merchtyl.registersession.RegisterSessionServiceTest
 -------------------------------------------------------------------------------
-Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in com.merchtyl.registersession.RegisterSessionServiceTest
+Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.094 s -- in com.merchtyl.registersession.RegisterSessionServiceTest
