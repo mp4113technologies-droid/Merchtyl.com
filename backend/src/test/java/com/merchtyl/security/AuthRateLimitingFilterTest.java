@@ -11,7 +11,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -61,6 +63,29 @@ class AuthRateLimitingFilterTest {
         filter.doFilter(request("/api/v1/products"), new MockHttpServletResponse(), chain);
 
         verify(chain, times(2)).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void boundsTrackedRemoteAddressesDuringDistributedTraffic() throws Exception {
+        AuthRateLimitingFilter filter = new AuthRateLimitingFilter(
+                new SecurityProperties(
+                        new SecurityProperties.Cors(List.of()),
+                        new SecurityProperties.RateLimit(true, 20, Duration.ofMinutes(1)),
+                        null),
+                objectMapper,
+                Clock.fixed(Instant.parse("2026-07-29T12:00:00Z"), ZoneOffset.UTC));
+        FilterChain chain = mock(FilterChain.class);
+
+        for (int index = 0; index < 10_100; index++) {
+            MockHttpServletRequest request = request("/api/v1/auth/login");
+            request.setRemoteAddr("203.0." + (index / 256) + "." + (index % 256));
+            filter.doFilter(request, new MockHttpServletResponse(), chain);
+        }
+
+        Field bucketsField = AuthRateLimitingFilter.class.getDeclaredField("buckets");
+        bucketsField.setAccessible(true);
+        Map<?, ?> buckets = (Map<?, ?>) bucketsField.get(filter);
+        assertThat(buckets).hasSizeLessThanOrEqualTo(10_001);
     }
 
     private static MockHttpServletRequest request(String path) {

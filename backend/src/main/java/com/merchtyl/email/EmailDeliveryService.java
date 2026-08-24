@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentMap;
 public class EmailDeliveryService {
     private static final Logger log = LoggerFactory.getLogger(EmailDeliveryService.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final ConcurrentMap<UUID, String> TRANSIENT_INVITATION_TOKENS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<UUID, TransientInvitationToken> TRANSIENT_INVITATION_TOKENS = new ConcurrentHashMap<>();
 
     private final JdbcTemplate jdbcTemplate;
     private final EmailSender emailSender;
@@ -178,7 +178,10 @@ public class EmailDeliveryService {
         if (successfulDeliveryExists(delivery.invitationId())) {
             throw new ConflictException("Email delivery has already been accepted by the provider");
         }
-        String rawToken = TRANSIENT_INVITATION_TOKENS.get(delivery.invitationId());
+        Instant now = Instant.now();
+        TRANSIENT_INVITATION_TOKENS.entrySet().removeIf(entry -> !now.isBefore(entry.getValue().expiresAt()));
+        TransientInvitationToken retainedToken = TRANSIENT_INVITATION_TOKENS.get(delivery.invitationId());
+        String rawToken = retainedToken == null ? null : retainedToken.value();
         if (rawToken == null || rawToken.isBlank()) {
             throw new ConflictException("Activation link is unavailable for retry; resend a new activation link");
         }
@@ -315,7 +318,8 @@ public class EmailDeliveryService {
     }
 
     private void sendOwnerInvitationDelivery(UUID deliveryId, OwnerInvitationEmailEvent event, String rawToken) {
-        TRANSIENT_INVITATION_TOKENS.put(event.invitationId(), rawToken);
+        TRANSIENT_INVITATION_TOKENS.entrySet().removeIf(entry -> !Instant.now().isBefore(entry.getValue().expiresAt()));
+        TRANSIENT_INVITATION_TOKENS.put(event.invitationId(), new TransientInvitationToken(rawToken, event.expiresAt()));
         String activationUrl = emailProperties.activationUrl(rawToken);
         RenderedEmailTemplate rendered = templateRenderer.render(event.templateCode(), Map.of(
                 "merchantOperatingName", event.merchantOperatingName(),
@@ -407,6 +411,7 @@ public class EmailDeliveryService {
                             updated_at = now(), version = version + 1
                         where id = ?
                         """, before.invitationId());
+                TRANSIENT_INVITATION_TOKENS.remove(before.invitationId());
             }
             if (temporaryCredentials(before.templateCode())) {
                 jdbcTemplate.update("""
@@ -634,5 +639,8 @@ public class EmailDeliveryService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 digest is unavailable", exception);
         }
+    }
+
+    private record TransientInvitationToken(String value, Instant expiresAt) {
     }
 }

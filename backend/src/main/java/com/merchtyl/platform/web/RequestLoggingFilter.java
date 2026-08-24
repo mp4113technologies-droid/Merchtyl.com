@@ -18,7 +18,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.HandlerMapping;
-import org.springframework.web.util.ContentCachingResponseWrapper;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -44,12 +43,11 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         long started = System.nanoTime();
-        ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
         if (properties.getRequest().isEnabled()) {
             logIncomingRequest(request);
         }
         try {
-            filterChain.doFilter(request, wrappedResponse);
+            filterChain.doFilter(request, response);
         } catch (ServletException | IOException | RuntimeException exception) {
             request.setAttribute(EXCEPTION_TYPE_ATTRIBUTE, exception.getClass().getName());
             throw exception;
@@ -57,7 +55,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             long durationMs = (System.nanoTime() - started) / 1_000_000;
             updateAuthenticatedMdc();
             if (properties.getResponse().isEnabled()) {
-                logOutgoingResponse(request, wrappedResponse, durationMs);
+                logOutgoingResponse(request, response, durationMs);
             }
             if (properties.getPerformance().isEnabled()
                     && durationMs > properties.getPerformance().getSlowRequestThresholdMs()) {
@@ -68,7 +66,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                         logSafe(request.getRequestURI()),
                         controllerName(request));
             }
-            wrappedResponse.copyBodyToResponse();
         }
     }
 
@@ -88,7 +85,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                 LogSanitizer.maskedHeaders(request, maskSensitive));
     }
 
-    private void logOutgoingResponse(HttpServletRequest request, ContentCachingResponseWrapper response, long durationMs) {
+    private void logOutgoingResponse(HttpServletRequest request, HttpServletResponse response, long durationMs) {
         String exceptionType = attribute(request, EXCEPTION_TYPE_ATTRIBUTE);
         String errorCode = attribute(request, ERROR_CODE_ATTRIBUTE);
         if (response.getStatus() >= 500) {
@@ -96,7 +93,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                     "http_response_failure status={} duration_ms={} response_size={} controller={} uri={} correlation_id={} exception_type={} business_error_code={}",
                     response.getStatus(),
                     durationMs,
-                    response.getContentSize(),
+                    responseSize(response),
                     controllerName(request),
                     logSafe(request.getRequestURI()),
                     MDC.get(CorrelationIdFilter.MDC_KEY),
@@ -109,7 +106,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                     "http_response_failure status={} duration_ms={} response_size={} controller={} uri={} correlation_id={} exception_type={} business_error_code={}",
                     response.getStatus(),
                     durationMs,
-                    response.getContentSize(),
+                    responseSize(response),
                     controllerName(request),
                     logSafe(request.getRequestURI()),
                     MDC.get(CorrelationIdFilter.MDC_KEY),
@@ -121,10 +118,22 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                 "http_response_completed status={} duration_ms={} response_size={} controller={} uri={} correlation_id={}",
                 response.getStatus(),
                 durationMs,
-                response.getContentSize(),
+                responseSize(response),
                 controllerName(request),
                 logSafe(request.getRequestURI()),
                 MDC.get(CorrelationIdFilter.MDC_KEY));
+    }
+
+    private static long responseSize(HttpServletResponse response) {
+        String contentLength = response.getHeader("Content-Length");
+        if (contentLength == null || contentLength.isBlank()) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(contentLength);
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
     }
 
     private static String controllerName(HttpServletRequest request) {

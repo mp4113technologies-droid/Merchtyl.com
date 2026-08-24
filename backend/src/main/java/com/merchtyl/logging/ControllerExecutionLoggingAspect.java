@@ -17,12 +17,12 @@ public class ControllerExecutionLoggingAspect {
     public Object logControllerExecution(ProceedingJoinPoint joinPoint, RestController restController) throws Throwable {
         String controller = joinPoint.getSignature().getDeclaringType().getSimpleName();
         String operation = joinPoint.getSignature().getName();
-        log.info("Entering Controller controller={} operation={}", controller, operation);
+        log.debug("Entering Controller controller={} operation={}", controller, operation);
         long started = System.nanoTime();
         try {
             Object result = joinPoint.proceed();
             long durationMs = (System.nanoTime() - started) / 1_000_000;
-            log.info("Leaving Controller controller={} operation={} duration_ms={}", controller, operation, durationMs);
+            log.debug("Leaving Controller controller={} operation={} duration_ms={}", controller, operation, durationMs);
             return result;
         } catch (Throwable exception) {
             long durationMs = (System.nanoTime() - started) / 1_000_000;

@@ -59,7 +59,11 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         Instant now = Instant.now(clock);
-        String key = request.getRemoteAddr() + ':' + request.getServletPath();
+        cleanExpiredBuckets(now);
+        String requestedKey = request.getRemoteAddr() + ':' + request.getServletPath();
+        String key = buckets.size() >= CLEANUP_THRESHOLD && !buckets.containsKey(requestedKey)
+                ? "overflow:" + request.getServletPath()
+                : requestedKey;
         AtomicReference<Bucket> updated = new AtomicReference<>();
         buckets.compute(key, (ignored, current) -> {
             Bucket next = current == null || !now.isBefore(current.resetAt())
@@ -68,8 +72,6 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
             updated.set(next);
             return next;
         });
-        cleanExpiredBuckets(now);
-
         Bucket bucket = updated.get();
         if (bucket.count() <= properties.authMaxAttempts()) {
             filterChain.doFilter(request, response);
@@ -105,7 +107,7 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
     }
 
     private void cleanExpiredBuckets(Instant now) {
-        if (buckets.size() <= CLEANUP_THRESHOLD) {
+        if (buckets.size() < CLEANUP_THRESHOLD) {
             return;
         }
         buckets.entrySet().removeIf(entry -> !now.isBefore(entry.getValue().resetAt()));
