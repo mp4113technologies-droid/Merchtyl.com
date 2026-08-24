@@ -68,6 +68,8 @@ Browser -> Vercel frontend -> Railway (Spring Boot) -> PostgreSQL/Neon
 
 Create a Railway service from this repository. Keep the service **Root Directory** at the repository root and set `RAILWAY_DOCKERFILE_PATH=backend/Dockerfile` so the Docker build retains access to both the parent Maven POM and the backend module. Configure at least:
 
+The importable `railway.env.json` file contains the required Railway variables with safe placeholders. Replace every `REPLACE_WITH_...` value before importing it into Railway; never commit the completed file containing real secrets.
+
 ```env
 SPRING_PROFILES_ACTIVE=prod
 SPRING_DATASOURCE_URL=jdbc:postgresql://HOST/DATABASE?sslmode=require
