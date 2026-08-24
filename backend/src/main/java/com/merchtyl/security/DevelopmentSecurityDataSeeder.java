@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-@Profile("dev")
+@Profile({"dev", "local"})
 public class DevelopmentSecurityDataSeeder implements ApplicationRunner {
     private static final String OWNER_EMAIL = "owner@example.local";
     private static final String MANAGER_EMAIL = "manager@example.local";

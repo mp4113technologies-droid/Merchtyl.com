@@ -7,11 +7,11 @@ Merchtyl is a browser-based retail commerce and point of sale platform.
 - `backend`: Spring Boot API using `/api/v1`, PostgreSQL, Flyway, JWT security, DTO-based APIs, and UUID primary keys.
 - `frontend`: React/Vite frontend with Material UI, TanStack Query, React Router, React Hook Form, Zod, and PWA assets.
 - `docs`: Project documentation.
-- `docker-compose.yml`: Backend, frontend, and Nginx wiring. The backend connects to Neon PostgreSQL.
+- `vercel.json`: Vercel routing configuration for the frontend deployment.
 
 ## Local development
 
-The backend defaults to the `dev` Spring profile. No environment variables are required for a normal local run, but a local PostgreSQL database must be available with the development credentials from `backend/src/main/resources/application-dev.yml`:
+The backend defaults to the `local` Spring profile. Local machine settings live in the Git-ignored `backend/src/main/resources/application-local.yml`; copy `backend/src/main/resources/application-local.example.yml` when setting up a new checkout. No environment variables are required for the checked-out local configuration, but its configured PostgreSQL database must be available:
 
 | Setting | Development default |
 | --- | --- |
@@ -20,7 +20,7 @@ The backend defaults to the `dev` Spring profile. No environment variables are r
 | Database password | `merchtyl_dev_password` |
 | Backend port | `8080` |
 | Swagger UI | enabled at `/swagger-ui.html` |
-| Test provisioning | enabled for `dev` with `X-Merchtyl-Test-Key: merchtyl-local-test-key` |
+| Test provisioning | enabled for `local` with `X-Merchtyl-Test-Key: merchtyl-local-test-key` |
 
 Create the local database/user if needed:
 
@@ -32,11 +32,11 @@ printf "port = 55432\nlisten_addresses = 'localhost'\n" >> .local/postgres/data/
 /Library/PostgreSQL/18/bin/createdb 'postgresql://merchtyl:merchtyl_dev_password@localhost:55432/postgres' merchtyl
 ```
 
-Run the backend with the dev profile:
+Run the backend with the local profile:
 
 ```bash
 cd backend
-mvn spring-boot:run
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
 The same settings can still be overridden from the shell when needed:
@@ -45,7 +45,7 @@ The same settings can still be overridden from the shell when needed:
 SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:5433/merchtyl' \
 SPRING_DATASOURCE_USERNAME=merchtyl \
 SPRING_DATASOURCE_PASSWORD='merchtyl_dev_password' \
-SPRING_PROFILES_ACTIVE=dev \
+SPRING_PROFILES_ACTIVE=local \
 mvn spring-boot:run
 ```
 
@@ -186,7 +186,7 @@ The sender address must be authorized by the configured Resend account. Resend a
 
 ### Development security users
 
-The `dev` profile seeds development-only security users into the configured development database after Flyway has applied the security schema:
+The `local` and legacy `dev` profiles seed development-only security users into the configured development database after Flyway has applied the security schema:
 
 | Email | Role | Password |
 | --- | --- | --- |

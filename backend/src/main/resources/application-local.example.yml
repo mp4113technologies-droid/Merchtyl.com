@@ -1,0 +1,44 @@
+spring:
+  datasource:
+    url: <LOCAL_DATABASE_JDBC_URL>
+    username: <LOCAL_DATABASE_USERNAME>
+    password: <LOCAL_DATABASE_PASSWORD>
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.merchtyl: DEBUG
+    org.flywaydb: INFO
+    org.hibernate.SQL: DEBUG
+
+merchtyl:
+  jwt:
+    issuer: merchtyl-local
+    secret: <LOCAL_JWT_SECRET_AT_LEAST_32_CHARACTERS>
+  security:
+    cors:
+      allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080
+  testing:
+    user-provisioning:
+      enabled: true
+      key: <LOCAL_TEST_PROVISIONING_KEY>
+      default-user-password: <LOCAL_TEST_USER_PASSWORD>
+  email:
+    provider: <console-or-resend>
+    from-address: <LOCAL_EMAIL_FROM_ADDRESS>
+    frontend-base-url: http://localhost:5173
+    resend:
+      enabled: false
+      api-key: <LOCAL_RESEND_API_KEY>
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+

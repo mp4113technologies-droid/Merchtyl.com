@@ -2,7 +2,7 @@ spring:
   application:
     name: merchtyl-backend
   profiles:
-    default: dev
+    default: local
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
