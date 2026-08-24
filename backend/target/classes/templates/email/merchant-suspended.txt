@@ -1,0 +1,7 @@
+Merchtyl
+
+Access for {{merchantOperatingName}} has been suspended.
+
+Reason: {{reason}}
+
+Contact Merchtyl support if you need help restoring access.

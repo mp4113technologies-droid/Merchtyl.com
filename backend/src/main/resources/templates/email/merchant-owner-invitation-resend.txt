@@ -1,0 +1,12 @@
+Merchtyl
+
+Hello {{ownerName}},
+
+A new activation link was requested for {{merchantOperatingName}}.
+
+Activate your account:
+{{activationUrl}}
+
+This new invitation expires at {{expiresAt}}.
+
+For your security, any previous unused activation link no longer works.

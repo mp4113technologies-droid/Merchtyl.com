@@ -1,0 +1,140 @@
+spring:
+  application:
+    name: merchtyl-backend
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://ep-holy-forest-au795cxk-pooler.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require}
+    username: ${SPRING_DATASOURCE_USERNAME:neondb_owner}
+    password: ${SPRING_DATASOURCE_PASSWORD:npg_Ji0gpIVLs9Yb}
+    driver-class-name: org.postgresql.Driver
+
+    hikari:
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:10}
+      minimum-idle: ${DB_MIN_IDLE:1}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:300000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:900000}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+    properties:
+      hibernate:
+        format_sql: ${HIBERNATE_FORMAT_SQL:true}
+        jdbc:
+          time_zone: UTC
+        default_batch_fetch_size: ${HIBERNATE_DEFAULT_BATCH_FETCH_SIZE:64}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+server:
+  port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    com.merchtyl: ${LOGGING_LEVEL_COM_MERCHTYL:DEBUG}
+    org.flywaydb: ${LOGGING_LEVEL_FLYWAY:INFO}
+    org.hibernate.SQL: ${LOGGING_LEVEL_HIBERNATE_SQL:DEBUG}
+    org.hibernate.orm.jdbc.bind: ${LOGGING_LEVEL_HIBERNATE_BIND:WARN}
+    org.springframework.jdbc.core.JdbcTemplate: ${LOGGING_LEVEL_JDBC_TEMPLATE:DEBUG}
+    org.springframework.transaction.interceptor: ${LOGGING_LEVEL_TRANSACTION:TRACE}
+
+merchtyl:
+  jwt:
+    issuer: ${MERCHTYL_JWT_ISSUER:merchtyl-dev}
+    secret: ${MERCHTYL_JWT_SECRET:merchtyl-dev-jwt-secret-2026-change-before-production-9xK7pQ2m}
+    expiration-minutes: ${MERCHTYL_JWT_EXPIRATION_MINUTES:60}
+    refresh-expiration-days: ${MERCHTYL_JWT_REFRESH_EXPIRATION_DAYS:14}
+  security:
+    cors:
+      allowed-origins: ${MERCHTYL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080}
+    rate-limit:
+      enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
+      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
+      auth-window: ${MERCHTYL_RATE_LIMIT_AUTH_WINDOW:1m}
+    temporary-password:
+      length: ${MERCHTYL_TEMPORARY_PASSWORD_LENGTH:20}
+      expiry-hours: ${MERCHTYL_TEMPORARY_PASSWORD_EXPIRY_HOURS:24}
+      password-change-token-minutes: ${MERCHTYL_PASSWORD_CHANGE_TOKEN_MINUTES:10}
+    login:
+      max-failed-attempts: ${MERCHTYL_LOGIN_MAX_FAILED_ATTEMPTS:3}
+      account-lock-email-enabled: ${MERCHTYL_ACCOUNT_LOCK_EMAIL_ENABLED:true}
+    password-reset:
+      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:30}
+      forgot-max-per-hour: ${MERCHTYL_PASSWORD_RESET_FORGOT_MAX_PER_HOUR:5}
+      admin-max-per-hour: ${MERCHTYL_PASSWORD_RESET_ADMIN_MAX_PER_HOUR:5}
+  platform:
+    bootstrap:
+      enabled: ${MERCHTYL_BOOTSTRAP_ADMIN_ENABLED:false}
+      email: ${MERCHTYL_BOOTSTRAP_ADMIN_EMAIL:}
+      name: ${MERCHTYL_BOOTSTRAP_ADMIN_NAME:}
+      password: ${MERCHTYL_BOOTSTRAP_ADMIN_PASSWORD:}
+    owner-invitation:
+      expiry-hours: ${MERCHTYL_OWNER_INVITATION_EXPIRY_HOURS:48}
+      resend-max-per-hour: ${MERCHTYL_OWNER_INVITATION_RESEND_MAX_PER_HOUR:3}
+      resend-min-interval-seconds: ${MERCHTYL_OWNER_INVITATION_RESEND_MIN_INTERVAL_SECONDS:60}
+      resend-max-total: ${MERCHTYL_OWNER_INVITATION_RESEND_MAX_TOTAL:10}
+    support-access:
+      enabled: ${MERCHTYL_SUPPORT_ACCESS_ENABLED:false}
+      default-minutes: ${MERCHTYL_SUPPORT_ACCESS_DEFAULT_MINUTES:30}
+  testing:
+    user-provisioning:
+      enabled: ${MERCHTYL_TEST_USER_PROVISIONING_ENABLED:true}
+      key: ${MERCHTYL_TEST_USER_PROVISIONING_KEY:merchtyl-local-test-key}
+      default-user-password: ${MERCHTYL_TEST_DEFAULT_USER_PASSWORD:Test1234!}
+  email:
+    provider: ${MERCHTYL_EMAIL_PROVIDER:resend}
+    from-address: ${MERCHTYL_EMAIL_FROM_ADDRESS:onboarding@adityabhosale.xyz}
+    from-name: ${MERCHTYL_EMAIL_FROM_NAME:Merchtyl}
+    reply-to: ${MERCHTYL_EMAIL_REPLY_TO:}
+    frontend-base-url: ${MERCHTYL_FRONTEND_BASE_URL:http://localhost:5173}
+    retry:
+      max-attempts: ${MERCHTYL_EMAIL_RETRY_MAX_ATTEMPTS:5}
+      initial-seconds: ${MERCHTYL_EMAIL_RETRY_INITIAL_SECONDS:30}
+      multiplier: ${MERCHTYL_EMAIL_RETRY_MULTIPLIER:2}
+    resend:
+      enabled: ${RESEND_ENABLED:true}
+      api-key: ${RESEND_API_KEY:re_a8tL5ppi_HXcmjPo6tV9mjyxfkV326GkR}
+  idempotency:
+    retention: ${MERCHTYL_IDEMPOTENCY_RETENTION:24h}
+    max-key-length: ${MERCHTYL_IDEMPOTENCY_MAX_KEY_LENGTH:255}
+  register-sessions:
+    single-open-per-register: ${MERCHTYL_REGISTER_SESSIONS_SINGLE_OPEN_PER_REGISTER:true}
+    single-open-per-device: ${MERCHTYL_REGISTER_SESSIONS_SINGLE_OPEN_PER_DEVICE:true}
+  register:
+    device-enforcement:
+      enabled: ${MERCHTYL_REGISTER_DEVICE_ENFORCEMENT_ENABLED:false}
+  cash-movements:
+    approval-required-types: ${MERCHTYL_CASH_MOVEMENTS_APPROVAL_REQUIRED_TYPES:SAFE_DROP,FLOAT_REMOVE,EXPENSE,BANK_DEPOSIT,CORRECTION}
+  refunds:
+    approval-required: ${MERCHTYL_REFUNDS_APPROVAL_REQUIRED:false}
+
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_API_DOCS_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:true}
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+    persist-authorization: true

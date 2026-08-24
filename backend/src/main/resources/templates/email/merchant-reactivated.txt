@@ -1,0 +1,7 @@
+Merchtyl
+
+Access for {{merchantOperatingName}} has been reactivated.
+
+Reason: {{reason}}
+
+Users can sign in according to their existing account, store, and permission status.

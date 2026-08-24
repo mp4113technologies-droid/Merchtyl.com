@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty scope="context" name="jsonEnabled" source="merchtyl.logging.json.enabled" defaultValue="false"/>
+    <springProperty scope="context" name="rootLevel" source="logging.level.root" defaultValue="INFO"/>
+    <springProperty scope="context" name="merchtylLevel" source="logging.level.com.merchtyl" defaultValue="INFO"/>
+    <springProperty scope="context" name="hibernateSqlLevel" source="logging.level.org.hibernate.SQL" defaultValue="WARN"/>
+    <springProperty scope="context" name="hibernateBindLevel" source="logging.level.org.hibernate.orm.jdbc.bind" defaultValue="WARN"/>
+    <springProperty scope="context" name="jdbcTemplateLevel" source="logging.level.org.springframework.jdbc.core.JdbcTemplate" defaultValue="WARN"/>
+    <springProperty scope="context" name="transactionLevel" source="logging.level.org.springframework.transaction.interceptor" defaultValue="WARN"/>
+
+    <property name="TEXT_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [corr=%X{correlationId:-}] [req=%X{requestId:-}] [tenant=%X{tenantId:-}] [store=%X{storeId:-}] [user=%X{username:-}] [userId=%X{userId:-}] [method=%X{httpMethod:-}] [uri=%X{requestUri:-}] [%thread] %logger{36} - %msg%n%ex"/>
+
+    <appender name="TEXT_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${TEXT_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <fieldName>timestamp</fieldName>
+                    <pattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</pattern>
+                </timestamp>
+                <logLevel/>
+                <threadName>
+                    <fieldName>thread</fieldName>
+                </threadName>
+                <loggerName>
+                    <fieldName>logger</fieldName>
+                </loggerName>
+                <message/>
+                <mdc/>
+                <stackTrace/>
+            </providers>
+        </encoder>
+    </appender>
+
+    <logger name="com.merchtyl" level="${merchtylLevel}"/>
+    <logger name="org.hibernate.SQL" level="${hibernateSqlLevel}"/>
+    <logger name="org.hibernate.orm.jdbc.bind" level="${hibernateBindLevel}"/>
+    <logger name="org.springframework.jdbc.core.JdbcTemplate" level="${jdbcTemplateLevel}"/>
+    <logger name="org.springframework.transaction.interceptor" level="${transactionLevel}"/>
+
+    <if condition='property("jsonEnabled").equalsIgnoreCase("true")'>
+        <then>
+            <root level="${rootLevel}">
+                <appender-ref ref="JSON_CONSOLE"/>
+            </root>
+        </then>
+        <else>
+            <root level="${rootLevel}">
+                <appender-ref ref="TEXT_CONSOLE"/>
+            </root>
+        </else>
+    </if>
+</configuration>
