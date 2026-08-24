@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://ep-holy-forest-au795cxk-pooler.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-    username: neondb_owner
-    password: npg_Ji0gpIVLs9Yb
+    url: jdbc:postgresql://localhost:55432/merchtyl
+    username: merchtyl
+    password: merchtyl_dev_password
 
 management:
   endpoint:
@@ -15,11 +15,14 @@ logging:
     com.merchtyl: DEBUG
     org.flywaydb: INFO
     org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: WARN
+    org.springframework.jdbc.core.JdbcTemplate: DEBUG
+    org.springframework.transaction.interceptor: TRACE
 
 merchtyl:
   jwt:
     issuer: merchtyl-local
-    secret: MERCHTYL_IS_THE_BEST_POS_SYSTEM_IN_THE_WORLD
+    secret: merchtyl-local-jwt-secret-change-for-your-machine-9xK7pQ2m
   security:
     cors:
       allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080
@@ -29,15 +32,14 @@ merchtyl:
       key: merchtyl-local-test-key
       default-user-password: Test1234!
   email:
-    provider: resend
-    from-address: support@merchtyl.com
+    provider: console
     frontend-base-url: http://localhost:5173
     resend:
-      enabled: true
-      api-key: re_bsVQkPbD_FqqwBYXpHMdQ9k4GSVdLJwM8
+      enabled: false
 
 springdoc:
   api-docs:
     enabled: true
   swagger-ui:
     enabled: true
+

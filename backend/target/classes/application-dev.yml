@@ -3,9 +3,9 @@ spring:
     name: merchtyl-backend
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://ep-holy-forest-au795cxk-pooler.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require}
-    username: ${SPRING_DATASOURCE_USERNAME:neondb_owner}
-    password: ${SPRING_DATASOURCE_PASSWORD:npg_Ji0gpIVLs9Yb}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/merchtyl}
+    username: ${SPRING_DATASOURCE_USERNAME:merchtyl}
+    password: ${SPRING_DATASOURCE_PASSWORD:merchtyl_dev_password}
     driver-class-name: org.postgresql.Driver
 
     hikari:
@@ -45,7 +45,8 @@ management:
         include: health
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8080}}
+  address: 0.0.0.0
 
 logging:
   level:
@@ -65,7 +66,7 @@ merchtyl:
     refresh-expiration-days: ${MERCHTYL_JWT_REFRESH_EXPIRATION_DAYS:14}
   security:
     cors:
-      allowed-origins: ${MERCHTYL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080}
+      allowed-origins: ${ALLOWED_ORIGINS:${MERCHTYL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080}}
     rate-limit:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
       auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
@@ -101,8 +102,8 @@ merchtyl:
       key: ${MERCHTYL_TEST_USER_PROVISIONING_KEY:merchtyl-local-test-key}
       default-user-password: ${MERCHTYL_TEST_DEFAULT_USER_PASSWORD:Test1234!}
   email:
-    provider: ${MERCHTYL_EMAIL_PROVIDER:resend}
-    from-address: ${MERCHTYL_EMAIL_FROM_ADDRESS:onboarding@adityabhosale.xyz}
+    provider: ${MERCHTYL_EMAIL_PROVIDER:console}
+    from-address: ${MERCHTYL_EMAIL_FROM_ADDRESS:}
     from-name: ${MERCHTYL_EMAIL_FROM_NAME:Merchtyl}
     reply-to: ${MERCHTYL_EMAIL_REPLY_TO:}
     frontend-base-url: ${MERCHTYL_FRONTEND_BASE_URL:http://localhost:5173}
@@ -111,8 +112,8 @@ merchtyl:
       initial-seconds: ${MERCHTYL_EMAIL_RETRY_INITIAL_SECONDS:30}
       multiplier: ${MERCHTYL_EMAIL_RETRY_MULTIPLIER:2}
     resend:
-      enabled: ${RESEND_ENABLED:true}
-      api-key: ${RESEND_API_KEY:re_a8tL5ppi_HXcmjPo6tV9mjyxfkV326GkR}
+      enabled: ${RESEND_ENABLED:false}
+      api-key: ${RESEND_API_KEY:}
   idempotency:
     retention: ${MERCHTYL_IDEMPOTENCY_RETENTION:24h}
     max-key-length: ${MERCHTYL_IDEMPOTENCY_MAX_KEY_LENGTH:255}
