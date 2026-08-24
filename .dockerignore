@@ -1,0 +1,14 @@
+.git
+.idea
+.vscode
+.DS_Store
+*.log
+**/target
+**/node_modules
+**/dist
+**/coverage
+.env
+.env.*
+docker-compose*.yml
+frontend
+docs

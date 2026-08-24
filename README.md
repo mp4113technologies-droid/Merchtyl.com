@@ -54,9 +54,111 @@ Automated integration tests use Testcontainers PostgreSQL and must not use the N
 
 Production remains environment-variable driven through the `prod` profile and `application-prod.yml`.
 
+## Production deployment
+
+The Spring Boot backend is ready for Railway deployment using `backend/Dockerfile` with the repository root as its build context. PostgreSQL remains an external Neon service, while the React/Vite frontend is deployed separately on Vercel.
+
+```text
+Browser -> Vercel frontend -> Railway (Spring Boot) -> PostgreSQL/Neon
+                                  |
+                                  +-> Resend
+```
+
+### 1. Configure the Railway backend service
+
+Create a Railway service from this repository. Keep the service **Root Directory** at the repository root and set `RAILWAY_DOCKERFILE_PATH=backend/Dockerfile` so the Docker build retains access to both the parent Maven POM and the backend module. Configure at least:
+
+```env
+SPRING_PROFILES_ACTIVE=prod
+SPRING_DATASOURCE_URL=jdbc:postgresql://HOST/DATABASE?sslmode=require
+SPRING_DATASOURCE_USERNAME=DATABASE_USER
+SPRING_DATASOURCE_PASSWORD=DATABASE_PASSWORD
+MERCHTYL_JWT_SECRET=GENERATE_A_LONG_RANDOM_SECRET
+MERCHTYL_CORS_ALLOWED_ORIGINS=https://YOUR_VERCEL_FRONTEND_DOMAIN
+MERCHTYL_FRONTEND_BASE_URL=https://YOUR_VERCEL_FRONTEND_DOMAIN
+MERCHTYL_EMAIL_PROVIDER=resend
+MERCHTYL_EMAIL_FROM_ADDRESS=notifications@YOUR_VERIFIED_DOMAIN
+RESEND_ENABLED=true
+RESEND_API_KEY=YOUR_RESEND_API_KEY
+SWAGGER_UI_ENABLED=false
+SWAGGER_API_DOCS_ENABLED=false
+```
+
+Railway supplies `PORT` automatically. The application listens on that port at `0.0.0.0`. In Railway service settings, configure the health-check path as `/actuator/health`, then generate a public domain under **Networking**. Verify the deployment before continuing:
+
+```bash
+curl https://YOUR_API_DOMAIN/actuator/health
+```
+
+Flyway runs automatically during backend startup. Do not run multiple first deployments concurrently against an empty database.
+
+The production profile requires Resend and validates these email settings during startup. The sender must be authorized by the configured Resend account. See `docs/transactional-email-resend.md`.
+
+### 2. Deploy the frontend separately
+
+The frontend remains a separate Vercel project whose **Root Directory** is `frontend`, framework preset is Vite, build command is `npm run build`, and output directory is `dist`.
+
+Add this Vercel environment variable to Production and Preview as appropriate:
+
+```env
+VITE_API_BASE_URL=https://YOUR_API_DOMAIN
+```
+
+The value is the API origin only, without `/api/v1` or a trailing slash. Vite embeds it at build time, so redeploy after changing it.
+
+Deploy the backend from the Railway dashboard or, after installing and authenticating the Railway CLI, from the repository root:
+
+```bash
+railway link
+railway up
+```
+
+### 3. Finalize allowed origins
+
+Set the Railway backend's `MERCHTYL_CORS_ALLOWED_ORIGINS` and `MERCHTYL_FRONTEND_BASE_URL` to the exact Vercel `https://` origin and redeploy the backend. `ALLOWED_ORIGINS` remains supported as an alias. For multiple exact origins, use a comma-separated list. Do not use `*` for production.
+
+Preview deployments use changing Vercel hostnames. Either give previews a dedicated stable custom domain and allow that origin, deploy previews against a non-production backend, or omit `VITE_API_BASE_URL` from previews that should not access the API.
+
+### 4. Production verification
+
+1. Open the Vercel URL directly on a nested route and confirm the SPA loads.
+2. Sign in and confirm `/api/v1/auth/login` targets the deployed API.
+3. Confirm the browser console contains no CORS or mixed-content errors.
+4. Check `GET /actuator/health` and backend logs.
+5. Send a test email and complete the platform-admin bootstrap described in `docs/platform-admin-bootstrap.md`.
+
+### Local container verification
+
+Build the same image Railway uses:
+
+```bash
+docker build -f backend/Dockerfile -t backend-railway .
+```
+
+Run it against an external PostgreSQL database:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e PORT=8080 \
+  -e SPRING_PROFILES_ACTIVE=prod \
+  -e SPRING_DATASOURCE_URL='jdbc:postgresql://HOST/DATABASE?sslmode=require' \
+  -e SPRING_DATASOURCE_USERNAME='DATABASE_USER' \
+  -e SPRING_DATASOURCE_PASSWORD='DATABASE_PASSWORD' \
+  -e MERCHTYL_JWT_SECRET='GENERATE_A_LONG_RANDOM_SECRET' \
+  -e MERCHTYL_CORS_ALLOWED_ORIGINS='http://localhost:5173' \
+  -e MERCHTYL_FRONTEND_BASE_URL='http://localhost:5173' \
+  -e MERCHTYL_EMAIL_PROVIDER='resend' \
+  -e MERCHTYL_EMAIL_FROM_ADDRESS='notifications@YOUR_VERIFIED_DOMAIN' \
+  -e RESEND_ENABLED='true' \
+  -e RESEND_API_KEY='YOUR_RESEND_API_KEY' \
+  backend-railway
+```
+
+Check `http://localhost:8080/actuator/health` after startup.
+
 ### Transactional email
 
-Local development uses the Resend email provider by default. To use console output for local testing, override the provider:
+Local development uses the console email provider by default. To make that choice explicit:
 
 ```bash
 MERCHTYL_EMAIL_PROVIDER=console \

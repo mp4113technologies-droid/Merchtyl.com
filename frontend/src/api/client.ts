@@ -1421,6 +1421,8 @@ export class ApiClientError extends Error {
   }
 }
 
+const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')}/api/v1`;
+
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) {
@@ -1430,7 +1432,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers
   });
@@ -1464,7 +1466,7 @@ async function requestText(path: string, init: RequestInit = {}, token?: string)
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  const response = await fetch(`/api/v1${path}`, { ...init, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     throw new ApiClientError(`Request failed with status ${response.status}`, response.status);
   }
@@ -1476,7 +1478,7 @@ async function requestBlob(path: string, init: RequestInit = {}, token?: string)
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  const response = await fetch(`/api/v1${path}`, { ...init, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     throw new ApiClientError(`Request failed with status ${response.status}`, response.status);
   }

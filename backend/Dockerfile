@@ -11,12 +11,12 @@ RUN apk add --no-cache curl \
     && addgroup -S merchtyl \
     && adduser -S merchtyl -G merchtyl
 WORKDIR /app
-ENV SERVER_PORT=8080 \
+ENV PORT=8080 \
     SPRING_PROFILES_ACTIVE=prod \
     JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 COPY --from=build /workspace/backend/target/*.jar /app/app.jar
 USER merchtyl
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${SERVER_PORT}/actuator/health/readiness" || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PORT}/actuator/health" || exit 1
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
