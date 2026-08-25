@@ -75,6 +75,8 @@ import { getApplicationDeviceIdentifier } from './deviceIdentity';
 import { AuthPage } from '../features/auth/AuthPage';
 import { FirstLoginPasswordChangePage } from '../features/auth/FirstLoginPasswordChangePage';
 import { ForgotPasswordPage, ResetPasswordPage } from '../features/auth/PasswordResetPages';
+import { PlatformAdminActivationPage } from '../features/auth/PlatformAdminActivationPage';
+import { PlatformAdminsPage } from '../features/platform/PlatformAdminsPage';
 import { NewRegisterPage, RegisterDetailPage, RegistersPage } from '../features/registers/RegisterPages';
 import { CashMovementPage, RegisterClosePage, RegisterCurrentPage, RegisterHistoryPage, RegisterOpenPage } from '../features/registersessions/RegisterSessionPages';
 import { NewStorePage, StoreDetailPage, StoresPage } from '../features/stores/StorePages';
@@ -321,6 +323,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     ...(canViewPlatform ? [{ label: 'Platform', to: '/platform', icon: <ShieldOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Merchants', to: '/platform/merchants', icon: <StorefrontIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Platform audit', to: '/platform/audit', icon: <HistoryOutlinedIcon /> }] : []),
+    ...(roles.includes('PLATFORM_SUPER_ADMIN') || roles.includes('PLATFORM_SUPPORT_ADMIN') ? [{ label: 'Platform Administrators', to: '/platform/admins', icon: <ManageAccountsOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Platform settings', to: '/platform/settings', icon: <SettingsInputComponentOutlinedIcon /> }] : []),
     ...(!canViewPlatform ? [{ label: 'Dashboard', to: '/', icon: <DashboardOutlinedIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'POS', to: '/pos', icon: <PointOfSaleOutlinedIcon /> }] : []),
@@ -613,6 +616,7 @@ function AppRoutes() {
       <Route path="/reset-password" element={session ? <Navigate to="/" replace /> : <ResetPasswordPage />} />
       <Route path="/first-login/change-password" element={session ? <Navigate to="/" replace /> : <FirstLoginPasswordChangePage />} />
       <Route path="/platform/login" element={session ? <Navigate to="/platform" replace /> : <PlatformLoginPage />} />
+      <Route path="/activate-platform-admin" element={<PlatformAdminActivationPage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<PosLayout />}>
           <Route path="/pos" element={<PosCartPage />} />
@@ -627,6 +631,7 @@ function AppRoutes() {
           <Route path="/platform/merchants/:tenantId" element={<PlatformMerchantDetailPage />} />
           <Route path="/platform/audit" element={<PlatformAuditPage />} />
           <Route path="/platform/settings" element={<PlatformSettingsPage />} />
+          <Route path="/platform/admins" element={<PlatformAdminsPage />} />
           <Route path="/stores" element={<StoresPage />} />
           <Route path="/stores/new" element={<NewStorePage />} />
           <Route path="/stores/:id" element={<StoreDetailPage />} />

@@ -93,6 +93,7 @@ com/merchtyl/refunds/RefundControllerAuthorizationTest$TestApplication.class
 com/merchtyl/lottery/LotteryPayoutPolicyControllerAuthorizationTest$TestSecurityConfig.class
 com/merchtyl/supplier/SupplierIntegrationTest.class
 com/merchtyl/cash/CashMovementControllerAuthorizationTest$TestSecurityConfig.class
+com/merchtyl/platform/web/RequestLoggingFilterMemoryTest.class
 com/merchtyl/lottery/LotteryOperatorServiceTest.class
 com/merchtyl/receipts/ReceiptControllerAuthorizationTest.class
 com/merchtyl/reports/LotteryReportControllerAuthorizationTest$TestSecurityConfig.class

@@ -20,6 +20,7 @@ public class EmailTemplateRenderer {
             case MERCHANT_OWNER_TEMPORARY_CREDENTIALS -> "merchant-owner-temporary-credentials";
             case MERCHANT_OWNER_TEMPORARY_CREDENTIALS_RESEND -> "merchant-owner-temporary-credentials";
             case PASSWORD_RESET -> "password-reset";
+            case PLATFORM_ADMIN_INVITATION -> "platform-admin-invitation";
             case MERCHANT_SUSPENDED -> "merchant-suspended";
             case MERCHANT_REACTIVATED -> "merchant-reactivated";
             case TEST_EMAIL -> "test-email";
@@ -54,6 +55,7 @@ public class EmailTemplateRenderer {
             case MERCHANT_OWNER_TEMPORARY_CREDENTIALS -> "Your temporary Merchtyl login details";
             case MERCHANT_OWNER_TEMPORARY_CREDENTIALS_RESEND -> "Your new temporary Merchtyl login details";
             case PASSWORD_RESET -> "Reset your Merchtyl password";
+            case PLATFORM_ADMIN_INVITATION -> "You've been invited to administer Merchtyl";
             case MERCHANT_SUSPENDED -> "Your Merchtyl merchant account has been suspended";
             case MERCHANT_REACTIVATED -> "Your Merchtyl merchant account has been reactivated";
             case TEST_EMAIL -> "Merchtyl test email";

@@ -176,6 +176,22 @@ export type PlatformUser = {
   version: number;
 };
 
+export type PlatformAdmin = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: 'PLATFORM_SUPER_ADMIN' | 'PLATFORM_SUPPORT_ADMIN';
+  status: 'PENDING_ACTIVATION' | 'ACTIVE' | 'DEACTIVATED';
+  locked: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  createdBy: { id: string; name: string } | null;
+  version: number;
+};
+
+export type PlatformAdminPage = { content: PlatformAdmin[]; page: number; size: number; totalElements: number; totalPages: number };
+
 export type PlatformSettings = {
   bootstrapEnabled: boolean;
   ownerInvitationExpiryHours: number;

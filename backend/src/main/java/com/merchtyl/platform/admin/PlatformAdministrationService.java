@@ -163,6 +163,7 @@ public class PlatformAdministrationService {
             throw badCredentials();
         }
         Instant now = Instant.now();
+        jdbcTemplate.update("update platform_users set last_login_at=?, updated_at=now() where id=?", timestamp(now), user.id());
         Instant accessExpiresAt = now.plusSeconds(jwtProperties.expirationMinutes() * 60);
         return new AuthResponse(
                 "AUTHENTICATED",

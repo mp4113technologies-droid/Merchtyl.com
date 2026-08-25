@@ -13,6 +13,7 @@ com/merchtyl/tax/TaxRuleStatusRequest.class
 com/merchtyl/security/UserSearchRequest.class
 com/merchtyl/inventory/InventoryBalanceResponse.class
 com/merchtyl/auth/PasswordPolicyException.class
+com/merchtyl/platform/admin/PlatformAdminDtos.class
 com/merchtyl/device/DeviceUpdateRequest.class
 com/merchtyl/eod/EndOfDayPaymentSummary.class
 com/merchtyl/tax/TaxRuleSearchRequest.class
@@ -57,6 +58,7 @@ com/merchtyl/lottery/LotteryOperatorUpdateRequest.class
 com/merchtyl/lottery/LotteryPayoutPolicySearchRequest.class
 com/merchtyl/lottery/LotteryPayoutService$LotteryPayoutReversalFingerprint.class
 com/merchtyl/registersession/RegisterDeviceRequiredException.class
+com/merchtyl/platform/admin/PlatformAdminDtos$StatusRequest.class
 com/merchtyl/product/ProductBarcodeResponse.class
 com/merchtyl/inventory/StockAdjustmentLineResponse.class
 com/merchtyl/tax/TaxRateUpdateRequest.class
@@ -128,6 +130,7 @@ com/merchtyl/inventory/StockCountResponse.class
 com/merchtyl/lottery/LotteryPayoutApprovalRepository.class
 com/merchtyl/email/OwnerTemporaryCredentialsEmailEvent.class
 com/merchtyl/cash/CashLedgerBreakdownResponse.class
+com/merchtyl/email/PlatformAdminInvitationEmailEvent.class
 com/merchtyl/config/SecurityProperties$Login.class
 com/merchtyl/cash/CashLedgerSourceType.class
 com/merchtyl/eod/EndOfDaySignOffResponse.class
@@ -164,6 +167,7 @@ com/merchtyl/platform/admin/PlatformAdministrationService$2.class
 com/merchtyl/cash/CashLedgerService$SourceDirection.class
 com/merchtyl/lottery/LotteryPayoutReversal.class
 com/merchtyl/idempotency/IdempotencyOperationResponse.class
+com/merchtyl/email/PlatformAdminInvitationEmailService.class
 com/merchtyl/supplier/SupplierUpdateRequest.class
 com/merchtyl/catalogue/CatalogueReferenceRepository.class
 com/merchtyl/lottery/LotteryPayout.class
@@ -303,6 +307,7 @@ com/merchtyl/registersession/RegisterSession.class
 com/merchtyl/device/Device.class
 com/merchtyl/idempotency/IdempotencyService.class
 com/merchtyl/inventory/StockCountLineResponse.class
+com/merchtyl/platform/admin/PlatformAdminDtos$ActivateRequest.class
 com/merchtyl/refunds/RefundCreateRequest.class
 com/merchtyl/cash/CashMovementRepository.class
 com/merchtyl/security/AssignedStoreResponse.class
@@ -668,6 +673,7 @@ com/merchtyl/tax/TaxTreatment.class
 com/merchtyl/tax/TaxGroupController.class
 com/merchtyl/tax/TaxCategoryService.class
 com/merchtyl/tax/TaxComponentUpdateRequest.class
+com/merchtyl/platform/admin/PlatformAdminDtos$Page.class
 com/merchtyl/register/RegisterStatusRequest.class
 com/merchtyl/reference/AdministrativeDivisionTimezone.class
 com/merchtyl/receipts/package-info.class
@@ -675,8 +681,10 @@ com/merchtyl/config/JwtProperties.class
 com/merchtyl/tax/TaxRuleConditionEvaluationResponse.class
 com/merchtyl/eod/EndOfDayReportResponse.class
 com/merchtyl/tax/TaxCategory.class
+com/merchtyl/platform/admin/PlatformAdminDtos$Response.class
 com/merchtyl/tax/TaxRateController.class
 com/merchtyl/eod/EndOfDayInventorySummaryResponse.class
+com/merchtyl/platform/admin/PlatformAdminDtos$CreateRequest.class
 com/merchtyl/tax/TaxComponentSearchRequest.class
 com/merchtyl/catalogue/CatalogueReferenceStatusRequest.class
 com/merchtyl/config/SecurityProperties$PasswordReset.class
@@ -689,6 +697,7 @@ com/merchtyl/tax/TaxTypeResponse.class
 com/merchtyl/tax/CountryUpdateRequest.class
 com/merchtyl/registersession/RegisterSessionController.class
 com/merchtyl/tax/TaxRuleEvaluationResponse.class
+com/merchtyl/platform/admin/PlatformAdminDtos$ActorSummary.class
 com/merchtyl/sales/AbstractSaleItemHandler.class
 com/merchtyl/features/FeatureDefinitionResponse.class
 com/merchtyl/platform/testing/TestUserProvisioningRole.class
@@ -810,6 +819,7 @@ com/merchtyl/supplier/ProductSupplierValues.class
 com/merchtyl/reference/CurrencyResponse.class
 com/merchtyl/inventory/StockAdjustmentLineRequest.class
 com/merchtyl/catalogue/CatalogueReferenceValues.class
+com/merchtyl/platform/admin/PlatformAdminManagementService.class
 com/merchtyl/inventory/StockAdjustment.class
 com/merchtyl/tax/TaxCalculator$1.class
 com/merchtyl/reports/RegisterReportController.class

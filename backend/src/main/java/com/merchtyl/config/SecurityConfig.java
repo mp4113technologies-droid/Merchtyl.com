@@ -102,6 +102,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/first-login/change-password",
                                 "/api/v1/platform/auth/login",
+                                "/api/v1/platform/admins/activate",
                                 "/api/v1/platform/owner-invitations/activate",
                                 "/api/v1/testing/users",
                                 "/api/v1/testing/users/batch",

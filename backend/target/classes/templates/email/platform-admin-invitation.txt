@@ -1,0 +1,7 @@
+Hello {{firstName}},
+
+Merchtyl administration invited you as {{role}}.
+
+Set your password and activate your account: {{activationUrl}}
+
+This one-time link expires at {{expiresAt}}. If you did not expect this invitation, do not open the link and contact Merchtyl administration.

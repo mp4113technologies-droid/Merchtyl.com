@@ -63,12 +63,14 @@ public class PlatformAdministrationController {
     private final PlatformAdministrationService platformService;
     private final AuditService auditService;
     private final PasswordResetService passwordResetService;
+    private final PlatformAdminManagementService platformAdmins;
 
     public PlatformAdministrationController(PlatformAdministrationService platformService, AuditService auditService,
-                                            PasswordResetService passwordResetService) {
+                                            PasswordResetService passwordResetService, PlatformAdminManagementService platformAdmins) {
         this.platformService = platformService;
         this.auditService = auditService;
         this.passwordResetService = passwordResetService;
+        this.platformAdmins = platformAdmins;
     }
 
     @PostMapping("/auth/login")
@@ -82,6 +84,41 @@ public class PlatformAdministrationController {
     @Operation(summary = "Activate invited merchant owner account")
     void activateOwner(@Valid @RequestBody OwnerActivationRequest request) {
         platformService.activateOwner(request);
+    }
+
+    @PostMapping("/admins/activate")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void activatePlatformAdmin(@Valid @RequestBody PlatformAdminDtos.ActivateRequest request) {
+        platformAdmins.activate(request);
+    }
+
+    @GetMapping("/admins")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_ADMIN_VIEW)")
+    PlatformAdminDtos.Page platformAdmins(@RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
+        return platformAdmins.list(page, size);
+    }
+
+    @PostMapping("/admins")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_ADMIN_CREATE)")
+    PlatformAdminDtos.Response createPlatformAdmin(@Valid @RequestBody PlatformAdminDtos.CreateRequest request,
+                                                    Authentication authentication) {
+        return platformAdmins.create(request, authentication);
+    }
+
+    @PostMapping("/admins/{platformUserId}/resend-invitation")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_ADMIN_CREATE)")
+    PlatformAdminDtos.Response resendPlatformAdminInvitation(@PathVariable UUID platformUserId, Authentication authentication) {
+        return platformAdmins.resend(platformUserId, authentication);
+    }
+
+    @PostMapping("/admins/{platformUserId}/status")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_ADMIN_DEACTIVATE)")
+    PlatformAdminDtos.Response changePlatformAdminStatus(@PathVariable UUID platformUserId,
+                                                         @Valid @RequestBody PlatformAdminDtos.StatusRequest request,
+                                                         Authentication authentication) {
+        return platformAdmins.status(platformUserId, request, authentication);
     }
 
     @GetMapping("/dashboard")
@@ -269,14 +306,6 @@ public class PlatformAdministrationController {
         return platformService.listPlatformUsers();
     }
 
-    @PostMapping("/users")
-    @ResponseStatus(HttpStatus.CREATED)
-    @Tag(name = "Platform Users")
-    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_USER_CREATE)")
-    PlatformUserResponse createPlatformUser(@Valid @RequestBody PlatformUserCreateRequest request, Authentication authentication) {
-        return platformService.createPlatformUser(request, authentication);
-    }
-
     @GetMapping("/users/{platformUserId}")
     @Tag(name = "Platform Users")
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_USER_VIEW)")
@@ -284,25 +313,6 @@ public class PlatformAdministrationController {
         return platformService.getPlatformUser(platformUserId);
     }
 
-    @PutMapping("/users/{platformUserId}")
-    @Tag(name = "Platform Users")
-    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_USER_UPDATE)")
-    PlatformUserResponse updatePlatformUser(
-            @PathVariable UUID platformUserId,
-            @Valid @RequestBody PlatformUserUpdateRequest request,
-            Authentication authentication) {
-        return platformService.updatePlatformUser(platformUserId, request, authentication);
-    }
-
-    @PostMapping("/users/{platformUserId}/disable")
-    @Tag(name = "Platform Users")
-    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_USER_DISABLE)")
-    PlatformUserResponse disablePlatformUser(
-            @PathVariable UUID platformUserId,
-            @Valid @RequestBody PlatformUserStatusRequest request,
-            Authentication authentication) {
-        return platformService.updatePlatformUserStatus(platformUserId, request, authentication);
-    }
 
     @GetMapping("/audit-events")
     @Tag(name = "Platform Audit")

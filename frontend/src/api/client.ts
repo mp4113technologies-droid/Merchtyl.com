@@ -125,6 +125,8 @@ import type {
   PlatformDashboard,
   PlatformSettings,
   PlatformUser,
+  PlatformAdmin,
+  PlatformAdminPage,
   AuditEventListResponse,
   EmailDelivery,
   EmailProviderStatus,
@@ -1725,6 +1727,26 @@ export function disablePlatformUser(token: string, platformUserId: string, paylo
     method: 'POST',
     body: JSON.stringify(payload)
   }, token);
+}
+
+export function listPlatformAdmins(token: string) {
+  return request<PlatformAdminPage>('/platform/admins?page=0&size=100', undefined, token);
+}
+
+export function invitePlatformAdmin(token: string, payload: { firstName: string; lastName: string; email: string; role: PlatformAdmin['role'] }) {
+  return request<PlatformAdmin>('/platform/admins', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function resendPlatformAdminInvitation(token: string, id: string) {
+  return request<PlatformAdmin>(`/platform/admins/${id}/resend-invitation`, { method: 'POST' }, token);
+}
+
+export function updatePlatformAdminStatus(token: string, id: string, enabled: boolean, version: number) {
+  return request<PlatformAdmin>(`/platform/admins/${id}/status`, { method: 'POST', body: JSON.stringify({ enabled, version }) }, token);
+}
+
+export function activatePlatformAdmin(payload: { token: string; password: string }) {
+  return request<void>('/platform/admins/activate', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export function listPlatformAuditEvents(token: string, params: { page?: number; size?: number; action?: string; entityType?: string } = {}) {

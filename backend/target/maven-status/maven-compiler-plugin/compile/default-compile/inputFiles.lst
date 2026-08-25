@@ -114,6 +114,8 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/MerchantNotificationEmailEvent.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/OwnerInvitationEmailEvent.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/OwnerTemporaryCredentialsEmailEvent.java
+/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/PlatformAdminInvitationEmailEvent.java
+/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/PlatformAdminInvitationEmailService.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/RenderedEmailTemplate.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/ResendEmailClient.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/email/ResendEmailSender.java
@@ -301,6 +303,8 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/organization/package-info.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/payments/package-info.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/platform/admin/OnboardingStage.java
+/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/platform/admin/PlatformAdminDtos.java
+/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/platform/admin/PlatformAdminManagementService.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/platform/admin/PlatformAdministrationController.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/platform/admin/PlatformAdministrationService.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/main/java/com/merchtyl/platform/admin/PlatformAuthorityService.java

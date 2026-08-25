@@ -57,6 +57,7 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/openapi/OpenApiDocumentationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/testing/TestUserProvisioningControllerTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/testing/TestUserProvisioningServiceTest.java
+/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/web/RequestLoggingFilterMemoryTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/product/ProductControllerAuthorizationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/product/ProductIntegrationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/product/ProductServiceTest.java
