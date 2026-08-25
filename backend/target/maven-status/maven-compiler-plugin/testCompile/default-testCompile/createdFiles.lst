@@ -160,6 +160,7 @@ com/merchtyl/register/RegisterControllerAuthorizationTest$TestApplication.class
 com/merchtyl/refunds/RefundServiceTest$ImmediateTransactions.class
 com/merchtyl/sales/SaleItemHandlerRegistryTest.class
 com/merchtyl/store/StoreControllerAuthorizationTest.class
+com/merchtyl/email/PlatformAdminActivationUrlTest.class
 com/merchtyl/idempotency/IdempotencyEndpointTest.class
 com/merchtyl/idempotency/IdempotencyEndpointTest$TestApplication.class
 com/merchtyl/inventory/InventoryControllerAuthorizationTest.class

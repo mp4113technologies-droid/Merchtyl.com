@@ -110,23 +110,31 @@ public class PlatformAdminManagementService {
     public void activate(ActivateRequest request) {
         passwordPolicy.validate(request.password());
         Map<String,Object> invite = jdbc.query("""
-                select id, platform_user_id, status, expires_at from platform_admin_invitations where token_hash=? for update
+                select id, platform_user_id, purpose, status, expires_at from platform_admin_invitations where token_hash=? for update
                 """, (rs, row) -> {
                     Map<String, Object> values = new java.util.HashMap<>();
                     values.put("id", rs.getObject("id", UUID.class));
                     values.put("userId", rs.getObject("platform_user_id", UUID.class));
+                    values.put("purpose", rs.getString("purpose"));
                     values.put("status", rs.getString("status"));
                     values.put("expires", rs.getTimestamp("expires_at").toInstant());
                     return values;
                 }, hash(request.token()))
-                .stream().findFirst().orElseThrow(() -> new ConflictException("INVITATION_EXPIRED"));
-        if (!"PENDING".equals(invite.get("status")) || !((Instant) invite.get("expires")).isAfter(Instant.now()))
-            throw new ConflictException("INVITATION_EXPIRED");
+                .stream().findFirst().orElseThrow(() -> new ConflictException("INVALID_ACTIVATION_TOKEN"));
+        if (!"PLATFORM_ADMIN_ACTIVATION".equals(invite.get("purpose"))) throw new ConflictException("INVALID_ACTIVATION_TOKEN");
+        if ("ACCEPTED".equals(invite.get("status"))) throw new ConflictException("ACTIVATION_TOKEN_ALREADY_USED");
+        if ("REVOKED".equals(invite.get("status"))) throw new ConflictException("ACTIVATION_TOKEN_REVOKED");
+        if (!((Instant) invite.get("expires")).isAfter(Instant.now())) {
+            jdbc.update("update platform_admin_invitations set status='EXPIRED' where id=?", invite.get("id"));
+            throw new ConflictException("EXPIRED_ACTIVATION_TOKEN");
+        }
         UUID userId = (UUID) invite.get("userId");
         jdbc.update("update platform_users set password_hash=?,enabled=true,status='ACTIVE',password_change_required=false,updated_at=now(),version=version+1 where id=? and status='PENDING_ACTIVATION'",
                 passwordEncoder.encode(request.password()), userId);
         jdbc.update("update platform_admin_invitations set status='ACCEPTED',accepted_at=now() where id=?", invite.get("id"));
+        jdbc.update("update platform_admin_invitations set status='REVOKED',revoked_at=now() where platform_user_id=? and status='PENDING' and id<>?", userId, invite.get("id"));
         record(userId, AuditAction.PLATFORM_ADMIN_ACTIVATED, userId, Map.of("status", "ACTIVE"));
+        log.info("PLATFORM_ADMIN_ACTIVATION_COMPLETED targetPublicId={}", userId);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)

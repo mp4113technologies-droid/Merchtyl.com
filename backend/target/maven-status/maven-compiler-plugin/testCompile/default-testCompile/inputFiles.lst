@@ -22,6 +22,7 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/device/DeviceIntegrationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/email/EmailConfigurationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/email/EmailTemplateRendererTest.java
+/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/email/PlatformAdminActivationUrlTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/email/ResendEmailSenderTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/eod/BusinessDayControllerAuthorizationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/eod/EndOfDayReportControllerAuthorizationTest.java

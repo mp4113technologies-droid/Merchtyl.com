@@ -25,8 +25,7 @@ public class PlatformAdminInvitationEmailService {
 
     @TransactionalEventListener
     public void send(PlatformAdminInvitationEmailEvent event) {
-        String activationUrl = properties.frontendBaseUrl().replaceAll("/+$", "")
-                + "/activate-platform-admin?token=" + event.rawToken();
+        String activationUrl = properties.platformAdminActivationUrl(event.rawToken());
         RenderedEmailTemplate rendered = renderer.render(EmailTemplateCode.PLATFORM_ADMIN_INVITATION, Map.of(
                 "firstName", event.firstName(),
                 "role", event.role().name().replace('_', ' '),

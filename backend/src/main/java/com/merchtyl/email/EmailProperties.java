@@ -40,6 +40,11 @@ public record EmailProperties(
         return base + "/reset-password?token=" + rawToken;
     }
 
+    public String platformAdminActivationUrl(String rawToken) {
+        String base = frontendBaseUrl == null ? "" : frontendBaseUrl.replaceAll("/+$", "");
+        return base + "/activate-platform-admin?token=" + rawToken;
+    }
+
     public int maxAttempts() {
         return Math.max(1, retry.maxAttempts());
     }
