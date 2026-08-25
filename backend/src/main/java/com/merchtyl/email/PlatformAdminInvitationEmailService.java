@@ -7,7 +7,6 @@ import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -27,16 +26,6 @@ public class PlatformAdminInvitationEmailService {
     @TransactionalEventListener
     public void send(PlatformAdminInvitationEmailEvent event) {
         String activationUrl = properties.platformAdminActivationUrl(event.rawToken());
-        URI diagnosticUrl = URI.create(activationUrl);
-        List<String> queryParameterNames = diagnosticUrl.getRawQuery() == null
-                ? List.of()
-                : java.util.Arrays.stream(diagnosticUrl.getRawQuery().split("&"))
-                .map(parameter -> parameter.split("=", 2)[0])
-                .distinct()
-                .toList();
-        log.info("origin={} pathname={} queryParams={}",
-                diagnosticUrl.getScheme() + "://" + diagnosticUrl.getAuthority(),
-                diagnosticUrl.getPath(), queryParameterNames);
         RenderedEmailTemplate rendered = renderer.render(EmailTemplateCode.PLATFORM_ADMIN_INVITATION, Map.of(
                 "firstName", event.firstName(),
                 "role", event.role().name().replace('_', ' '),
