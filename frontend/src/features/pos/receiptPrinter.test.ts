@@ -3,6 +3,7 @@ import {
   printReceiptWithFallback,
   QzTrayReceiptPrinter,
   receiptHtml,
+  receiptPrintStyles,
   type ReceiptPrinterPreferences
 } from './receiptPrinter';
 import type { ReceiptDocument } from '../../api/types';
@@ -107,6 +108,14 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('Sales tax');
   });
 
+  it('defines an 80mm print-only receipt layout', () => {
+    const printCss = JSON.stringify(receiptPrintStyles);
+    expect(printCss).toContain('@media print');
+    expect(printCss).toContain('80mm auto');
+    expect(printCss).toContain('.receipt-print-root');
+    expect(printCss).toContain("[role='dialog']");
+  });
+
   it('prints through a browser window', async () => {
     const print = vi.fn();
     const write = vi.fn();
@@ -208,9 +217,11 @@ describe('QzTrayReceiptPrinter', () => {
     } as unknown as Window);
     const preferences: ReceiptPrinterPreferences = {
       mode: 'QZ_TRAY',
+      receiptPrintMode: 'BROWSER_DIALOG',
       widthMm: 80,
       copies: 1,
       autoPrint: false,
+      autoPrintReceipt: false,
       qzPrinterName: 'Receipt Printer',
       fallbackToBrowser: true,
       cashDrawerPulse: { enabled: false, command: '\\x1Bp\\x00\\x19\\xFA' }

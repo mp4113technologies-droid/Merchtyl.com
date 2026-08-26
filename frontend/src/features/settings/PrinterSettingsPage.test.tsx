@@ -56,9 +56,11 @@ function qzMock() {
 function qzPreferences(overrides: Partial<ReceiptPrinterPreferences> = {}): ReceiptPrinterPreferences {
   return {
     mode: 'QZ_TRAY',
+    receiptPrintMode: 'KIOSK_AUTO_PRINT',
     widthMm: 58,
     copies: 2,
     autoPrint: true,
+    autoPrintReceipt: true,
     qzPrinterName: 'Receipt Printer',
     fallbackToBrowser: false,
     cashDrawerPulse: { enabled: true, command: '\\x1Bp\\x00\\x19\\xFA' },
@@ -88,7 +90,7 @@ describe('PrinterSettingsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(screen.queryByText('QZ Tray is connected and the configured printer is available.')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Test print' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Test Receipt' }));
 
     expect(await screen.findByText('QZ Tray test receipt sent.')).toBeInTheDocument();
     expect(qz.print).toHaveBeenCalledTimes(3);
@@ -111,11 +113,30 @@ describe('PrinterSettingsPage', () => {
       const saved = JSON.parse(window.localStorage.getItem(receiptPrinterPreferencesKey) ?? '{}') as ReceiptPrinterPreferences;
       expect(saved).toMatchObject({
         mode: 'BROWSER',
+        receiptPrintMode: 'BROWSER_DIALOG',
         widthMm: 112,
         copies: 3,
         autoPrint: true,
+        autoPrintReceipt: true,
         fallbackToBrowser: true
       });
     });
+  });
+
+  it('prints a rendered test receipt without creating sales or payments', async () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Test Receipt' }));
+
+    expect(await screen.findByLabelText('Test receipt')).toHaveTextContent('PRINT TEST');
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    expect(await screen.findByText('Test receipt sent to browser printing.')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  GlobalStyles,
   Grid,
   InputLabel,
   MenuItem,
@@ -22,9 +23,11 @@ import * as React from 'react';
 import {
   defaultCashDrawerPulseCommand,
   loadReceiptPrinterPreferences,
+  printRenderedReceipt,
   printReceiptWithFallback,
   QzTrayReceiptPrinter,
   saveReceiptPrinterPreferences,
+  receiptPrintStyles,
   testReceiptDocument,
   type ReceiptPrinterPreferences
 } from '../pos/receiptPrinter';
@@ -42,6 +45,16 @@ export function PrinterSettingsPage() {
   const [preferences, setPreferences] = React.useState<ReceiptPrinterPreferences>(() => loadReceiptPrinterPreferences());
   const [status, setStatus] = React.useState<PrinterStatus | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [browserTestReceipt, setBrowserTestReceipt] = React.useState<ReturnType<typeof testReceiptDocument> | null>(null);
+
+  React.useEffect(() => {
+    if (!browserTestReceipt) return;
+    setBusy(true);
+    void printRenderedReceipt({ saleId: browserTestReceipt.saleId, registerId: browserTestReceipt.register.id })
+      .then(() => setStatus({ severity: 'info', message: 'Test receipt sent to browser printing.' }))
+      .catch((error) => setStatus({ severity: 'error', message: errorMessage(error) }))
+      .finally(() => setBusy(false));
+  }, [browserTestReceipt]);
 
   function update(next: ReceiptPrinterPreferences) {
     setPreferences(next);
@@ -75,6 +88,11 @@ export function PrinterSettingsPage() {
   }
 
   async function testPrint() {
+    if (preferences.mode === 'BROWSER') {
+      setStatus(null);
+      setBrowserTestReceipt(testReceiptDocument());
+      return;
+    }
     setBusy(true);
     setStatus(null);
     try {
@@ -104,6 +122,7 @@ export function PrinterSettingsPage() {
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 980 }}>
+      <GlobalStyles styles={receiptPrintStyles} />
       <Box>
         <Typography variant="h5" component="h1">Hardware printers</Typography>
         <Typography color="text.secondary">Configure receipt printing for this browser and device.</Typography>
@@ -116,6 +135,19 @@ export function PrinterSettingsPage() {
         >
           {status.message}
         </Alert>
+      ) : null}
+
+      {browserTestReceipt ? (
+        <Paper className="receipt-print-root" aria-label="Test receipt" sx={{ p: 2, width: '80mm', fontFamily: 'monospace' }}>
+          <Typography align="center" fontWeight={700}>MERCHTYL</Typography>
+          <Typography align="center" fontWeight={700}>PRINT TEST</Typography>
+          <Divider sx={{ my: 1 }} />
+          <Typography>Store: {browserTestReceipt.store.name}</Typography>
+          <Typography>Register: {browserTestReceipt.register.name}</Typography>
+          <Typography>Date/Time: {new Date(browserTestReceipt.completedAt).toLocaleString()}</Typography>
+          <Divider sx={{ my: 1 }} />
+          <Typography>If you can read this receipt, printing is configured correctly.</Typography>
+        </Paper>
       ) : null}
 
       <Paper variant="outlined" sx={{ p: 3 }}>
@@ -132,6 +164,20 @@ export function PrinterSettingsPage() {
                 >
                   <MenuItem value="BROWSER">Browser print dialog</MenuItem>
                   <MenuItem value="QZ_TRAY">QZ Tray printer</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel id="receipt-print-mode-label">Print mode</InputLabel>
+                <Select
+                  labelId="receipt-print-mode-label"
+                  label="Print mode"
+                  value={preferences.receiptPrintMode}
+                  onChange={(event) => update({ ...preferences, receiptPrintMode: event.target.value as ReceiptPrinterPreferences['receiptPrintMode'] })}
+                >
+                  <MenuItem value="BROWSER_DIALOG">Browser dialog</MenuItem>
+                  <MenuItem value="KIOSK_AUTO_PRINT">Kiosk auto print</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -179,12 +225,15 @@ export function PrinterSettingsPage() {
                 <FormControlLabel
                   control={(
                     <Checkbox
-                      checked={preferences.autoPrint}
-                      onChange={(event) => update({ ...preferences, autoPrint: event.target.checked })}
+                      checked={preferences.autoPrintReceipt}
+                      onChange={(event) => update({ ...preferences, autoPrint: event.target.checked, autoPrintReceipt: event.target.checked })}
                     />
                   )}
                   label="Auto-print receipts"
                 />
+                <Typography variant="caption" color="text.secondary">
+                  Kiosk Auto Print requires the POS computer to run Chrome or Edge using kiosk printing configuration.
+                </Typography>
                 <FormControlLabel
                   control={(
                     <Checkbox
@@ -242,7 +291,7 @@ export function PrinterSettingsPage() {
               Check QZ
             </Button>
             <Button variant="outlined" startIcon={<PrintOutlinedIcon />} disabled={busy} onClick={testPrint}>
-              Test print
+              Test Receipt
             </Button>
             <Button variant="text" disabled={busy} onClick={disconnectQz}>
               Disconnect QZ

@@ -23,7 +23,7 @@ describe('password reset pages', () => {
 
   it('validates password confirmation before reset', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      minimumLength: 12, maximumLength: 128, requiresUppercase: true,
+      minimumLength: 8, maximumLength: 20, requiresUppercase: true,
       requiresLowercase: true, requiresNumber: true, requiresSpecialCharacter: true
     }), { status: 200 }));
     renderPage(<ResetPasswordPage />, '/reset-password?token=test-token');
@@ -36,26 +36,26 @@ describe('password reset pages', () => {
   it('displays backend password policy violations and rules', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       if (String(input).includes('password-policy')) return new Response(JSON.stringify({
-        minimumLength: 12, maximumLength: 128, requiresUppercase: true,
+        minimumLength: 8, maximumLength: 20, requiresUppercase: true,
         requiresLowercase: true, requiresNumber: true, requiresSpecialCharacter: true
       }), { status: 200 });
       return new Response(JSON.stringify({
         code: 'PASSWORD_POLICY_VIOLATION', message: 'The password does not meet the required security policy.',
-        correlationId: 'corr-1', violations: [{ field: 'newPassword', code: 'PASSWORD_TOO_SHORT', message: 'Password must contain at least 12 characters.' }]
+        correlationId: 'corr-1', violations: [{ field: 'newPassword', code: 'PASSWORD_TOO_SHORT', message: 'Password must be between 8 and 20 characters and include at least one uppercase letter, one lowercase letter, one number, and one special character.' }]
       }), { status: 400 });
     });
     renderPage(<ResetPasswordPage />, '/reset-password?token=test-token');
-    expect(await screen.findByText(/Use 12–128 characters/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/New Password/), { target: { value: 'Short1!' } });
-    fireEvent.change(screen.getByLabelText(/Confirm Password/), { target: { value: 'Short1!' } });
+    expect(await screen.findByText(/Password must be between 8 and 20 characters/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/New Password/), { target: { value: 'Test@123' } });
+    fireEvent.change(screen.getByLabelText(/Confirm Password/), { target: { value: 'Test@123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update password' }));
-    expect(await screen.findByText('Password must contain at least 12 characters.')).toBeInTheDocument();
+    expect(await screen.findByText('Password must be between 8 and 20 characters and include at least one uppercase letter, one lowercase letter, one number, and one special character.')).toBeInTheDocument();
   });
 
   it('shows a safe expired-token message', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       if (String(input).includes('password-policy')) return new Response(JSON.stringify({
-        minimumLength: 12, maximumLength: 128, requiresUppercase: true,
+        minimumLength: 8, maximumLength: 20, requiresUppercase: true,
         requiresLowercase: true, requiresNumber: true, requiresSpecialCharacter: true
       }), { status: 200 });
       return new Response(JSON.stringify({ code: 'EXPIRED_RESET_TOKEN', message: 'expired', violations: [] }), { status: 410 });

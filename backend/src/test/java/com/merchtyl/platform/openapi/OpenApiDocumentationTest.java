@@ -6,6 +6,8 @@ import com.merchtyl.auth.AuthController;
 import com.merchtyl.auth.AuthService;
 import com.merchtyl.auth.JwtAuthenticationFilter;
 import com.merchtyl.auth.JwtService;
+import com.merchtyl.auth.PasswordPolicyService;
+import com.merchtyl.auth.PasswordResetService;
 import com.merchtyl.config.SecurityConfig;
 import com.merchtyl.eod.BusinessDayController;
 import com.merchtyl.eod.BusinessDayService;
@@ -88,6 +90,12 @@ class OpenApiDocumentationTest {
     AuthService authService;
 
     @MockBean
+    PasswordResetService passwordResetService;
+
+    @MockBean
+    PasswordPolicyService passwordPolicyService;
+
+    @MockBean
     SaleService saleService;
 
     @MockBean
@@ -110,6 +118,16 @@ class OpenApiDocumentationTest {
 
     @MockBean
     UserDetailsService userDetailsService;
+
+    @Test
+    void passwordSchemasDocumentGlobalLengthPolicy() throws Exception {
+        String document = mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(document).contains("\"minLength\":8", "\"maxLength\":20");
+        assertThat(document).contains("Password must be between 8 and 20 characters");
+    }
 
     @Test
     void swaggerUiRouteIsAvailableWithoutAuthentication() throws Exception {

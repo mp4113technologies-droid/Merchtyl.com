@@ -9,8 +9,8 @@ import jakarta.validation.constraints.Size;
 public record RegisterRequest(
         @Schema(description = "User email address.", example = "owner@example.test")
         @Email @NotBlank @Size(max = 320) String email,
-        @Schema(description = "User password. The example is a placeholder and not a real password.", format = "password", example = "<password>")
-        @NotBlank @Size(min = 8, max = 128) String password,
+        @Schema(description = PasswordPolicyService.REQUIREMENTS_MESSAGE, format = "password", example = "<password>", minLength = 8, maxLength = 20)
+        @NotBlank @Size(min = 8, max = 20, message = PasswordPolicyService.REQUIREMENTS_MESSAGE) String password,
         @Schema(description = "Display name for UI use.", example = "Store Owner")
         @NotBlank @Size(max = 160) String displayName
 ) {

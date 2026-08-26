@@ -3,6 +3,7 @@ package com.merchtyl.security;
 import com.merchtyl.audit.AuditAction;
 import com.merchtyl.audit.AuditService;
 import com.merchtyl.audit.CreateAuditRecordCommand;
+import com.merchtyl.auth.PasswordPolicyException;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.ForbiddenOperationException;
@@ -57,6 +58,18 @@ class UserAdministrationServiceTest {
             registerRepository,
             passwordEncoder,
             auditService);
+
+    @Test
+    void createAndAdminResetUseGlobalPasswordPolicy() {
+        assertThatThrownBy(() -> service.create(new UserCreateRequest(
+                "cashier@example.local", "Cashier", "test123", List.of(RoleName.CASHIER),
+                List.of(STORE_ID), List.of(), true, false), mock(Authentication.class)))
+                .isInstanceOf(PasswordPolicyException.class);
+
+        assertThatThrownBy(() -> service.resetPassword(UUID.randomUUID(),
+                new UserPasswordResetRequest("VeryLongPasswordForMerchtyl@12345", 1L), mock(Authentication.class)))
+                .isInstanceOf(PasswordPolicyException.class);
+    }
 
     @Test
     void omittedUuidFilterDoesNotBecomeIsNullPredicate() {

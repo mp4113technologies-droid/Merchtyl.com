@@ -39,6 +39,7 @@ import * as React from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
+import { PASSWORD_POLICY_HELP, passwordValueSchema, validPassword } from '../auth/passwordPolicy';
 import {
   createUser,
   disableUser,
@@ -86,7 +87,7 @@ type UserFilterForm = {
 const userSchema = z.object({
   email: z.string().trim().email('Enter a valid email').max(320, 'Email must be 320 characters or fewer'),
   displayName: z.string().trim().min(1, 'Display name is required').max(160, 'Display name must be 160 characters or fewer'),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password must be 128 characters or fewer').optional(),
+  password: passwordValueSchema.optional(),
   enabled: z.boolean(),
   locked: z.boolean(),
   roles: z.array(z.enum(['STORE_MANAGER', 'CASHIER'])).min(1, 'Select one role').max(1, 'Select one role'),
@@ -359,7 +360,7 @@ function UserForm({
 }) {
   const form = useForm<UserFormValues>({
     resolver: zodResolver(mode === 'create'
-      ? userSchema.extend({ password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password must be 128 characters or fewer') })
+      ? userSchema.extend({ password: passwordValueSchema })
       : userSchema),
     defaultValues,
     values: defaultValues
@@ -844,13 +845,13 @@ export function UserDetailPage() {
               label="New password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
-              error={newPassword.length > 0 && newPassword.length < 8}
-              helperText={newPassword.length > 0 && newPassword.length < 8 ? 'Password must be at least 8 characters' : undefined}
+              error={newPassword.length > 0 && !validPassword(newPassword)}
+              helperText={newPassword.length > 0 && !validPassword(newPassword) ? PASSWORD_POLICY_HELP : undefined}
             />
             <Button
               variant="outlined"
               startIcon={<KeyIcon />}
-              disabled={resetMutation.isPending || newPassword.length < 8}
+              disabled={resetMutation.isPending || !validPassword(newPassword)}
               onClick={() => resetMutation.mutate()}
               sx={{ alignSelf: 'flex-start' }}
             >

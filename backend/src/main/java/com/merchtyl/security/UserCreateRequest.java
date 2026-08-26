@@ -15,8 +15,8 @@ public record UserCreateRequest(
         @NotBlank @Email @Size(max = 320) String email,
         @Schema(description = "Display name for UI use.", example = "Front Cashier")
         @NotBlank @Size(max = 160) String displayName,
-        @Schema(description = "Initial password. The example is a placeholder and not a real password.", format = "password", example = "<password>")
-        @NotBlank @Size(min = 8, max = 128) String password,
+        @Schema(description = "Password must be 8–20 characters and include uppercase, lowercase, number, and allowed special characters.", format = "password", example = "<password>", minLength = 8, maxLength = 20)
+        @NotBlank @Size(min = 8, max = 20, message = com.merchtyl.auth.PasswordPolicyService.REQUIREMENTS_MESSAGE) String password,
         @Schema(description = "Roles assigned to the user.")
         @NotEmpty List<RoleName> roles,
         @Schema(description = "Stores the user can access.")

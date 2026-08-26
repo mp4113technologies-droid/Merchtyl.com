@@ -15,14 +15,10 @@ import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { firstLoginChangePassword } from '../../api/client';
+import { PASSWORD_POLICY_HELP, passwordValueSchema } from './passwordPolicy';
 
 const passwordSchema = z.object({
-  newPassword: z.string()
-    .min(12, 'Use at least 12 characters.')
-    .regex(/[A-Z]/, 'Include an uppercase letter.')
-    .regex(/[a-z]/, 'Include a lowercase letter.')
-    .regex(/[0-9]/, 'Include a number.')
-    .regex(/[^A-Za-z0-9]/, 'Include a symbol.'),
+  newPassword: passwordValueSchema,
   confirmPassword: z.string().min(1, 'Confirm your new password.')
 }).refine((value) => value.newPassword === value.confirmPassword, {
   path: ['confirmPassword'],
@@ -84,7 +80,7 @@ export function FirstLoginPasswordChangePage() {
               )}
 
               <Typography variant="body2" color="text.secondary">
-                Use at least 12 characters with uppercase, lowercase, number, and symbol characters.
+                {PASSWORD_POLICY_HELP}
               </Typography>
 
               <Controller

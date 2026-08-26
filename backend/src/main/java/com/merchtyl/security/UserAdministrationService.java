@@ -3,6 +3,7 @@ package com.merchtyl.security;
 import com.merchtyl.audit.AuditAction;
 import com.merchtyl.audit.AuditService;
 import com.merchtyl.audit.CreateAuditRecordCommand;
+import com.merchtyl.auth.PasswordPolicyService;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.ForbiddenOperationException;
@@ -47,6 +48,7 @@ public class UserAdministrationService {
     private final StoreRepository storeRepository;
     private final RegisterRepository registerRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordPolicyService passwordPolicyService;
     private final AuditService auditService;
     private final StoreAccessService storeAccessService;
 
@@ -60,6 +62,7 @@ public class UserAdministrationService {
             StoreRepository storeRepository,
             RegisterRepository registerRepository,
             PasswordEncoder passwordEncoder,
+            PasswordPolicyService passwordPolicyService,
             AuditService auditService,
             StoreAccessService storeAccessService) {
         this.userRepository = userRepository;
@@ -70,6 +73,7 @@ public class UserAdministrationService {
         this.storeRepository = storeRepository;
         this.registerRepository = registerRepository;
         this.passwordEncoder = passwordEncoder;
+        this.passwordPolicyService = passwordPolicyService;
         this.auditService = auditService;
         this.storeAccessService = storeAccessService;
     }
@@ -85,11 +89,13 @@ public class UserAdministrationService {
             PasswordEncoder passwordEncoder,
             AuditService auditService) {
         this(userRepository, roleRepository, userRoleRepository, userStoreAssignmentRepository,
-                userRegisterAssignmentRepository, storeRepository, registerRepository, passwordEncoder, auditService, null);
+                userRegisterAssignmentRepository, storeRepository, registerRepository, passwordEncoder,
+                new PasswordPolicyService(), auditService, null);
     }
 
     @Transactional
     public UserResponse create(UserCreateRequest request, Authentication authentication) {
+        passwordPolicyService.validate(request.password());
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw duplicateEmail();
@@ -232,6 +238,7 @@ public class UserAdministrationService {
 
     @Transactional
     public UserResponse resetPassword(UUID id, UserPasswordResetRequest request, Authentication authentication) {
+        passwordPolicyService.validate(request.newPassword());
         User actor = actor(authentication);
         User user = permittedTarget(actor, id, true, authentication);
         requireCanModify(actor, user, primaryEmployeeRole(user), authentication);

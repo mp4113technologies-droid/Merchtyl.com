@@ -14,17 +14,28 @@ class PasswordPolicyServiceTest {
     private final PasswordPolicyService service = new PasswordPolicyService();
 
     @Test
-    void reportsCandidatePasswordAsTooShortWithoutRelaxingPolicy() {
+    void acceptsRequiredCompliantPasswords() {
+        assertThatCode(() -> service.validate("Test@123")).doesNotThrowAnyException();
+        assertThatCode(() -> service.validate("Merchant@1")).doesNotThrowAnyException();
+        assertThatCode(() -> service.validate("Admin#2026")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsPasswordsOutsideRequiredLength() {
         PasswordPolicyException exception = catchThrowableOfType(
-                () -> service.validate("Test@123456"), PasswordPolicyException.class);
+                () -> service.validate("Ab1!"), PasswordPolicyException.class);
+        PasswordPolicyException tooLong = catchThrowableOfType(
+                () -> service.validate("VeryLongPasswordForMerchtyl@12345"), PasswordPolicyException.class);
 
         assertThat(exception.violations()).extracting(PasswordPolicyViolation::code)
-                .containsExactly("PASSWORD_TOO_SHORT");
+                .contains("PASSWORD_TOO_SHORT");
+        assertThat(tooLong.violations()).extracting(PasswordPolicyViolation::code)
+                .contains("PASSWORD_TOO_LONG");
     }
 
     @Test
     void acceptsACompliantPasswordAndEncoderCanVerifyIt() {
-        String password = "Mtyl#BlueRiver7294!";
+        String password = "Mtyl#Blue7294!";
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
         assertThatCode(() -> service.validate(password)).doesNotThrowAnyException();
@@ -33,26 +44,27 @@ class PasswordPolicyServiceTest {
 
     @Test
     void reportsAllMissingCharacterClasses() {
-        PasswordPolicyException exception = catchThrowableOfType(
-                () -> service.validate("abcdefghijkl"), PasswordPolicyException.class);
-
-        Set<String> codes = exception.violations().stream()
-                .map(PasswordPolicyViolation::code)
-                .collect(Collectors.toSet());
-        assertThat(codes).contains("PASSWORD_MISSING_UPPERCASE", "PASSWORD_MISSING_NUMBER",
-                "PASSWORD_MISSING_SPECIAL_CHARACTER");
+        assertThat(codes("test123")).contains("PASSWORD_MISSING_UPPERCASE", "PASSWORD_MISSING_SPECIAL_CHARACTER");
+        assertThat(codes("TEST@123")).contains("PASSWORD_MISSING_LOWERCASE");
+        assertThat(codes("TestPassword")).contains("PASSWORD_MISSING_NUMBER", "PASSWORD_MISSING_SPECIAL_CHARACTER");
+        assertThat(codes("Test1234")).contains("PASSWORD_MISSING_SPECIAL_CHARACTER");
     }
 
     @Test
     void reportsMissingLowercaseAndMaximumLength() {
         PasswordPolicyException lowercase = catchThrowableOfType(
-                () -> service.validate("ABCDEFGHIJK1!"), PasswordPolicyException.class);
+                () -> service.validate("ABCDEFG1!"), PasswordPolicyException.class);
         PasswordPolicyException tooLong = catchThrowableOfType(
-                () -> service.validate("Aa1!" + "x".repeat(125)), PasswordPolicyException.class);
+                () -> service.validate("Aa1!" + "x".repeat(17)), PasswordPolicyException.class);
 
         assertThat(lowercase.violations()).extracting(PasswordPolicyViolation::code)
                 .contains("PASSWORD_MISSING_LOWERCASE");
         assertThat(tooLong.violations()).extracting(PasswordPolicyViolation::code)
                 .contains("PASSWORD_TOO_LONG");
+    }
+
+    private Set<String> codes(String password) {
+        return catchThrowableOfType(() -> service.validate(password), PasswordPolicyException.class)
+                .violations().stream().map(PasswordPolicyViolation::code).collect(Collectors.toSet());
     }
 }

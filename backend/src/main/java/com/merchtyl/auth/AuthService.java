@@ -107,6 +107,8 @@ public class AuthService {
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public AuthResponse register(RegisterRequest request) {
+        if (passwordPolicyService == null) new PasswordPolicyService().validate(request.password());
+        else passwordPolicyService.validate(request.password());
         String email = request.email().trim().toLowerCase();
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new ConflictException("Email is already registered");

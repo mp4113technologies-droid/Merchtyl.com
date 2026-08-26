@@ -1526,6 +1526,7 @@ export type PasswordPolicy = {
   requiresLowercase: boolean;
   requiresNumber: boolean;
   requiresSpecialCharacter: boolean;
+  allowedSpecialCharacters: string;
 };
 
 export function getPasswordPolicy() {

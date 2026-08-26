@@ -1,6 +1,8 @@
 package com.merchtyl.platform.admin;
 
 import com.merchtyl.security.RoleName;
+import com.merchtyl.auth.PasswordPolicyService;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -19,7 +21,10 @@ public final class PlatformAdminDtos {
             @NotBlank @Email @Size(max = 320) String email,
             @NotNull RoleName role) {}
 
-    public record ActivateRequest(@NotBlank String token, @NotBlank @Size(min = 12, max = 128) String password) {}
+    public record ActivateRequest(
+            @NotBlank String token,
+            @Schema(description = PasswordPolicyService.REQUIREMENTS_MESSAGE, format = "password", minLength = 8, maxLength = 20)
+            @NotBlank @Size(min = 8, max = 20, message = PasswordPolicyService.REQUIREMENTS_MESSAGE) String password) {}
     public record StatusRequest(@NotNull Boolean enabled, @NotNull Long version) {}
     public record ActorSummary(UUID id, String name) {}
     public record Response(UUID id, String firstName, String lastName, String email, RoleName role,

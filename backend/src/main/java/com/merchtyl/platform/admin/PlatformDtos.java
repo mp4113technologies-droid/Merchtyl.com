@@ -294,7 +294,7 @@ public final class PlatformDtos {
 
     public record OwnerActivationRequest(
             @NotBlank @Size(max = 512) String token,
-            @NotBlank @Size(min = 12, max = 128) String password
+            @NotBlank @Size(min = 8, max = 20, message = com.merchtyl.auth.PasswordPolicyService.REQUIREMENTS_MESSAGE) String password
     ) {
     }
 
@@ -388,7 +388,7 @@ public final class PlatformDtos {
     public record PlatformUserCreateRequest(
             @NotBlank @Email @Size(max = 320) String email,
             @NotBlank @Size(max = 160) String displayName,
-            @NotBlank @Size(min = 12, max = 128) String password,
+            @NotBlank @Size(min = 8, max = 20, message = com.merchtyl.auth.PasswordPolicyService.REQUIREMENTS_MESSAGE) String password,
             @NotNull RoleName role,
             Boolean enabled
     ) {

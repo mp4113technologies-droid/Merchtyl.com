@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiClientError, forgotPassword, getPasswordPolicy, resetPassword } from '../../api/client';
+import { PASSWORD_POLICY_HELP, validPassword } from './passwordPolicy';
 
 const genericMessage = 'If an eligible account exists, password reset instructions have been sent.';
 
@@ -42,12 +43,10 @@ export function ResetPasswordPage() {
     {!token ? <Alert severity="error">This password reset link is invalid.</Alert> : null}
     {mutation.isSuccess ? <Alert severity="success">Password updated successfully. Please sign in with your new password.</Alert> : null}
     {mutation.isError ? <Alert severity="error">{resetErrorMessage(mutation.error)}</Alert> : null}
-    <Typography color="text.secondary">{policy.data
-      ? `Use ${policy.data.minimumLength}–${policy.data.maximumLength} characters${policy.data.requiresUppercase ? ', uppercase' : ''}${policy.data.requiresLowercase ? ', lowercase' : ''}${policy.data.requiresNumber ? ', a number' : ''}${policy.data.requiresSpecialCharacter ? ', and a symbol' : ''}.`
-      : 'Use a strong, unique password.'}</Typography>
-    <TextField label="New Password" type="password" autoComplete="new-password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+    <Typography color="text.secondary">{policy.data ? PASSWORD_POLICY_HELP : 'Use a strong, unique password.'}</Typography>
+    <TextField label="New Password" type="password" autoComplete="new-password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} error={newPassword.length > 0 && !validPassword(newPassword)} helperText={newPassword.length > 0 && !validPassword(newPassword) ? PASSWORD_POLICY_HELP : undefined} />
     <TextField label="Confirm Password" type="password" autoComplete="new-password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} error={Boolean(confirmPassword && newPassword !== confirmPassword)} helperText={confirmPassword && newPassword !== confirmPassword ? 'Passwords do not match' : undefined} />
-    <Button type="submit" variant="contained" disabled={!token || mutation.isPending || newPassword !== confirmPassword}>{mutation.isPending ? 'Updating' : 'Update password'}</Button>
+    <Button type="submit" variant="contained" disabled={!token || mutation.isPending || !validPassword(newPassword) || newPassword !== confirmPassword}>{mutation.isPending ? 'Updating' : 'Update password'}</Button>
   </Stack></ResetShell>;
 }
 

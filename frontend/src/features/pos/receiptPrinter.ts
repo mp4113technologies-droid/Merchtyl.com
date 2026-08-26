@@ -6,6 +6,7 @@ export interface ReceiptPrinter {
 }
 
 export type ReceiptPrinterMode = 'BROWSER' | 'QZ_TRAY';
+export type ReceiptPrintMode = 'BROWSER_DIALOG' | 'KIOSK_AUTO_PRINT';
 
 export type BrowserReceiptPrinterOptions = {
   widthMm?: number;
@@ -18,9 +19,11 @@ export type QzTrayCashDrawerPulse = {
 
 export type ReceiptPrinterPreferences = {
   mode: ReceiptPrinterMode;
+  receiptPrintMode: ReceiptPrintMode;
   widthMm: number;
   copies: number;
   autoPrint: boolean;
+  autoPrintReceipt: boolean;
   qzPrinterName: string;
   fallbackToBrowser: boolean;
   cashDrawerPulse: QzTrayCashDrawerPulse;
@@ -36,6 +39,11 @@ export type QzTrayReceiptPrinterOptions = {
 export type ReceiptPrintResult = {
   printer: ReceiptPrinterMode;
   fallbackReason?: string;
+};
+
+export type ReceiptPrintContext = {
+  saleId: string;
+  registerId: string;
 };
 
 type QzTrayApi = {
@@ -62,13 +70,32 @@ type QzTrayPrintData = {
 
 export const receiptPrinterPreferencesKey = 'merchtyl.receiptPrinterPreferences';
 
+export const receiptPrintStyles = {
+  '@media print': {
+    '@page': { size: '80mm auto', margin: 0 },
+    'body *': { visibility: 'hidden !important' },
+    '.receipt-print-root, .receipt-print-root *': { visibility: 'visible !important' },
+    '.receipt-print-root': {
+      position: 'absolute !important',
+      inset: '0 auto auto 0 !important',
+      width: '80mm',
+      margin: '0 !important',
+      color: '#000 !important',
+      background: '#fff !important'
+    },
+    "nav, aside, button, [role='dialog']": { display: 'none !important' }
+  }
+} as const;
+
 export const defaultCashDrawerPulseCommand = '\\x1Bp\\x00\\x19\\xFA';
 
 export const defaultReceiptPrinterPreferences: ReceiptPrinterPreferences = {
   mode: 'BROWSER',
+  receiptPrintMode: 'BROWSER_DIALOG',
   widthMm: 80,
   copies: 1,
   autoPrint: false,
+  autoPrintReceipt: false,
   qzPrinterName: '',
   fallbackToBrowser: true,
   cashDrawerPulse: {
@@ -223,11 +250,16 @@ export function saveReceiptPrinterPreferences(preferences: ReceiptPrinterPrefere
 
 export function normalizeReceiptPrinterPreferences(preferences: Partial<ReceiptPrinterPreferences>): ReceiptPrinterPreferences {
   const cashDrawerPulse = (preferences.cashDrawerPulse ?? {}) as Partial<QzTrayCashDrawerPulse>;
+  const autoPrintReceipt = typeof preferences.autoPrintReceipt === 'boolean'
+    ? preferences.autoPrintReceipt
+    : Boolean(preferences.autoPrint);
   return {
     mode: preferences.mode === 'QZ_TRAY' ? 'QZ_TRAY' : 'BROWSER',
+    receiptPrintMode: preferences.receiptPrintMode === 'KIOSK_AUTO_PRINT' ? 'KIOSK_AUTO_PRINT' : 'BROWSER_DIALOG',
     widthMm: [58, 80, 112].includes(Number(preferences.widthMm)) ? Number(preferences.widthMm) : 80,
     copies: clampCopies(preferences.copies),
-    autoPrint: Boolean(preferences.autoPrint),
+    autoPrint: autoPrintReceipt,
+    autoPrintReceipt,
     qzPrinterName: typeof preferences.qzPrinterName === 'string' ? preferences.qzPrinterName : '',
     fallbackToBrowser: typeof preferences.fallbackToBrowser === 'boolean' ? preferences.fallbackToBrowser : true,
     cashDrawerPulse: {
@@ -237,6 +269,20 @@ export function normalizeReceiptPrinterPreferences(preferences: Partial<ReceiptP
         : defaultCashDrawerPulseCommand
     }
   };
+}
+
+export async function printRenderedReceipt(context: ReceiptPrintContext) {
+  if (typeof window === 'undefined' || typeof window.print !== 'function') {
+    throw new Error('Browser receipt printing is unavailable');
+  }
+  await afterNextPaint();
+  if (import.meta.env.DEV) {
+    console.info('RECEIPT_PRINT_REQUESTED', {
+      saleId: context.saleId,
+      registerId: context.registerId
+    });
+  }
+  window.print();
 }
 
 export async function printReceiptWithFallback(
@@ -507,4 +553,10 @@ function errorMessage(error: unknown) {
 
 function decodeEscapedCommand(value: string) {
   return value.replace(/\\x([0-9a-fA-F]{2})/g, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+}
+
+function afterNextPaint() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+  });
 }

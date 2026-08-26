@@ -24,6 +24,7 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  GlobalStyles,
   Grid,
   IconButton,
   InputAdornment,
@@ -84,6 +85,8 @@ import { registerSessionKeys } from '../registersessions/registerSessionKeys';
 import {
   loadReceiptPrinterPreferences,
   printReceiptWithFallback,
+  printRenderedReceipt,
+  receiptPrintStyles,
   saveReceiptPrinterPreferences,
   type ReceiptPrinterPreferences
 } from './receiptPrinter';
@@ -566,6 +569,7 @@ function PaymentDialog({
 function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthMm: number }) {
   return (
     <Paper
+      className="receipt-print-root"
       variant="outlined"
       aria-label="Receipt preview"
       sx={{
@@ -575,7 +579,15 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
         p: 2,
         fontFamily: 'monospace',
         fontSize: 12,
-        bgcolor: 'background.paper'
+        bgcolor: 'background.paper',
+        '@media print': {
+          width: `${widthMm}mm`,
+          maxWidth: 'none',
+          m: 0,
+          p: '4mm',
+          border: 0,
+          boxShadow: 'none'
+        }
       }}
     >
       <Stack spacing={1}>
@@ -743,8 +755,12 @@ function SuccessfulSaleScreen({
               <FormControlLabel
                 control={(
                   <Checkbox
-                    checked={preferences.autoPrint}
-                    onChange={(event) => onPreferencesChange({ ...preferences, autoPrint: event.target.checked })}
+                    checked={preferences.autoPrintReceipt}
+                    onChange={(event) => onPreferencesChange({
+                      ...preferences,
+                      autoPrint: event.target.checked,
+                      autoPrintReceipt: event.target.checked
+                    })}
                   />
                 )}
                 label="Auto-print"
@@ -808,6 +824,7 @@ export function PosCartPage() {
   const [draftRecovered, setDraftRecovered] = React.useState(false);
   const [printingReceipt, setPrintingReceipt] = React.useState(false);
   const completionKeyRef = React.useRef<string | null>(null);
+  const automaticPrintSaleIdRef = React.useRef<string | null>(null);
   const autoPrintedReceiptRef = React.useRef<string | null>(null);
   const recoveryCheckedRef = React.useRef(false);
 
@@ -905,16 +922,20 @@ export function PosCartPage() {
     saveReceiptPrinterPreferences(preferences);
   }
 
-  const printReceiptDocument = React.useCallback(async (receipt: ReceiptDocument) => {
+  const printReceiptDocument = React.useCallback(async (receipt: ReceiptDocument, automatic = false) => {
     setPrintingReceipt(true);
     setReceiptPrintError(null);
     try {
-      const result = await printReceiptWithFallback(receipt, receiptPreferences);
+      const result = receiptPreferences.mode === 'BROWSER'
+        ? (await printRenderedReceipt({ saleId: receipt.saleId, registerId: receipt.register.id }), { printer: 'BROWSER' as const })
+        : await printReceiptWithFallback(receipt, receiptPreferences);
       if (result.fallbackReason) {
         setReceiptPrintError(`QZ Tray failed: ${result.fallbackReason}. Printed with browser instead.`);
       }
     } catch (error) {
-      setReceiptPrintError(errorMessage(error));
+      setReceiptPrintError(automatic
+        ? 'Sale completed. Receipt could not be printed automatically.'
+        : errorMessage(error));
     } finally {
       setPrintingReceipt(false);
     }
@@ -1105,6 +1126,7 @@ export function PosCartPage() {
     },
     onSuccess: (sale) => {
       completionKeyRef.current = null;
+      automaticPrintSaleIdRef.current = sale.id;
       setPaymentDialogOpen(false);
       rememberSale(sale);
       void queryClient.invalidateQueries({ queryKey: ['sales'] });
@@ -1129,12 +1151,17 @@ export function PosCartPage() {
 
   React.useEffect(() => {
     const receipt = receiptQuery.data;
-    if (!receiptPreferences.autoPrint || !receipt || autoPrintedReceiptRef.current === receipt.id) {
+    if (receiptPreferences.receiptPrintMode !== 'KIOSK_AUTO_PRINT'
+      || !receiptPreferences.autoPrintReceipt
+      || !receipt
+      || automaticPrintSaleIdRef.current !== receipt.saleId
+      || autoPrintedReceiptRef.current === receipt.id) {
       return;
     }
+    automaticPrintSaleIdRef.current = null;
     autoPrintedReceiptRef.current = receipt.id;
-    void printReceiptDocument(receipt.document);
-  }, [printReceiptDocument, receiptPreferences.autoPrint, receiptQuery.data]);
+    void printReceiptDocument(receipt.document, true);
+  }, [printReceiptDocument, receiptPreferences.autoPrintReceipt, receiptPreferences.receiptPrintMode, receiptQuery.data]);
 
   const busy = addProductMutation.isPending
     || barcodeMutation.isPending
@@ -1181,6 +1208,7 @@ export function PosCartPage() {
 
   return (
     <Stack spacing={2} sx={{ minHeight: 'calc(100vh - 88px)' }}>
+      <GlobalStyles styles={receiptPrintStyles} />
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2}>
         <Box>
           <Typography variant="h5" component="h1">Checkout</Typography>

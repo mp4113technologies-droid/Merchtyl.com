@@ -4,6 +4,8 @@ import com.merchtyl.auth.AuthController;
 import com.merchtyl.auth.AuthService;
 import com.merchtyl.auth.JwtAuthenticationFilter;
 import com.merchtyl.auth.JwtService;
+import com.merchtyl.auth.PasswordPolicyService;
+import com.merchtyl.auth.PasswordResetService;
 import com.merchtyl.config.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -55,6 +57,12 @@ class OpenApiDisabledTest {
 
     @MockBean
     AuthService authService;
+
+    @MockBean
+    PasswordResetService passwordResetService;
+
+    @MockBean
+    PasswordPolicyService passwordPolicyService;
 
     @MockBean
     JwtService jwtService;

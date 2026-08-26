@@ -9,7 +9,7 @@ vi.mock('../../api/client', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api/client')>();
   return {
     ...original,
-    getPasswordPolicy: vi.fn().mockResolvedValue({ minimumLength: 12, maximumLength: 128, requiresUppercase: true, requiresLowercase: true, requiresNumber: true, requiresSpecialCharacter: true }),
+    getPasswordPolicy: vi.fn().mockResolvedValue({ minimumLength: 8, maximumLength: 20, requiresUppercase: true, requiresLowercase: true, requiresNumber: true, requiresSpecialCharacter: true }),
     activatePlatformAdmin: vi.fn().mockResolvedValue(undefined)
   };
 });

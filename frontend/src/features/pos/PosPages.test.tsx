@@ -788,7 +788,47 @@ describe('POS pages', () => {
     })).toBe(false);
   });
 
+  it('does not print or complete a sale when the payment API fails', async () => {
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT',
+      autoPrintReceipt: true
+    }));
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(sale('DRAFT'));
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST') {
+        return jsonResponse({ message: 'Payment was declined', code: 'payment_declined' }, 422);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Take payment' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Exact' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByText('Payment was declined')).toBeInTheDocument();
+    expect(print).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([input, init]) => {
+      const url = new URL(String(input), window.location.origin);
+      return url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST';
+    })).toBe(false);
+  });
+
   it('keeps a fully paid sale recoverable after completion failure', async () => {
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT',
+      autoPrintReceipt: true
+    }));
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
     const fullyPaid = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]);
     let completeAttempts = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
@@ -818,21 +858,22 @@ describe('POS pages', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Complete sale' }));
     expect(await screen.findByText('Inventory changed before completion')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Complete sale' })).toBeEnabled();
+    expect(print).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
     expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
     expect(completeAttempts).toBe(2);
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
   });
 
   it('previews receipts, prints configured copies, and reprints through the backend', async () => {
     const completed = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)], 'COMPLETED');
     const print = vi.fn();
-    const write = vi.fn();
-    vi.spyOn(window, 'open').mockReturnValue({
-      document: { open: vi.fn(), write, close: vi.fn() },
-      focus: vi.fn(),
-      print
-    } as unknown as Window);
+    vi.spyOn(window, 'print').mockImplementation(print);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) {
@@ -863,34 +904,45 @@ describe('POS pages', () => {
     await userEvent.click(await screen.findByRole('option', { name: '2' }));
     await userEvent.click(screen.getByRole('button', { name: 'Print receipt' }));
 
-    await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
-    expect(write).toHaveBeenCalledWith(expect.stringContaining('width: 58mm'));
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
 
     await userEvent.click(screen.getByRole('button', { name: 'Reprint' }));
-    await waitFor(() => expect(print).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
       return url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt/reprint`) && init?.method === 'POST';
     })).toBe(true);
+    expect(fetchMock.mock.calls.some(([input, init]) => {
+      const url = new URL(String(input), window.location.origin);
+      return (url.pathname.endsWith('/api/v1/sales/drafts') || url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`))
+        && init?.method === 'POST';
+    })).toBe(false);
   });
 
   it('reports auto-print failure without reversing a completed sale', async () => {
     window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT',
       widthMm: 80,
       copies: 1,
-      autoPrint: true
+      autoPrintReceipt: true
     }));
-    vi.spyOn(window, 'open').mockReturnValue(null);
-    const completed = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)], 'COMPLETED');
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(window, 'print').mockImplementation(() => {
+      throw new Error('print unavailable');
+    });
+    const fullyPaid = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]);
+    const completed = saleWithPayments(fullyPaid.payments, 'COMPLETED');
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) {
         return common;
       }
       const url = new URL(String(input), window.location.origin);
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') {
-        return jsonResponse(completed);
-      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(fullyPaid);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') return jsonResponse(completed);
       if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`) && init?.method === undefined) {
         return jsonResponse(receipt());
       }
@@ -899,9 +951,69 @@ describe('POS pages', () => {
 
     render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
 
+    await userEvent.click(await screen.findByRole('button', { name: 'Complete sale' }));
     expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
-    expect(await screen.findByText('Browser blocked the receipt print window')).toBeInTheDocument();
+    expect(await screen.findByText('Sale completed. Receipt could not be printed automatically.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print receipt' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'New sale' })).toBeEnabled();
+  });
+
+  it('auto-prints a newly completed kiosk receipt once after rendering', async () => {
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT',
+      autoPrintReceipt: true,
+      widthMm: 80
+    }));
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const fullyPaid = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]);
+    const completed = saleWithPayments(fullyPaid.payments, 'COMPLETED');
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(fullyPaid);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') return jsonResponse(completed);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`) && init?.method === undefined) return jsonResponse(receipt());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Complete sale' }));
+    expect(await screen.findByLabelText('Receipt preview')).toHaveTextContent('RCT-2026-07-21-00000000');
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    await userEvent.click(screen.getByLabelText('Auto-print'));
+    await userEvent.click(screen.getByLabelText('Auto-print'));
+    fireEvent.focus(window);
+    await Promise.resolve();
+    expect(print).toHaveBeenCalledOnce();
+  });
+
+  it('does not auto-print a completed sale opened after refresh', async () => {
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT',
+      autoPrintReceipt: true
+    }));
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    const completed = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)], 'COMPLETED');
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(completed);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`) && init?.method === undefined) return jsonResponse(receipt());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+
+    expect(await screen.findByLabelText('Receipt preview')).toBeInTheDocument();
+    expect(print).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Print receipt' })).toBeEnabled();
   });
 
   it('adds a product from search, updates quantity, and removes the item', async () => {

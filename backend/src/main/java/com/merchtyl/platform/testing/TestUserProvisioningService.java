@@ -570,9 +570,7 @@ public class TestUserProvisioningService {
         if (!hasText(password)) {
             throw new BadRequestException("password is required when no test default password is configured");
         }
-        if (password.length() < 8 || password.length() > 128) {
-            throw new BadRequestException("password must be between 8 and 128 characters");
-        }
+        new com.merchtyl.auth.PasswordPolicyService().validate(password);
         return password;
     }
 
