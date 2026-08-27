@@ -1,5 +1,39 @@
 export type UserRole = 'PLATFORM_SUPER_ADMIN' | 'PLATFORM_SUPPORT_ADMIN' | 'TENANT_OWNER' | 'STORE_MANAGER' | 'OWNER' | 'MANAGER' | 'CASHIER';
 
+export type BillingPage<T> = { content: T[]; page: number; size: number; totalElements: number; totalPages: number };
+export type PricingPlan = {
+  id: string; code: string; name: string; description: string | null; status: 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  billingInterval: 'MONTHLY' | 'YEARLY'; basePrice: number; oneTimeOnboardingFee: number; currency: string; trialDays: number;
+  includedStores: number | null; includedRegisters: number | null; includedUsers: number | null;
+  additionalStorePrice: number | null; additionalRegisterPrice: number | null; additionalUserPrice: number | null;
+  taxBehavior: 'EXCLUSIVE' | 'INCLUSIVE' | 'EXEMPT'; effectiveFrom: string; effectiveTo: string | null;
+  activeMerchants: number; createdAt: string; updatedAt: string; version: number;
+};
+export type BillingSubscription = {
+  id: string; tenantId: string; merchantName: string; pricingPlanId: string; planCode: string; planName: string;
+  status: 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED'; billingInterval: 'MONTHLY' | 'YEARLY';
+  subscriptionStartDate: string; currentPeriodStart: string; currentPeriodEnd: string; nextBillingDate: string;
+  trialEndDate: string | null; cancelAtPeriodEnd: boolean; cancelledAt: string | null; cancellationReason: string | null;
+  standardBasePrice: number; merchantBasePrice: number; currency: string; includedStoresSnapshot: number | null;
+  additionalStorePriceSnapshot: number | null; onboardingFeeSnapshot: number | null; onboardingFeeInvoicedAt: string | null;
+  currentBillableStores: number; additionalBillableStores: number; estimatedMonthlyPrice: number;
+  customAdditionalStorePrice: number | null;
+  customAdditionalRegisterPrice: number | null; customAdditionalUserPrice: number | null; discountName: string | null;
+  discountType: 'PERCENTAGE' | 'FIXED_AMOUNT' | null; discountValue: number | null; pricingNotes: string | null;
+  paymentTermsDays: number | null; version: number;
+};
+export type PlatformInvoiceLine = { id: string; lineType: string; description: string; quantity: number; unitPrice: number; discount: number; taxAmount: number; lineSubtotal: number; lineTotal: number };
+export type PlatformInvoice = {
+  id: string; invoiceNumber: string; tenantId: string; merchantName: string; subscriptionId: string; pricingPlanId: string;
+  planCode: string; billingPeriodStart: string; billingPeriodEnd: string; issueDate: string; dueDate: string; currency: string;
+  subtotal: number; discountTotal: number; taxTotal: number; total: number; amountPaid: number; amountOutstanding: number;
+  status: string; billingEmail: string; billingAddress: string | null; taxLabel: string | null; taxRate: number | null;
+  notes: string | null; issuedAt: string | null; sentAt: string | null; paidAt: string | null; voidedAt: string | null;
+  lines: PlatformInvoiceLine[];
+};
+export type BillingOverview = { activeSubscriptions: number; trialSubscriptions: number; monthlyRecurringRevenue: number; invoicesThisMonth: number; outstandingBalance: number; pastDueInvoices: number; paidThisMonth: number; subscriptionsCancelling: number; currency: string };
+export type PlatformBillingSettings = { id: string; legalName: string | null; billingAddress: string | null; supportEmail: string | null; invoiceSenderEmail: string | null; defaultCurrency: string; defaultPaymentTermsDays: number; invoicePrefix: string; taxRegistrationNumber: string | null; defaultTaxRuleId: string | null; invoiceFooter: string | null; paymentInstructions: string | null; billingEnforcementEnabled: boolean; version: number };
+
 export type TenantStatus = 'PENDING_ONBOARDING' | 'PENDING_OWNER_ACTIVATION' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED' | 'REJECTED';
 export type OnboardingStage = 'MERCHANT_DETAILS' | 'OWNER_ACCOUNT' | 'OWNER_INVITATION' | 'OWNER_ACTIVATION' | 'ORGANIZATION_SETUP' | 'FIRST_STORE_SETUP' | 'COMPLETED';
 

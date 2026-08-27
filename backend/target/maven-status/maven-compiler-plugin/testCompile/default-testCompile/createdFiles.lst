@@ -98,6 +98,7 @@ com/merchtyl/lottery/LotteryOperatorServiceTest.class
 com/merchtyl/receipts/ReceiptControllerAuthorizationTest.class
 com/merchtyl/reports/LotteryReportControllerAuthorizationTest$TestSecurityConfig.class
 com/merchtyl/reports/RegisterReportServiceTest.class
+com/merchtyl/platform/billing/PlatformBillingControllerAuthorizationTest.class
 com/merchtyl/lottery/LotteryCommissionRuleControllerAuthorizationTest.class
 com/merchtyl/lottery/LotteryPayoutServiceTest.class
 com/merchtyl/catalogue/CatalogueReferenceControllerAuthorizationTest.class
@@ -112,6 +113,7 @@ com/merchtyl/tax/TaxRuleServiceTest.class
 com/merchtyl/auth/PasswordResetSecurityTest.class
 com/merchtyl/lottery/LotterySettlementIntegrationTest.class
 com/merchtyl/sales/SaleCompletionIntegrationTest.class
+com/merchtyl/platform/billing/SubscriptionBillingServiceTest.class
 com/merchtyl/product/ProductIntegrationTest.class
 com/merchtyl/security/RoleServiceTest.class
 com/merchtyl/supplier/SupplierControllerAuthorizationTest$TestApplication.class
@@ -129,6 +131,7 @@ com/merchtyl/product/ProductServiceTest.class
 com/merchtyl/reports/SalesReportControllerAuthorizationTest.class
 com/merchtyl/refunds/RefundControllerAuthorizationTest.class
 com/merchtyl/product/ProductControllerAuthorizationTest$TestApplication.class
+com/merchtyl/platform/admin/PlatformMerchantPaginationTest.class
 com/merchtyl/tax/TaxGroupCategoryControllerAuthorizationTest$TestSecurityConfig.class
 com/merchtyl/reports/RegisterReportControllerAuthorizationTest$TestApplication.class
 com/merchtyl/lottery/LotteryCommissionRuleServiceTest.class

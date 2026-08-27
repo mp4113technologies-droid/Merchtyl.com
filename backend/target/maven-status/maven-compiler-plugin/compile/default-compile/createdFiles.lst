@@ -703,7 +703,6 @@ com/merchtyl/features/FeatureDefinitionResponse.class
 com/merchtyl/platform/testing/TestUserProvisioningRole.class
 com/merchtyl/security/UserCreateRequest.class
 com/merchtyl/tax/CountryResponse.class
-com/merchtyl/platform/admin/PlatformDtos$MerchantSubscriptionRequest.class
 com/merchtyl/inventory/InventoryTransactionType.class
 com/merchtyl/sales/SaleItemResponse.class
 com/merchtyl/cash/CashLedgerEntry.class

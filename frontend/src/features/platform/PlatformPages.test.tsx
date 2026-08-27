@@ -276,3 +276,174 @@ describe('Platform merchant owner activation', () => {
     });
   });
 });
+
+describe('Platform merchant server pagination', () => {
+  beforeEach(() => {
+    window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse()));
+    vi.restoreAllMocks();
+  });
+
+  it('requests only page zero with size ten, then requests the next page', async () => {
+    const merchantRequests: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.includes('/api/v1/reference/countries?')) return jsonResponse([]);
+      if (url.includes('/api/v1/platform/tenants?')) {
+        merchantRequests.push(url);
+        const requestUrl = new URL(url, 'http://localhost');
+        const page = Number(requestUrl.searchParams.get('page'));
+        return jsonResponse({
+          content: [{ ...tenantDetail().tenant, id: `${tenantId.slice(0, -1)}${page + 1}`, displayName: page === 0 ? 'Newest Merchant' : 'Older Merchant' }],
+          page,
+          size: 10,
+          totalElements: 11,
+          totalPages: 2,
+          first: page === 0,
+          last: page === 1
+        });
+      }
+      return jsonResponse({ message: `Unexpected request: ${url}` }, 500);
+    });
+
+    render(<App initialEntries={['/platform/merchants']} />);
+
+    expect(await screen.findByText('Newest Merchant')).toBeInTheDocument();
+    expect(merchantRequests[0]).toContain('page=0');
+    expect(merchantRequests[0]).toContain('size=10');
+    expect(merchantRequests[0]).toContain('sort=createdAt%2Cdesc');
+    expect(screen.getByRole('button', { name: 'Go to previous page' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Go to next page' }));
+    expect(await screen.findByText('Older Merchant')).toBeInTheDocument();
+    expect(merchantRequests.at(-1)).toContain('page=1');
+    expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled();
+  });
+
+  it('debounces search and resets an existing page to zero', async () => {
+    const merchantRequests: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.includes('/api/v1/reference/countries?')) return jsonResponse([]);
+      if (url.includes('/api/v1/platform/tenants?')) {
+        merchantRequests.push(url);
+        return jsonResponse({ content: [], page: 0, size: 10, totalElements: 0, totalPages: 0, first: true, last: true });
+      }
+      return jsonResponse({ message: `Unexpected request: ${url}` }, 500);
+    });
+
+    render(<App initialEntries={['/platform/merchants?page=5']} />);
+    await screen.findByText('No merchants yet.');
+    await userEvent.type(screen.getByLabelText('Search merchants...'), 'market');
+
+    await waitFor(() => expect(merchantRequests.some((url) => url.includes('search=market') && url.includes('page=0'))).toBe(true), { timeout: 1500 });
+    expect(merchantRequests.filter((url) => url.includes('search=')).length).toBe(1);
+  });
+
+  it('keeps the selected country visible and sends its canonical code atomically', async () => {
+    const merchantRequests: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.includes('/api/v1/reference/countries?')) return jsonResponse([
+        { id: 'country-ca', alpha2Code: 'CA', alpha3Code: 'CAN', name: 'Canada', defaultCurrencyCode: 'CAD', defaultLanguageCode: 'en', active: true, displayOrder: 1 },
+        { id: 'country-us', alpha2Code: 'US', alpha3Code: 'USA', name: 'United States', defaultCurrencyCode: 'USD', defaultLanguageCode: 'en', active: true, displayOrder: 2 }
+      ]);
+      if (url.includes('/api/v1/reference/countries/CA/administrative-divisions?')) return jsonResponse([]);
+      if (url.includes('/api/v1/platform/tenants?')) {
+        merchantRequests.push(url);
+        const requestUrl = new URL(url, 'http://localhost');
+        const page = Number(requestUrl.searchParams.get('page'));
+        return jsonResponse({ content: [tenantDetail().tenant], page, size: 10, totalElements: 20, totalPages: 2, first: page === 0, last: page === 1 });
+      }
+      return jsonResponse({ message: `Unexpected request: ${url}` }, 500);
+    });
+
+    render(<App initialEntries={['/platform/merchants?page=1&status=ACTIVE&province=NB']} />);
+    await screen.findByText('Acme Market');
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Country' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Canada' }));
+
+    expect(screen.getByRole('combobox', { name: 'Country' })).toHaveTextContent('Canada');
+    await waitFor(() => expect(merchantRequests.some((url) => {
+      const params = new URL(url, 'http://localhost').searchParams;
+      return params.get('country') === 'CA' && params.get('page') === '0' && params.get('status') === 'ACTIVE' && !params.has('province');
+    })).toBe(true));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Go to next page' }));
+    await waitFor(() => expect(merchantRequests.some((url) => new URL(url, 'http://localhost').searchParams.get('page') === '1'
+      && new URL(url, 'http://localhost').searchParams.get('country') === 'CA')).toBe(true));
+    expect(screen.getByRole('combobox', { name: 'Country' })).toHaveTextContent('Canada');
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Country' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'All countries' }));
+    await waitFor(() => expect(merchantRequests.some((url) => {
+      const params = new URL(url, 'http://localhost').searchParams;
+      return params.get('page') === '0' && !params.has('country');
+    })).toBe(true));
+  });
+});
+
+describe('Pricing-plan-driven merchant onboarding', () => {
+  beforeEach(() => {
+    window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse()));
+    vi.restoreAllMocks();
+  });
+
+  it('selects an active plan, displays its pricing, and submits pricingPlanId', async () => {
+    let submitted: Record<string, unknown> | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.includes('/api/v1/reference/countries?')) return jsonResponse([{ id: 'ca', alpha2Code: 'CA', alpha3Code: 'CAN', name: 'Canada', defaultCurrencyCode: 'CAD', defaultLanguageCode: 'en', active: true, displayOrder: 1 }]);
+      if (url.includes('/api/v1/reference/countries/CA/administrative-divisions?')) return jsonResponse([{ id: 'nb', countryCode: 'CA', code: 'NB', name: 'New Brunswick', divisionType: 'PROVINCE', defaultTimezone: 'America/Moncton', defaultTaxRegionCode: 'CA-NB', active: true, displayOrder: 1 }]);
+      if (url.includes('/api/v1/reference/countries/CA/currencies')) return jsonResponse([{ id: 'cad', code: 'CAD', name: 'Canadian Dollar', symbol: '$', decimalPlaces: 2, active: true, primaryForCountry: true }]);
+      if (url.includes('/api/v1/reference/administrative-divisions/nb/timezones')) return jsonResponse([{ id: 'tz', ianaName: 'America/Moncton', displayName: 'Atlantic', countryCode: 'CA', active: true, defaultForDivision: true }]);
+      if (url.includes('/api/v1/reference/administrative-divisions/nb/tax-regions')) return jsonResponse([{ id: 'tax', code: 'CA-NB', name: 'New Brunswick', countryCode: 'CA', administrativeDivisionCode: 'NB', active: true, defaultForDivision: true }]);
+      if (url.endsWith('/api/v1/platform/billing/plans/options')) return jsonResponse([{
+        id: 'plan-growth', code: 'GROWTH', name: 'Growth', description: null, status: 'ACTIVE', billingInterval: 'MONTHLY',
+        basePrice: 99, oneTimeOnboardingFee: 199, currency: 'CAD', trialDays: 14, includedStores: 1,
+        includedRegisters: null, includedUsers: null, additionalStorePrice: 25, additionalRegisterPrice: null,
+        additionalUserPrice: null, taxBehavior: 'EXCLUSIVE', effectiveFrom: '2026-08-01', effectiveTo: null,
+        activeMerchants: 0, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z', version: 0
+      }]);
+      if (url.endsWith('/api/v1/platform/tenants') && init?.method === 'POST') {
+        submitted = JSON.parse(String(init.body));
+        return jsonResponse(tenantDetail(), 201);
+      }
+      return jsonResponse({ message: `Unexpected request: ${url}` }, 500);
+    });
+
+    render(<App initialEntries={['/platform/merchants/new']} />);
+    await userEvent.type(await screen.findByLabelText(/^Legal business name/), 'Acme Market LLC');
+    await userEvent.type(screen.getByLabelText(/^Operating name/), 'Acme Market');
+    await userEvent.type(screen.getByLabelText(/^Tenant code/), 'ACME');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Country' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Canada' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Province / Territory' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'New Brunswick' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Default currency' })).toHaveTextContent('CAD'));
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await userEvent.type(screen.getByLabelText(/^Owner first name/), 'Owner');
+    await userEvent.type(screen.getByLabelText(/^Owner last name/), 'One');
+    await userEvent.type(screen.getByLabelText(/^Owner email/), 'owner@example.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(screen.queryByRole('textbox', { name: 'Plan' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('combobox', { name: 'Subscription Plan' }));
+    await userEvent.click(await screen.findByRole('option', { name: /Growth/ }));
+    expect(screen.getByText(/Monthly Base:/)).toHaveTextContent('$99.00');
+    expect(screen.getByText(/One-Time Onboarding:/)).toHaveTextContent('$199.00');
+    expect(screen.getByText(/Additional Store:/)).toHaveTextContent('$25.00');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create merchant' }));
+
+    await waitFor(() => expect(submitted).toBeDefined());
+    expect(submitted?.pricingPlanId).toBe('plan-growth');
+    expect(submitted).not.toHaveProperty('subscriptionPlan');
+  });
+});

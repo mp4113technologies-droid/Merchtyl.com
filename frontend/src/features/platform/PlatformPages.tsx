@@ -37,12 +37,13 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TablePagination,
   TextField,
   Typography
 } from '@mui/material';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   activateOwnerInvitation,
   closePlatformTenant,
@@ -52,9 +53,11 @@ import {
   getOwnerActivationStatus,
   getTenantDeletionEligibility,
   getPlatformDashboard,
+  getPlatformBillingSubscription,
   getPlatformSettings,
   getPlatformTenant,
   listPlatformAuditEvents,
+  listActivePlatformPricingPlans,
   listTenantEmailDeliveries,
   listTenantStatusHistory,
   listPlatformTenants,
@@ -307,9 +310,54 @@ export function PlatformDashboardPage() {
 }
 
 export function PlatformMerchantsPage() {
-  const merchants = useAuthedQuery(['platform-tenants'], (token) => listPlatformTenants(token, { size: 100 }));
-  if (merchants.isLoading) return <CircularProgress aria-label="Loading merchants" />;
-  if (merchants.error) return <Alert severity="error">{merchants.error.message}</Alert>;
+  const { getValidAccessToken, isPlatform } = usePlatformToken();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Math.max(0, Number(searchParams.get('page') ?? 0) || 0);
+  const size = [10, 25, 50].includes(Number(searchParams.get('size'))) ? Number(searchParams.get('size')) : 10;
+  const [searchInput, setSearchInput] = useState(searchParams.get('search') ?? '');
+  const search = searchParams.get('search') ?? '';
+  const status = searchParams.get('status') ?? '';
+  const country = searchParams.get('country') ?? '';
+  const province = searchParams.get('province') ?? '';
+  const createdFrom = searchParams.get('createdFrom') ?? '';
+  const createdTo = searchParams.get('createdTo') ?? '';
+  const setParam = (name: string, value: string, resetPage = true) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      value ? next.set(name, value) : next.delete(name);
+      if (resetPage) next.set('page', '0');
+      return next;
+    });
+  };
+  const setCountryFilter = (value: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      value ? next.set('country', value) : next.delete('country');
+      next.delete('province');
+      next.set('page', '0');
+      return next;
+    });
+  };
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const trimmed = searchInput.trim().slice(0, 100);
+      if (trimmed !== search) setParam('search', trimmed);
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput, search]);
+  const countries = useAuthedQuery(['reference-countries', 'merchant-filter'], listReferenceCountries);
+  const provinces = useAuthedQuery(['reference-divisions', country, 'merchant-filter'], (token) => listReferenceAdministrativeDivisions(token, country), Boolean(country));
+  const queryParams = { page, size, search, status, country, province, createdFrom, createdTo, sort: 'createdAt,desc' as const };
+  const merchants = useQuery({
+    queryKey: ['platform-tenants', queryParams],
+    queryFn: async () => listPlatformTenants(await getValidAccessToken(), queryParams),
+    enabled: isPlatform,
+    placeholderData: keepPreviousData
+  });
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearchParams({ page: '0', size: String(size) });
+  };
   return (
     <RequirePlatform>
       <Stack spacing={3}>
@@ -317,13 +365,48 @@ export function PlatformMerchantsPage() {
           <Typography variant="h4" component="h1">Merchants</Typography>
           <Button component={Link} to="/platform/merchants/new" variant="contained" startIcon={<AddIcon />}>New merchant</Button>
         </Stack>
-        <MerchantTable merchants={merchants.data?.content ?? []} />
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField label="Search merchants..." value={searchInput} onChange={(event) => setSearchInput(event.target.value)} inputProps={{ maxLength: 100 }} fullWidth />
+            <TextField select label="Status" value={status} onChange={(event) => setParam('status', event.target.value)} sx={{ minWidth: 180 }}>
+              <MenuItem value="">All statuses</MenuItem>
+              {['PENDING_ONBOARDING', 'PENDING_OWNER_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED', 'REJECTED'].map((value) => <MenuItem key={value} value={value}>{value.replaceAll('_', ' ')}</MenuItem>)}
+            </TextField>
+            <TextField select label="Country" value={country} onChange={(event) => setCountryFilter(event.target.value)} sx={{ minWidth: 160 }}>
+              <MenuItem value="">All countries</MenuItem>
+              {(countries.data ?? []).map((item) => <MenuItem key={item.alpha2Code} value={item.alpha2Code}>{item.name}</MenuItem>)}
+            </TextField>
+            <TextField select label="Province / State" value={province} disabled={!country} onChange={(event) => setParam('province', event.target.value)} sx={{ minWidth: 180 }}>
+              <MenuItem value="">All regions</MenuItem>
+              {(provinces.data ?? []).map((item) => <MenuItem key={item.code} value={item.code}>{item.name}</MenuItem>)}
+            </TextField>
+          </Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 2 }}>
+            <TextField label="Created from" type="date" value={createdFrom} onChange={(event) => setParam('createdFrom', event.target.value)} InputLabelProps={{ shrink: true }} />
+            <TextField label="Created to" type="date" value={createdTo} onChange={(event) => setParam('createdTo', event.target.value)} InputLabelProps={{ shrink: true }} />
+            <Button onClick={clearFilters}>Clear filters</Button>
+          </Stack>
+        </Paper>
+        {merchants.isLoading && <CircularProgress aria-label="Loading merchants" />}
+        {merchants.error && <Alert severity="error" action={<Button color="inherit" onClick={() => merchants.refetch()}>Retry</Button>}>Unable to load merchants.</Alert>}
+        {!merchants.isLoading && !merchants.error && merchants.data?.content.length === 0 && (
+          <Alert severity="info" action={(search || status || country || province || createdFrom || createdTo) ? <Button color="inherit" onClick={clearFilters}>Clear Filters</Button> : undefined}>
+            {(search || status || country || province || createdFrom || createdTo) ? 'No merchants match your filters.' : 'No merchants yet.'}
+          </Alert>
+        )}
+        {merchants.data && merchants.data.content.length > 0 && <MerchantTable merchants={merchants.data.content} returnSearch={searchParams.toString()} />}
+        {merchants.data && (
+          <TablePagination component="div" count={merchants.data.totalElements} page={page} rowsPerPage={size}
+            rowsPerPageOptions={[10, 25, 50]}
+            onPageChange={(_, nextPage) => setParam('page', String(Math.max(0, nextPage)), false)}
+            onRowsPerPageChange={(event) => { setParam('size', event.target.value); }} />
+        )}
       </Stack>
     </RequirePlatform>
   );
 }
 
-function MerchantTable({ merchants }: { merchants: TenantSummary[] }) {
+function MerchantTable({ merchants, returnSearch = '' }: { merchants: TenantSummary[]; returnSearch?: string }) {
   return (
     <Paper variant="outlined" sx={{ borderRadius: 1, overflow: 'auto' }}>
       <Table size="small">
@@ -345,7 +428,7 @@ function MerchantTable({ merchants }: { merchants: TenantSummary[] }) {
           {merchants.map((merchant) => (
             <TableRow key={merchant.id} hover>
               <TableCell>
-                <Button component={Link} to={`/platform/merchants/${merchant.id}`} sx={{ justifyContent: 'flex-start', px: 0 }}>
+                <Button component={Link} to={`/platform/merchants/${merchant.id}`} state={{ merchantListSearch: returnSearch }} sx={{ justifyContent: 'flex-start', px: 0 }}>
                   {merchant.displayName}
                 </Button>
                 <Typography variant="caption" display="block" color="text.secondary">{merchant.legalName}</Typography>
@@ -404,10 +487,7 @@ export function NewPlatformMerchantPage() {
     industryType: '',
     estimatedStoreCount: 1,
     notes: '',
-    subscriptionPlan: 'TRIAL',
-    trialStartsAt: new Date().toISOString(),
-    trialEndsAt: '',
-    maximumStores: 1,
+    pricingPlanId: '',
     maximumUsers: 5,
     features: { pos: true, inventory: true, lottery: false },
     ownerFirstName: '',
@@ -416,6 +496,8 @@ export function NewPlatformMerchantPage() {
     ownerPhone: ''
   });
   const countries = useAuthedQuery(['reference-countries'], listReferenceCountries);
+  const pricingPlans = useAuthedQuery(['platform-pricing-plan-options'], listActivePlatformPricingPlans);
+  const selectedPlan = pricingPlans.data?.find((plan) => plan.id === form.pricingPlanId);
   const divisions = useAuthedQuery(
     ['reference-divisions', form.countryCode],
     (token) => listReferenceAdministrativeDivisions(token, form.countryCode),
@@ -442,10 +524,7 @@ export function NewPlatformMerchantPage() {
   const selectedTimezone = timezones.data?.find((timezone) => timezone.ianaName === form.primaryTimezone);
   const selectedTaxRegion = taxRegions.data?.find((region) => region.code === form.defaultTaxRegionCode);
   const mutation = useMutation({
-    mutationFn: async () => createPlatformTenant(await getValidAccessToken(), {
-      ...form,
-      trialEndsAt: form.trialEndsAt || undefined
-    }),
+    mutationFn: async () => createPlatformTenant(await getValidAccessToken(), form),
     onSuccess: (tenant) => {
       setCreated(tenant);
       setActiveStep(5);
@@ -555,10 +634,17 @@ export function NewPlatformMerchantPage() {
         )}
         {activeStep === 3 && (
           <Grid container spacing={2}>
-            <Grid item xs={12} md={3}><TextField fullWidth required label="Plan" value={form.subscriptionPlan} onChange={(e) => field('subscriptionPlan', e.target.value)} /></Grid>
-            <Grid item xs={12} md={3}><TextField fullWidth type="datetime-local" label="Trial expiry" InputLabelProps={{ shrink: true }} onChange={(e) => field('trialEndsAt', e.target.value ? new Date(e.target.value).toISOString() : '')} /></Grid>
-            <Grid item xs={12} md={3}><TextField fullWidth type="number" label="Store limit" value={form.maximumStores} onChange={(e) => field('maximumStores', Number(e.target.value))} /></Grid>
-            <Grid item xs={12} md={3}><TextField fullWidth type="number" label="User limit" value={form.maximumUsers} onChange={(e) => field('maximumUsers', Number(e.target.value))} /></Grid>
+            <Grid item xs={12} md={6}><TextField fullWidth select required label="Subscription Plan" value={form.pricingPlanId} onChange={(e) => field('pricingPlanId', e.target.value)} helperText={pricingPlans.isLoading ? 'Loading active pricing plans...' : undefined}>
+              {(pricingPlans.data ?? []).map((plan) => <MenuItem key={plan.id} value={plan.id}>{plan.name} — {new Intl.NumberFormat(undefined, { style: 'currency', currency: plan.currency }).format(plan.basePrice)}/month</MenuItem>)}
+            </TextField></Grid>
+            {selectedPlan && <Grid item xs={12}><Paper variant="outlined" sx={{ p: 2 }}><Typography variant="h6">{selectedPlan.name}</Typography>
+              <Typography>Monthly Base: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.basePrice)}</Typography>
+              <Typography>Included Stores: {selectedPlan.includedStores ?? 0}</Typography>
+              <Typography>Additional Store: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.additionalStorePrice ?? 0)}/store/month</Typography>
+              <Typography>One-Time Onboarding: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.oneTimeOnboardingFee)}</Typography>
+              <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.basePrice + Math.max(0, (form.estimatedStoreCount ?? 0) - (selectedPlan.includedStores ?? 0)) * (selectedPlan.additionalStorePrice ?? 0))}</Typography>
+              <Typography color="text.secondary">Additional stores are billed beginning with the next billing cycle. Tax is calculated by the backend.</Typography>
+            </Paper></Grid>}
             {Object.entries(form.features).map(([key, enabled]) => (
               <Grid item xs={12} sm={4} key={key}>
                 <FormControlLabel control={<Switch checked={enabled} onChange={(e) => field('features', { ...form.features, [key]: e.target.checked })} />} label={key.toUpperCase()} />
@@ -575,7 +661,7 @@ export function NewPlatformMerchantPage() {
             <Typography color="text.secondary">{selectedCountry?.name ?? form.countryCode} · {selectedDivision?.name ?? form.administrativeDivisionCode}</Typography>
             <Typography color="text.secondary">{selectedCurrency ? `${selectedCurrency.code} — ${selectedCurrency.name}` : form.defaultCurrencyCode} · {selectedTimezone?.ianaName ?? form.primaryTimezone} · {selectedTaxRegion ? `${selectedTaxRegion.code} — ${selectedTaxRegion.name}` : form.defaultTaxRegionCode}</Typography>
             <Typography color="text.secondary">Owner: {form.ownerFirstName} {form.ownerLastName} · {form.ownerEmail}</Typography>
-            <Typography color="text.secondary">Plan: {form.subscriptionPlan} · Stores {form.maximumStores} · Users {form.maximumUsers}</Typography>
+            <Typography color="text.secondary">Plan: {selectedPlan?.name ?? 'Not selected'} · {selectedPlan?.currency ?? ''} {selectedPlan?.basePrice ?? ''}/month</Typography>
           </Paper>
         )}
         {activeStep === 5 && created && (
@@ -594,6 +680,7 @@ export function NewPlatformMerchantPage() {
 }
 
 export function PlatformMerchantDetailPage() {
+  const location = useLocation();
   const { tenantId = '' } = useParams();
   const { getValidAccessToken } = usePlatformToken();
   const queryClient = useQueryClient();
@@ -601,6 +688,7 @@ export function PlatformMerchantDetailPage() {
   const { currentUser, session } = useSession();
   const isSuperAdmin = (currentUser?.roles ?? session?.roles ?? []).includes('PLATFORM_SUPER_ADMIN');
   const tenant = useAuthedQuery(['platform-tenant', tenantId], (token) => getPlatformTenant(token, tenantId), Boolean(tenantId));
+  const billingSubscription = useAuthedQuery(['platform-billing-subscription', tenantId], (token) => getPlatformBillingSubscription(token, tenantId), Boolean(tenantId));
   const ownerActivation = useAuthedQuery(['platform-owner-activation', tenantId], (token) => getOwnerActivationStatus(token, tenantId), Boolean(tenantId));
   const history = useAuthedQuery(['platform-tenant-status-history', tenantId], (token) => listTenantStatusHistory(token, tenantId), Boolean(tenantId));
   const deliveries = useAuthedQuery(['platform-email-deliveries', tenantId], (token) => listTenantEmailDeliveries(token, tenantId), Boolean(tenantId));
@@ -706,7 +794,7 @@ export function PlatformMerchantDetailPage() {
             <Typography variant="h4" component="h1">{data.tenant.displayName}</Typography>
             <Stack direction="row" gap={1} alignItems="center"><StatusChip status={data.tenant.status} /><Typography color="text.secondary">{data.tenant.tenantCode}</Typography></Stack>
           </Box>
-          <Button component={Link} to="/platform/merchants">All merchants</Button>
+          <Button component={Link} to={`/platform/merchants${location.state?.merchantListSearch ? `?${location.state.merchantListSearch}` : ''}`}>All merchants</Button>
         </Stack>
         {(subscription.error || resend.error || retryDelivery.error || reissueCredentials.error || sendReset.error || unlockOwner.error || ownerActivation.error) && <Alert severity="error">{(subscription.error || resend.error || retryDelivery.error || reissueCredentials.error || sendReset.error || unlockOwner.error || ownerActivation.error)?.message}</Alert>}
         {sendReset.data && <Alert severity={sendReset.data.status === 'SENT' ? 'success' : 'warning'}>Password reset delivery status: {sendReset.data.status}. No password or reset token is visible to administrators.</Alert>}
@@ -759,12 +847,20 @@ export function PlatformMerchantDetailPage() {
           </Grid>
           <Grid item xs={12} md={6}>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
-              <Typography variant="h6">Subscription</Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} sx={{ mt: 2 }}>
-                <TextField label="Plan" value={plan || data.subscription.planCode} onChange={(e) => setPlan(e.target.value)} />
-                <Button variant="contained" startIcon={<SaveIcon />} onClick={() => subscription.mutate()} disabled={subscription.isPending}>Save</Button>
-              </Stack>
-              <Typography sx={{ mt: 1 }} color="text.secondary">Status {data.subscription.status}; stores {data.subscription.maximumStores ?? 'unlimited'}; users {data.subscription.maximumUsers ?? 'unlimited'}</Typography>
+              <Typography variant="h6">Subscription & Billing</Typography>
+              {billingSubscription.data ? <Stack spacing={1} sx={{ mt: 2 }}>
+                <Typography>Plan: {billingSubscription.data.planName}</Typography>
+                <Typography>Monthly Base: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.merchantBasePrice)}</Typography>
+                <Typography>Included Stores: {billingSubscription.data.includedStoresSnapshot ?? 0}</Typography>
+                <Typography>Current Billable Stores: {billingSubscription.data.currentBillableStores}</Typography>
+                <Typography>Additional Billable Stores: {billingSubscription.data.additionalBillableStores}</Typography>
+                <Typography>Additional Store Rate: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.additionalStorePriceSnapshot ?? 0)}</Typography>
+                <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.estimatedMonthlyPrice)}</Typography>
+                <Typography>One-Time Onboarding Fee: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.onboardingFeeSnapshot ?? 0)}</Typography>
+                <Typography>Onboarding Fee Status: {billingSubscription.data.onboardingFeeInvoicedAt ? 'INVOICED' : 'NOT INVOICED'}</Typography>
+                <Typography>Next Billing Date: {billingSubscription.data.nextBillingDate}</Typography>
+                <Stack direction="row"><Button component={Link} to="/platform/billing/subscriptions">Change Plan / Edit Pricing</Button><Button component={Link} to="/platform/billing/invoices">View Invoices</Button></Stack>
+              </Stack> : <Typography sx={{ mt: 2 }} color="text.secondary">Billing subscription details are unavailable.</Typography>}
             </Paper>
           </Grid>
           <Grid item xs={12} md={6}>

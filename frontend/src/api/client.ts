@@ -177,10 +177,7 @@ export type MerchantOnboardingPayload = {
   industryType?: string;
   estimatedStoreCount?: number;
   notes?: string;
-  subscriptionPlan: string;
-  trialStartsAt?: string;
-  trialEndsAt?: string;
-  maximumStores?: number;
+  pricingPlanId: string;
   maximumUsers?: number;
   features: Record<string, boolean>;
   ownerFirstName: string;
@@ -1594,7 +1591,21 @@ export function getPlatformSettings(token: string) {
   return request<PlatformSettings>('/platform/settings', undefined, token);
 }
 
-export function listPlatformTenants(token: string, params: { page?: number; size?: number } = {}) {
+export type PlatformTenantListParams = {
+  page?: number;
+  size?: number;
+  search?: string;
+  status?: string;
+  country?: string;
+  province?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  subscriptionStatus?: string;
+  pricingPlan?: string;
+  sort?: 'createdAt,desc' | 'createdAt,asc' | 'merchantName,asc' | 'merchantName,desc' | 'status,asc' | 'status,desc';
+};
+
+export function listPlatformTenants(token: string, params: PlatformTenantListParams = {}) {
   return request<TenantSummaryListResponse>(`/platform/tenants${queryString(params)}`, undefined, token);
 }
 
@@ -2463,6 +2474,86 @@ export function reprintSaleReceipt(token: string, id: string) {
   return request<Receipt>(`/sales/${id}/receipt/reprint`, {
     method: 'POST'
   }, token);
+}
+
+export function getPlatformBillingOverview(token: string) {
+  return request<import('./types').BillingOverview>('/platform/billing/overview', undefined, token);
+}
+
+export function listPlatformPricingPlans(token: string, page = 0, size = 100) {
+  return request<import('./types').BillingPage<import('./types').PricingPlan>>(`/platform/billing/plans?page=${page}&size=${size}`, undefined, token);
+}
+
+export function listActivePlatformPricingPlans(token: string) {
+  return request<import('./types').PricingPlan[]>('/platform/billing/plans/options', undefined, token);
+}
+
+export function createPlatformPricingPlan(token: string, payload: Record<string, unknown>) {
+  return request<import('./types').PricingPlan>('/platform/billing/plans', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function updatePlatformPricingPlan(token: string, id: string, payload: Record<string, unknown>) {
+  return request<import('./types').PricingPlan>(`/platform/billing/plans/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token);
+}
+
+export function getPlatformBillingSubscription(token: string, tenantId: string) {
+  return request<import('./types').BillingSubscription>(`/platform/billing/subscriptions/${tenantId}`, undefined, token);
+}
+
+export function assignPlatformBillingSubscription(token: string, tenantId: string, payload: Record<string, unknown>) {
+  return request<import('./types').BillingSubscription>(`/platform/billing/subscriptions/${tenantId}`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function platformBillingSubscriptionAction(token: string, tenantId: string, payload: Record<string, unknown>) {
+  return request<import('./types').BillingSubscription>(`/platform/billing/subscriptions/${tenantId}/actions`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function listPlatformInvoices(token: string, query = '') {
+  return request<import('./types').BillingPage<import('./types').PlatformInvoice>>(`/platform/billing/invoices${query ? `?${query}` : ''}`, undefined, token);
+}
+
+export function getPlatformInvoice(token: string, id: string) {
+  return request<import('./types').PlatformInvoice>(`/platform/billing/invoices/${id}`, undefined, token);
+}
+
+export function generatePlatformInvoice(token: string, tenantId: string, payload: Record<string, unknown> = {}) {
+  return request<import('./types').PlatformInvoice>(`/platform/billing/subscriptions/${tenantId}/invoices`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function sendPlatformInvoice(token: string, id: string) {
+  return request<import('./types').PlatformInvoice>(`/platform/billing/invoices/${id}/send`, { method: 'POST' }, token);
+}
+
+export function recordPlatformInvoicePayment(token: string, id: string, payload: Record<string, unknown>) {
+  return request<import('./types').PlatformInvoice>(`/platform/billing/invoices/${id}/payments`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function voidPlatformInvoice(token: string, id: string, reason: string) {
+  return request<import('./types').PlatformInvoice>(`/platform/billing/invoices/${id}/void?reason=${encodeURIComponent(reason)}`, { method: 'POST' }, token);
+}
+
+export function getPlatformBillingSettings(token: string) {
+  return request<import('./types').PlatformBillingSettings>('/platform/billing/settings', undefined, token);
+}
+
+export function updatePlatformBillingSettings(token: string, payload: Record<string, unknown>) {
+  return request<import('./types').PlatformBillingSettings>('/platform/billing/settings', { method: 'PUT', body: JSON.stringify(payload) }, token);
+}
+
+export function getMerchantBillingSubscription(token: string) {
+  return request<import('./types').BillingSubscription>('/billing/subscription', undefined, token);
+}
+
+export function downloadPlatformInvoicePdf(token: string, id: string) {
+  return requestBlob(`/platform/billing/invoices/${id}/pdf`, undefined, token);
+}
+
+export function downloadMerchantInvoicePdf(token: string, id: string) {
+  return requestBlob(`/billing/invoices/${id}/pdf`, undefined, token);
+}
+
+export function listMerchantBillingInvoices(token: string) {
+  return request<import('./types').BillingPage<import('./types').PlatformInvoice>>('/billing/invoices', undefined, token);
 }
 
 export function listReturns(token: string, params: ReturnSearchParams = {}) {

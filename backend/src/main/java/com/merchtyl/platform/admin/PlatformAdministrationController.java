@@ -53,6 +53,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -152,11 +153,23 @@ public class PlatformAdministrationController {
     }
 
     @GetMapping("/tenants")
+    @Operation(summary = "List merchants with server-side search, filtering, sorting, and pagination",
+            description = "Defaults to page 0, size 10, sorted by createdAt descending then id descending. Maximum page size is 100.")
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).TENANT_VIEW)")
     PageResponse<TenantSummaryResponse> tenants(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return platformService.listTenants(page, size);
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) TenantStatus status,
+            @RequestParam(required = false) String country,
+            @RequestParam(required = false) String province,
+            @RequestParam(required = false) LocalDate createdFrom,
+            @RequestParam(required = false) LocalDate createdTo,
+            @RequestParam(required = false) String subscriptionStatus,
+            @RequestParam(required = false) String pricingPlan,
+            @RequestParam(defaultValue = "createdAt,desc") String sort) {
+        return platformService.listTenants(new PlatformDtos.TenantListRequest(page, size, search, status, country,
+                province, createdFrom, createdTo, subscriptionStatus, pricingPlan, sort));
     }
 
     @GetMapping("/tenants/{tenantId}")

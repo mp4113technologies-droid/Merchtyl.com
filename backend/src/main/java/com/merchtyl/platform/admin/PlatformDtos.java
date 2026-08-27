@@ -37,18 +37,12 @@ public final class PlatformDtos {
             @Size(max = 120) String industryType,
             @Min(0) Integer estimatedStoreCount,
             @Size(max = 2000) String notes,
-            @Size(max = 80) String subscriptionPlan,
-            Instant trialStartsAt,
-            Instant trialEndsAt,
-            @Min(1) Integer maximumStores,
-            @Min(1) Integer maximumUsers,
-            Map<String, Boolean> features,
+            @NotNull(message = "PRICING_PLAN_REQUIRED") UUID pricingPlanId,
             @Size(max = 120) String ownerFirstName,
             @Size(max = 120) String ownerLastName,
             @Email @Size(max = 320) String ownerEmail,
             @Size(max = 40) String ownerPhone,
-            MerchantOwnerRequest owner,
-            MerchantSubscriptionRequest subscription
+            MerchantOwnerRequest owner
     ) {
     }
 
@@ -57,16 +51,6 @@ public final class PlatformDtos {
             @NotBlank @Size(max = 120) String lastName,
             @NotBlank @Email @Size(max = 320) String email,
             @Size(max = 40) String phone
-    ) {
-    }
-
-    public record MerchantSubscriptionRequest(
-            @NotBlank @Size(max = 80) String planCode,
-            Instant trialStartsAt,
-            Instant trialEndsAt,
-            @Min(1) Integer maximumStores,
-            @Min(1) Integer maximumUsers,
-            Map<String, Boolean> features
     ) {
     }
 
@@ -121,6 +105,21 @@ public final class PlatformDtos {
             Instant reactivatedAt,
             UUID reactivatedByPlatformUserId,
             long version
+    ) {
+    }
+
+    public record TenantListRequest(
+            int page,
+            int size,
+            String search,
+            TenantStatus status,
+            String country,
+            String province,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String subscriptionStatus,
+            String pricingPlan,
+            String sort
     ) {
     }
 

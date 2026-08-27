@@ -77,6 +77,14 @@ import { FirstLoginPasswordChangePage } from '../features/auth/FirstLoginPasswor
 import { ForgotPasswordPage, ResetPasswordPage } from '../features/auth/PasswordResetPages';
 import { PlatformAdminActivationPage } from '../features/auth/PlatformAdminActivationPage';
 import { PlatformAdminsPage } from '../features/platform/PlatformAdminsPage';
+import {
+  PlatformBillingOverviewPage,
+  PlatformBillingSettingsPage,
+  PlatformInvoicesPage,
+  PlatformPricingPlansPage,
+  PlatformSubscriptionsPage
+} from '../features/platform/PlatformBillingPages';
+import { MerchantBillingPage } from '../features/billing/MerchantBillingPage';
 import { NewRegisterPage, RegisterDetailPage, RegistersPage } from '../features/registers/RegisterPages';
 import { CashMovementPage, RegisterClosePage, RegisterCurrentPage, RegisterHistoryPage, RegisterOpenPage } from '../features/registersessions/RegisterSessionPages';
 import { NewStorePage, StoreDetailPage, StoresPage } from '../features/stores/StorePages';
@@ -302,6 +310,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { currentUser, session, getValidAccessToken } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
   const canViewPlatform = roles.some((role) => role === 'PLATFORM_SUPER_ADMIN' || role === 'PLATFORM_SUPPORT_ADMIN');
+  const canViewMerchantBilling = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER');
   const canViewStores = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER' || role === 'CASHIER');
   const canViewRegisters = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER' || role === 'CASHIER');
   const canViewUsers = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
@@ -322,10 +331,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const navItems = [
     ...(canViewPlatform ? [{ label: 'Platform', to: '/platform', icon: <ShieldOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Merchants', to: '/platform/merchants', icon: <StorefrontIcon /> }] : []),
+    ...(canViewPlatform ? [{ label: 'Billing', to: '/platform/billing', icon: <PaymentsOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Platform audit', to: '/platform/audit', icon: <HistoryOutlinedIcon /> }] : []),
     ...(roles.includes('PLATFORM_SUPER_ADMIN') || roles.includes('PLATFORM_SUPPORT_ADMIN') ? [{ label: 'Platform Administrators', to: '/platform/admins', icon: <ManageAccountsOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Platform settings', to: '/platform/settings', icon: <SettingsInputComponentOutlinedIcon /> }] : []),
     ...(!canViewPlatform ? [{ label: 'Dashboard', to: '/', icon: <DashboardOutlinedIcon /> }] : []),
+    ...(canViewMerchantBilling ? [{ label: 'Subscription & Billing', to: '/billing', icon: <PaymentsOutlinedIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'POS', to: '/pos', icon: <PointOfSaleOutlinedIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'Held sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon /> }] : []),
     ...(canViewStores ? [{ label: 'Stores', to: '/stores', icon: <StoreMallDirectoryOutlinedIcon /> }] : []),
@@ -632,6 +643,12 @@ function AppRoutes() {
           <Route path="/platform/audit" element={<PlatformAuditPage />} />
           <Route path="/platform/settings" element={<PlatformSettingsPage />} />
           <Route path="/platform/admins" element={<PlatformAdminsPage />} />
+          <Route path="/platform/billing" element={<PlatformBillingOverviewPage />} />
+          <Route path="/platform/billing/plans" element={<PlatformPricingPlansPage />} />
+          <Route path="/platform/billing/subscriptions" element={<PlatformSubscriptionsPage />} />
+          <Route path="/platform/billing/invoices" element={<PlatformInvoicesPage />} />
+          <Route path="/platform/billing/settings" element={<PlatformBillingSettingsPage />} />
+          <Route path="/billing" element={<MerchantBillingPage />} />
           <Route path="/stores" element={<StoresPage />} />
           <Route path="/stores/new" element={<NewStorePage />} />
           <Route path="/stores/:id" element={<StoreDetailPage />} />

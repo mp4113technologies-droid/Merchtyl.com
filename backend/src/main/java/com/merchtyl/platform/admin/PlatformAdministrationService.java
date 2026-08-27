@@ -71,6 +71,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
@@ -96,6 +98,7 @@ import com.merchtyl.auth.PasswordPolicyService;
 
 @Service
 public class PlatformAdministrationService {
+    private static final Logger log = LoggerFactory.getLogger(PlatformAdministrationService.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final TypeReference<Map<String, Boolean>> FEATURE_MAP = new TypeReference<>() {
     };
@@ -201,6 +204,23 @@ public class PlatformAdministrationService {
         String ownerEmail = normalizeEmail(ownerEmail(request));
         String ownerDisplayName = cleanRequired(ownerFirstName(request), "ownerFirstName") + " "
                 + cleanRequired(ownerLastName(request), "ownerLastName");
+        Map<String, Object> pricingPlan = jdbcTemplate.queryForList("""
+                select id,code,name,status,billing_interval,base_price,currency_code,trial_days,included_stores,included_users,
+                       additional_store_price,one_time_onboarding_fee
+                from platform_pricing_plans where id=?
+                """, request.pricingPlanId()).stream().findFirst()
+                .orElseThrow(() -> new BadRequestException("PRICING_PLAN_NOT_FOUND"));
+        if (!"ACTIVE".equals(pricingPlan.get("status"))) throw new BadRequestException("PRICING_PLAN_NOT_ACTIVE");
+        if (!geography.currency().getCode().equals(pricingPlan.get("currency_code"))) {
+            throw new BadRequestException("Selected pricing plan currency must match merchant currency");
+        }
+        log.info("billing_event event=MERCHANT_PRICING_PLAN_SELECTED tenant_id={} subscription_public_id={} plan_code={}",
+                tenantId, subscriptionId, pricingPlan.get("code"));
+        int trialDays = ((Number) pricingPlan.get("trial_days")).intValue();
+        String subscriptionStatus = trialDays > 0 ? "TRIAL" : "ACTIVE";
+        LocalDate subscriptionStart = LocalDate.now();
+        LocalDate billingStart = trialDays > 0 ? subscriptionStart.plusDays(trialDays) : subscriptionStart;
+        LocalDate billingEnd = "YEARLY".equals(pricingPlan.get("billing_interval")) ? billingStart.plusYears(1).minusDays(1) : billingStart.plusMonths(1).minusDays(1);
 
         try {
             jdbcTemplate.update("""
@@ -260,18 +280,24 @@ public class PlatformAdministrationService {
                     cleanOptional(request.notes()));
 
             jdbcTemplate.update("""
-                    insert into tenant_subscriptions (id, tenant_id, plan_code, status, starts_at, trial_ends_at,
-                                                      maximum_stores, maximum_users, features)
-                    values (?, ?, ?, 'TRIAL', ?, ?, ?, ?, ?::jsonb)
+                    insert into tenant_subscriptions (id,tenant_id,plan_code,status,starts_at,trial_ends_at,renews_at,
+                      maximum_stores,maximum_users,features,pricing_plan_id,billing_interval,current_period_start,current_period_end,
+                      next_billing_date,base_price_snapshot,currency_code,plan_name_snapshot,plan_code_snapshot,included_stores_snapshot,
+                      additional_store_price_snapshot,onboarding_fee_snapshot,pricing_effective_from)
+                    values (?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     subscriptionId,
                     tenantId,
-                    normalizeCode(subscriptionPlan(request), "subscriptionPlan"),
-                    timestamp(trialStartsAt(request) == null ? now : trialStartsAt(request)),
-                    timestamp(trialEndsAt(request)),
-                    maximumStores(request),
-                    maximumUsers(request),
-                    featuresJson(features(request)));
+                    pricingPlan.get("code"), subscriptionStatus, timestamp(now), trialDays > 0 ? timestamp(billingStart.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()) : null,
+                    timestamp(billingStart.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()), pricingPlan.get("included_stores"),
+                    pricingPlan.get("included_users"),
+                    "{}", pricingPlan.get("id"), pricingPlan.get("billing_interval"),
+                    java.sql.Date.valueOf(billingStart), java.sql.Date.valueOf(billingEnd), java.sql.Date.valueOf(billingStart),
+                    pricingPlan.get("base_price"), pricingPlan.get("currency_code"), pricingPlan.get("name"), pricingPlan.get("code"),
+                    pricingPlan.get("included_stores"), pricingPlan.get("additional_store_price"), pricingPlan.get("one_time_onboarding_fee"),
+                    java.sql.Date.valueOf(subscriptionStart));
+            log.info("billing_event event=MERCHANT_SUBSCRIPTION_CREATED tenant_id={} subscription_public_id={} plan_code={}",
+                    tenantId, subscriptionId, pricingPlan.get("code"));
 
             jdbcTemplate.update("""
                     insert into tenant_onboardings (id, tenant_id, current_stage)
@@ -300,6 +326,8 @@ public class PlatformAdministrationService {
             recordStatus(tenantId, null, TenantStatus.PENDING_OWNER_ACTIVATION, actor.id(), "merchant onboarding created");
 
             audit(actor.id(), AuditAction.MERCHANT_TENANT_CREATED, "TENANT", tenantId, null, tenant(tenantId), null);
+            audit(actor.id(), AuditAction.PRICING_PLAN_ASSIGNED_TO_MERCHANT, "MERCHANT_SUBSCRIPTION", subscriptionId, null,
+                    Map.of("tenantId", tenantId, "pricingPlanId", request.pricingPlanId(), "planCode", pricingPlan.get("code")), null);
             audit(actor.id(), AuditAction.MERCHANT_GEOGRAPHY_SELECTED, "TENANT", tenantId, null,
                     Map.of("countryCode", geography.country().getCode(),
                             "administrativeDivisionCode", geography.administrativeDivision().getCode(),
@@ -346,17 +374,79 @@ public class PlatformAdministrationService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<TenantSummaryResponse> listTenants(int page, int size) {
-        int pageNumber = Math.max(0, page);
-        int pageSize = Math.max(1, Math.min(100, size));
-        long total = count("select count(*) from tenants");
-        List<TenantSummaryResponse> content = jdbcTemplate.query("""
-                select * from platform_tenant_summary
-                order by created_at desc, id desc
-                limit ? offset ?
-                """, tenantSummaryMapper(), pageSize, pageNumber * pageSize);
+    public PageResponse<TenantSummaryResponse> listTenants(PlatformDtos.TenantListRequest request) {
+        int pageNumber = Math.max(0, request.page());
+        int pageSize = Math.max(1, Math.min(100, request.size()));
+        String search = cleanOptional(request.search());
+        if (search != null && search.length() > 100) throw new BadRequestException("Merchant search must not exceed 100 characters");
+        List<Object> parameters = new ArrayList<>();
+        StringBuilder where = new StringBuilder(" where 1=1");
+        if (search != null) {
+            where.append("""
+                     and (summary.display_name ilike ? or summary.legal_name ilike ? or summary.tenant_code ilike ?
+                       or summary.primary_owner_email ilike ?
+                       or exists (select 1 from security_users owner_search
+                                  join security_user_roles owner_role_link on owner_role_link.user_id=owner_search.id
+                                  join security_roles owner_role on owner_role.id=owner_role_link.role_id
+                                  where owner_search.tenant_id=summary.id and owner_role.name in ('TENANT_OWNER','OWNER')
+                                    and (owner_search.display_name ilike ? or owner_search.email ilike ?))
+                       or exists (select 1 from merchant_profiles profile_search where profile_search.tenant_id=summary.id
+                                  and profile_search.contact_phone ilike ?))
+                    """);
+            String pattern = "%" + search + "%";
+            for (int index = 0; index < 7; index++) parameters.add(pattern);
+        }
+        if (request.status() != null) addFilter(where, parameters, "summary.status", request.status().name());
+        addFilter(where, parameters, "summary.country_code", normalizedCode(request.country()));
+        addFilter(where, parameters, "summary.administrative_division_code", normalizedCode(request.province()));
+        if (request.createdFrom() != null) {
+            where.append(" and summary.created_at >= ?");
+            parameters.add(java.sql.Date.valueOf(request.createdFrom()));
+        }
+        if (request.createdTo() != null) {
+            where.append(" and summary.created_at < ?");
+            parameters.add(java.sql.Date.valueOf(request.createdTo().plusDays(1)));
+        }
+        if (request.createdFrom() != null && request.createdTo() != null && request.createdTo().isBefore(request.createdFrom())) {
+            throw new BadRequestException("createdTo must be on or after createdFrom");
+        }
+        addFilter(where, parameters, "upper(summary.subscription_plan)", normalizedCode(request.pricingPlan()));
+        if (cleanOptional(request.subscriptionStatus()) != null) {
+            where.append(" and exists (select 1 from tenant_subscriptions subscription_filter where subscription_filter.tenant_id=summary.id and upper(subscription_filter.status)=?)");
+            parameters.add(normalizedCode(request.subscriptionStatus()));
+        }
+        String from = " from platform_tenant_summary summary" + where;
+        Long totalValue = jdbcTemplate.queryForObject("select count(*)" + from, Long.class, parameters.toArray());
+        long total = totalValue == null ? 0 : totalValue;
+        List<Object> pageParameters = new ArrayList<>(parameters);
+        pageParameters.add(pageSize);
+        pageParameters.add((long) pageNumber * pageSize);
+        List<TenantSummaryResponse> content = jdbcTemplate.query("select summary.*" + from + orderBy(request.sort()) + " limit ? offset ?",
+                tenantSummaryMapper(), pageParameters.toArray());
         return new PageResponse<>(content, pageNumber, pageSize, total, (int) Math.ceil((double) total / pageSize),
                 pageNumber == 0, (pageNumber + 1L) * pageSize >= total);
+    }
+
+    private static void addFilter(StringBuilder where, List<Object> parameters, String column, String value) {
+        if (value == null) return;
+        where.append(" and ").append(column).append(" = ?");
+        parameters.add(value);
+    }
+
+    private static String normalizedCode(String value) {
+        String cleaned = cleanOptional(value);
+        return cleaned == null ? null : cleaned.toUpperCase(Locale.ROOT);
+    }
+
+    private static String orderBy(String requestedSort) {
+        String sort = cleanOptional(requestedSort);
+        if (sort == null || sort.equalsIgnoreCase("createdAt,desc")) return " order by summary.created_at desc, summary.id desc";
+        if (sort.equalsIgnoreCase("createdAt,asc")) return " order by summary.created_at asc, summary.id asc";
+        if (sort.equalsIgnoreCase("merchantName,asc")) return " order by lower(summary.display_name) asc, summary.id asc";
+        if (sort.equalsIgnoreCase("merchantName,desc")) return " order by lower(summary.display_name) desc, summary.id desc";
+        if (sort.equalsIgnoreCase("status,asc")) return " order by summary.status asc, summary.created_at desc, summary.id desc";
+        if (sort.equalsIgnoreCase("status,desc")) return " order by summary.status desc, summary.created_at desc, summary.id desc";
+        throw new BadRequestException("Unsupported merchant sort");
     }
 
     @Transactional(readOnly = true)
@@ -1709,30 +1799,6 @@ public class PlatformAdministrationService {
 
     private static String ownerPhone(MerchantOnboardingRequest request) {
         return request.owner() == null ? request.ownerPhone() : request.owner().phone();
-    }
-
-    private static String subscriptionPlan(MerchantOnboardingRequest request) {
-        return request.subscription() == null ? request.subscriptionPlan() : request.subscription().planCode();
-    }
-
-    private static Instant trialStartsAt(MerchantOnboardingRequest request) {
-        return request.subscription() == null ? request.trialStartsAt() : request.subscription().trialStartsAt();
-    }
-
-    private static Instant trialEndsAt(MerchantOnboardingRequest request) {
-        return request.subscription() == null ? request.trialEndsAt() : request.subscription().trialEndsAt();
-    }
-
-    private static Integer maximumStores(MerchantOnboardingRequest request) {
-        return request.subscription() == null ? request.maximumStores() : request.subscription().maximumStores();
-    }
-
-    private static Integer maximumUsers(MerchantOnboardingRequest request) {
-        return request.subscription() == null ? request.maximumUsers() : request.subscription().maximumUsers();
-    }
-
-    private static Map<String, Boolean> features(MerchantOnboardingRequest request) {
-        return request.subscription() == null ? request.features() : request.subscription().features();
     }
 
     private void auditMerchantGeographyChanges(UUID actorId, UUID tenantId, TenantSummaryResponse before, TenantSummaryResponse after, String reason) {

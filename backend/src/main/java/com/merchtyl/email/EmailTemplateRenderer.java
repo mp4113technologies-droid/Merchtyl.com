@@ -23,6 +23,7 @@ public class EmailTemplateRenderer {
             case PLATFORM_ADMIN_INVITATION -> "platform-admin-invitation";
             case MERCHANT_SUSPENDED -> "merchant-suspended";
             case MERCHANT_REACTIVATED -> "merchant-reactivated";
+            case MERCHANT_SUBSCRIPTION_INVOICE -> "merchant-subscription-invoice";
             case TEST_EMAIL -> "test-email";
         };
         String html = renderResource("templates/email/" + baseName + ".html", values, true);
@@ -58,6 +59,7 @@ public class EmailTemplateRenderer {
             case PLATFORM_ADMIN_INVITATION -> "You've been invited to administer Merchtyl";
             case MERCHANT_SUSPENDED -> "Your Merchtyl merchant account has been suspended";
             case MERCHANT_REACTIVATED -> "Your Merchtyl merchant account has been reactivated";
+            case MERCHANT_SUBSCRIPTION_INVOICE -> "Your Merchtyl subscription invoice";
             case TEST_EMAIL -> "Merchtyl test email";
         };
     }
