@@ -653,7 +653,7 @@ export function NewPlatformMerchantPage() {
               <Typography>Included Stores: {selectedPlan.includedStores ?? 0}</Typography>
               <Typography>Additional Store: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.additionalStorePrice ?? 0)}/store/month</Typography>
               <Typography>One-Time Onboarding: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.oneTimeOnboardingFee)}</Typography>
-              {pricingPreview.data?.capabilityCharges.map(charge=><Typography key={charge.capability}>{charge.description}: +{new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyTotal)}/month ({charge.storeCount} stores)</Typography>)}
+              {pricingPreview.data?.capabilityCharges.map(charge=><Typography key={charge.capability}>{charge.description}: +{new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyPricePerStore)} / {charge.billingUnit.replace('PER_','').toLowerCase()} / month ({charge.storeCount} units; {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyTotal)} total)</Typography>)}
               <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(pricingPreview.data?.estimatedMonthlySubscription??selectedPlan.basePrice)}</Typography>
               <Typography color="text.secondary">Additional stores are billed beginning with the next billing cycle. Tax is calculated by the backend.</Typography>
             </Paper></Grid>}

@@ -25,7 +25,7 @@ public class SubscriptionBillingService {
         input.capabilities().forEach(capability -> {
             requireNonNegative(capability.monthlyPricePerStore(), capability.capability());
             if (capability.storeCount() > 0 && value(capability.monthlyPricePerStore()).signum() > 0) {
-                lines.add(line("CAPABILITY_ADD_ON", capability.description(), BigDecimal.valueOf(capability.storeCount()), capability.monthlyPricePerStore()));
+                lines.add(line("CAPABILITY_ADD_ON", capability.description(), BigDecimal.valueOf(capability.storeCount()), capability.monthlyPricePerStore(),capability.capability(),capability.billingUnit()));
             }
         });
 
@@ -45,8 +45,12 @@ public class SubscriptionBillingService {
     }
 
     private static CalculatedLine line(String type, String description, BigDecimal quantity, BigDecimal unitPrice) {
+        return line(type,description,quantity,unitPrice,null,null);
+    }
+
+    private static CalculatedLine line(String type, String description, BigDecimal quantity, BigDecimal unitPrice, String capability, BillingUnit billingUnit) {
         BigDecimal subtotal = money(quantity.multiply(unitPrice));
-        return new CalculatedLine(type, description, quantity, unitPrice, subtotal);
+        return new CalculatedLine(type, description, quantity, unitPrice, subtotal,capability,billingUnit);
     }
 
     private static BigDecimal discount(String type, BigDecimal value, BigDecimal subtotal) {
@@ -86,7 +90,9 @@ public class SubscriptionBillingService {
                     discountType, discountValue, taxRate, onboardingFee, includeOnboardingFee, List.of());
         }
     }
-    public record CapabilityUsage(String capability, String description, int storeCount, BigDecimal monthlyPricePerStore) {}
-    public record CalculatedLine(String lineType, String description, BigDecimal quantity, BigDecimal unitPrice, BigDecimal lineSubtotal) {}
+    public record CapabilityUsage(String capability, String description, int storeCount, BigDecimal monthlyPricePerStore, BillingUnit billingUnit) {
+        public CapabilityUsage(String capability,String description,int storeCount,BigDecimal monthlyPricePerStore){this(capability,description,storeCount,monthlyPricePerStore,null);}
+    }
+    public record CalculatedLine(String lineType, String description, BigDecimal quantity, BigDecimal unitPrice, BigDecimal lineSubtotal, String capability, BillingUnit billingUnit) {}
     public record Calculation(List<CalculatedLine> lines, BigDecimal subtotal, BigDecimal discount, BigDecimal tax, BigDecimal total) {}
 }

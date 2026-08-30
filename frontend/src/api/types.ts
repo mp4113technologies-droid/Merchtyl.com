@@ -12,9 +12,9 @@ export type PricingPlan = {
 };
 export type CommercialCapability = 'RETAIL_POS' | 'INVENTORY' | 'REGISTER_MANAGEMENT' | 'RETURNS' | 'REPORTING' | 'ADVANCED_REPORTING' | 'EMPLOYEE_MANAGEMENT' | 'FOOD_SERVICE' | 'LOTTERY';
 export type CapabilityInclusionType = 'INCLUDED' | 'PAID_ADD_ON' | 'NOT_AVAILABLE';
-export type CapabilityBillingUnit = 'PER_MERCHANT' | 'PER_STORE' | 'PER_REGISTER';
+export type CapabilityBillingUnit = 'PER_MERCHANT' | 'PER_STORE' | 'PER_USER' | 'PER_REGISTER';
 export type CapabilityPrice = { capability: CommercialCapability; inclusionType: CapabilityInclusionType; billingUnit: CapabilityBillingUnit | null; monthlyPricePerStore: number | null };
-export type CapabilityCharge = { capability: CommercialCapability; description: string; storeCount: number; monthlyPricePerStore: number; monthlyTotal: number };
+export type CapabilityCharge = { capability: CommercialCapability; description: string; billingUnit: CapabilityBillingUnit; storeCount: number; monthlyPricePerStore: number; monthlyTotal: number };
 export type CapabilityDefinition = { capability: CommercialCapability; displayName: string; supportedBillingUnits: CapabilityBillingUnit[] };
 export type PricingVersion = { id: string; pricingPlanId: string; versionNumber: number; status: 'ACTIVE' | 'SCHEDULED' | 'SUPERSEDED' | 'CANCELLED'; effectiveFrom: string; effectiveTo: string | null; subscriberPolicy: 'NEW_SUBSCRIPTIONS_ONLY' | 'APPLY_NEXT_BILLING_CYCLE'; pricing: Omit<PricingPlan, 'id' | 'activeMerchants' | 'createdAt' | 'updatedAt' | 'version'>; usedForBilling: boolean; createdAt: string; version: number };
 export type PricingPreview = { currency: string; baseSubscription: number; storeCount: number; includedStores: number; additionalStoreCount: number; additionalStoreMonthlyPrice: number; capabilityCharges: CapabilityCharge[]; estimatedMonthlySubscription: number };
@@ -32,7 +32,7 @@ export type BillingSubscription = {
   discountType: 'PERCENTAGE' | 'FIXED_AMOUNT' | null; discountValue: number | null; pricingNotes: string | null;
   paymentTermsDays: number | null; version: number;
 };
-export type PlatformInvoiceLine = { id: string; lineType: string; description: string; quantity: number; unitPrice: number; discount: number; taxAmount: number; lineSubtotal: number; lineTotal: number };
+export type PlatformInvoiceLine = { id: string; lineType: string; description: string; quantity: number; unitPrice: number; discount: number; taxAmount: number; lineSubtotal: number; lineTotal: number; capability: CommercialCapability | null; billingUnit: CapabilityBillingUnit | null };
 export type PlatformInvoice = {
   id: string; invoiceNumber: string; tenantId: string; merchantName: string; subscriptionId: string; pricingPlanId: string;
   planCode: string; billingPeriodStart: string; billingPeriodEnd: string; issueDate: string; dueDate: string; currency: string;

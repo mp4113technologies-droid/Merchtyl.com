@@ -50,15 +50,18 @@ public class PlatformBillingService {
     private final PlatformUserRepository platformUsers;
     private final UserRepository users;
     private final ObjectMapper objectMapper;
+    private final BillingQuantityService billingQuantities;
 
     public PlatformBillingService(JdbcTemplate jdbc, SubscriptionBillingService calculator, AuditService auditService,
-                                  PlatformUserRepository platformUsers, UserRepository users, ObjectMapper objectMapper) {
+                                  PlatformUserRepository platformUsers, UserRepository users, ObjectMapper objectMapper,
+                                  BillingQuantityService billingQuantities) {
         this.jdbc = jdbc;
         this.calculator = calculator;
         this.auditService = auditService;
         this.platformUsers = platformUsers;
         this.users = users;
         this.objectMapper = objectMapper;
+        this.billingQuantities = billingQuantities;
     }
 
     @Transactional(readOnly = true)
@@ -148,12 +151,13 @@ public class PlatformBillingService {
 
     @Transactional(readOnly=true)
     public List<CapabilityDefinition> capabilityDefinitions(){
+        BillingUnit[] units=BillingUnit.values();
         return List.of(
-                definition(CommercialCapability.RETAIL_POS,BillingUnit.PER_MERCHANT),definition(CommercialCapability.INVENTORY,BillingUnit.PER_MERCHANT),
-                definition(CommercialCapability.REGISTER_MANAGEMENT,BillingUnit.PER_REGISTER),definition(CommercialCapability.RETURNS,BillingUnit.PER_MERCHANT),
-                definition(CommercialCapability.REPORTING,BillingUnit.PER_MERCHANT),definition(CommercialCapability.ADVANCED_REPORTING,BillingUnit.PER_MERCHANT),
-                definition(CommercialCapability.EMPLOYEE_MANAGEMENT,BillingUnit.PER_MERCHANT),definition(CommercialCapability.FOOD_SERVICE,BillingUnit.PER_STORE),
-                definition(CommercialCapability.LOTTERY,BillingUnit.PER_STORE));
+                definition(CommercialCapability.RETAIL_POS,units),definition(CommercialCapability.INVENTORY,units),
+                definition(CommercialCapability.REGISTER_MANAGEMENT,units),definition(CommercialCapability.RETURNS,units),
+                definition(CommercialCapability.REPORTING,units),definition(CommercialCapability.ADVANCED_REPORTING,units),
+                definition(CommercialCapability.EMPLOYEE_MANAGEMENT,units),definition(CommercialCapability.FOOD_SERVICE,units),
+                definition(CommercialCapability.LOTTERY,units));
     }
 
     @Transactional(readOnly=true)
@@ -267,13 +271,13 @@ public class PlatformBillingService {
         SubscriptionResponse subscription=subscription(tenantId);
         Map<String,Integer> counts=new HashMap<>(tenantCapabilityCounts(tenantId));
         if(foodService)counts.merge("FOOD_SERVICE",1,Integer::sum);
-        List<CapabilityPrice> prices=jdbc.query("select capability,monthly_price_per_store from tenant_subscription_capability_price_snapshots where subscription_id=? order by capability",(rs,row)->new CapabilityPrice(CommercialCapability.valueOf(rs.getString(1)),CapabilityInclusionType.PAID_ADD_ON,BillingUnit.PER_STORE,rs.getBigDecimal(2)),subscription.id());
+        List<CapabilityPrice> prices=jdbc.query("select capability,billing_unit_snapshot,coalesce(custom_unit_price,unit_price_snapshot) from tenant_subscription_capabilities where subscription_id=? and inclusion_type_snapshot='PAID_ADD_ON' order by capability",(rs,row)->new CapabilityPrice(CommercialCapability.valueOf(rs.getString(1)),CapabilityInclusionType.PAID_ADD_ON,BillingUnit.valueOf(rs.getString(2)),rs.getBigDecimal(3)),subscription.id());
         return preview(subscription.currency(),subscription.merchantBasePrice(),subscription.includedStoresSnapshot(),subscription.additionalStorePriceSnapshot(),subscription.currentBillableStores()+Math.max(0,additionalStores),counts,prices);
     }
 
     private PricingPreview preview(String currency,BigDecimal base,Integer included,BigDecimal additionalRate,int stores,Map<String,Integer> counts,List<CapabilityPrice> prices){
         int includedCount=included==null?stores:included;int additional=Math.max(0,stores-includedCount);BigDecimal storeTotal=value(additionalRate,BigDecimal.ZERO).multiply(BigDecimal.valueOf(additional));
-        List<CapabilityCharge> charges=prices.stream().map(price->{int count=counts.getOrDefault(price.capability().name(),0);return new CapabilityCharge(price.capability(),capabilityDescription(price.capability().name()),count,price.monthlyPricePerStore(),money(price.monthlyPricePerStore().multiply(BigDecimal.valueOf(count))));}).toList();
+        List<CapabilityCharge> charges=prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON).map(price->{int count=switch(price.billingUnit()){case PER_MERCHANT->1;case PER_STORE->counts.getOrDefault(price.capability().name(),stores);case PER_USER,PER_REGISTER->0;};return new CapabilityCharge(price.capability(),capabilityDescription(price.capability().name()),price.billingUnit(),count,price.monthlyPricePerStore(),money(price.monthlyPricePerStore().multiply(BigDecimal.valueOf(count))));}).toList();
         BigDecimal total=value(base,BigDecimal.ZERO).add(storeTotal).add(charges.stream().map(CapabilityCharge::monthlyTotal).reduce(BigDecimal.ZERO,BigDecimal::add));
         return new PricingPreview(currency,money(value(base,BigDecimal.ZERO)),stores,includedCount,additional,money(storeTotal),charges,money(total));
     }
@@ -355,8 +359,8 @@ public class PlatformBillingService {
             return invoiceForPeriod(subscription.id(), start, end);
         }
         for (SubscriptionBillingService.CalculatedLine line : calculation.lines()) {
-            jdbc.update("insert into platform_invoice_lines(id,invoice_id,line_type,description,quantity,unit_price,line_subtotal,line_total) values (?,?,?,?,?,?,?,?)",
-                    UUID.randomUUID(), invoiceId, line.lineType(), line.description(), line.quantity(), line.unitPrice(), line.lineSubtotal(), line.lineSubtotal());
+            jdbc.update("insert into platform_invoice_lines(id,invoice_id,line_type,description,quantity,unit_price,line_subtotal,line_total,capability,billing_unit) values (?,?,?,?,?,?,?,?,?,?)",
+                    UUID.randomUUID(), invoiceId, line.lineType(), line.description(), line.quantity(), line.unitPrice(), line.lineSubtotal(), line.lineSubtotal(),line.capability(),line.billingUnit()==null?null:line.billingUnit().name());
         }
         if (includeOnboardingFee) {
             jdbc.update("update tenant_subscriptions set onboarding_fee_invoiced_at=now(),onboarding_fee_invoice_id=? where id=? and onboarding_fee_invoiced_at is null",
@@ -476,7 +480,7 @@ public class PlatformBillingService {
         List<InvoiceLine> lines = jdbc.query("select * from platform_invoice_lines where invoice_id=? order by created_at,id", (rs, row) -> new InvoiceLine(
                 rs.getObject("id", UUID.class), rs.getString("line_type"), rs.getString("description"), rs.getBigDecimal("quantity"),
                 rs.getBigDecimal("unit_price"), rs.getBigDecimal("discount_amount"), rs.getBigDecimal("tax_amount"),
-                rs.getBigDecimal("line_subtotal"), rs.getBigDecimal("line_total")), invoice.id());
+                rs.getBigDecimal("line_subtotal"), rs.getBigDecimal("line_total"),rs.getString("capability"),rs.getString("billing_unit") == null ? null : BillingUnit.valueOf(rs.getString("billing_unit"))), invoice.id());
         return new InvoiceResponse(invoice.id(), invoice.invoiceNumber(), invoice.tenantId(), invoice.merchantName(), invoice.subscriptionId(), invoice.pricingPlanId(),
                 invoice.planCode(), invoice.billingPeriodStart(), invoice.billingPeriodEnd(), invoice.issueDate(), invoice.dueDate(), invoice.currency(),
                 invoice.subtotal(), invoice.discountTotal(), invoice.taxTotal(), invoice.total(), invoice.amountPaid(), invoice.amountOutstanding(), invoice.status(),
@@ -521,18 +525,17 @@ public class PlatformBillingService {
 
     private List<SubscriptionBillingService.CapabilityUsage> capabilityUsage(UUID subscriptionId, UUID tenantId) {
         return jdbc.query("select capability,billing_unit_snapshot,coalesce(custom_unit_price,unit_price_snapshot) unit_price from tenant_subscription_capabilities where subscription_id=? and status='ACTIVE' and inclusion_type_snapshot='PAID_ADD_ON' order by capability",
-                (rs,row)->new SubscriptionBillingService.CapabilityUsage(rs.getString(1),capabilityDescription(rs.getString(1)),billingQuantity(tenantId,rs.getString(1),rs.getString(2)),rs.getBigDecimal(3)),subscriptionId);
+                (rs,row)->new SubscriptionBillingService.CapabilityUsage(rs.getString(1),capabilityDescription(rs.getString(1)),billingQuantities.quantity(tenantId,CommercialCapability.valueOf(rs.getString(1)),BillingUnit.valueOf(rs.getString(2))),rs.getBigDecimal(3),BillingUnit.valueOf(rs.getString(2))),subscriptionId);
     }
 
     private SubscriptionResponse withCapabilityCharges(SubscriptionResponse value, Map<String,Integer> counts) {
         List<CapabilityCharge> charges=jdbc.query("select capability,billing_unit_snapshot,coalesce(custom_unit_price,unit_price_snapshot) unit_price from tenant_subscription_capabilities where subscription_id=? and status='ACTIVE' and inclusion_type_snapshot='PAID_ADD_ON' order by capability",
-                (rs,row)->{var capability=CommercialCapability.valueOf(rs.getString(1));int count=billingQuantity(value.tenantId(),capability.name(),rs.getString(2));BigDecimal rate=rs.getBigDecimal(3);return new CapabilityCharge(capability,capabilityDescription(capability.name()),count,rate,money(rate.multiply(BigDecimal.valueOf(count))));},value.id());
+                (rs,row)->{var capability=CommercialCapability.valueOf(rs.getString(1));var unit=BillingUnit.valueOf(rs.getString(2));int count=billingQuantities.quantity(value.tenantId(),capability,unit);BigDecimal rate=rs.getBigDecimal(3);return new CapabilityCharge(capability,capabilityDescription(capability.name()),unit,count,rate,money(rate.multiply(BigDecimal.valueOf(count))));},value.id());
         BigDecimal total=value.estimatedMonthlyPrice().add(charges.stream().map(CapabilityCharge::monthlyTotal).reduce(BigDecimal.ZERO,BigDecimal::add));
         return new SubscriptionResponse(value.id(),value.tenantId(),value.merchantName(),value.pricingPlanId(),value.planCode(),value.planName(),value.status(),value.billingInterval(),value.subscriptionStartDate(),value.currentPeriodStart(),value.currentPeriodEnd(),value.nextBillingDate(),value.trialEndDate(),value.cancelAtPeriodEnd(),value.cancelledAt(),value.cancellationReason(),value.standardBasePrice(),value.merchantBasePrice(),value.currency(),value.includedStoresSnapshot(),value.additionalStorePriceSnapshot(),value.onboardingFeeSnapshot(),value.onboardingFeeInvoicedAt(),value.currentBillableStores(),value.additionalBillableStores(),money(total),charges,value.customAdditionalStorePrice(),value.customAdditionalRegisterPrice(),value.customAdditionalUserPrice(),value.discountName(),value.discountType(),value.discountValue(),value.pricingNotes(),value.paymentTermsDays(),value.version());
     }
 
     private static String capabilityDescription(String capability){return switch(capability){case "FOOD_SERVICE"->"Food Service add-on";default->capability.replace('_',' ')+" add-on";};}
-    private int billingQuantity(UUID tenantId,String capability,String unit){return switch(BillingUnit.valueOf(unit)){case PER_MERCHANT->1;case PER_STORE->"FOOD_SERVICE".equals(capability)?number(jdbc.queryForMap("select count(*) quantity from stores s join store_capabilities c on c.store_id=s.id where s.tenant_id=? and s.active=true and c.capability='FOOD_SERVICE'",tenantId).get("quantity")):"LOTTERY".equals(capability)?number(jdbc.queryForMap("select count(distinct policy.store_id) quantity from lottery_payout_policies policy join stores s on s.id=policy.store_id where s.tenant_id=? and s.active=true and policy.active=true",tenantId).get("quantity")):number(jdbc.queryForMap("select count(*) quantity from stores where tenant_id=? and active=true",tenantId).get("quantity"));case PER_REGISTER->number(jdbc.queryForMap("select count(*) quantity from registers r join stores s on s.id=r.store_id where s.tenant_id=? and r.active=true",tenantId).get("quantity"));};}
     private static CapabilityInclusionType normalizeInclusion(CapabilityPrice price){return price.inclusionType()==null?CapabilityInclusionType.PAID_ADD_ON:price.inclusionType();}
 
     private void snapshotPlan(UUID id, int version, PlanRequest request, UUID actor) {

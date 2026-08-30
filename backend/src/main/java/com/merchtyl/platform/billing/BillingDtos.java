@@ -85,7 +85,7 @@ public final class BillingDtos {
 
     public record CapabilityPrice(@NotNull CommercialCapability capability, CapabilityInclusionType inclusionType,
                                   BillingUnit billingUnit, @DecimalMin("0") BigDecimal monthlyPricePerStore) {}
-    public record CapabilityCharge(CommercialCapability capability, String description, int storeCount, BigDecimal monthlyPricePerStore, BigDecimal monthlyTotal) {}
+    public record CapabilityCharge(CommercialCapability capability, String description, BillingUnit billingUnit, int storeCount, BigDecimal monthlyPricePerStore, BigDecimal monthlyTotal) {}
     public record PricingPreview(String currency, BigDecimal baseSubscription, int storeCount, int includedStores,
                                  int additionalStoreCount, BigDecimal additionalStoreMonthlyPrice,
                                  List<CapabilityCharge> capabilityCharges, BigDecimal estimatedMonthlySubscription) {}
@@ -100,7 +100,8 @@ public final class BillingDtos {
 
     public record InvoiceLine(
             UUID id, String lineType, String description, BigDecimal quantity, BigDecimal unitPrice,
-            BigDecimal discount, BigDecimal taxAmount, BigDecimal lineSubtotal, BigDecimal lineTotal) {}
+            BigDecimal discount, BigDecimal taxAmount, BigDecimal lineSubtotal, BigDecimal lineTotal,
+            String capability, BillingUnit billingUnit) {}
 
     public record InvoiceResponse(
             UUID id, String invoiceNumber, UUID tenantId, String merchantName, UUID subscriptionId,

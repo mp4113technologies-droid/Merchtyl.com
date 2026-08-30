@@ -38,7 +38,8 @@ describe('platform billing pages', () => {
     vi.clearAllMocks();
     api.overview.mockResolvedValue({ activeSubscriptions: 42, trialSubscriptions: 6, monthlyRecurringRevenue: 4850, invoicesThisMonth: 42, outstandingBalance: 400, pastDueInvoices: 2, paidThisMonth: 3600, subscriptionsCancelling: 1, currency: 'CAD' });
     api.plans.mockResolvedValue({ content: [{ id: 'plan', code: 'GROWTH', name: 'Growth', description: null, status: 'ACTIVE', billingInterval: 'MONTHLY', basePrice: 99, oneTimeOnboardingFee: 199, currency: 'CAD', trialDays: 14, includedStores: 3, includedRegisters: 5, includedUsers: 15, additionalStorePrice: 20, additionalRegisterPrice: 10, additionalUserPrice: 5, capabilityPrices: [{capability:'RETAIL_POS',inclusionType:'INCLUDED',billingUnit:null,monthlyPricePerStore:null},{capability:'FOOD_SERVICE',inclusionType:'PAID_ADD_ON',billingUnit:'PER_STORE',monthlyPricePerStore:15}], taxBehavior: 'EXCLUSIVE', effectiveFrom: '2026-01-01', effectiveTo: null, activeMerchants: 25, createdAt: '', updatedAt: '', version: 0 }], page: 0, size: 20, totalElements: 1, totalPages: 1 });
-    api.capabilities.mockResolvedValue([{capability:'RETAIL_POS',displayName:'Retail POS',supportedBillingUnits:['PER_MERCHANT']},{capability:'FOOD_SERVICE',displayName:'Food Service / Kitchen',supportedBillingUnits:['PER_STORE']}]);
+    const units=['PER_MERCHANT','PER_STORE','PER_USER','PER_REGISTER'];
+    api.capabilities.mockResolvedValue([{capability:'RETAIL_POS',displayName:'Retail POS',supportedBillingUnits:units},{capability:'FOOD_SERVICE',displayName:'Food Service / Kitchen',supportedBillingUnits:units}]);
     api.history.mockResolvedValue([{id:'version-1',pricingPlanId:'plan',versionNumber:1,status:'ACTIVE',effectiveFrom:'2026-01-01',effectiveTo:null,subscriberPolicy:'NEW_SUBSCRIPTIONS_ONLY',pricing:{basePrice:99,additionalStorePrice:20,currency:'CAD'},usedForBilling:true,createdAt:'',version:0}]);
     api.schedule.mockResolvedValue({id:'version-2'});
     api.tenants.mockResolvedValue({ content: [{ id: 'tenant', displayName: 'ABC Convenience', operatingName: 'ABC Convenience' }], page: 0, size: 100, totalElements: 1, totalPages: 1 });
@@ -64,7 +65,7 @@ describe('platform billing pages', () => {
   it('renders persisted capability comparison and schedules subscriber migration', async () => {
     renderPage(<PlatformPricingPlansPage />);
     expect(await screen.findByText('Plan Comparison')).toBeInTheDocument();
-    expect(await screen.findByText('Add-on · CA$15.00')).toBeInTheDocument();
+    expect(await screen.findByText('Add-on · CA$15.00 / store / month')).toBeInTheDocument();
     await userEvent.click(screen.getAllByText('Growth')[0]);
     expect(await screen.findByText('Pricing History')).toBeInTheDocument();
     const selects=screen.getByRole('dialog').querySelectorAll('[role="combobox"]');
@@ -73,6 +74,21 @@ describe('platform billing pages', () => {
     await userEvent.click(await screen.findByRole('option',{name:'APPLY_NEXT_BILLING_CYCLE'}));
     await userEvent.click(screen.getByRole('button',{name:'Save Pricing Changes'}));
     expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({effectivePolicy:'NEXT_BILLING_CYCLE',existingSubscriberPolicy:'APPLY_NEXT_BILLING_CYCLE',confirmCapabilityRemoval:false}));
+  });
+
+  it('offers every billing unit and preserves then versions the selected canonical value', async () => {
+    renderPage(<PlatformPricingPlansPage />);
+    await userEvent.click((await screen.findAllByText('Growth'))[0]);
+    const dialog=screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Billing Unit *');
+    const perStore=screen.getByRole('combobox',{name:'Billing Unit *'});
+    expect(perStore).toHaveTextContent('Per Store');
+    await userEvent.click(perStore);
+    for(const label of ['Per Merchant','Per Store','Per User','Per Register'])expect(await screen.findByRole('option',{name:label})).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('option',{name:'Per User'}));
+    await userEvent.click(screen.getByRole('button',{name:'Save Pricing Changes'}));
+    expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({pricing:expect.objectContaining({capabilityPrices:expect.arrayContaining([expect.objectContaining({capability:'FOOD_SERVICE',billingUnit:'PER_USER'})])})}));
+    expect(api.history.mock.results[0].value).toBeTruthy();
   });
 
   it('submits permission-gated merchant pricing overrides without changing the plan', async () => {
