@@ -3,6 +3,8 @@ package com.merchtyl.security;
 import com.merchtyl.store.Store;
 
 import java.util.UUID;
+import java.util.Set;
+import com.merchtyl.store.StoreCapability;
 
 public record AssignedStoreResponse(
         UUID storeId,
@@ -10,7 +12,8 @@ public record AssignedStoreResponse(
         String storeName,
         String city,
         String administrativeDivisionCode,
-        AssignmentRole assignmentRole
+        AssignmentRole assignmentRole,
+        Set<StoreCapability> capabilities
 ) {
     public static AssignedStoreResponse from(Store store, AssignmentRole assignmentRole) {
         return new AssignedStoreResponse(
@@ -19,7 +22,8 @@ public record AssignedStoreResponse(
                 store.getName(),
                 cityFromAddress(store.getAddress()),
                 store.getAdministrativeAreaCode(),
-                assignmentRole);
+                assignmentRole,
+                store.getCapabilities());
     }
 
     private static String cityFromAddress(String address) {

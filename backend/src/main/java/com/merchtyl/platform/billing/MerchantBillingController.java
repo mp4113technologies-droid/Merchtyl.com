@@ -29,6 +29,9 @@ public class MerchantBillingController {
     @GetMapping("/subscription")
     BillingDtos.SubscriptionResponse subscription(Authentication authentication) { return billing.subscription(billing.tenantFor(authentication)); }
 
+    @GetMapping("/subscription/preview")
+    BillingDtos.PricingPreview preview(Authentication authentication,@RequestParam(defaultValue="0") int additionalStores,@RequestParam(defaultValue="false") boolean foodService){return billing.subscriptionPreview(billing.tenantFor(authentication),additionalStores,foodService);}
+
     @GetMapping("/invoices")
     BillingDtos.Page<BillingDtos.InvoiceResponse> invoices(Authentication authentication,
                                                             @RequestParam(defaultValue = "0") int page,

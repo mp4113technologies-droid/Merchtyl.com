@@ -184,6 +184,8 @@ export type MerchantOnboardingPayload = {
   ownerLastName: string;
   ownerEmail: string;
   ownerPhone?: string;
+  storeCapabilities: Array<'RETAIL' | 'FOOD_SERVICE'>;
+  kitchenDisplayName?: string;
 };
 
 export type MerchantGeographyValidationPayload = {
@@ -338,6 +340,8 @@ export type StorePayload = {
   pricesIncludeTax: boolean;
   negativeStockAllowed: boolean;
   active: boolean;
+  capabilities: Array<'RETAIL' | 'FOOD_SERVICE'>;
+  kitchenDisplayName?: string;
 };
 
 export type StoreUpdatePayload = StorePayload & {
@@ -1818,6 +1822,21 @@ export function getStore(token: string, id: string) {
   return request<Store>(`/stores/${id}`, undefined, token);
 }
 
+export function getFoodServiceConfiguration(token: string, storeId: string) {
+  return request<{ storeId: string; restaurantPosEnabled: boolean; kitchenDisplayName: string }>(`/stores/${storeId}/food-service/configuration`, undefined, token);
+}
+
+export function listFoodMenuCategories(token: string, storeId: string) { return request<import('./types').FoodMenuCategory[]>(`/stores/${storeId}/food-menu/categories`, undefined, token); }
+export function createFoodMenuCategory(token: string, storeId: string, payload: import('./types').FoodMenuCategoryPayload) { return request<import('./types').FoodMenuCategory>(`/stores/${storeId}/food-menu/categories`, { method: 'POST', body: JSON.stringify(payload) }, token); }
+export function updateFoodMenuCategory(token: string, storeId: string, id: string, payload: import('./types').FoodMenuCategoryPayload) { return request<import('./types').FoodMenuCategory>(`/stores/${storeId}/food-menu/categories/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token); }
+export function deleteFoodMenuCategory(token: string, storeId: string, id: string) { return request<void>(`/stores/${storeId}/food-menu/categories/${id}`, { method: 'DELETE' }, token); }
+export function listFoodMenuItems(token: string, storeId: string) { return request<import('./types').FoodMenuItem[]>(`/stores/${storeId}/food-menu/items`, undefined, token); }
+export function createFoodMenuItem(token: string, storeId: string, payload: import('./types').FoodMenuItemPayload) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items`, { method: 'POST', body: JSON.stringify(payload) }, token); }
+export function updateFoodMenuItem(token: string, storeId: string, id: string, payload: import('./types').FoodMenuItemPayload) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token); }
+export function updateFoodMenuItemAvailability(token: string, storeId: string, id: string, available: boolean) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items/${id}/availability`, { method: 'PATCH', body: JSON.stringify({ available }) }, token); }
+export function deleteFoodMenuItem(token: string, storeId: string, id: string) { return request<void>(`/stores/${storeId}/food-menu/items/${id}`, { method: 'DELETE' }, token); }
+export function addFoodMenuItemToSale(token: string, storeId: string, itemId: string, saleId: string, quantity: number) { return request<Sale>(`/stores/${storeId}/food-menu/items/${itemId}/sales/${saleId}`, { method: 'POST', body: JSON.stringify({ quantity }) }, token); }
+
 export function createStore(token: string, payload: StorePayload) {
   return request<Store>('/stores', {
     method: 'POST',
@@ -2495,6 +2514,24 @@ export function createPlatformPricingPlan(token: string, payload: Record<string,
 export function updatePlatformPricingPlan(token: string, id: string, payload: Record<string, unknown>) {
   return request<import('./types').PricingPlan>(`/platform/billing/plans/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token);
 }
+
+export function listPlatformBillingCapabilities(token: string) {
+  return request<import('./types').CapabilityDefinition[]>('/platform/billing/capabilities', undefined, token);
+}
+
+export function listPlatformPricingHistory(token: string, id: string) {
+  return request<import('./types').PricingVersion[]>(`/platform/billing/plans/${id}/pricing-history`, undefined, token);
+}
+
+export function schedulePlatformPricingVersion(token: string, id: string, payload: Record<string, unknown>) {
+  return request<import('./types').PricingVersion>(`/platform/billing/plans/${id}/pricing-versions`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function cancelPlatformPricingVersion(token: string, planId: string, versionId: string) {
+  return request<void>(`/platform/billing/plans/${planId}/pricing-versions/${versionId}/cancel`, { method: 'POST' }, token);
+}
+export function getPlatformPricingPreview(token:string,planId:string,storeCount:number,foodServiceStoreCount:number){return request<import('./types').PricingPreview>(`/platform/billing/plans/${planId}/preview?storeCount=${storeCount}&foodServiceStoreCount=${foodServiceStoreCount}`,undefined,token);}
+export function getMerchantStorePricingPreview(token:string,foodService:boolean){return request<import('./types').PricingPreview>(`/stores/pricing-preview?foodService=${foodService}`,undefined,token);}
 
 export function getPlatformBillingSubscription(token: string, tenantId: string) {
   return request<import('./types').BillingSubscription>(`/platform/billing/subscriptions/${tenantId}`, undefined, token);

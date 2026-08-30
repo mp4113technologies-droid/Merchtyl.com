@@ -13,6 +13,7 @@ import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
+import com.merchtyl.store.StoreCapability;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -38,7 +39,7 @@ import java.util.stream.Collectors;
 public class UserAdministrationService {
     private static final Logger log = LoggerFactory.getLogger(UserAdministrationService.class);
     private static final int MAX_PAGE_SIZE = 100;
-    private static final Set<RoleName> EMPLOYEE_ROLES = Set.of(RoleName.STORE_MANAGER, RoleName.CASHIER);
+    private static final Set<RoleName> EMPLOYEE_ROLES = Set.of(RoleName.STORE_MANAGER, RoleName.CASHIER, RoleName.KITCHEN);
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -111,6 +112,7 @@ public class UserAdministrationService {
             throw new BadRequestException("At least one store assignment is required for an active user");
         }
         List<Store> stores = storesForAssignment(actor, storeIds);
+        validateRoleStoreCapabilities(roleName, stores);
         validateRegisterAssignments(actor, ids(request.registerIds()), storeIds);
 
         User user = new User(email, cleanRequired(request.displayName(), "displayName"), passwordEncoder.encode(request.password()));
@@ -201,6 +203,7 @@ public class UserAdministrationService {
             throw new BadRequestException("At least one store assignment is required for an active user");
         }
         List<Store> stores = storesForAssignment(actor, storeIds);
+        validateRoleStoreCapabilities(roleName, stores);
         validateRegisterAssignments(actor, ids(request.registerIds()), storeIds);
 
         UserResponse before = response(user);
@@ -264,6 +267,7 @@ public class UserAdministrationService {
             throw new BadRequestException("At least one store assignment is required for an active user");
         }
         List<Store> stores = storesForAssignment(actor, storeIds);
+        validateRoleStoreCapabilities(roleName, stores);
         validateRegisterAssignments(actor, ids(request.registerIds()), storeIds);
 
         UserResponse before = response(user);
@@ -292,7 +296,9 @@ public class UserAdministrationService {
         RoleName roleName = employeeRoleForAssignment(request.assignmentRole());
         requireCanModify(actor, user, roleName, authentication);
         requireRoleCompatible(user, roleName);
-        addAssignments(actor, user, storesForAssignment(actor, ids(request.storeIds())), request.assignmentRole());
+        List<Store> stores = storesForAssignment(actor, ids(request.storeIds()));
+        validateRoleStoreCapabilities(roleName, stores);
+        addAssignments(actor, user, stores, request.assignmentRole());
         return storeAssignments(id, authentication);
     }
 
@@ -303,7 +309,9 @@ public class UserAdministrationService {
         RoleName roleName = employeeRoleForAssignment(request.assignmentRole());
         requireCanModify(actor, user, roleName, authentication);
         requireRoleCompatible(user, roleName);
-        replaceStoreAssignments(actor, user, storesForAssignment(actor, ids(request.storeIds())), roleName, request.removalReason());
+        List<Store> stores = storesForAssignment(actor, ids(request.storeIds()));
+        validateRoleStoreCapabilities(roleName, stores);
+        replaceStoreAssignments(actor, user, stores, roleName, request.removalReason());
         return storeAssignments(id, authentication);
     }
 
@@ -378,7 +386,7 @@ public class UserAdministrationService {
         }
         if (StoreAccessService.isManager(actorRoles)
                 && hasTenantPermission(authentication, PermissionCode.USER_CREATE)
-                && (roleName == RoleName.CASHIER
+                && (roleName == RoleName.CASHIER || roleName == RoleName.KITCHEN
                     || roleName == RoleName.STORE_MANAGER && hasTenantPermission(authentication, PermissionCode.MANAGER_CREATE_MANAGER))) {
             return;
         }
@@ -392,7 +400,7 @@ public class UserAdministrationService {
         }
         if (StoreAccessService.isManager(actorRoles)
                 && managerCanSeeTarget(actor, target, authentication)
-                && (requestedRole == RoleName.CASHIER
+                && (requestedRole == RoleName.CASHIER || requestedRole == RoleName.KITCHEN
                     || requestedRole == RoleName.STORE_MANAGER && hasTenantPermission(authentication, PermissionCode.MANAGER_CREATE_MANAGER))) {
             return;
         }
@@ -658,7 +666,7 @@ public class UserAdministrationService {
 
     private boolean managerCanSeeTarget(User actor, User target, Authentication authentication) {
         Set<RoleName> targetRoles = roles(target);
-        boolean visibleRole = targetRoles.contains(RoleName.CASHIER)
+        boolean visibleRole = targetRoles.contains(RoleName.CASHIER) || targetRoles.contains(RoleName.KITCHEN)
                 || (targetRoles.contains(RoleName.STORE_MANAGER) || targetRoles.contains(RoleName.MANAGER))
                 && hasTenantPermission(authentication, PermissionCode.MANAGER_CREATE_MANAGER);
         if (!visibleRole) {
@@ -691,6 +699,9 @@ public class UserAdministrationService {
         if (roles.contains(RoleName.CASHIER)) {
             return RoleName.CASHIER;
         }
+        if (roles.contains(RoleName.KITCHEN)) {
+            return RoleName.KITCHEN;
+        }
         throw new ForbiddenOperationException("User is outside the permitted employee scope");
     }
 
@@ -701,7 +712,8 @@ public class UserAdministrationService {
         Set<RoleName> normalized = roleNames.stream().map(role -> switch (role) {
             case STORE_MANAGER, MANAGER -> RoleName.STORE_MANAGER;
             case CASHIER -> RoleName.CASHIER;
-            default -> throw new BadRequestException("Merchant employee APIs only support STORE_MANAGER and CASHIER roles");
+            case KITCHEN -> RoleName.KITCHEN;
+            default -> throw new BadRequestException("Merchant employee APIs only support STORE_MANAGER, CASHIER and KITCHEN roles");
         }).collect(Collectors.toCollection(LinkedHashSet::new));
         if (normalized.size() != 1) {
             throw new BadRequestException("Exactly one employee role is required");
@@ -716,6 +728,9 @@ public class UserAdministrationService {
         if (assignmentRole == AssignmentRole.CASHIER) {
             return RoleName.CASHIER;
         }
+        if (assignmentRole == AssignmentRole.KITCHEN) {
+            return RoleName.KITCHEN;
+        }
         throw new BadRequestException("assignmentRole is required");
     }
 
@@ -727,7 +742,14 @@ public class UserAdministrationService {
     }
 
     private AssignmentRole assignmentRole(RoleName roleName) {
-        return roleName == RoleName.STORE_MANAGER ? AssignmentRole.MANAGER : AssignmentRole.CASHIER;
+        return roleName == RoleName.STORE_MANAGER ? AssignmentRole.MANAGER
+                : roleName == RoleName.KITCHEN ? AssignmentRole.KITCHEN : AssignmentRole.CASHIER;
+    }
+
+    private void validateRoleStoreCapabilities(RoleName roleName, List<Store> stores) {
+        if (roleName == RoleName.KITCHEN && stores.stream().anyMatch(store -> !store.getCapabilities().contains(StoreCapability.FOOD_SERVICE))) {
+            throw new BadRequestException("Kitchen users may only be assigned to FOOD_SERVICE stores");
+        }
     }
 
     private String status(User user) {

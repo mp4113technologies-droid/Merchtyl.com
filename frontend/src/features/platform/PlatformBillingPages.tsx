@@ -12,10 +12,10 @@ import { Link } from 'react-router-dom';
 import {
   assignPlatformBillingSubscription, createPlatformPricingPlan, downloadPlatformInvoicePdf,
   generatePlatformInvoice, getPlatformBillingOverview, getPlatformBillingSettings,
-  listPlatformInvoices, listPlatformPricingPlans, listPlatformTenants, recordPlatformInvoicePayment,
-  sendPlatformInvoice, updatePlatformBillingSettings, voidPlatformInvoice
+  listPlatformBillingCapabilities, listPlatformInvoices, listPlatformPricingHistory, listPlatformPricingPlans, listPlatformTenants, recordPlatformInvoicePayment,
+  schedulePlatformPricingVersion, sendPlatformInvoice, cancelPlatformPricingVersion, updatePlatformBillingSettings, voidPlatformInvoice
 } from '../../api/client';
-import type { PlatformBillingSettings, PlatformInvoice, PricingPlan } from '../../api/types';
+import type { CapabilityDefinition, CapabilityPrice, PlatformBillingSettings, PlatformInvoice, PricingPlan } from '../../api/types';
 import { useSession } from '../../app/session';
 
 function money(value: number, currency: string) {
@@ -42,23 +42,39 @@ export function PlatformBillingOverviewPage() {
   </Stack>;
 }
 
-const emptyPlan = { code: '', name: '', description: '', status: 'DRAFT', billingInterval: 'MONTHLY', basePrice: 0, oneTimeOnboardingFee: 0, currency: 'CAD', trialDays: 0, includedStores: 1, includedRegisters: 1, includedUsers: 5, additionalStorePrice: 0, additionalRegisterPrice: 0, additionalUserPrice: 0, taxBehavior: 'EXCLUSIVE', effectiveFrom: new Date().toISOString().slice(0, 10), effectiveTo: null };
+const emptyPlan = { code: '', name: '', description: '', status: 'DRAFT', billingInterval: 'MONTHLY', basePrice: 0, oneTimeOnboardingFee: 0, currency: 'CAD', trialDays: 0, includedStores: 1, includedRegisters: 1, includedUsers: 5, additionalStorePrice: 0, additionalRegisterPrice: 0, additionalUserPrice: 0, capabilityPrices: [] as CapabilityPrice[], taxBehavior: 'EXCLUSIVE', effectiveFrom: new Date().toISOString().slice(0, 10), effectiveTo: null };
+
+function capabilityRows(definitions: CapabilityDefinition[], existing: CapabilityPrice[] = []) {
+  return definitions.map(definition => existing.find(value => value.capability === definition.capability) ?? { capability: definition.capability, inclusionType: 'NOT_AVAILABLE' as const, billingUnit: null, monthlyPricePerStore: null });
+}
 
 export function PlatformPricingPlansPage() {
   const token = useToken(); const client = useQueryClient();
   const [open, setOpen] = React.useState(false); const [form, setForm] = React.useState<Record<string, unknown>>(emptyPlan);
+  const [selected, setSelected] = React.useState<PricingPlan | null>(null); const [effectiveDate, setEffectiveDate] = React.useState(new Date(Date.now()+86400000).toISOString().slice(0,10)); const [subscriberPolicy,setSubscriberPolicy]=React.useState('NEW_SUBSCRIPTIONS_ONLY');
+  const capabilityPrices = form.capabilityPrices as CapabilityPrice[];
   const plans = useQuery({ queryKey: ['platform-pricing-plans'], queryFn: async () => listPlatformPricingPlans(await token()) });
+  const capabilities = useQuery({ queryKey: ['platform-billing-capabilities'], queryFn: async () => listPlatformBillingCapabilities(await token()) });
+  const history = useQuery({ queryKey: ['platform-pricing-history',selected?.id], enabled: Boolean(selected), queryFn: async () => listPlatformPricingHistory(await token(), selected!.id) });
   const save = useMutation({ mutationFn: async () => createPlatformPricingPlan(await token(), form), onSuccess: async () => { setOpen(false); setForm(emptyPlan); await client.invalidateQueries({ queryKey: ['platform-pricing-plans'] }); } });
-  return <Stack spacing={3}><Header title="Pricing Plans" action={<Button startIcon={<AddIcon />} variant="contained" onClick={() => setOpen(true)}>New Plan</Button>} />
-    {save.error ? <Alert severity="error">{save.error.message}</Alert> : null}
+  const schedule = useMutation({ mutationFn: async () => schedulePlatformPricingVersion(await token(), selected!.id, { pricing: form, effectivePolicy: 'SPECIFIC_FUTURE_DATE', effectiveDate, existingSubscriberPolicy: subscriberPolicy, confirmCapabilityRemoval: true, expectedPlanVersion: selected!.version }), onSuccess: async () => { setOpen(false); await client.invalidateQueries({queryKey:['platform-pricing-history']}); await client.invalidateQueries({queryKey:['platform-pricing-plans']}); } });
+  const cancel = useMutation({ mutationFn: async (versionId:string) => cancelPlatformPricingVersion(await token(),selected!.id,versionId), onSuccess:()=>client.invalidateQueries({queryKey:['platform-pricing-history']}) });
+  function openCreate(){setSelected(null);setForm({...emptyPlan,capabilityPrices:capabilityRows(capabilities.data??[])});setOpen(true);}
+  function openEdit(plan:PricingPlan){setSelected(plan);setForm({...plan,capabilityPrices:capabilityRows(capabilities.data??[],plan.capabilityPrices)});setOpen(true);}
+  function updateCapability(index:number, values:Partial<CapabilityPrice>){const next=[...capabilityPrices];next[index]={...next[index],...values};if(next[index].inclusionType!=='PAID_ADD_ON')next[index]={...next[index],billingUnit:null,monthlyPricePerStore:null};setForm({...form,capabilityPrices:next});}
+  return <Stack spacing={3}><Header title="Pricing Plans" action={<Button startIcon={<AddIcon />} variant="contained" onClick={openCreate}>New Plan</Button>} />
+    {save.error || schedule.error ? <Alert severity="error">{(save.error??schedule.error)?.message}</Alert> : null}
     <Paper variant="outlined"><Table><TableHead><TableRow>{['Plan','Monthly Base','Onboarding Fee','Included Stores','Additional Store','Billing','Status','Active Merchants'].map(x => <TableCell key={x}>{x}</TableCell>)}</TableRow></TableHead><TableBody>
-      {plans.data?.content.map(plan => <TableRow key={plan.id}><TableCell>{plan.name}<Typography variant="caption" display="block">{plan.code}</Typography></TableCell><TableCell>{money(plan.basePrice, plan.currency)}</TableCell><TableCell>{money(plan.oneTimeOnboardingFee, plan.currency)}</TableCell><TableCell>{plan.includedStores ?? 'Unlimited'}</TableCell><TableCell>{money(plan.additionalStorePrice ?? 0, plan.currency)}</TableCell><TableCell>{plan.billingInterval}</TableCell><TableCell><Chip size="small" label={plan.status} /></TableCell><TableCell>{plan.activeMerchants}</TableCell></TableRow>)}
+      {plans.data?.content.map(plan => <TableRow hover key={plan.id} onClick={()=>openEdit(plan)} sx={{cursor:'pointer'}}><TableCell>{plan.name}<Typography variant="caption" display="block">{plan.code}</Typography></TableCell><TableCell>{money(plan.basePrice, plan.currency)}</TableCell><TableCell>{money(plan.oneTimeOnboardingFee, plan.currency)}</TableCell><TableCell>{plan.includedStores ?? 'Unlimited'}</TableCell><TableCell>{money(plan.additionalStorePrice ?? 0, plan.currency)}<Typography variant="caption" display="block">Food Service: {money(plan.capabilityPrices?.find(price=>price.capability==='FOOD_SERVICE')?.monthlyPricePerStore??0,plan.currency)}</Typography></TableCell><TableCell>{plan.billingInterval}</TableCell><TableCell><Chip size="small" label={plan.status} /></TableCell><TableCell>{plan.activeMerchants}</TableCell></TableRow>)}
     </TableBody></Table></Paper>
-    <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="md"><DialogTitle>Create Pricing Plan</DialogTitle><DialogContent><Grid container spacing={2} sx={{ mt: 0 }}>
+    <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="md"><DialogTitle>{selected?'Edit Pricing':'Create Pricing Plan'}</DialogTitle><DialogContent><Grid container spacing={2} sx={{ mt: 0 }}>
       {['name','code','description','basePrice','oneTimeOnboardingFee','currency','trialDays','includedStores','includedRegisters','includedUsers','additionalStorePrice','additionalRegisterPrice','additionalUserPrice'].map(field => <Grid item xs={12} sm={field === 'description' ? 12 : 6} key={field}><TextField fullWidth label={field.replace(/([A-Z])/g, ' $1')} type={field.toLowerCase().includes('price') || field.toLowerCase().includes('fee') || field.toLowerCase().includes('included') || field === 'trialDays' ? 'number' : 'text'} value={form[field] ?? ''} onChange={event => setForm({ ...form, [field]: event.target.type === 'number' ? Number(event.target.value) : event.target.value })} /></Grid>)}
       <Grid item xs={6}><SelectField label="Billing Frequency" value={String(form.billingInterval)} values={['MONTHLY','YEARLY']} onChange={value => setForm({ ...form, billingInterval: value })} /></Grid>
       <Grid item xs={6}><SelectField label="Status" value={String(form.status)} values={['DRAFT','ACTIVE','INACTIVE','ARCHIVED']} onChange={value => setForm({ ...form, status: value })} /></Grid>
-    </Grid></DialogContent><DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="contained" onClick={() => save.mutate()}>Create</Button></DialogActions></Dialog>
+      <Grid item xs={12}><Typography variant="h6">Included Features &amp; Add-ons</Typography></Grid>
+      {capabilityPrices.map((price,index)=><React.Fragment key={price.capability}><Grid item xs={12} md={4}><Typography sx={{pt:2}}>{(capabilities.data??[]).find(value=>value.capability===price.capability)?.displayName??price.capability}</Typography></Grid><Grid item xs={12} md={4}><SelectField label="Type" value={price.inclusionType} values={['INCLUDED','PAID_ADD_ON','NOT_AVAILABLE']} onChange={value=>updateCapability(index,{inclusionType:value as CapabilityPrice['inclusionType']})}/></Grid><Grid item xs={6} md={2}>{price.inclusionType==='PAID_ADD_ON'?<TextField fullWidth label="Price" type="number" inputProps={{min:0}} value={price.monthlyPricePerStore??''} onChange={e=>updateCapability(index,{monthlyPricePerStore:Number(e.target.value)})}/>:null}</Grid><Grid item xs={6} md={2}>{price.inclusionType==='PAID_ADD_ON'?<SelectField label="Billing Unit" value={price.billingUnit??''} values={(capabilities.data??[]).find(value=>value.capability===price.capability)?.supportedBillingUnits??[]} onChange={value=>updateCapability(index,{billingUnit:value as CapabilityPrice['billingUnit']})}/>:null}</Grid></React.Fragment>)}
+      {selected?<><Grid item xs={12}><Typography variant="h6">Schedule Pricing Change</Typography></Grid><Grid item xs={6}><TextField fullWidth label="Effective Date" type="date" InputLabelProps={{shrink:true}} value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/></Grid><Grid item xs={6}><SelectField label="Existing Subscribers" value={subscriberPolicy} values={['NEW_SUBSCRIPTIONS_ONLY','APPLY_NEXT_BILLING_CYCLE']} onChange={setSubscriberPolicy}/></Grid><Grid item xs={12}><Alert severity="info">Current base {money(selected.basePrice,selected.currency)} → new base {money(Number(form.basePrice),selected.currency)}. Backend validation and subscription snapshots remain authoritative.</Alert></Grid>{history.data?.map(version=><Grid item xs={12} key={version.id}><Paper variant="outlined" sx={{p:1}}><Stack direction="row" justifyContent="space-between"><Typography>Version {version.versionNumber} · {version.status} · effective {version.effectiveFrom}</Typography>{version.status==='SCHEDULED'?<Button color="error" onClick={()=>cancel.mutate(version.id)}>Cancel scheduled change</Button>:null}</Stack></Paper></Grid>)}</>:null}
+    </Grid></DialogContent><DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="contained" onClick={() => selected?schedule.mutate():save.mutate()}>{selected?'Save Pricing Changes':'Create'}</Button></DialogActions></Dialog>
   </Stack>;
 }
 

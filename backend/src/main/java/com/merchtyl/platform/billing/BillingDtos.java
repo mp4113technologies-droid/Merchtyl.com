@@ -36,6 +36,7 @@ public final class BillingDtos {
             @DecimalMin("0") BigDecimal additionalStorePrice,
             @DecimalMin("0") BigDecimal additionalRegisterPrice,
             @DecimalMin("0") BigDecimal additionalUserPrice,
+            List<CapabilityPrice> capabilityPrices,
             @NotBlank String taxBehavior,
             @NotNull LocalDate effectiveFrom,
             LocalDate effectiveTo) {}
@@ -45,6 +46,7 @@ public final class BillingDtos {
             BigDecimal basePrice, BigDecimal oneTimeOnboardingFee, String currency, int trialDays, Integer includedStores,
             Integer includedRegisters, Integer includedUsers, BigDecimal additionalStorePrice,
             BigDecimal additionalRegisterPrice, BigDecimal additionalUserPrice, String taxBehavior,
+            List<CapabilityPrice> capabilityPrices,
             LocalDate effectiveFrom, LocalDate effectiveTo, long activeMerchants, Instant createdAt,
             Instant updatedAt, long version) {}
 
@@ -76,9 +78,25 @@ public final class BillingDtos {
             Integer includedStoresSnapshot, BigDecimal additionalStorePriceSnapshot,
             BigDecimal onboardingFeeSnapshot, Instant onboardingFeeInvoicedAt,
             int currentBillableStores, int additionalBillableStores, BigDecimal estimatedMonthlyPrice,
+            List<CapabilityCharge> capabilityCharges,
             BigDecimal customAdditionalStorePrice, BigDecimal customAdditionalRegisterPrice,
             BigDecimal customAdditionalUserPrice, String discountName, String discountType,
             BigDecimal discountValue, String pricingNotes, Integer paymentTermsDays, long version) {}
+
+    public record CapabilityPrice(@NotNull CommercialCapability capability, CapabilityInclusionType inclusionType,
+                                  BillingUnit billingUnit, @DecimalMin("0") BigDecimal monthlyPricePerStore) {}
+    public record CapabilityCharge(CommercialCapability capability, String description, int storeCount, BigDecimal monthlyPricePerStore, BigDecimal monthlyTotal) {}
+    public record PricingPreview(String currency, BigDecimal baseSubscription, int storeCount, int includedStores,
+                                 int additionalStoreCount, BigDecimal additionalStoreMonthlyPrice,
+                                 List<CapabilityCharge> capabilityCharges, BigDecimal estimatedMonthlySubscription) {}
+    public record PricingVersionRequest(@NotNull PlanRequest pricing, @NotBlank String effectivePolicy,
+                                        LocalDate effectiveDate, @NotBlank String existingSubscriberPolicy,
+                                        boolean confirmCapabilityRemoval, long expectedPlanVersion) {}
+    public record PricingVersionResponse(UUID id, UUID pricingPlanId, int versionNumber, String status,
+                                         LocalDate effectiveFrom, LocalDate effectiveTo, String subscriberPolicy,
+                                         PlanRequest pricing, boolean usedForBilling, Instant createdAt, long version) {}
+    public record CapabilityDefinition(CommercialCapability capability, String displayName,
+                                       List<BillingUnit> supportedBillingUnits) {}
 
     public record InvoiceLine(
             UUID id, String lineType, String description, BigDecimal quantity, BigDecimal unitPrice,

@@ -46,6 +46,10 @@ public class PlatformBillingController {
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_VIEW)")
     List<PlanResponse> planOptions() { return billing.activePlanOptions(); }
 
+    @GetMapping("/plans/{id}/preview")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_VIEW)")
+    PricingPreview planPreview(@PathVariable UUID id,@RequestParam int storeCount,@RequestParam(defaultValue="0") int foodServiceStoreCount){return billing.planPreview(id,storeCount,foodServiceStoreCount);}
+
     @PostMapping("/plans")
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_CREATE)")
     PlanResponse createPlan(@Valid @RequestBody PlanRequest request, Authentication authentication) { return billing.createPlan(request, authentication); }
@@ -53,6 +57,22 @@ public class PlatformBillingController {
     @PutMapping("/plans/{id}")
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_UPDATE)")
     PlanResponse updatePlan(@PathVariable UUID id, @Valid @RequestBody PlanRequest request, Authentication authentication) { return billing.updatePlan(id, request, authentication); }
+
+    @GetMapping("/capabilities")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_PLAN_VIEW)")
+    List<CapabilityDefinition> capabilities(){return billing.capabilityDefinitions();}
+
+    @GetMapping("/plans/{id}/pricing-history")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_PLAN_VERSION_VIEW)")
+    List<PricingVersionResponse> pricingHistory(@PathVariable UUID id){return billing.pricingHistory(id);}
+
+    @PostMapping("/plans/{id}/pricing-versions")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_PLAN_VERSION_SCHEDULE)")
+    PricingVersionResponse schedulePricing(@PathVariable UUID id,@Valid @RequestBody PricingVersionRequest request,Authentication authentication){return billing.schedulePricingVersion(id,request,authentication);}
+
+    @PostMapping("/plans/{id}/pricing-versions/{versionId}/cancel")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_PRICING_PLAN_VERSION_CANCEL)")
+    void cancelPricing(@PathVariable UUID id,@PathVariable UUID versionId,Authentication authentication){billing.cancelPricingVersion(id,versionId,authentication);}
 
     @GetMapping("/subscriptions/{tenantId}")
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).PLATFORM_SUBSCRIPTION_VIEW)")

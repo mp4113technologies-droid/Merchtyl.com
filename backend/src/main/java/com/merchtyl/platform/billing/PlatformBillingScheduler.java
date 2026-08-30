@@ -21,6 +21,7 @@ public class PlatformBillingScheduler {
 
     @Scheduled(cron = "${merchtyl.billing.invoice-cron:0 15 2 * * *}", zone = "UTC")
     public void generateDueInvoices() {
+        billing.activateDuePricingVersions();
         jdbc.update("""
                 update tenant_subscriptions set status='ACTIVE',updated_at=now(),version=version+1
                 where status='TRIAL' and trial_ends_at is not null and trial_ends_at<=now()
@@ -31,6 +32,7 @@ public class PlatformBillingScheduler {
                 order by next_billing_date for update skip locked
                 """, (rs, row) -> rs.getObject(1, UUID.class));
         for (UUID tenantId : tenantIds) {
+            billing.adoptDuePricingVersion(tenantId);
             BillingDtos.InvoiceResponse invoice = billing.generateInvoice(
                     tenantId, new BillingDtos.InvoiceGenerateRequest(null, null, null), (UUID) null);
             email.sendSystem(invoice.id());

@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.NotEmpty;
+import java.util.Set;
 
 public record StoreRequest(
         @NotBlank @Size(max = 64) String code,
@@ -21,6 +23,8 @@ public record StoreRequest(
         @Size(max = 64) String taxRegionCode,
         boolean pricesIncludeTax,
         boolean negativeStockAllowed,
-        boolean active
+        boolean active,
+        @NotEmpty Set<StoreCapability> capabilities,
+        @Size(max = 180) String kitchenDisplayName
 ) {
 }

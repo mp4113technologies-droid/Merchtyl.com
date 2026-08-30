@@ -375,7 +375,7 @@ const paymentMethods: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'OTHER', label: 'Other' }
 ];
 
-function PaymentDialog({
+export function PaymentDialog({
   open,
   sale,
   busy,

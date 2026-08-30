@@ -10,6 +10,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
@@ -40,6 +41,7 @@ import { z } from 'zod';
 import {
   createStore,
   getStoreDefaults,
+  getMerchantStorePricingPreview,
   getStore,
   listReferenceAdministrativeDivisions,
   listReferenceCountries,
@@ -61,7 +63,8 @@ import type {
   StoreDefaults,
   TaxRegionReference,
   TimezoneReference,
-  UserRole
+  UserRole,
+  StoreCapability
 } from '../../api/types';
 import { useSession } from '../../app/session';
 
@@ -92,10 +95,12 @@ const storeSchema = z.object({
   pricesIncludeTax: z.boolean(),
   negativeStockAllowed: z.boolean(),
   active: z.boolean()
+  ,capabilities: z.array(z.enum(['RETAIL', 'FOOD_SERVICE'])).min(1, 'Select at least one operation'),
+  kitchenDisplayName: z.string().max(180, 'Kitchen name must be 180 characters or fewer').optional()
 });
 
 type StoreFormValues = z.infer<typeof storeSchema>;
-type StoreTextFieldName = Exclude<keyof StoreFormValues, 'pricesIncludeTax' | 'negativeStockAllowed' | 'active'>;
+type StoreTextFieldName = Exclude<keyof StoreFormValues, 'pricesIncludeTax' | 'negativeStockAllowed' | 'active' | 'capabilities'>;
 
 const emptyStoreForm: StoreFormValues = {
   code: '',
@@ -112,7 +117,9 @@ const emptyStoreForm: StoreFormValues = {
   taxRegionCode: '',
   pricesIncludeTax: false,
   negativeStockAllowed: false,
-  active: true
+  active: true,
+  capabilities: ['RETAIL'],
+  kitchenDisplayName: ''
 };
 
 function canViewStores(roles: UserRole[]) {
@@ -139,7 +146,9 @@ function storeFormValues(store: Store): StoreFormValues {
     taxRegionCode: store.taxRegionCode ?? '',
     pricesIncludeTax: store.pricesIncludeTax,
     negativeStockAllowed: store.negativeStockAllowed,
-    active: store.active
+    active: store.active,
+    capabilities: store.capabilities ?? ['RETAIL'],
+    kitchenDisplayName: store.kitchenDisplayName ?? ''
   };
 }
 
@@ -151,7 +160,9 @@ function storeDefaultsForm(defaults?: StoreDefaults): StoreFormValues {
     currencyCode: defaults?.currencyCode ?? '',
     locale: defaults?.locale ?? 'en-US',
     timezone: defaults?.timezone ?? '',
-    taxRegionCode: defaults?.taxRegionCode ?? ''
+    taxRegionCode: defaults?.taxRegionCode ?? '',
+    capabilities: defaults?.capabilities ?? ['RETAIL'],
+    kitchenDisplayName: defaults?.kitchenDisplayName ?? ''
   };
 }
 
@@ -172,7 +183,9 @@ function cleanPayload(values: StoreFormValues): StorePayload {
     taxRegionCode: optionalText(values.taxRegionCode)?.toUpperCase(),
     pricesIncludeTax: values.pricesIncludeTax,
     negativeStockAllowed: values.negativeStockAllowed,
-    active: values.active
+    active: values.active,
+    capabilities: values.capabilities,
+    kitchenDisplayName: values.capabilities.includes('FOOD_SERVICE') ? optionalText(values.kitchenDisplayName) : undefined
   };
 }
 
@@ -244,6 +257,8 @@ function StoreForm({
   const currencyCode = form.watch('currencyCode');
   const timezone = form.watch('timezone');
   const taxRegionCode = form.watch('taxRegionCode');
+  const capabilities = form.watch('capabilities');
+  const pricingPreview = useQuery({queryKey:['store-pricing-preview',capabilities.includes('FOOD_SERVICE')],queryFn:async()=>getMerchantStorePricingPreview(await getValidAccessToken(),capabilities.includes('FOOD_SERVICE'))});
 
   const countries = useQuery({
     queryKey: ['reference', 'countries'],
@@ -405,6 +420,21 @@ function StoreForm({
           <TextInput control={form.control} name="email" label="Email" disabled={disabled} />
         </Grid>
       </Grid>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="h6">Store Operations</Typography>
+        <Typography color="text.secondary" sx={{ mb: 1 }}>What does this location operate?</Typography>
+        <Controller name="capabilities" control={form.control} render={({ field, fieldState }) => (
+          <Stack>
+            {([['RETAIL', 'Convenience / Retail Store', 'Barcode scanning, retail inventory and standard POS'], ['FOOD_SERVICE', 'Kitchen / Food Service', 'Food menu, tile POS and kitchen operations']] as const).map(([value, label, description]) => (
+              <FormControlLabel key={value} control={<Checkbox checked={field.value.includes(value)} disabled={disabled} onChange={(_, checked) => field.onChange(checked ? [...field.value, value] : field.value.filter((item: StoreCapability) => item !== value))} />} label={<Box><Typography>{label}</Typography><Typography variant="body2" color="text.secondary">{description}</Typography></Box>} />
+            ))}
+            {fieldState.error ? <Typography color="error" variant="caption">{fieldState.error.message}</Typography> : null}
+          </Stack>
+        )} />
+        {capabilities.includes('FOOD_SERVICE') ? <Box sx={{ mt: 2 }}><TextInput control={form.control} name="kitchenDisplayName" label="Kitchen / Food Service Name" disabled={disabled} /></Box> : null}
+        {pricingPreview.data ? <Alert severity={capabilities.includes('FOOD_SERVICE')?'warning':'info'} sx={{mt:2}}>{capabilities.includes('FOOD_SERVICE')?'This location includes the Food Service add-on. ':''}Additional Store: {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(pricingPreview.data.additionalStoreMonthlyPrice)}/month. {pricingPreview.data.capabilityCharges.map(charge=>`${charge.description}: +${new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyPricePerStore)}/month. `)}Estimated Monthly Subscription: {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(pricingPreview.data.estimatedMonthlySubscription)}.</Alert>:null}
+      </Paper>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
         <Controller
@@ -907,6 +937,14 @@ export function StoreDetailPage() {
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
         <Stack spacing={2}>
           <Box>
+            <Typography variant="h6">Operations</Typography>
+            <Typography>{storeTypeLabel(store.data.capabilities)}</Typography>
+            <Typography color="text.secondary">Retail: {(store.data.capabilities ?? ['RETAIL']).includes('RETAIL') ? 'Enabled' : 'Disabled'}</Typography>
+            <Typography color="text.secondary">Kitchen / Food Service: {store.data.foodServiceEnabled ? 'Enabled' : 'Disabled'}</Typography>
+            {store.data.foodServiceEnabled ? <><Typography color="text.secondary">Kitchen Name: {store.data.kitchenDisplayName}</Typography><Typography color="text.secondary">Restaurant POS: Enabled</Typography><Typography color="text.secondary">Kitchen Users: {store.data.kitchenUsersCount}</Typography></> : null}
+          </Box>
+          <Divider />
+          <Box>
             <Typography variant="h6" component="h2">Store settings</Typography>
             <Typography color="text.secondary">Version {store.data.version}</Typography>
           </Box>
@@ -924,4 +962,10 @@ export function StoreDetailPage() {
       </Paper>
     </Stack>
   );
+}
+
+export function storeTypeLabel(capabilities: StoreCapability[] = ['RETAIL']) {
+  if (capabilities.includes('RETAIL') && capabilities.includes('FOOD_SERVICE')) return 'Convenience Store + Kitchen';
+  if (capabilities.includes('FOOD_SERVICE')) return 'Restaurant / Food Service';
+  return 'Convenience Store';
 }

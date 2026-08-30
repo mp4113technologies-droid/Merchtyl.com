@@ -89,6 +89,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -296,6 +297,18 @@ public class PlatformAdministrationService {
                     pricingPlan.get("base_price"), pricingPlan.get("currency_code"), pricingPlan.get("name"), pricingPlan.get("code"),
                     pricingPlan.get("included_stores"), pricingPlan.get("additional_store_price"), pricingPlan.get("one_time_onboarding_fee"),
                     java.sql.Date.valueOf(subscriptionStart));
+            jdbcTemplate.update("""
+                    insert into tenant_subscription_capability_price_snapshots(subscription_id,capability,monthly_price_per_store)
+                    select ?,capability,monthly_price_per_store from platform_pricing_plan_capability_prices where pricing_plan_id=?
+                    """, subscriptionId, pricingPlan.get("id"));
+            UUID pricingVersionId=jdbcTemplate.query("select id from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE' and effective_from<=now() order by version_number desc limit 1",(rs,row)->rs.getObject(1,UUID.class),pricingPlan.get("id")).stream().findFirst().orElse(null);
+            jdbcTemplate.update("update tenant_subscriptions set pricing_plan_version_id=? where id=?",pricingVersionId,subscriptionId);
+            if(pricingVersionId!=null)jdbcTemplate.update("""
+                    insert into tenant_subscription_capabilities(id,subscription_id,capability,status,inclusion_type_snapshot,billing_unit_snapshot,unit_price_snapshot,effective_from)
+                    select gen_random_uuid(),?,capability,case when inclusion_type='INCLUDED' then 'ACTIVE' else 'INACTIVE' end,inclusion_type,billing_unit,unit_price,?
+                    from platform_pricing_plan_version_capabilities where pricing_plan_version_id=? and inclusion_type<>'NOT_AVAILABLE'
+                    on conflict(subscription_id,capability) do nothing
+                    """,subscriptionId,java.sql.Date.valueOf(subscriptionStart),pricingVersionId);
             log.info("billing_event event=MERCHANT_SUBSCRIPTION_CREATED tenant_id={} subscription_public_id={} plan_code={}",
                     tenantId, subscriptionId, pricingPlan.get("code"));
 
@@ -303,6 +316,16 @@ public class PlatformAdministrationService {
                     insert into tenant_onboardings (id, tenant_id, current_stage)
                     values (?, ?, ?)
                     """, onboardingId, tenantId, OnboardingStage.OWNER_INVITATION.name());
+            Set<com.merchtyl.store.StoreCapability> storeCapabilities = request.storeCapabilities() == null
+                    ? Set.of(com.merchtyl.store.StoreCapability.RETAIL) : request.storeCapabilities();
+            if (storeCapabilities.isEmpty()) throw new BadRequestException("At least one store capability is required");
+            for (var capability : storeCapabilities) {
+                jdbcTemplate.update("""
+                        insert into tenant_store_operation_defaults (tenant_id, capability, kitchen_display_name)
+                        values (?, ?, ?)
+                        """, tenantId, capability.name(), capability == com.merchtyl.store.StoreCapability.FOOD_SERVICE
+                                ? defaultKitchenName(request.operatingName(), request.kitchenDisplayName()) : null);
+            }
             completeStage(onboardingId, OnboardingStage.MERCHANT_DETAILS, now);
             completeStage(onboardingId, OnboardingStage.OWNER_ACCOUNT, now);
 
@@ -349,6 +372,11 @@ public class PlatformAdministrationService {
         } catch (DuplicateKeyException exception) {
             throw new ConflictException("Merchant tenant or owner already exists");
         }
+    }
+
+    private static String defaultKitchenName(String operatingName, String requestedName) {
+        String cleaned = cleanOptional(requestedName);
+        return cleaned == null ? cleanRequired(operatingName, "operatingName") + " Kitchen" : cleaned;
     }
 
     @Transactional(readOnly = true)

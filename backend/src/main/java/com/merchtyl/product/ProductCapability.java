@@ -1,6 +1,8 @@
 package com.merchtyl.product;
 
 public enum ProductCapability {
+    RETAIL,
+    FOOD_SERVICE,
     TRACK_INVENTORY,
     ALLOW_DECIMAL_QUANTITY,
     ALLOW_DISCOUNT,

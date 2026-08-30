@@ -29,9 +29,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
+import java.util.Set;
+import java.util.EnumSet;
 
 import static com.merchtyl.platform.billing.BillingDtos.*;
 
@@ -82,7 +86,7 @@ public class PlatformBillingService {
         List<PlanResponse> content = jdbc.query("""
                 select p.*, (select count(*) from tenant_subscriptions s where s.pricing_plan_id=p.id and s.status in ('TRIAL','ACTIVE','PAST_DUE')) active_merchants
                 from platform_pricing_plans p order by p.name, p.id limit ? offset ?
-                """, PlatformBillingService::plan, safeSize, safePage * safeSize);
+                """, PlatformBillingService::plan, safeSize, safePage * safeSize).stream().map(this::withCapabilityPrices).toList();
         long total = count("select count(*) from platform_pricing_plans");
         return new Page<>(content, safePage, safeSize, total, pages(total, safeSize));
     }
@@ -94,7 +98,7 @@ public class PlatformBillingService {
                 from platform_pricing_plans p
                 where p.status='ACTIVE' and p.effective_from<=current_date and (p.effective_to is null or p.effective_to>=current_date)
                 order by p.name,p.id
-                """, PlatformBillingService::plan);
+                """, PlatformBillingService::plan).stream().map(this::withCapabilityPrices).toList();
     }
 
     @Transactional
@@ -111,6 +115,7 @@ public class PlatformBillingService {
                 request.basePrice(), request.oneTimeOnboardingFee(), request.currency().toUpperCase(Locale.ROOT), request.trialDays(), request.includedStores(), request.includedRegisters(),
                 request.includedUsers(), request.additionalStorePrice(), request.additionalRegisterPrice(), request.additionalUserPrice(),
                 taxBehavior(request.taxBehavior()), Date.valueOf(request.effectiveFrom()), date(request.effectiveTo()), actor);
+        replacePlanCapabilityPrices(id, request.capabilityPrices());
         snapshotPlan(id, 1, request, actor);
         PlanResponse response = plan(id);
         audit(actor, AuditAction.PRICING_PLAN_CREATED, "PLATFORM_PRICING_PLAN", id, null, response, request.name());
@@ -131,6 +136,7 @@ public class PlatformBillingService {
                 taxBehavior(request.taxBehavior()), Date.valueOf(request.effectiveFrom()), date(request.effectiveTo()), id);
         if (updated == 0) throw new NotFoundException("Pricing plan not found");
         UUID actor = platformActor(authentication);
+        replacePlanCapabilityPrices(id, request.capabilityPrices());
         snapshotPlan(id, Math.toIntExact(before.version() + 2), request, actor);
         PlanResponse after = plan(id);
         AuditAction action = !before.status().equals(after.status()) && after.status().equals("ACTIVE")
@@ -138,6 +144,56 @@ public class PlatformBillingService {
                 : !before.status().equals(after.status()) ? AuditAction.PRICING_PLAN_DEACTIVATED : AuditAction.PRICING_PLAN_UPDATED;
         audit(actor, action, "PLATFORM_PRICING_PLAN", id, before, after, request.name());
         return after;
+    }
+
+    @Transactional(readOnly=true)
+    public List<CapabilityDefinition> capabilityDefinitions(){
+        return List.of(
+                definition(CommercialCapability.RETAIL_POS,BillingUnit.PER_MERCHANT),definition(CommercialCapability.INVENTORY,BillingUnit.PER_MERCHANT),
+                definition(CommercialCapability.REGISTER_MANAGEMENT,BillingUnit.PER_REGISTER),definition(CommercialCapability.RETURNS,BillingUnit.PER_MERCHANT),
+                definition(CommercialCapability.REPORTING,BillingUnit.PER_MERCHANT),definition(CommercialCapability.ADVANCED_REPORTING,BillingUnit.PER_MERCHANT),
+                definition(CommercialCapability.EMPLOYEE_MANAGEMENT,BillingUnit.PER_MERCHANT),definition(CommercialCapability.FOOD_SERVICE,BillingUnit.PER_STORE),
+                definition(CommercialCapability.LOTTERY,BillingUnit.PER_STORE));
+    }
+
+    @Transactional(readOnly=true)
+    public List<PricingVersionResponse> pricingHistory(UUID planId){plan(planId);return jdbc.query("select v.*,p.code,p.name,p.description,p.status plan_status,p.tax_behavior from platform_pricing_plan_versions v join platform_pricing_plans p on p.id=v.pricing_plan_id where v.pricing_plan_id=? order by v.version_number desc",(rs,row)->pricingVersion(rs,row),planId);}
+
+    @Transactional
+    public PricingVersionResponse schedulePricingVersion(UUID planId,PricingVersionRequest request,Authentication authentication){
+        PlanResponse current=plan(planId);validatePlan(request.pricing());
+        if(current.version()!=request.expectedPlanVersion())throw new ConflictException("PRICING_PLAN_MODIFIED");
+        LocalDate effective=effectiveDate(request);
+        Integer conflict=jdbc.queryForObject("select count(*) from platform_pricing_plan_versions where pricing_plan_id=? and status in ('SCHEDULED','ACTIVE') and effective_from::date=?",Integer.class,planId,Date.valueOf(effective));
+        if(conflict!=null&&conflict>0)throw new ConflictException("PRICING_PLAN_VERSION_CONFLICT");
+        validateCapabilities(request.pricing().capabilityPrices());
+        UUID actor=platformActor(authentication);int number=Objects.requireNonNull(jdbc.queryForObject("select coalesce(max(version_number),0)+1 from platform_pricing_plan_versions where pricing_plan_id=?",Integer.class,planId));UUID versionId=UUID.randomUUID();
+        insertPricingVersion(versionId,planId,number,request.pricing(),effective,"SCHEDULED",subscriberPolicy(request.existingSubscriberPolicy()),actor);
+        jdbc.update("update platform_pricing_plans set version=version+1,updated_at=now() where id=? and version=?",planId,request.expectedPlanVersion());
+        PricingVersionResponse response=pricingVersion(versionId);audit(actor,AuditAction.PRICING_PLAN_PRICE_CHANGE_SCHEDULED,"PLATFORM_PRICING_PLAN_VERSION",versionId,current,response,"effective="+effective+",policy="+request.existingSubscriberPolicy());return response;
+    }
+
+    @Transactional
+    public void cancelPricingVersion(UUID planId,UUID versionId,Authentication authentication){
+        PricingVersionResponse before=pricingVersion(versionId);if(!before.pricingPlanId().equals(planId))throw new NotFoundException("PRICING_PLAN_NOT_FOUND");if(!"SCHEDULED".equals(before.status()))throw new ConflictException("Only scheduled pricing can be cancelled");
+        jdbc.update("update platform_pricing_plan_versions set status='CANCELLED',cancelled_at=now(),version=version+1 where id=? and status='SCHEDULED'",versionId);audit(platformActor(authentication),AuditAction.PRICING_PLAN_PRICE_CHANGE_CANCELLED,"PLATFORM_PRICING_PLAN_VERSION",versionId,before,pricingVersion(versionId),"Scheduled pricing cancelled");
+    }
+
+    @Transactional
+    public void activateDuePricingVersions(){
+        List<UUID> due=jdbc.query("select id from platform_pricing_plan_versions where status='SCHEDULED' and effective_from<=now() order by effective_from for update skip locked",(rs,row)->rs.getObject(1,UUID.class));
+        due.forEach(this::activatePricingVersion);
+    }
+
+    @Transactional
+    public void adoptDuePricingVersion(UUID tenantId){
+        SubscriptionResponse subscription=subscription(tenantId);
+        List<UUID> applicable=jdbc.query("select id from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE' and subscriber_policy='APPLY_NEXT_BILLING_CYCLE' and effective_from::date<=? order by version_number desc limit 1",(rs,row)->rs.getObject(1,UUID.class),subscription.pricingPlanId(),Date.valueOf(subscription.nextBillingDate()));
+        if(applicable.isEmpty()||applicable.getFirst().equals(jdbc.queryForObject("select pricing_plan_version_id from tenant_subscriptions where id=?",UUID.class,subscription.id())))return;
+        if(jdbc.queryForObject("select count(*) from tenant_subscriptions where id=? and (custom_base_price is not null or custom_additional_store_price is not null)",Integer.class,subscription.id())>0)return;
+        PricingVersionResponse version=pricingVersion(applicable.getFirst());PlanRequest price=version.pricing();
+        jdbc.update("update tenant_subscriptions set pricing_plan_version_id=?,base_price_snapshot=?,included_stores_snapshot=?,additional_store_price_snapshot=?,onboarding_fee_snapshot=?,updated_at=now(),version=version+1 where id=?",version.id(),price.basePrice(),price.includedStores(),price.additionalStorePrice(),price.oneTimeOnboardingFee(),subscription.id());
+        replaceSubscriptionCapabilitySnapshots(subscription.id(),price.capabilityPrices());syncSubscriptionEntitlements(subscription.id(),price.capabilityPrices(),subscription.nextBillingDate());
     }
 
     @Transactional
@@ -176,6 +232,10 @@ public class PlatformBillingService {
                 request.customBasePrice(), request.customOnboardingFee(), request.customAdditionalStorePrice(), request.customAdditionalRegisterPrice(),
                 request.customAdditionalUserPrice(), clean(request.discountName()), discountType(request.discountType()), request.discountValue(),
                 clean(request.pricingNotes()), Date.valueOf(request.startDate()), request.paymentTermsDays());
+        replaceSubscriptionCapabilitySnapshots(id, plan.capabilityPrices());
+        UUID planVersion=jdbc.query("select id from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE' and effective_from<=now() order by version_number desc limit 1",(rs,row)->rs.getObject(1,UUID.class),plan.id()).stream().findFirst().orElse(null);
+        jdbc.update("update tenant_subscriptions set pricing_plan_version_id=? where id=?",planVersion,id);
+        syncSubscriptionEntitlements(id,plan.capabilityPrices(),request.startDate());
         SubscriptionResponse response = subscription(tenantId);
         audit(actor, AuditAction.MERCHANT_SUBSCRIPTION_CREATED, "MERCHANT_SUBSCRIPTION", response.id(), null, response, response.planCode());
         log.info("billing_event event=SUBSCRIPTION_STATUS_CHANGED tenant_id={} subscription_public_id={} status={}", tenantId, response.id(), response.status());
@@ -184,7 +244,7 @@ public class PlatformBillingService {
 
     @Transactional(readOnly = true)
     public SubscriptionResponse subscription(UUID tenantId) {
-        return jdbc.query("""
+        SubscriptionResponse response = jdbc.query("""
                 select s.*,t.display_name merchant_name,coalesce(s.plan_name_snapshot,p.name,s.plan_code) plan_name,
                   coalesce(s.plan_code_snapshot,p.code,s.plan_code) current_plan_code,p.base_price standard_base_price,
                   (select count(*) from stores store_count where store_count.tenant_id=s.tenant_id and store_count.active=true) billable_store_count
@@ -192,6 +252,29 @@ public class PlatformBillingService {
                 where s.tenant_id=?
                 """, PlatformBillingService::subscription, tenantId).stream().findFirst()
                 .orElseThrow(() -> new NotFoundException("Merchant subscription not found"));
+        return withCapabilityCharges(response, tenantCapabilityCounts(tenantId));
+    }
+
+    @Transactional(readOnly = true)
+    public PricingPreview planPreview(UUID planId, int storeCount, int foodServiceStoreCount) {
+        PlanResponse plan=plan(planId);
+        return preview(plan.currency(),plan.basePrice(),plan.includedStores(),plan.additionalStorePrice(),Math.max(0,storeCount),Map.of("FOOD_SERVICE",Math.max(0,foodServiceStoreCount)),plan.capabilityPrices());
+    }
+
+    @Transactional(readOnly = true)
+    public PricingPreview subscriptionPreview(UUID tenantId, int additionalStores, boolean foodService) {
+        SubscriptionResponse subscription=subscription(tenantId);
+        Map<String,Integer> counts=new HashMap<>(tenantCapabilityCounts(tenantId));
+        if(foodService)counts.merge("FOOD_SERVICE",1,Integer::sum);
+        List<CapabilityPrice> prices=jdbc.query("select capability,monthly_price_per_store from tenant_subscription_capability_price_snapshots where subscription_id=? order by capability",(rs,row)->new CapabilityPrice(CommercialCapability.valueOf(rs.getString(1)),CapabilityInclusionType.PAID_ADD_ON,BillingUnit.PER_STORE,rs.getBigDecimal(2)),subscription.id());
+        return preview(subscription.currency(),subscription.merchantBasePrice(),subscription.includedStoresSnapshot(),subscription.additionalStorePriceSnapshot(),subscription.currentBillableStores()+Math.max(0,additionalStores),counts,prices);
+    }
+
+    private PricingPreview preview(String currency,BigDecimal base,Integer included,BigDecimal additionalRate,int stores,Map<String,Integer> counts,List<CapabilityPrice> prices){
+        int includedCount=included==null?stores:included;int additional=Math.max(0,stores-includedCount);BigDecimal storeTotal=value(additionalRate,BigDecimal.ZERO).multiply(BigDecimal.valueOf(additional));
+        List<CapabilityCharge> charges=prices.stream().map(price->{int count=counts.getOrDefault(price.capability().name(),0);return new CapabilityCharge(price.capability(),capabilityDescription(price.capability().name()),count,price.monthlyPricePerStore(),money(price.monthlyPricePerStore().multiply(BigDecimal.valueOf(count))));}).toList();
+        BigDecimal total=value(base,BigDecimal.ZERO).add(storeTotal).add(charges.stream().map(CapabilityCharge::monthlyTotal).reduce(BigDecimal.ZERO,BigDecimal::add));
+        return new PricingPreview(currency,money(value(base,BigDecimal.ZERO)),stores,includedCount,additional,money(storeTotal),charges,money(total));
     }
 
     @Transactional
@@ -235,12 +318,13 @@ public class PlatformBillingService {
         BigDecimal base = subscription.merchantBasePrice();
         boolean includeOnboardingFee = subscription.onboardingFeeInvoicedAt() == null
                 && subscription.onboardingFeeSnapshot() != null && subscription.onboardingFeeSnapshot().signum() > 0;
+        List<SubscriptionBillingService.CapabilityUsage> capabilityUsage = capabilityUsage(subscription.id(), tenantId);
         SubscriptionBillingService.Calculation calculation = calculator.calculate(new SubscriptionBillingService.Input(
                 subscription.planName(), base, subscription.includedStoresSnapshot(), null, null,
                 subscription.additionalStorePriceSnapshot(), null, null,
                 number(usage.get("stores")), number(usage.get("registers")), number(usage.get("users")),
                 subscription.discountType(), subscription.discountValue(), (BigDecimal) tax.get("rate"),
-                subscription.onboardingFeeSnapshot(), includeOnboardingFee));
+                subscription.onboardingFeeSnapshot(), includeOnboardingFee, capabilityUsage));
         int billableStores = number(usage.get("stores"));
         int additionalStores = Math.max(0, billableStores - (subscription.includedStoresSnapshot() == null ? 0 : subscription.includedStoresSnapshot()));
         log.info("billing_event event=MONTHLY_SUBSCRIPTION_CALCULATED tenant_id={} subscription_public_id={} plan_code={} billable_store_count={} additional_store_count={}",
@@ -400,18 +484,99 @@ public class PlatformBillingService {
     }
 
     private PlanResponse plan(UUID id) {
-        return jdbc.query("select p.*,(select count(*) from tenant_subscriptions s where s.pricing_plan_id=p.id and s.status in ('TRIAL','ACTIVE','PAST_DUE')) active_merchants from platform_pricing_plans p where p.id=?",
+        PlanResponse response = jdbc.query("select p.*,(select count(*) from tenant_subscriptions s where s.pricing_plan_id=p.id and s.status in ('TRIAL','ACTIVE','PAST_DUE')) active_merchants from platform_pricing_plans p where p.id=?",
                 PlatformBillingService::plan, id).stream().findFirst().orElseThrow(() -> new NotFoundException("Pricing plan not found"));
+        return withCapabilityPrices(response);
     }
 
-    private void snapshotPlan(UUID id, int version, PlanRequest request, UUID actor) {
-        try {
-            jdbc.update("insert into platform_pricing_plan_versions(id,pricing_plan_id,version_number,snapshot,effective_from,created_by) values (?,?,?,?::jsonb,now(),?)",
-                    UUID.randomUUID(), id, version, objectMapper.writeValueAsString(request), actor);
-        } catch (JsonProcessingException exception) {
-            throw new BadRequestException("Pricing plan snapshot could not be created");
-        }
+    private PlanResponse withCapabilityPrices(PlanResponse plan) {
+        List<CapabilityPrice> prices = jdbc.query("""
+                select c.capability,c.inclusion_type,c.billing_unit,c.unit_price
+                from platform_pricing_plan_version_capabilities c
+                join platform_pricing_plan_versions v on v.id=c.pricing_plan_version_id
+                where v.id=(select id from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE' order by version_number desc limit 1)
+                order by c.capability
+                """,(rs,row)->new CapabilityPrice(CommercialCapability.valueOf(rs.getString(1)),CapabilityInclusionType.valueOf(rs.getString(2)),rs.getString(3)==null?null:BillingUnit.valueOf(rs.getString(3)),rs.getBigDecimal(4)),plan.id());
+        if(prices.isEmpty())prices=jdbc.query("select capability,monthly_price_per_store from platform_pricing_plan_capability_prices where pricing_plan_id=? order by capability",
+                (rs,row)->new CapabilityPrice(CommercialCapability.valueOf(rs.getString(1)),CapabilityInclusionType.PAID_ADD_ON,BillingUnit.PER_STORE,rs.getBigDecimal(2)),plan.id());
+        return new PlanResponse(plan.id(),plan.code(),plan.name(),plan.description(),plan.status(),plan.billingInterval(),plan.basePrice(),plan.oneTimeOnboardingFee(),plan.currency(),plan.trialDays(),plan.includedStores(),plan.includedRegisters(),plan.includedUsers(),plan.additionalStorePrice(),plan.additionalRegisterPrice(),plan.additionalUserPrice(),plan.taxBehavior(),prices,plan.effectiveFrom(),plan.effectiveTo(),plan.activeMerchants(),plan.createdAt(),plan.updatedAt(),plan.version());
     }
+
+    private void replacePlanCapabilityPrices(UUID planId, List<CapabilityPrice> prices) {
+        jdbc.update("delete from platform_pricing_plan_capability_prices where pricing_plan_id=?",planId);
+        if(prices==null)return;
+        prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON).forEach(price->jdbc.update("insert into platform_pricing_plan_capability_prices(pricing_plan_id,capability,monthly_price_per_store) values (?,?,?)",planId,price.capability().name(),price.monthlyPricePerStore()));
+    }
+
+    private void replaceSubscriptionCapabilitySnapshots(UUID subscriptionId, List<CapabilityPrice> prices) {
+        jdbc.update("delete from tenant_subscription_capability_price_snapshots where subscription_id=?",subscriptionId);
+        prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON).forEach(price->jdbc.update("insert into tenant_subscription_capability_price_snapshots(subscription_id,capability,monthly_price_per_store) values (?,?,?)",subscriptionId,price.capability().name(),price.monthlyPricePerStore()));
+    }
+
+    private Map<String,Integer> tenantCapabilityCounts(UUID tenantId) {
+        return jdbc.query("select capability,count(*) quantity from store_capabilities sc join stores s on s.id=sc.store_id where s.tenant_id=? and s.active=true group by capability",
+                rs->{Map<String,Integer> counts=new HashMap<>();while(rs.next())counts.put(rs.getString(1),rs.getInt(2));return counts;},tenantId);
+    }
+
+    private List<SubscriptionBillingService.CapabilityUsage> capabilityUsage(UUID subscriptionId, UUID tenantId) {
+        return jdbc.query("select capability,billing_unit_snapshot,coalesce(custom_unit_price,unit_price_snapshot) unit_price from tenant_subscription_capabilities where subscription_id=? and status='ACTIVE' and inclusion_type_snapshot='PAID_ADD_ON' order by capability",
+                (rs,row)->new SubscriptionBillingService.CapabilityUsage(rs.getString(1),capabilityDescription(rs.getString(1)),billingQuantity(tenantId,rs.getString(1),rs.getString(2)),rs.getBigDecimal(3)),subscriptionId);
+    }
+
+    private SubscriptionResponse withCapabilityCharges(SubscriptionResponse value, Map<String,Integer> counts) {
+        List<CapabilityCharge> charges=jdbc.query("select capability,billing_unit_snapshot,coalesce(custom_unit_price,unit_price_snapshot) unit_price from tenant_subscription_capabilities where subscription_id=? and status='ACTIVE' and inclusion_type_snapshot='PAID_ADD_ON' order by capability",
+                (rs,row)->{var capability=CommercialCapability.valueOf(rs.getString(1));int count=billingQuantity(value.tenantId(),capability.name(),rs.getString(2));BigDecimal rate=rs.getBigDecimal(3);return new CapabilityCharge(capability,capabilityDescription(capability.name()),count,rate,money(rate.multiply(BigDecimal.valueOf(count))));},value.id());
+        BigDecimal total=value.estimatedMonthlyPrice().add(charges.stream().map(CapabilityCharge::monthlyTotal).reduce(BigDecimal.ZERO,BigDecimal::add));
+        return new SubscriptionResponse(value.id(),value.tenantId(),value.merchantName(),value.pricingPlanId(),value.planCode(),value.planName(),value.status(),value.billingInterval(),value.subscriptionStartDate(),value.currentPeriodStart(),value.currentPeriodEnd(),value.nextBillingDate(),value.trialEndDate(),value.cancelAtPeriodEnd(),value.cancelledAt(),value.cancellationReason(),value.standardBasePrice(),value.merchantBasePrice(),value.currency(),value.includedStoresSnapshot(),value.additionalStorePriceSnapshot(),value.onboardingFeeSnapshot(),value.onboardingFeeInvoicedAt(),value.currentBillableStores(),value.additionalBillableStores(),money(total),charges,value.customAdditionalStorePrice(),value.customAdditionalRegisterPrice(),value.customAdditionalUserPrice(),value.discountName(),value.discountType(),value.discountValue(),value.pricingNotes(),value.paymentTermsDays(),value.version());
+    }
+
+    private static String capabilityDescription(String capability){return switch(capability){case "FOOD_SERVICE"->"Food Service add-on";default->capability.replace('_',' ')+" add-on";};}
+    private int billingQuantity(UUID tenantId,String capability,String unit){return switch(BillingUnit.valueOf(unit)){case PER_MERCHANT->1;case PER_STORE->"FOOD_SERVICE".equals(capability)?number(jdbc.queryForMap("select count(*) quantity from stores s join store_capabilities c on c.store_id=s.id where s.tenant_id=? and s.active=true and c.capability='FOOD_SERVICE'",tenantId).get("quantity")):"LOTTERY".equals(capability)?number(jdbc.queryForMap("select count(distinct policy.store_id) quantity from lottery_payout_policies policy join stores s on s.id=policy.store_id where s.tenant_id=? and s.active=true and policy.active=true",tenantId).get("quantity")):number(jdbc.queryForMap("select count(*) quantity from stores where tenant_id=? and active=true",tenantId).get("quantity"));case PER_REGISTER->number(jdbc.queryForMap("select count(*) quantity from registers r join stores s on s.id=r.store_id where s.tenant_id=? and r.active=true",tenantId).get("quantity"));};}
+    private static CapabilityInclusionType normalizeInclusion(CapabilityPrice price){return price.inclusionType()==null?CapabilityInclusionType.PAID_ADD_ON:price.inclusionType();}
+
+    private void snapshotPlan(UUID id, int version, PlanRequest request, UUID actor) {
+        jdbc.update("update platform_pricing_plan_versions set status='SUPERSEDED',effective_to=? where pricing_plan_id=? and status='ACTIVE'",timestamp(request.effectiveFrom().minusDays(1)),id);
+        insertPricingVersion(UUID.randomUUID(),id,version,request,request.effectiveFrom(),"ACTIVE","NEW_SUBSCRIPTIONS_ONLY",actor);
+    }
+
+    private void insertPricingVersion(UUID versionId,UUID planId,int number,PlanRequest request,LocalDate effective,String status,String policy,UUID actor) {
+        final String snapshot;
+        try { snapshot=objectMapper.writeValueAsString(request); } catch(JsonProcessingException exception){throw new BadRequestException("Pricing plan snapshot could not be created");}
+        jdbc.update("""
+                insert into platform_pricing_plan_versions(id,pricing_plan_id,version_number,snapshot,effective_from,created_by,currency_code,billing_interval,base_price,included_stores,additional_store_price,one_time_onboarding_fee,trial_days,status,subscriber_policy,activated_at)
+                values (?,?,?,?::jsonb,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,versionId,planId,number,snapshot,timestamp(effective),actor,request.currency().toUpperCase(Locale.ROOT),interval(request.billingInterval()),request.basePrice(),request.includedStores(),request.additionalStorePrice(),request.oneTimeOnboardingFee(),request.trialDays(),status,policy,"ACTIVE".equals(status)?Timestamp.from(Instant.now()):null);
+        List<CapabilityPrice> capabilities=request.capabilityPrices()==null?List.of():request.capabilityPrices();
+        capabilities.forEach(capability->jdbc.update("insert into platform_pricing_plan_version_capabilities(id,pricing_plan_version_id,capability,inclusion_type,billing_unit,unit_price) values (?,?,?,?,?,?)",UUID.randomUUID(),versionId,capability.capability().name(),normalizeInclusion(capability).name(),capability.billingUnit()==null?null:capability.billingUnit().name(),capability.monthlyPricePerStore()));
+    }
+
+    private PricingVersionResponse pricingVersion(UUID id){return jdbc.query("select v.*,p.code,p.name,p.description,p.status plan_status,p.tax_behavior from platform_pricing_plan_versions v join platform_pricing_plans p on p.id=v.pricing_plan_id where v.id=?",(rs,row)->pricingVersion(rs,row),id).stream().findFirst().orElseThrow(()->new NotFoundException("PRICING_PLAN_NOT_FOUND"));}
+    private PricingVersionResponse pricingVersion(ResultSet rs,int row)throws SQLException{
+        UUID id=rs.getObject("id",UUID.class);List<CapabilityPrice> capabilities=jdbc.query("select capability,inclusion_type,billing_unit,unit_price from platform_pricing_plan_version_capabilities where pricing_plan_version_id=? order by capability",(values,index)->new CapabilityPrice(CommercialCapability.valueOf(values.getString(1)),CapabilityInclusionType.valueOf(values.getString(2)),values.getString(3)==null?null:BillingUnit.valueOf(values.getString(3)),values.getBigDecimal(4)),id);
+        PlanRequest pricing=new PlanRequest(rs.getString("code"),rs.getString("name"),rs.getString("description"),rs.getString("plan_status"),rs.getString("billing_interval"),rs.getBigDecimal("base_price"),rs.getBigDecimal("one_time_onboarding_fee"),rs.getString("currency_code"),rs.getInt("trial_days"),integer(rs,"included_stores"),null,null,rs.getBigDecimal("additional_store_price"),null,null,capabilities,rs.getString("tax_behavior"),localDate(rs,"effective_from"),localDate(rs,"effective_to"));
+        Integer used=jdbc.queryForObject("select count(*) from platform_invoices where subscription_id in(select id from tenant_subscriptions where pricing_plan_version_id=?)",Integer.class,id);
+        return new PricingVersionResponse(id,rs.getObject("pricing_plan_id",UUID.class),rs.getInt("version_number"),rs.getString("status"),localDate(rs,"effective_from"),localDate(rs,"effective_to"),rs.getString("subscriber_policy"),pricing,used!=null&&used>0,instant(rs,"created_at"),rs.getLong("version"));
+    }
+
+    private void activatePricingVersion(UUID versionId){
+        PricingVersionResponse version=pricingVersion(versionId);PlanRequest price=version.pricing();
+        jdbc.update("update platform_pricing_plan_versions set status='SUPERSEDED',effective_to=? where pricing_plan_id=? and status='ACTIVE' and id<>?",timestamp(version.effectiveFrom().minusDays(1)),version.pricingPlanId(),versionId);
+        jdbc.update("update platform_pricing_plan_versions set status='ACTIVE',activated_at=now(),version=version+1 where id=?",versionId);
+        jdbc.update("update platform_pricing_plans set billing_interval=?,base_price=?,one_time_onboarding_fee=?,currency_code=?,trial_days=?,included_stores=?,additional_store_price=?,effective_from=?,updated_at=now(),version=version+1 where id=?",price.billingInterval(),price.basePrice(),price.oneTimeOnboardingFee(),price.currency(),price.trialDays(),price.includedStores(),price.additionalStorePrice(),Date.valueOf(version.effectiveFrom()),version.pricingPlanId());
+        replacePlanCapabilityPrices(version.pricingPlanId(),price.capabilityPrices());
+    }
+
+    private void syncSubscriptionEntitlements(UUID subscriptionId,List<CapabilityPrice> capabilities,LocalDate effective){
+        capabilities.stream().filter(value->normalizeInclusion(value)!=CapabilityInclusionType.NOT_AVAILABLE).forEach(value->jdbc.update("""
+                insert into tenant_subscription_capabilities(id,subscription_id,capability,status,inclusion_type_snapshot,billing_unit_snapshot,unit_price_snapshot,effective_from)
+                values (?,?,?,?,?,?,?,?) on conflict(subscription_id,capability) do update set inclusion_type_snapshot=excluded.inclusion_type_snapshot,billing_unit_snapshot=excluded.billing_unit_snapshot,unit_price_snapshot=excluded.unit_price_snapshot,effective_from=excluded.effective_from,updated_at=now(),version=tenant_subscription_capabilities.version+1
+                """,UUID.randomUUID(),subscriptionId,value.capability().name(),normalizeInclusion(value)==CapabilityInclusionType.INCLUDED?"ACTIVE":"INACTIVE",normalizeInclusion(value).name(),value.billingUnit()==null?null:value.billingUnit().name(),value.monthlyPricePerStore(),Date.valueOf(effective)));
+    }
+
+    private static CapabilityDefinition definition(CommercialCapability capability,BillingUnit... units){return new CapabilityDefinition(capability,capability.name().replace('_',' '),List.of(units));}
+    private static LocalDate effectiveDate(PricingVersionRequest request){LocalDate value="NEXT_BILLING_CYCLE".equalsIgnoreCase(request.effectivePolicy())?LocalDate.now().plusDays(1):request.effectiveDate();if(value==null||!value.isAfter(LocalDate.now()))throw new BadRequestException("PRICING_PLAN_EFFECTIVE_DATE_INVALID");return value;}
+    private static String subscriberPolicy(String value){return allowed(value,List.of("NEW_SUBSCRIPTIONS_ONLY","APPLY_NEXT_BILLING_CYCLE"),"subscriber policy");}
+    private static void validateCapabilities(List<CapabilityPrice> capabilities){Set<CommercialCapability> seen=EnumSet.noneOf(CommercialCapability.class);for(CapabilityPrice value:capabilities==null?List.<CapabilityPrice>of():capabilities){if(!seen.add(value.capability()))throw new BadRequestException("PRICING_PLAN_CAPABILITY_DUPLICATE");CapabilityInclusionType type=normalizeInclusion(value);if(type==CapabilityInclusionType.PAID_ADD_ON&&(value.billingUnit()==null||value.monthlyPricePerStore()==null))throw new BadRequestException("Paid add-on requires price and billing unit");if(type!=CapabilityInclusionType.PAID_ADD_ON&&value.monthlyPricePerStore()!=null&&value.monthlyPricePerStore().signum()!=0)throw new BadRequestException("Included or unavailable capability cannot have a separate price");}}
 
     private Map<String, Object> merchant(UUID tenantId) {
         return jdbc.queryForMap("""
@@ -465,7 +630,7 @@ public class PlatformBillingService {
                 rs.getString("status"), rs.getString("billing_interval"), rs.getBigDecimal("base_price"), rs.getBigDecimal("one_time_onboarding_fee"), rs.getString("currency_code"),
                 rs.getInt("trial_days"), integer(rs, "included_stores"), integer(rs, "included_registers"), integer(rs, "included_users"),
                 rs.getBigDecimal("additional_store_price"), rs.getBigDecimal("additional_register_price"), rs.getBigDecimal("additional_user_price"),
-                rs.getString("tax_behavior"), rs.getObject("effective_from", LocalDate.class), rs.getObject("effective_to", LocalDate.class),
+                rs.getString("tax_behavior"), List.of(), rs.getObject("effective_from", LocalDate.class), rs.getObject("effective_to", LocalDate.class),
                 rs.getLong("active_merchants"), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(), rs.getLong("version"));
     }
 
@@ -484,7 +649,7 @@ public class PlatformBillingService {
                 base, rs.getString("currency_code"), includedStores,
                 rs.getBigDecimal("custom_additional_store_price") == null ? rs.getBigDecimal("additional_store_price_snapshot") : rs.getBigDecimal("custom_additional_store_price"),
                 rs.getBigDecimal("custom_onboarding_fee") == null ? rs.getBigDecimal("onboarding_fee_snapshot") : rs.getBigDecimal("custom_onboarding_fee"),
-                instant(rs, "onboarding_fee_invoiced_at"), billableStores, additionalStores, estimated,
+                instant(rs, "onboarding_fee_invoiced_at"), billableStores, additionalStores, estimated, List.of(),
                 rs.getBigDecimal("custom_additional_store_price"), rs.getBigDecimal("custom_additional_register_price"),
                 rs.getBigDecimal("custom_additional_user_price"), rs.getString("discount_name"), rs.getString("discount_type"), rs.getBigDecimal("discount_value"),
                 rs.getString("pricing_notes"), integer(rs, "payment_terms_days"), rs.getLong("version"));
@@ -511,6 +676,7 @@ public class PlatformBillingService {
 
     private static void validatePlan(PlanRequest request) {
         status(request.status()); interval(request.billingInterval()); taxBehavior(request.taxBehavior());
+        validateCapabilities(request.capabilityPrices());
         if (request.effectiveTo() != null && request.effectiveTo().isBefore(request.effectiveFrom())) throw new BadRequestException("Plan effective end date cannot precede start date");
     }
     private static void validateSubscription(SubscriptionRequest request, PlanResponse plan) {

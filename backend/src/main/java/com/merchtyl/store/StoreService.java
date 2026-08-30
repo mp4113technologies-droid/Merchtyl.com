@@ -8,6 +8,8 @@ import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.platform.admin.PlatformAdministrationService;
+import com.merchtyl.platform.billing.CommercialCapability;
+import com.merchtyl.platform.billing.SubscriptionEntitlementService;
 import com.merchtyl.reference.ReferenceDataService;
 import com.merchtyl.reference.StoreGeographySelection;
 import com.merchtyl.security.AuthorizationService;
@@ -45,6 +47,7 @@ public class StoreService {
     private final PlatformAdministrationService platformAdministrationService;
     private final StoreAccessService storeAccessService;
     private final JdbcTemplate jdbcTemplate;
+    private final SubscriptionEntitlementService entitlements;
 
     public StoreService(
             StoreRepository storeRepository,
@@ -54,7 +57,8 @@ public class StoreService {
             AuthorizationService authorizationService,
             PlatformAdministrationService platformAdministrationService,
             StoreAccessService storeAccessService,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            SubscriptionEntitlementService entitlements) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
@@ -63,6 +67,7 @@ public class StoreService {
         this.platformAdministrationService = platformAdministrationService;
         this.storeAccessService = storeAccessService;
         this.jdbcTemplate = jdbcTemplate;
+        this.entitlements = entitlements;
     }
 
     @Transactional
@@ -95,8 +100,12 @@ public class StoreService {
                 values.negativeStockAllowed(),
                 values.active());
         UUID tenantId = currentTenantId(authentication);
+        if (request.capabilities() != null && request.capabilities().contains(StoreCapability.FOOD_SERVICE)) {
+            entitlements.requireOrActivate(tenantId, CommercialCapability.FOOD_SERVICE);
+        }
         store.assignTenant(tenantId);
-        StoreResponse response = StoreResponse.from(save(store));
+        store.configureOperations(validCapabilities(request.capabilities()), kitchenDisplayName(request.name(), request.capabilities(), request.kitchenDisplayName()));
+        StoreResponse response = response(save(store));
         if (platformAdministrationService != null) {
             platformAdministrationService.markFirstStoreCreated(tenantId);
         }
@@ -130,7 +139,7 @@ public class StoreService {
     @Transactional(readOnly = true)
     public StoreResponse get(UUID id, Authentication authentication) {
         storeAccessService.requireStoreAccess(authentication, id);
-        return StoreResponse.from(find(id));
+        return response(find(id));
     }
 
     @Transactional(readOnly = true)
@@ -150,13 +159,18 @@ public class StoreService {
             if (!rs.next()) {
                 throw new NotFoundException("Tenant defaults not found");
             }
+            Set<StoreCapability> capabilities = Set.copyOf(jdbcTemplate.queryForList(
+                    "select capability from tenant_store_operation_defaults where tenant_id = ?", String.class, tenantId)
+                    .stream().map(StoreCapability::valueOf).toList());
+            String kitchenName = jdbcTemplate.queryForList("select kitchen_display_name from tenant_store_operation_defaults where tenant_id = ? and capability = 'FOOD_SERVICE'", String.class, tenantId)
+                    .stream().findFirst().orElse(null);
             return new StoreDefaultsResponse(
                     rs.getString("country_code"),
                     rs.getString("administrative_division_code"),
                     rs.getString("default_currency_code"),
                     rs.getString("default_language_code"),
                     rs.getString("primary_timezone"),
-                    rs.getString("default_tax_region_code"));
+                    rs.getString("default_tax_region_code"), capabilities.isEmpty() ? Set.of(StoreCapability.RETAIL) : capabilities, kitchenName);
         }, tenantId);
     }
 
@@ -170,9 +184,18 @@ public class StoreService {
             throw duplicateCode();
         }
 
-        StoreResponse before = StoreResponse.from(store);
+        StoreResponse before = response(store);
+        boolean previouslyFoodEnabled = store.getCapabilities().contains(StoreCapability.FOOD_SERVICE);
+        UUID tenantId = currentTenantId(authentication);
+        if (request.capabilities() != null && request.capabilities().contains(StoreCapability.FOOD_SERVICE) && !previouslyFoodEnabled) {
+            entitlements.requireOrActivate(tenantId, CommercialCapability.FOOD_SERVICE);
+        }
         store.update(values);
-        StoreResponse after = StoreResponse.from(save(store));
+        store.configureOperations(validCapabilities(request.capabilities()), kitchenDisplayName(request.name(), request.capabilities(), request.kitchenDisplayName()));
+        StoreResponse after = response(save(store));
+        if (previouslyFoodEnabled && !after.capabilities().contains(StoreCapability.FOOD_SERVICE)) {
+            entitlements.deactivateIfUnused(tenantId, CommercialCapability.FOOD_SERVICE);
+        }
         audit(authentication, AuditAction.STORE_UPDATED, id, before, after, null);
         auditGeographyChanges(authentication, id, before, after);
         return after;
@@ -197,6 +220,27 @@ public class StoreService {
         } catch (DataIntegrityViolationException exception) {
             throw duplicateCode();
         }
+    }
+
+    private StoreResponse response(Store store) {
+        Long kitchenUsers = jdbcTemplate.queryForObject("""
+                select count(distinct user_id) from security_user_store_assignments
+                where store_id = ? and tenant_id = ? and active = true and assignment_role = 'KITCHEN'
+                """, Long.class, store.getId(), store.getTenantId());
+        return StoreResponse.from(store).withKitchenUsersCount(kitchenUsers == null ? 0 : kitchenUsers);
+    }
+
+    private Set<StoreCapability> validCapabilities(Set<StoreCapability> capabilities) {
+        if (capabilities == null || capabilities.isEmpty()) {
+            throw new BadRequestException("At least one store capability is required");
+        }
+        return Set.copyOf(capabilities);
+    }
+
+    private String kitchenDisplayName(String storeName, Set<StoreCapability> capabilities, String requestedName) {
+        if (capabilities == null || !capabilities.contains(StoreCapability.FOOD_SERVICE)) return null;
+        String cleaned = cleanOptional(requestedName);
+        return cleaned == null ? cleanRequired(storeName, "name") + " Kitchen" : cleaned;
     }
 
     private Store find(UUID id) {

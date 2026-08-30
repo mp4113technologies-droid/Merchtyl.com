@@ -55,6 +55,10 @@ function store(overrides: Partial<Store> = {}): Store {
     createdAt: '2026-07-21T12:00:00Z',
     updatedAt: '2026-07-21T12:00:00Z',
     version: 0,
+    capabilities: ['RETAIL'],
+    foodServiceEnabled: false,
+    kitchenDisplayName: null,
+    kitchenUsersCount: 0,
     ...overrides
   };
 }

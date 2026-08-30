@@ -439,11 +439,15 @@ describe('Pricing-plan-driven merchant onboarding', () => {
     expect(screen.getByText(/Monthly Base:/)).toHaveTextContent('$99.00');
     expect(screen.getByText(/One-Time Onboarding:/)).toHaveTextContent('$199.00');
     expect(screen.getByText(/Additional Store:/)).toHaveTextContent('$25.00');
+    await userEvent.click(screen.getByRole('checkbox', { name: /Kitchen \/ Food Service/ }));
+    await userEvent.type(screen.getByLabelText('Kitchen / Food Service Name'), "Acme Kitchen");
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create merchant' }));
 
     await waitFor(() => expect(submitted).toBeDefined());
     expect(submitted?.pricingPlanId).toBe('plan-growth');
+    expect(submitted?.storeCapabilities).toEqual(['RETAIL', 'FOOD_SERVICE']);
+    expect(submitted?.kitchenDisplayName).toBe('Acme Kitchen');
     expect(submitted).not.toHaveProperty('subscriptionPlan');
   });
 });

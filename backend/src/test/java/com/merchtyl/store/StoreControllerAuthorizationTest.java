@@ -58,7 +58,8 @@ class StoreControllerAuthorizationTest {
               "timezone": "America/Los_Angeles",
               "pricesIncludeTax": true,
               "negativeStockAllowed": false,
-              "active": true
+                  "active": true,
+                  "capabilities": ["RETAIL"]
             }
             """;
 

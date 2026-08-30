@@ -10,6 +10,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
@@ -54,6 +55,7 @@ import {
   getTenantDeletionEligibility,
   getPlatformDashboard,
   getPlatformBillingSubscription,
+  getPlatformPricingPreview,
   getPlatformSettings,
   getPlatformTenant,
   listPlatformAuditEvents,
@@ -493,11 +495,14 @@ export function NewPlatformMerchantPage() {
     ownerFirstName: '',
     ownerLastName: '',
     ownerEmail: '',
-    ownerPhone: ''
+    ownerPhone: '',
+    storeCapabilities: ['RETAIL'],
+    kitchenDisplayName: ''
   });
   const countries = useAuthedQuery(['reference-countries'], listReferenceCountries);
   const pricingPlans = useAuthedQuery(['platform-pricing-plan-options'], listActivePlatformPricingPlans);
   const selectedPlan = pricingPlans.data?.find((plan) => plan.id === form.pricingPlanId);
+  const pricingPreview = useAuthedQuery(['platform-pricing-preview',form.pricingPlanId,form.estimatedStoreCount,form.storeCapabilities],token=>getPlatformPricingPreview(token,form.pricingPlanId,form.estimatedStoreCount??1,form.storeCapabilities.includes('FOOD_SERVICE')?(form.estimatedStoreCount??1):0),Boolean(form.pricingPlanId));
   const divisions = useAuthedQuery(
     ['reference-divisions', form.countryCode],
     (token) => listReferenceAdministrativeDivisions(token, form.countryCode),
@@ -634,6 +639,12 @@ export function NewPlatformMerchantPage() {
         )}
         {activeStep === 3 && (
           <Grid container spacing={2}>
+            <Grid item xs={12}><Paper variant="outlined" sx={{ p: 2 }}><Typography variant="h6">Store Operations</Typography><Typography color="text.secondary">What does this location operate?</Typography>
+              <FormControlLabel control={<Checkbox checked={form.storeCapabilities.includes('RETAIL')} onChange={(_, checked) => field('storeCapabilities', checked ? [...form.storeCapabilities, 'RETAIL'] : form.storeCapabilities.filter((item) => item !== 'RETAIL'))} />} label="Convenience / Retail Store — Barcode scanning, retail inventory and standard POS" />
+              <FormControlLabel control={<Checkbox checked={form.storeCapabilities.includes('FOOD_SERVICE')} onChange={(_, checked) => field('storeCapabilities', checked ? [...form.storeCapabilities, 'FOOD_SERVICE'] : form.storeCapabilities.filter((item) => item !== 'FOOD_SERVICE'))} />} label="Kitchen / Food Service — Food menu, tile POS and kitchen operations" />
+              {form.storeCapabilities.includes('FOOD_SERVICE') ? <TextField fullWidth sx={{ mt: 1 }} label="Kitchen / Food Service Name" value={form.kitchenDisplayName} placeholder={`${form.operatingName || 'Store'} Kitchen`} onChange={(event) => field('kitchenDisplayName', event.target.value)} /> : null}
+              {form.storeCapabilities.length === 0 ? <Alert severity="error">Select at least one operation.</Alert> : null}
+            </Paper></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth select required label="Subscription Plan" value={form.pricingPlanId} onChange={(e) => field('pricingPlanId', e.target.value)} helperText={pricingPlans.isLoading ? 'Loading active pricing plans...' : undefined}>
               {(pricingPlans.data ?? []).map((plan) => <MenuItem key={plan.id} value={plan.id}>{plan.name} — {new Intl.NumberFormat(undefined, { style: 'currency', currency: plan.currency }).format(plan.basePrice)}/month</MenuItem>)}
             </TextField></Grid>
@@ -642,7 +653,8 @@ export function NewPlatformMerchantPage() {
               <Typography>Included Stores: {selectedPlan.includedStores ?? 0}</Typography>
               <Typography>Additional Store: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.additionalStorePrice ?? 0)}/store/month</Typography>
               <Typography>One-Time Onboarding: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.oneTimeOnboardingFee)}</Typography>
-              <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.basePrice + Math.max(0, (form.estimatedStoreCount ?? 0) - (selectedPlan.includedStores ?? 0)) * (selectedPlan.additionalStorePrice ?? 0))}</Typography>
+              {pricingPreview.data?.capabilityCharges.map(charge=><Typography key={charge.capability}>{charge.description}: +{new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyTotal)}/month ({charge.storeCount} stores)</Typography>)}
+              <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(pricingPreview.data?.estimatedMonthlySubscription??selectedPlan.basePrice)}</Typography>
               <Typography color="text.secondary">Additional stores are billed beginning with the next billing cycle. Tax is calculated by the backend.</Typography>
             </Paper></Grid>}
             {Object.entries(form.features).map(([key, enabled]) => (

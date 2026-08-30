@@ -31,6 +31,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
+  Alert,
   AppBar,
   Avatar,
   Box,
@@ -97,6 +98,8 @@ import { InventoryAdjustmentsPage, NewInventoryAdjustmentPage } from '../feature
 import { InventoryReportingPage } from '../features/inventory/InventoryReportingPages';
 import { NewStockCountPage, StockCountDetailPage, StockCountsPage } from '../features/inventory/StockCountPages';
 import { HeldSalesPage, PosCartPage } from '../features/pos/PosPages';
+import { FoodPosPage } from '../features/pos/FoodPosPage';
+import { FoodMenuPage } from '../features/foodmenu/FoodMenuPage';
 import { NewReturnPage, ReturnDetailPage, ReturnsPage } from '../features/returns/ReturnPages';
 import { LotteryOperatorDetailPage, LotteryOperatorsPage, NewLotteryOperatorPage } from '../features/lottery/LotteryOperatorPages';
 import { LotteryPayoutPoliciesPage, LotteryPayoutPolicyDetailPage, NewLotteryPayoutPolicyPage } from '../features/lottery/LotteryPayoutPolicyPages';
@@ -200,13 +203,17 @@ function UnauthorizedPage() {
 function HomeRedirect() {
   const { currentUser, session } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
-  if (roles.some((role) => role === 'PLATFORM_SUPER_ADMIN' || role === 'PLATFORM_SUPPORT_ADMIN')) {
-    return <Navigate to="/platform" replace />;
-  }
-  if (roles.includes('CASHIER')) {
-    return <Navigate to="/store-menu" replace />;
-  }
+  const destination = homeDestination(roles);
+  if (destination) return <Navigate to={destination} replace />;
   return <OwnerDashboardPage />;
+}
+
+export function homeDestination(roles: string[]) {
+  if (roles.some((role) => role === 'PLATFORM_SUPER_ADMIN' || role === 'PLATFORM_SUPPORT_ADMIN')) return '/platform';
+  if (roles.includes('CASHIER') && roles.includes('KITCHEN')) return '/store-menu';
+  if (roles.includes('KITCHEN')) return '/pos/food';
+  if (roles.includes('CASHIER')) return '/store-menu';
+  return null;
 }
 
 function PosLayout() {
@@ -240,6 +247,7 @@ function PosLayout() {
 function StoreMenuPage() {
   const { currentUser, session, getValidAccessToken, logout } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
+  const permissions = currentUser?.permissions ?? [];
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const current = useQuery({
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
@@ -259,6 +267,10 @@ function StoreMenuPage() {
   const register = registers.data?.content.find((item) => item.id === activeSession?.registerId);
   const isCashier = roles.includes('CASHIER');
   const operations = [
+    { label: 'Retail POS', to: '/pos', visible: permissions.includes('POS_ACCESS') },
+    { label: 'Food Menu', to: '/food-menu', visible: permissions.includes('FOOD_POS_ACCESS') },
+    { label: 'Orders', to: '/sales', visible: permissions.includes('FOOD_ORDER_VIEW') },
+    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: permissions.includes('FOOD_POS_ACCESS') },
     { label: 'Inventory / Product Lookup', to: '/inventory', visible: true },
     { label: 'Returns', to: '/returns', visible: true },
     { label: 'Current Register', to: '/register/current', visible: true },
@@ -631,11 +643,13 @@ function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<PosLayout />}>
           <Route path="/pos" element={<PosCartPage />} />
+          <Route path="/pos/food" element={<FoodPosPage />} />
           <Route path="/pos/held-sales" element={<HeldSalesPage />} />
         </Route>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/store-menu" element={<StoreMenuPage />} />
+          <Route path="/food-menu" element={<FoodMenuPage />} />
           <Route path="/platform" element={<PlatformDashboardPage />} />
           <Route path="/platform/merchants" element={<PlatformMerchantsPage />} />
           <Route path="/platform/merchants/new" element={<NewPlatformMerchantPage />} />

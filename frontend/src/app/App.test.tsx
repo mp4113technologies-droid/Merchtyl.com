@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { App } from './App';
+import { App, homeDestination } from './App';
 import type { AuthResponse, CurrentUserResponse } from '../api/types';
 
 function authResponse(overrides: Partial<AuthResponse> = {}): AuthResponse {
@@ -57,6 +57,13 @@ describe('App authentication', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  it('routes retail, kitchen, and combined operators correctly', () => {
+    expect(homeDestination(['KITCHEN'])).toBe('/pos/food');
+    expect(homeDestination(['CASHIER'])).toBe('/store-menu');
+    expect(homeDestination(['CASHIER', 'KITCHEN'])).toBe('/store-menu');
+    expect(homeDestination(['OWNER'])).toBeNull();
   });
 
   it('renders the login page when no session exists', async () => {

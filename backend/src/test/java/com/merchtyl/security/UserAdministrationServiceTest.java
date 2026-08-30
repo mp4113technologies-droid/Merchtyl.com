@@ -11,6 +11,7 @@ import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
+import com.merchtyl.store.StoreCapability;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.core.Authentication;
@@ -23,6 +24,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +36,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class UserAdministrationServiceTest {
+    @Test
+    void kitchenRoleRequiresFoodServiceStore() {
+        Store retail = mock(Store.class);
+        Store kitchen = mock(Store.class);
+        when(retail.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL));
+        when(kitchen.getCapabilities()).thenReturn(Set.of(StoreCapability.FOOD_SERVICE));
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(service, "validateRoleStoreCapabilities",
+                RoleName.KITCHEN, List.of(retail)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("FOOD_SERVICE");
+        ReflectionTestUtils.invokeMethod(service, "validateRoleStoreCapabilities", RoleName.KITCHEN, List.of(kitchen));
+    }
     private static final UUID STORE_ID = UUID.fromString("00000000-0000-0000-0000-000000000901");
     private static final UUID REGISTER_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000900");

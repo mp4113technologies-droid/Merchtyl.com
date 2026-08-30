@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.NotEmpty;
+import java.util.Set;
 
 public record StoreUpdateRequest(
         @NotBlank @Size(max = 64) String code,
@@ -23,6 +25,8 @@ public record StoreUpdateRequest(
         boolean pricesIncludeTax,
         boolean negativeStockAllowed,
         boolean active,
+        @NotEmpty Set<StoreCapability> capabilities,
+        @Size(max = 180) String kitchenDisplayName,
         @NotNull Long version
 ) {
 }

@@ -16,12 +16,18 @@ public class SubscriptionBillingService {
         requireNonNegative(input.basePrice(), "basePrice");
         requireNonNegative(input.taxRate(), "taxRate");
         List<CalculatedLine> lines = new ArrayList<>();
-        lines.add(line("BASE_SUBSCRIPTION", input.planName(), BigDecimal.ONE, input.basePrice()));
+        lines.add(line("BASE_SUBSCRIPTION", "Monthly Subscription — " + input.planName(), BigDecimal.ONE, input.basePrice()));
         if (input.includeOnboardingFee() && value(input.onboardingFee()).signum() > 0) {
             requireNonNegative(input.onboardingFee(), "onboardingFee");
             lines.add(line("ONBOARDING_FEE", "One-time onboarding fee", BigDecimal.ONE, input.onboardingFee()));
         }
         addUsage(lines, "ADDITIONAL_STORE", "Additional stores", input.activeStores(), input.includedStores(), input.additionalStorePrice());
+        input.capabilities().forEach(capability -> {
+            requireNonNegative(capability.monthlyPricePerStore(), capability.capability());
+            if (capability.storeCount() > 0 && value(capability.monthlyPricePerStore()).signum() > 0) {
+                lines.add(line("CAPABILITY_ADD_ON", capability.description(), BigDecimal.valueOf(capability.storeCount()), capability.monthlyPricePerStore()));
+            }
+        });
 
         BigDecimal subtotal = lines.stream().map(CalculatedLine::lineSubtotal).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal discount = discount(input.discountType(), input.discountValue(), subtotal);
@@ -68,7 +74,19 @@ public class SubscriptionBillingService {
             Integer includedUsers, BigDecimal additionalStorePrice, BigDecimal additionalRegisterPrice,
             BigDecimal additionalUserPrice, int activeStores, int activeRegisters, int billableUsers,
             String discountType, BigDecimal discountValue, BigDecimal taxRate,
-            BigDecimal onboardingFee, boolean includeOnboardingFee) {}
+            BigDecimal onboardingFee, boolean includeOnboardingFee, List<CapabilityUsage> capabilities) {
+        public Input { capabilities = capabilities == null ? List.of() : List.copyOf(capabilities); }
+        public Input(String planName, BigDecimal basePrice, Integer includedStores, Integer includedRegisters,
+                     Integer includedUsers, BigDecimal additionalStorePrice, BigDecimal additionalRegisterPrice,
+                     BigDecimal additionalUserPrice, int activeStores, int activeRegisters, int billableUsers,
+                     String discountType, BigDecimal discountValue, BigDecimal taxRate,
+                     BigDecimal onboardingFee, boolean includeOnboardingFee) {
+            this(planName, basePrice, includedStores, includedRegisters, includedUsers, additionalStorePrice,
+                    additionalRegisterPrice, additionalUserPrice, activeStores, activeRegisters, billableUsers,
+                    discountType, discountValue, taxRate, onboardingFee, includeOnboardingFee, List.of());
+        }
+    }
+    public record CapabilityUsage(String capability, String description, int storeCount, BigDecimal monthlyPricePerStore) {}
     public record CalculatedLine(String lineType, String description, BigDecimal quantity, BigDecimal unitPrice, BigDecimal lineSubtotal) {}
     public record Calculation(List<CalculatedLine> lines, BigDecimal subtotal, BigDecimal discount, BigDecimal tax, BigDecimal total) {}
 }

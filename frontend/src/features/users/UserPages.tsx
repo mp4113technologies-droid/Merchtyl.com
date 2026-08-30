@@ -59,7 +59,7 @@ import {
 import type { AssignedStore, Register, RoleAdmin, Store, UserAdmin, UserRole } from '../../api/types';
 import { useSession } from '../../app/session';
 
-const employeeRoleOptions = ['STORE_MANAGER', 'CASHIER'] satisfies UserRole[];
+const employeeRoleOptions = ['STORE_MANAGER', 'CASHIER', 'KITCHEN'] satisfies UserRole[];
 type EmployeeUserRole = typeof employeeRoleOptions[number];
 const tenantRoleOptions = ['STORE_MANAGER', 'MANAGER', 'CASHIER'] as const;
 type TenantUserRole = typeof tenantRoleOptions[number];
@@ -90,7 +90,7 @@ const userSchema = z.object({
   password: passwordValueSchema.optional(),
   enabled: z.boolean(),
   locked: z.boolean(),
-  roles: z.array(z.enum(['STORE_MANAGER', 'CASHIER'])).min(1, 'Select one role').max(1, 'Select one role'),
+  roles: z.array(z.enum(['STORE_MANAGER', 'CASHIER', 'KITCHEN'])).min(1, 'Select one role').max(1, 'Select one role'),
   storeIds: z.array(z.string().uuid()).min(1, 'Select at least one assigned store'),
   registerIds: z.array(z.string().uuid())
 });
@@ -185,7 +185,8 @@ function assignableStoreToStore(store: AssignedStore): Store {
     active: true,
     createdAt: '',
     updatedAt: '',
-    version: 0
+    version: 0,
+    capabilities: store.capabilities ?? []
   };
 }
 
@@ -264,6 +265,9 @@ function AssignmentControls({
   onChange: (values: Partial<UserFormValues>) => void;
 }) {
   const storeMap = React.useMemo(() => new Map(stores.map((store) => [store.id, store])), [stores]);
+  const eligibleStores = values.roles.includes('KITCHEN')
+    ? stores.filter((store) => store.capabilities?.includes('FOOD_SERVICE'))
+    : stores;
   const visibleRegisters = values.storeIds.length === 0
     ? registers
     : registers.filter((register) => values.storeIds.includes(register.storeId));
@@ -291,8 +295,8 @@ function AssignmentControls({
       <Grid item xs={12} md={4}>
         <Typography variant="subtitle2" gutterBottom>Stores</Typography>
         <Stack spacing={0.5}>
-          {stores.length === 0 ? <Typography color="text.secondary">No stores available</Typography> : null}
-          {stores.map((store) => (
+          {eligibleStores.length === 0 ? <Typography color="text.secondary">No eligible food-service stores available</Typography> : null}
+          {eligibleStores.map((store) => (
             <FormControlLabel
               key={store.id}
               control={(

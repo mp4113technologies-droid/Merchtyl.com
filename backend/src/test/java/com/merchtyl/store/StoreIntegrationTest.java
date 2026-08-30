@@ -230,6 +230,40 @@ class StoreIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void supportsCapabilityCombinationsAndEnforcesFoodServiceApi() throws Exception {
+        String token = registerAndGetToken("operations@stores.test", "Operations Owner");
+        JsonNode retail = createStore(token, "retail", "Retail Store", true);
+        String foodBody = storeJson("food", "Restaurant", true)
+                .replace("\"capabilities\": [\"RETAIL\"]", "\"capabilities\": [\"FOOD_SERVICE\"], \"kitchenDisplayName\": \"Joe's Kitchen\"");
+        String bothBody = storeJson("both", "Market", true)
+                .replace("\"capabilities\": [\"RETAIL\"]", "\"capabilities\": [\"RETAIL\", \"FOOD_SERVICE\"]");
+
+        JsonNode food = objectMapper.readTree(mockMvc.perform(post("/api/v1/stores").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON).content(foodBody)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.capabilities[0]").value("FOOD_SERVICE"))
+                .andExpect(jsonPath("$.kitchenDisplayName").value("Joe's Kitchen")).andReturn().getResponse().getContentAsString());
+        mockMvc.perform(post("/api/v1/stores").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON).content(bothBody)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.foodServiceEnabled").value(true))
+                .andExpect(jsonPath("$.kitchenDisplayName").value("Market Kitchen"));
+
+        mockMvc.perform(get("/api/v1/stores/{id}/food-service/configuration", retail.get("id").asText())
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/stores/{id}/food-service/configuration", food.get("id").asText())
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.restaurantPosEnabled").value(true));
+    }
+
+    @Test
+    void rejectsStoreWithoutCapabilities() throws Exception {
+        String token = registerAndGetToken("nocap@stores.test", "No Cap Owner");
+        mockMvc.perform(post("/api/v1/stores").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(storeJson("none", "No Operations", true).replace("[\"RETAIL\"]", "[]")))
+                .andExpect(status().isBadRequest());
+    }
+
     private JsonNode createStore(String token, String code, String name, boolean active) throws Exception {
         String body = mockMvc.perform(post("/api/v1/stores")
                         .header("Authorization", "Bearer " + token)
@@ -276,6 +310,7 @@ class StoreIntegrationTest {
                   "pricesIncludeTax": true,
                   "negativeStockAllowed": false,
                   "active": %s
+                  ,"capabilities": ["RETAIL"]
                 }
                 """.formatted(code, name, code, code, active);
     }
@@ -297,6 +332,7 @@ class StoreIntegrationTest {
                   "pricesIncludeTax": false,
                   "negativeStockAllowed": true,
                   "active": %s,
+                  "capabilities": ["RETAIL"],
                   "version": %d
                 }
                 """.formatted(code, name, code, code, active, version);

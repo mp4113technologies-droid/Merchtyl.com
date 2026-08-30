@@ -178,8 +178,23 @@ public class SaleService {
 
     @Transactional
     public SaleResponse addItem(UUID saleId, SaleAddItemRequest request, Authentication authentication) {
+        return addItem(saleId, request, authentication, null, null);
+    }
+
+    @Transactional
+    public SaleResponse addFoodMenuItem(UUID saleId, UUID storeId, UUID productId, BigDecimal quantity,
+                                        BigDecimal menuPrice, Authentication authentication) {
+        return addItem(saleId, new SaleAddItemRequest(productId, quantity, null, null, false, false,
+                null, null, null, null), authentication, storeId, menuPrice);
+    }
+
+    private SaleResponse addItem(UUID saleId, SaleAddItemRequest request, Authentication authentication,
+                                 UUID requiredStoreId, BigDecimal trustedUnitPrice) {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
+        if (requiredStoreId != null && !sale.getStore().getId().equals(requiredStoreId)) {
+            throw new ForbiddenOperationException("Food menu does not belong to the sale store");
+        }
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
         requireDraft(sale);
         requireNoPayments(sale);
@@ -206,7 +221,7 @@ public class SaleService {
                 product,
                 variant,
                 normalizeQuantity(request.quantity()),
-                normalizeMoney(variant == null ? storeProduct.sellingPrice() : variant.getPrice(), "unitPrice"),
+                normalizeMoney(trustedUnitPrice != null ? trustedUnitPrice : (variant == null ? storeProduct.sellingPrice() : variant.getPrice()), "unitPrice"),
                 moneyZero(),
                 false,
                 Boolean.TRUE.equals(request.ageVerified()),

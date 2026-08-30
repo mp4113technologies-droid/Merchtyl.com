@@ -3,10 +3,18 @@ package com.merchtyl.store;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.util.UUID;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(
@@ -78,6 +86,15 @@ public class Store extends BaseUuidEntity {
 
     @Column(name = "tenant_id")
     private UUID tenantId;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "store_capabilities", joinColumns = @JoinColumn(name = "store_id"))
+    @Column(name = "capability", nullable = false, length = 40)
+    @Enumerated(EnumType.STRING)
+    private Set<StoreCapability> capabilities = new LinkedHashSet<>();
+
+    @Column(name = "kitchen_display_name", length = 180)
+    private String kitchenDisplayName;
 
     protected Store() {
     }
@@ -194,6 +211,16 @@ public class Store extends BaseUuidEntity {
     void setActive(boolean active) {
         this.active = active;
     }
+
+    void configureOperations(Set<StoreCapability> capabilities, String kitchenDisplayName) {
+        this.capabilities.clear();
+        this.capabilities.addAll(capabilities);
+        this.kitchenDisplayName = capabilities.contains(StoreCapability.FOOD_SERVICE) ? kitchenDisplayName : null;
+    }
+
+    public Set<StoreCapability> getCapabilities() { return Set.copyOf(capabilities); }
+    public String getKitchenDisplayName() { return kitchenDisplayName; }
+    public boolean isFoodServiceEnabled() { return capabilities.contains(StoreCapability.FOOD_SERVICE); }
 
     public String getCode() {
         return code;

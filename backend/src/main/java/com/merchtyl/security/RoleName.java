@@ -7,5 +7,6 @@ public enum RoleName {
     STORE_MANAGER,
     OWNER,
     MANAGER,
-    CASHIER
+    CASHIER,
+    KITCHEN
 }

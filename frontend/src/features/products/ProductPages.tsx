@@ -78,6 +78,8 @@ const sellableTypes = [
 ] as const;
 
 const productCapabilities = [
+  'RETAIL',
+  'FOOD_SERVICE',
   'TRACK_INVENTORY',
   'ALLOW_DECIMAL_QUANTITY',
   'ALLOW_DISCOUNT',

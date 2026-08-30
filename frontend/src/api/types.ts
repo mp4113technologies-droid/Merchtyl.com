@@ -1,4 +1,4 @@
-export type UserRole = 'PLATFORM_SUPER_ADMIN' | 'PLATFORM_SUPPORT_ADMIN' | 'TENANT_OWNER' | 'STORE_MANAGER' | 'OWNER' | 'MANAGER' | 'CASHIER';
+export type UserRole = 'PLATFORM_SUPER_ADMIN' | 'PLATFORM_SUPPORT_ADMIN' | 'TENANT_OWNER' | 'STORE_MANAGER' | 'OWNER' | 'MANAGER' | 'CASHIER' | 'KITCHEN';
 
 export type BillingPage<T> = { content: T[]; page: number; size: number; totalElements: number; totalPages: number };
 export type PricingPlan = {
@@ -6,9 +6,18 @@ export type PricingPlan = {
   billingInterval: 'MONTHLY' | 'YEARLY'; basePrice: number; oneTimeOnboardingFee: number; currency: string; trialDays: number;
   includedStores: number | null; includedRegisters: number | null; includedUsers: number | null;
   additionalStorePrice: number | null; additionalRegisterPrice: number | null; additionalUserPrice: number | null;
+  capabilityPrices: CapabilityPrice[];
   taxBehavior: 'EXCLUSIVE' | 'INCLUSIVE' | 'EXEMPT'; effectiveFrom: string; effectiveTo: string | null;
   activeMerchants: number; createdAt: string; updatedAt: string; version: number;
 };
+export type CommercialCapability = 'RETAIL_POS' | 'INVENTORY' | 'REGISTER_MANAGEMENT' | 'RETURNS' | 'REPORTING' | 'ADVANCED_REPORTING' | 'EMPLOYEE_MANAGEMENT' | 'FOOD_SERVICE' | 'LOTTERY';
+export type CapabilityInclusionType = 'INCLUDED' | 'PAID_ADD_ON' | 'NOT_AVAILABLE';
+export type CapabilityBillingUnit = 'PER_MERCHANT' | 'PER_STORE' | 'PER_REGISTER';
+export type CapabilityPrice = { capability: CommercialCapability; inclusionType: CapabilityInclusionType; billingUnit: CapabilityBillingUnit | null; monthlyPricePerStore: number | null };
+export type CapabilityCharge = { capability: CommercialCapability; description: string; storeCount: number; monthlyPricePerStore: number; monthlyTotal: number };
+export type CapabilityDefinition = { capability: CommercialCapability; displayName: string; supportedBillingUnits: CapabilityBillingUnit[] };
+export type PricingVersion = { id: string; pricingPlanId: string; versionNumber: number; status: 'ACTIVE' | 'SCHEDULED' | 'SUPERSEDED' | 'CANCELLED'; effectiveFrom: string; effectiveTo: string | null; subscriberPolicy: 'NEW_SUBSCRIPTIONS_ONLY' | 'APPLY_NEXT_BILLING_CYCLE'; pricing: Omit<PricingPlan, 'id' | 'activeMerchants' | 'createdAt' | 'updatedAt' | 'version'>; usedForBilling: boolean; createdAt: string; version: number };
+export type PricingPreview = { currency: string; baseSubscription: number; storeCount: number; includedStores: number; additionalStoreCount: number; additionalStoreMonthlyPrice: number; capabilityCharges: CapabilityCharge[]; estimatedMonthlySubscription: number };
 export type BillingSubscription = {
   id: string; tenantId: string; merchantName: string; pricingPlanId: string; planCode: string; planName: string;
   status: 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED'; billingInterval: 'MONTHLY' | 'YEARLY';
@@ -17,6 +26,7 @@ export type BillingSubscription = {
   standardBasePrice: number; merchantBasePrice: number; currency: string; includedStoresSnapshot: number | null;
   additionalStorePriceSnapshot: number | null; onboardingFeeSnapshot: number | null; onboardingFeeInvoicedAt: string | null;
   currentBillableStores: number; additionalBillableStores: number; estimatedMonthlyPrice: number;
+  capabilityCharges: CapabilityCharge[];
   customAdditionalStorePrice: number | null;
   customAdditionalRegisterPrice: number | null; customAdditionalUserPrice: number | null; discountName: string | null;
   discountType: 'PERCENTAGE' | 'FIXED_AMOUNT' | null; discountValue: number | null; pricingNotes: string | null;
@@ -347,6 +357,8 @@ export type SellableType =
   | 'DIGITAL_PRODUCT';
 
 export type ProductCapability =
+  | 'RETAIL'
+  | 'FOOD_SERVICE'
   | 'TRACK_INVENTORY'
   | 'ALLOW_DECIMAL_QUANTITY'
   | 'ALLOW_DISCOUNT'
@@ -361,6 +373,11 @@ export type ProductCapability =
   | 'EXCLUDE_FROM_LOYALTY'
   | 'RESTRICT_PAYMENT_METHOD'
   | 'NON_REFUNDABLE';
+
+export type FoodMenuCategory = { id: string; storeId: string; name: string; displayOrder: number; active: boolean; imageUrl: string | null; version: number };
+export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string; productName: string; displayName: string; price: number; displayOrder: number; available: boolean; imageUrl: string | null; version: number };
+export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
+export type FoodMenuItemPayload = { productId: string; categoryId: string; displayName: string; price: number; displayOrder: number; available: boolean; imageUrl?: string };
 
 export type ProductVariant = {
   id: string;
@@ -668,7 +685,13 @@ export type Store = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  capabilities?: StoreCapability[];
+  foodServiceEnabled?: boolean;
+  kitchenDisplayName?: string | null;
+  kitchenUsersCount?: number;
 };
+
+export type StoreCapability = 'RETAIL' | 'FOOD_SERVICE';
 
 export type StoreListResponse = PageResponse<Store>;
 
@@ -679,9 +702,11 @@ export type StoreDefaults = {
   locale: string | null;
   timezone: string | null;
   taxRegionCode: string | null;
+  capabilities?: StoreCapability[];
+  kitchenDisplayName: string | null;
 };
 
-export type AssignmentRole = 'MANAGER' | 'CASHIER';
+export type AssignmentRole = 'MANAGER' | 'CASHIER' | 'KITCHEN';
 export type AssignmentStatus = 'ACTIVE' | 'INACTIVE' | 'REVOKED' | 'PENDING';
 
 export type AssignedStore = {
@@ -691,6 +716,7 @@ export type AssignedStore = {
   city: string | null;
   administrativeDivisionCode: string | null;
   assignmentRole: AssignmentRole;
+  capabilities?: StoreCapability[];
 };
 
 export type CountryReference = {

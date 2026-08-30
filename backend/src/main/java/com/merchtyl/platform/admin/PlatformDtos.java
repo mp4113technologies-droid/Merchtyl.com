@@ -12,6 +12,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
+import com.merchtyl.store.StoreCapability;
 
 public final class PlatformDtos {
     private PlatformDtos() {
@@ -42,7 +44,9 @@ public final class PlatformDtos {
             @Size(max = 120) String ownerLastName,
             @Email @Size(max = 320) String ownerEmail,
             @Size(max = 40) String ownerPhone,
-            MerchantOwnerRequest owner
+            MerchantOwnerRequest owner,
+            Set<StoreCapability> storeCapabilities,
+            @Size(max = 180) String kitchenDisplayName
     ) {
     }
 
