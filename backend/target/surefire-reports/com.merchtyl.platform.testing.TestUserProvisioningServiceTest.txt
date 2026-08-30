@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.merchtyl.platform.testing.TestUserProvisioningServiceTest
 -------------------------------------------------------------------------------
-Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.288 s -- in com.merchtyl.platform.testing.TestUserProvisioningServiceTest
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.303 s -- in com.merchtyl.platform.testing.TestUserProvisioningServiceTest

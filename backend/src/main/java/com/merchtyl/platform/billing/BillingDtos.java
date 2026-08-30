@@ -77,17 +77,25 @@ public final class BillingDtos {
             BigDecimal standardBasePrice, BigDecimal merchantBasePrice, String currency,
             Integer includedStoresSnapshot, BigDecimal additionalStorePriceSnapshot,
             BigDecimal onboardingFeeSnapshot, Instant onboardingFeeInvoicedAt,
-            int currentBillableStores, int additionalBillableStores, BigDecimal estimatedMonthlyPrice,
+            int currentBillableStores, int additionalBillableStores,
+            Integer includedRegistersPerStoreSnapshot, BigDecimal additionalRegisterPriceSnapshot,
+            int currentBillableRegisters, int additionalBillableRegisters,
+            List<RegisterUsage> registerUsage, BigDecimal estimatedAdditionalRegisterCharge,
+            BigDecimal estimatedMonthlyPrice,
             List<CapabilityCharge> capabilityCharges,
             BigDecimal customAdditionalStorePrice, BigDecimal customAdditionalRegisterPrice,
             BigDecimal customAdditionalUserPrice, String discountName, String discountType,
             BigDecimal discountValue, String pricingNotes, Integer paymentTermsDays, long version) {}
+    public record RegisterUsage(UUID storeId,String storeName,int activeRegisters,int includedRegisters,int additionalRegisters) {}
 
     public record CapabilityPrice(@NotNull CommercialCapability capability, CapabilityInclusionType inclusionType,
                                   BillingUnit billingUnit, @DecimalMin("0") BigDecimal monthlyPricePerStore) {}
     public record CapabilityCharge(CommercialCapability capability, String description, BillingUnit billingUnit, int storeCount, BigDecimal monthlyPricePerStore, BigDecimal monthlyTotal) {}
     public record PricingPreview(String currency, BigDecimal baseSubscription, int storeCount, int includedStores,
                                  int additionalStoreCount, BigDecimal additionalStoreMonthlyPrice,
+                                 Integer includedRegistersPerStore, BigDecimal additionalRegisterMonthlyPrice,
+                                 int activeRegisterCount,int additionalRegisterCount,List<RegisterUsage> registerUsage,
+                                 BigDecimal additionalRegisterMonthlyTotal,
                                  List<CapabilityCharge> capabilityCharges, BigDecimal estimatedMonthlySubscription) {}
     public record PricingVersionRequest(@NotNull PlanRequest pricing, @NotBlank String effectivePolicy,
                                         LocalDate effectiveDate, @NotBlank String existingSubscriberPolicy,

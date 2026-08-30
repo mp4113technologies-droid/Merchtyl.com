@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -89,6 +89,21 @@ describe('platform billing pages', () => {
     await userEvent.click(screen.getByRole('button',{name:'Save Pricing Changes'}));
     expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({pricing:expect.objectContaining({capabilityPrices:expect.arrayContaining([expect.objectContaining({capability:'FOOD_SERVICE',billingUnit:'PER_USER'})])})}));
     expect(api.history.mock.results[0].value).toBeTruthy();
+  });
+
+  it('creates and versions included-register-per-store pricing without frontend totals', async () => {
+    renderPage(<PlatformPricingPlansPage />);
+    await userEvent.click(screen.getByRole('button',{name:'New Plan'}));
+    expect(screen.getByLabelText('Included Registers Per Store')).toHaveValue(1);
+    expect(screen.getByLabelText('Additional Register Price')).toHaveValue(0);
+    expect(screen.getByText(/Each store includes 1 registers/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Included Registers Per Store'),{target:{value:'-1'}});
+    expect(screen.getByRole('button',{name:'Create'})).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText('Included Registers Per Store'));
+    await userEvent.type(screen.getByLabelText('Included Registers Per Store'),'2');
+    await userEvent.clear(screen.getByLabelText('Additional Register Price'));
+    await userEvent.type(screen.getByLabelText('Additional Register Price'),'10');
+    expect(screen.getByRole('button',{name:'Create'})).toBeEnabled();
   });
 
   it('submits permission-gated merchant pricing overrides without changing the plan', async () => {

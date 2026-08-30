@@ -6,6 +6,7 @@ com/merchtyl/features/RegisterFeatureRepository.class
 com/merchtyl/product/ProductRequest.class
 com/merchtyl/tax/TaxCategoryRequest.class
 com/merchtyl/catalogue/package-info.class
+com/merchtyl/store/FoodServiceController.class
 com/merchtyl/logging/MerchtylLoggingProperties$Performance.class
 com/merchtyl/sales/package-info.class
 com/merchtyl/lottery/LotteryPayoutRepository.class
@@ -32,6 +33,7 @@ com/merchtyl/reference/TimezoneReference.class
 com/merchtyl/eod/EndOfDayLotterySummary.class
 com/merchtyl/lottery/LotteryPayoutPolicyStatusRequest.class
 com/merchtyl/supplier/ProductSupplierController.class
+com/merchtyl/platform/billing/BillingDtos$RegisterUsage.class
 com/merchtyl/features/FeatureResolutionSource.class
 com/merchtyl/platform/admin/PlatformDtos$OwnerInvitationResendResponse.class
 com/merchtyl/lottery/LotteryPayoutResponse.class
@@ -73,6 +75,7 @@ com/merchtyl/common/ForbiddenOperationException.class
 com/merchtyl/security/UserStatusRequest.class
 com/merchtyl/eod/BusinessDayRepository.class
 com/merchtyl/eod/EndOfDayExceptionType.class
+com/merchtyl/platform/billing/BillingDtos$PricingVersionResponse.class
 com/merchtyl/tax/TaxJurisdictionType.class
 com/merchtyl/email/RenderedEmailTemplate.class
 com/merchtyl/auth/CurrentUserResponse.class
@@ -133,6 +136,7 @@ com/merchtyl/cash/CashLedgerBreakdownResponse.class
 com/merchtyl/email/PlatformAdminInvitationEmailEvent.class
 com/merchtyl/config/SecurityProperties$Login.class
 com/merchtyl/cash/CashLedgerSourceType.class
+com/merchtyl/foodmenu/FoodMenuDtos$AddToSaleRequest.class
 com/merchtyl/eod/EndOfDaySignOffResponse.class
 com/merchtyl/common/ApiError.class
 com/merchtyl/platform/admin/PlatformDtos$PlatformUserUpdateRequest.class
@@ -152,6 +156,7 @@ com/merchtyl/eod/BusinessDayService$RegisterValuesWithSession.class
 com/merchtyl/product/ProductValues.class
 com/merchtyl/platform/admin/OnboardingStage.class
 com/merchtyl/inventory/StockAdjustmentService.class
+com/merchtyl/platform/billing/BillingDtos$PricingVersionRequest.class
 com/merchtyl/config/SecurityProperties.class
 com/merchtyl/lottery/LotteryPayoutCashAvailabilityResponse.class
 com/merchtyl/tax/TaxEngine.class
@@ -159,6 +164,7 @@ com/merchtyl/store/StoreSearchRequest.class
 com/merchtyl/sales/SaleAdjustmentStatus.class
 com/merchtyl/platform/testing/TestUserProvisioningService$1.class
 com/merchtyl/refunds/RefundPayment.class
+com/merchtyl/foodmenu/FoodMenuCategoryRepository.class
 com/merchtyl/inventory/StockAdjustmentRepository.class
 com/merchtyl/cash/CashMovementService$1.class
 com/merchtyl/sales/SaleRepository.class
@@ -211,6 +217,7 @@ com/merchtyl/store/StoreResponse.class
 com/merchtyl/lottery/LotteryOperatorValues.class
 com/merchtyl/lottery/LotteryCommissionRule.class
 com/merchtyl/tax/TaxRuleConditionValues.class
+com/merchtyl/platform/billing/BillingDtos$CapabilityPrice.class
 com/merchtyl/tax/CountryController.class
 com/merchtyl/lottery/LotteryPayoutStatus.class
 com/merchtyl/device/DeviceResponse.class
@@ -277,6 +284,7 @@ com/merchtyl/tax/TaxTypeStatusRequest.class
 com/merchtyl/tax/ProductTaxCategoryAssignmentRequest.class
 com/merchtyl/platform/admin/PlatformDtos$PlatformUserCreateRequest.class
 com/merchtyl/catalogue/CatalogueReferenceResponse.class
+com/merchtyl/platform/billing/CapabilityInclusionType.class
 com/merchtyl/idempotency/IdempotencyState.class
 com/merchtyl/inventory/InventoryStockChangeRequest.class
 com/merchtyl/auth/ForgotPasswordRequest.class
@@ -290,6 +298,7 @@ com/merchtyl/sales/WeightedProductSaleItemHandler.class
 com/merchtyl/tax/TaxTypeRequest.class
 com/merchtyl/email/EmailTemplateCode.class
 com/merchtyl/product/ProductUpdateRequest.class
+com/merchtyl/platform/billing/RegisterOverageService$StoreRegisterUsage.class
 com/merchtyl/tax/TaxComponentController.class
 com/merchtyl/auth/AuthService.class
 com/merchtyl/platform/admin/PlatformDtos$OwnerInviteResponse.class
@@ -380,7 +389,9 @@ com/merchtyl/platform/testing/TestProvisioningRateLimiter.class
 com/merchtyl/reports/SalesReportService$Totals.class
 com/merchtyl/inventory/package-info.class
 com/merchtyl/cash/CashLedgerService$1.class
+com/merchtyl/platform/billing/BillingQuantityService$1.class
 com/merchtyl/tax/TaxRuleActionValues.class
+com/merchtyl/platform/billing/PlatformBillingService$1.class
 com/merchtyl/reference/CurrencyRepository.class
 com/merchtyl/platform/admin/PlatformDtos$MerchantOwnerRequest.class
 com/merchtyl/platform/testing/TestUserProvisioningController.class
@@ -420,7 +431,9 @@ com/merchtyl/eod/BusinessDayService$EndOfDayCashierValues.class
 com/merchtyl/reports/InventoryReportService.class
 com/merchtyl/lottery/LotterySettlementResponse.class
 com/merchtyl/platform/web/RequestLoggingFilter.class
+com/merchtyl/platform/billing/CommercialCapability.class
 com/merchtyl/common/GlobalExceptionHandler.class
+com/merchtyl/foodmenu/FoodMenuDtos$AvailabilityRequest.class
 com/merchtyl/health/HealthController.class
 com/merchtyl/receipts/ReceiptRegisterDto.class
 com/merchtyl/lottery/LotteryPayoutRejectRequest.class
@@ -443,6 +456,7 @@ com/merchtyl/lottery/LotteryPayoutPolicyService.class
 com/merchtyl/eod/BusinessDayController.class
 com/merchtyl/platform/admin/PlatformDtos$LifecycleRequest.class
 com/merchtyl/supplier/SupplierResponse.class
+com/merchtyl/platform/billing/RegisterOverageService.class
 com/merchtyl/platform/admin/PlatformDtos$OwnerInvitationDeliverySummary.class
 com/merchtyl/tax/AdministrativeAreaStatusRequest.class
 com/merchtyl/lottery/LotteryOperatorRequest.class
@@ -452,6 +466,7 @@ com/merchtyl/lottery/LotteryPayoutValidationRequest.class
 com/merchtyl/features/FeatureService.class
 com/merchtyl/auth/JwtAuthenticationFilter.class
 com/merchtyl/common/BadRequestException.class
+com/merchtyl/foodmenu/FoodMenuService.class
 com/merchtyl/sales/SaleAdjustmentType.class
 com/merchtyl/tax/TaxComponentRepository.class
 com/merchtyl/lottery/LotteryCommissionRuleRequest.class
@@ -480,6 +495,7 @@ com/merchtyl/eod/BusinessDayOpenRequest.class
 com/merchtyl/platform/admin/PlatformDtos$PlatformUserStatusRequest.class
 com/merchtyl/tax/TaxGroupComponentResponse.class
 com/merchtyl/inventory/InventoryService.class
+com/merchtyl/store/FoodServiceConfigurationResponse.class
 com/merchtyl/refunds/Refund.class
 com/merchtyl/returns/ReturnItem.class
 com/merchtyl/eod/EndOfDayExceptionSummary.class
@@ -526,9 +542,11 @@ com/merchtyl/lottery/LotteryOperatorSearchRequest.class
 com/merchtyl/idempotency/IdempotencyStore.class
 com/merchtyl/lottery/LotteryPayoutPolicyUpdateRequest.class
 com/merchtyl/sales/SaleSearchRequest.class
+com/merchtyl/platform/billing/BillingDtos$CapabilityDefinition.class
 com/merchtyl/security/AuthRateLimitingFilter$Bucket.class
 com/merchtyl/eod/BusinessDayConfiguration.class
 com/merchtyl/sales/SaleItemRequest.class
+com/merchtyl/platform/billing/BillingDtos$CapabilityCharge.class
 com/merchtyl/lottery/LotteryOperatorResponse.class
 com/merchtyl/platform/admin/PlatformDtos$PlatformLoginRequest.class
 com/merchtyl/eod/RegisterSummaryValues.class
@@ -578,8 +596,10 @@ com/merchtyl/device/DeviceSearchRequest.class
 com/merchtyl/lottery/LotterySettlementStatus.class
 com/merchtyl/tax/TaxRuleActionResponse.class
 com/merchtyl/cash/CashMovementSearchRequest.class
+com/merchtyl/foodmenu/FoodMenuItem.class
 com/merchtyl/tax/TaxRateRepository.class
 com/merchtyl/config/PlatformAdministrationProperties.class
+com/merchtyl/foodmenu/FoodMenuController.class
 com/merchtyl/catalogue/BrandService.class
 com/merchtyl/cash/CashMovement.class
 com/merchtyl/security/UserRepository.class
@@ -617,6 +637,7 @@ com/merchtyl/device/DeviceStatusRequest.class
 com/merchtyl/platform/admin/PlatformDtos$TenantDeletionBlockerResponse.class
 com/merchtyl/tax/TaxTypeController.class
 com/merchtyl/product/ProductBarcodeRepository.class
+com/merchtyl/foodmenu/FoodMenuDtos$ItemResponse.class
 com/merchtyl/lottery/LotterySettlementSearchRequest.class
 com/merchtyl/cash/CashLedgerService.class
 com/merchtyl/tax/TaxRuleEvaluator.class
@@ -642,6 +663,7 @@ com/merchtyl/tax/TaxJurisdictionSearchRequest.class
 com/merchtyl/product/ProductSearchRequest.class
 com/merchtyl/payments/package-info.class
 com/merchtyl/inventory/StockCountStatus.class
+com/merchtyl/platform/billing/RegisterOverageService$RegisterOverage.class
 com/merchtyl/security/RolePermissionRepository.class
 com/merchtyl/receipts/ReceiptResponse.class
 com/merchtyl/inventory/InventoryBalanceSearchRequest.class
@@ -649,9 +671,11 @@ com/merchtyl/security/RolePermission.class
 com/merchtyl/returns/ReturnCreateRequest.class
 com/merchtyl/platform/admin/PlatformDtos$NamedCode.class
 com/merchtyl/eod/ClosingReminderResponse.class
+com/merchtyl/platform/billing/BillingQuantityService.class
 com/merchtyl/lottery/LotteryPayoutPolicyRequest.class
 com/merchtyl/eod/EndOfDayRegisterSummaryResponse.class
 com/merchtyl/auth/RefreshRequest.class
+com/merchtyl/store/StoreCapabilityService.class
 com/merchtyl/product/ProductVariantRequest.class
 com/merchtyl/lottery/LotterySaleResponse.class
 com/merchtyl/tax/TaxTypeRepository.class
@@ -670,6 +694,7 @@ com/merchtyl/reports/RegisterReportService$AmountSelector.class
 com/merchtyl/inventory/StockAdjustmentSearchRequest.class
 com/merchtyl/cash/CashMovementResponse.class
 com/merchtyl/tax/TaxTreatment.class
+com/merchtyl/foodmenu/FoodMenuDtos$ItemRequest.class
 com/merchtyl/tax/TaxGroupController.class
 com/merchtyl/tax/TaxCategoryService.class
 com/merchtyl/tax/TaxComponentUpdateRequest.class
@@ -678,9 +703,11 @@ com/merchtyl/register/RegisterStatusRequest.class
 com/merchtyl/reference/AdministrativeDivisionTimezone.class
 com/merchtyl/receipts/package-info.class
 com/merchtyl/config/JwtProperties.class
+com/merchtyl/foodmenu/FoodMenuDtos$CategoryResponse.class
 com/merchtyl/tax/TaxRuleConditionEvaluationResponse.class
 com/merchtyl/eod/EndOfDayReportResponse.class
 com/merchtyl/tax/TaxCategory.class
+com/merchtyl/platform/billing/SubscriptionEntitlementService.class
 com/merchtyl/platform/admin/PlatformAdminDtos$Response.class
 com/merchtyl/tax/TaxRateController.class
 com/merchtyl/eod/EndOfDayInventorySummaryResponse.class
@@ -698,6 +725,7 @@ com/merchtyl/tax/CountryUpdateRequest.class
 com/merchtyl/registersession/RegisterSessionController.class
 com/merchtyl/tax/TaxRuleEvaluationResponse.class
 com/merchtyl/platform/admin/PlatformAdminDtos$ActorSummary.class
+com/merchtyl/platform/billing/SubscriptionBillingService$CapabilityUsage.class
 com/merchtyl/sales/AbstractSaleItemHandler.class
 com/merchtyl/features/FeatureDefinitionResponse.class
 com/merchtyl/platform/testing/TestUserProvisioningRole.class
@@ -710,11 +738,14 @@ com/merchtyl/tax/TaxCategoryRepository.class
 com/merchtyl/features/FeatureCode.class
 com/merchtyl/tax/CountryRequest.class
 com/merchtyl/supplier/ProductSupplierStatusRequest.class
+com/merchtyl/platform/billing/BillingUnit.class
 com/merchtyl/tax/TaxGroupUpdateRequest.class
 com/merchtyl/reference/AdministrativeDivisionResponse.class
 com/merchtyl/cash/CashLedgerDirection.class
 com/merchtyl/auth/PasswordResetService.class
+com/merchtyl/foodmenu/FoodMenuItemRepository.class
 com/merchtyl/platform/testing/TestUserProvisioningProperties.class
+com/merchtyl/store/StoreCapability.class
 com/merchtyl/tax/TaxCalculationRequest.class
 com/merchtyl/platform/testing/TestUserProvisioningService.class
 com/merchtyl/tax/TaxGroupResponse.class
@@ -744,6 +775,7 @@ com/merchtyl/sales/SaleItem.class
 com/merchtyl/tax/TaxRateSearchRequest.class
 com/merchtyl/refunds/RefundProperties.class
 com/merchtyl/lottery/LotteryOperator.class
+com/merchtyl/store/StorePricingPreviewController.class
 com/merchtyl/inventory/StockCountSearchRequest.class
 com/merchtyl/lottery/LotteryPayoutPolicyController.class
 com/merchtyl/tax/TaxRuleActionType.class
@@ -756,6 +788,7 @@ com/merchtyl/security/AccountLockReason.class
 com/merchtyl/reports/SalesReportController.class
 com/merchtyl/tax/TaxRuleConditionResponse.class
 com/merchtyl/supplier/SupplierValues.class
+com/merchtyl/platform/billing/BillingDtos$PricingPreview.class
 com/merchtyl/sales/PriceOverrideRequest.class
 com/merchtyl/security/UserStoreAssignment.class
 com/merchtyl/email/EmailTemplateRenderer.class
@@ -772,6 +805,7 @@ com/merchtyl/catalogue/CatalogueReference.class
 com/merchtyl/register/RegisterController.class
 com/merchtyl/register/package-info.class
 com/merchtyl/reports/LotteryReportApprovalRow.class
+com/merchtyl/foodmenu/FoodMenuCategory.class
 com/merchtyl/email/OwnerInvitationEmailEvent.class
 com/merchtyl/config/PlatformAdministrationProperties$SupportAccess.class
 com/merchtyl/inventory/StockCountCreateRequest.class
@@ -795,10 +829,12 @@ com/merchtyl/security/RefreshTokenService.class
 com/merchtyl/cash/CashMovementType.class
 com/merchtyl/idempotency/IdempotencyConfig.class
 com/merchtyl/device/DeviceRepository.class
+com/merchtyl/foodmenu/FoodMenuDtos$CategoryRequest.class
 com/merchtyl/tax/TaxGroupSearchRequest.class
 com/merchtyl/lottery/LotteryPayoutReversalRepository.class
 com/merchtyl/tax/TaxJurisdictionUpdateRequest.class
 com/merchtyl/inventory/InventoryTransactionResponse.class
+com/merchtyl/foodmenu/FoodMenuDtos.class
 com/merchtyl/sales/Payment.class
 com/merchtyl/sales/PaymentResponse.class
 com/merchtyl/device/DeviceValues.class

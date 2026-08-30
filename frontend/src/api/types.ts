@@ -17,7 +17,7 @@ export type CapabilityPrice = { capability: CommercialCapability; inclusionType:
 export type CapabilityCharge = { capability: CommercialCapability; description: string; billingUnit: CapabilityBillingUnit; storeCount: number; monthlyPricePerStore: number; monthlyTotal: number };
 export type CapabilityDefinition = { capability: CommercialCapability; displayName: string; supportedBillingUnits: CapabilityBillingUnit[] };
 export type PricingVersion = { id: string; pricingPlanId: string; versionNumber: number; status: 'ACTIVE' | 'SCHEDULED' | 'SUPERSEDED' | 'CANCELLED'; effectiveFrom: string; effectiveTo: string | null; subscriberPolicy: 'NEW_SUBSCRIPTIONS_ONLY' | 'APPLY_NEXT_BILLING_CYCLE'; pricing: Omit<PricingPlan, 'id' | 'activeMerchants' | 'createdAt' | 'updatedAt' | 'version'>; usedForBilling: boolean; createdAt: string; version: number };
-export type PricingPreview = { currency: string; baseSubscription: number; storeCount: number; includedStores: number; additionalStoreCount: number; additionalStoreMonthlyPrice: number; capabilityCharges: CapabilityCharge[]; estimatedMonthlySubscription: number };
+export type PricingPreview = { currency: string; baseSubscription: number; storeCount: number; includedStores: number; additionalStoreCount: number; additionalStoreMonthlyPrice: number; includedRegistersPerStore:number|null; additionalRegisterMonthlyPrice:number|null; activeRegisterCount:number; additionalRegisterCount:number; registerUsage:Array<{storeId:string;storeName:string;activeRegisters:number;includedRegisters:number;additionalRegisters:number}>; additionalRegisterMonthlyTotal:number; capabilityCharges: CapabilityCharge[]; estimatedMonthlySubscription: number };
 export type BillingSubscription = {
   id: string; tenantId: string; merchantName: string; pricingPlanId: string; planCode: string; planName: string;
   status: 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED'; billingInterval: 'MONTHLY' | 'YEARLY';
@@ -25,7 +25,10 @@ export type BillingSubscription = {
   trialEndDate: string | null; cancelAtPeriodEnd: boolean; cancelledAt: string | null; cancellationReason: string | null;
   standardBasePrice: number; merchantBasePrice: number; currency: string; includedStoresSnapshot: number | null;
   additionalStorePriceSnapshot: number | null; onboardingFeeSnapshot: number | null; onboardingFeeInvoicedAt: string | null;
-  currentBillableStores: number; additionalBillableStores: number; estimatedMonthlyPrice: number;
+  currentBillableStores: number; additionalBillableStores: number; includedRegistersPerStoreSnapshot: number | null;
+  additionalRegisterPriceSnapshot: number | null; currentBillableRegisters: number; additionalBillableRegisters: number;
+  registerUsage: Array<{storeId:string;storeName:string;activeRegisters:number;includedRegisters:number;additionalRegisters:number}>;
+  estimatedAdditionalRegisterCharge:number; estimatedMonthlyPrice: number;
   capabilityCharges: CapabilityCharge[];
   customAdditionalStorePrice: number | null;
   customAdditionalRegisterPrice: number | null; customAdditionalUserPrice: number | null; discountName: string | null;

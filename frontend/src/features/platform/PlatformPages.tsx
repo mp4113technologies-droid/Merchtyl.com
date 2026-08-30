@@ -652,6 +652,8 @@ export function NewPlatformMerchantPage() {
               <Typography>Monthly Base: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.basePrice)}</Typography>
               <Typography>Included Stores: {selectedPlan.includedStores ?? 0}</Typography>
               <Typography>Additional Store: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.additionalStorePrice ?? 0)}/store/month</Typography>
+              <Typography>Registers Included: {selectedPlan.includedRegisters ?? 0} per store</Typography>
+              <Typography>Additional Register: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.additionalRegisterPrice ?? 0)}/register/month</Typography>
               <Typography>One-Time Onboarding: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(selectedPlan.oneTimeOnboardingFee)}</Typography>
               {pricingPreview.data?.capabilityCharges.map(charge=><Typography key={charge.capability}>{charge.description}: +{new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyPricePerStore)} / {charge.billingUnit.replace('PER_','').toLowerCase()} / month ({charge.storeCount} units; {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyTotal)} total)</Typography>)}
               <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedPlan.currency }).format(pricingPreview.data?.estimatedMonthlySubscription??selectedPlan.basePrice)}</Typography>
@@ -867,6 +869,12 @@ export function PlatformMerchantDetailPage() {
                 <Typography>Current Billable Stores: {billingSubscription.data.currentBillableStores}</Typography>
                 <Typography>Additional Billable Stores: {billingSubscription.data.additionalBillableStores}</Typography>
                 <Typography>Additional Store Rate: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.additionalStorePriceSnapshot ?? 0)}</Typography>
+                <Typography>Included Registers Per Store: {billingSubscription.data.includedRegistersPerStoreSnapshot ?? 0}</Typography>
+                <Typography>Additional Register Rate: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.additionalRegisterPriceSnapshot ?? 0)}</Typography>
+                <Typography>Active Registers: {billingSubscription.data.currentBillableRegisters}</Typography>
+                <Typography>Additional Registers: {billingSubscription.data.additionalBillableRegisters}</Typography>
+                {(billingSubscription.data.registerUsage??[]).map(store=><Typography key={store.storeId} variant="body2">{store.storeName}: {store.activeRegisters} registers · {store.includedRegisters} included · {store.additionalRegisters} additional</Typography>)}
+                <Typography>Upcoming Additional Register Charge: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.estimatedAdditionalRegisterCharge)}</Typography>
                 <Typography fontWeight={600}>Estimated Monthly: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.estimatedMonthlyPrice)}</Typography>
                 <Typography>One-Time Onboarding Fee: {new Intl.NumberFormat(undefined, { style: 'currency', currency: billingSubscription.data.currency }).format(billingSubscription.data.onboardingFeeSnapshot ?? 0)}</Typography>
                 <Typography>Onboarding Fee Status: {billingSubscription.data.onboardingFeeInvoicedAt ? 'INVOICED' : 'NOT INVOICED'}</Typography>

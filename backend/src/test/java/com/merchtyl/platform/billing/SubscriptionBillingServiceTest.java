@@ -91,6 +91,24 @@ class SubscriptionBillingServiceTest {
         assertThat(result.total()).isEqualByComparingTo("62.50");
     }
 
+    @Test
+    void billsAggregatedPerStoreRegisterOverageWithBigDecimalPrecision(){
+        var result=service.calculate(new SubscriptionBillingService.Input("Retail Pro",new BigDecimal("100"),1,2,null,new BigDecimal("30"),new BigDecimal("10.00"),null,3,7,0,null,null,BigDecimal.ZERO,BigDecimal.ZERO,false,List.of(),5));
+        assertThat(result.lines()).extracting(SubscriptionBillingService.CalculatedLine::lineType)
+                .containsExactly("BASE_SUBSCRIPTION","ADDITIONAL_STORE","ADDITIONAL_REGISTER");
+        var registerLine=result.lines().get(2);
+        assertThat(registerLine.quantity()).isEqualByComparingTo("5");
+        assertThat(registerLine.unitPrice()).isEqualByComparingTo("10.00");
+        assertThat(registerLine.lineSubtotal()).isEqualByComparingTo("50.00");
+        assertThat(result.total()).isEqualByComparingTo("210.00");
+    }
+
+    @Test
+    void zeroRegisterOveragePriceCreatesNoCharge(){
+        var result=service.calculate(new SubscriptionBillingService.Input("Legacy",new BigDecimal("50"),1,0,null,BigDecimal.ZERO,BigDecimal.ZERO,null,1,4,0,null,null,BigDecimal.ZERO,BigDecimal.ZERO,false,List.of(),4));
+        assertThat(result.lines()).extracting(SubscriptionBillingService.CalculatedLine::lineType).containsExactly("BASE_SUBSCRIPTION");
+    }
+
     private static SubscriptionBillingService.Input input(String base, int stores, int registers, int users, String discountType, String discount, String tax) {
         return new SubscriptionBillingService.Input("Growth Plan", new BigDecimal(base), 1, 2, 5,
                 new BigDecimal("20"), new BigDecimal("10"), new BigDecimal("5"), stores, registers, users,
