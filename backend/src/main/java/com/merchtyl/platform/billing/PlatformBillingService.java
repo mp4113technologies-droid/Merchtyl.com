@@ -163,7 +163,8 @@ public class PlatformBillingService {
     public PricingVersionResponse schedulePricingVersion(UUID planId,PricingVersionRequest request,Authentication authentication){
         PlanResponse current=plan(planId);validatePlan(request.pricing());
         if(current.version()!=request.expectedPlanVersion())throw new ConflictException("PRICING_PLAN_MODIFIED");
-        LocalDate effective=effectiveDate(request);
+        requireCapabilityRemovalConfirmation(planId,current.capabilityPrices(),request.pricing().capabilityPrices(),request.confirmCapabilityRemoval());
+        LocalDate effective=effectiveDate(planId,request);
         Integer conflict=jdbc.queryForObject("select count(*) from platform_pricing_plan_versions where pricing_plan_id=? and status in ('SCHEDULED','ACTIVE') and effective_from::date=?",Integer.class,planId,Date.valueOf(effective));
         if(conflict!=null&&conflict>0)throw new ConflictException("PRICING_PLAN_VERSION_CONFLICT");
         validateCapabilities(request.pricing().capabilityPrices());
@@ -567,14 +568,31 @@ public class PlatformBillingService {
     }
 
     private void syncSubscriptionEntitlements(UUID subscriptionId,List<CapabilityPrice> capabilities,LocalDate effective){
-        capabilities.stream().filter(value->normalizeInclusion(value)!=CapabilityInclusionType.NOT_AVAILABLE).forEach(value->jdbc.update("""
+        List<CapabilityPrice> configured=capabilities==null?List.of():capabilities;
+        Set<CommercialCapability> offered=configured.stream()
+                .filter(value->normalizeInclusion(value)!=CapabilityInclusionType.NOT_AVAILABLE).map(CapabilityPrice::capability).collect(java.util.stream.Collectors.toSet());
+        for(CommercialCapability capability:CommercialCapability.values())if(!offered.contains(capability))jdbc.update("update tenant_subscription_capabilities set status='INACTIVE',effective_to=?,updated_at=now(),version=version+1 where subscription_id=? and capability=? and status='ACTIVE'",Date.valueOf(effective),subscriptionId,capability.name());
+        configured.stream().filter(value->normalizeInclusion(value)!=CapabilityInclusionType.NOT_AVAILABLE).forEach(value->jdbc.update("""
                 insert into tenant_subscription_capabilities(id,subscription_id,capability,status,inclusion_type_snapshot,billing_unit_snapshot,unit_price_snapshot,effective_from)
                 values (?,?,?,?,?,?,?,?) on conflict(subscription_id,capability) do update set inclusion_type_snapshot=excluded.inclusion_type_snapshot,billing_unit_snapshot=excluded.billing_unit_snapshot,unit_price_snapshot=excluded.unit_price_snapshot,effective_from=excluded.effective_from,updated_at=now(),version=tenant_subscription_capabilities.version+1
                 """,UUID.randomUUID(),subscriptionId,value.capability().name(),normalizeInclusion(value)==CapabilityInclusionType.INCLUDED?"ACTIVE":"INACTIVE",normalizeInclusion(value).name(),value.billingUnit()==null?null:value.billingUnit().name(),value.monthlyPricePerStore(),Date.valueOf(effective)));
     }
 
     private static CapabilityDefinition definition(CommercialCapability capability,BillingUnit... units){return new CapabilityDefinition(capability,capability.name().replace('_',' '),List.of(units));}
-    private static LocalDate effectiveDate(PricingVersionRequest request){LocalDate value="NEXT_BILLING_CYCLE".equalsIgnoreCase(request.effectivePolicy())?LocalDate.now().plusDays(1):request.effectiveDate();if(value==null||!value.isAfter(LocalDate.now()))throw new BadRequestException("PRICING_PLAN_EFFECTIVE_DATE_INVALID");return value;}
+    private LocalDate effectiveDate(UUID planId,PricingVersionRequest request){
+        LocalDate value=request.effectiveDate();
+        if("NEXT_BILLING_CYCLE".equalsIgnoreCase(request.effectivePolicy()))value=jdbc.query("select min(next_billing_date) from tenant_subscriptions where pricing_plan_id=? and status in ('TRIAL','ACTIVE','PAST_DUE')",rs->{rs.next();Date date=rs.getDate(1);return date==null?LocalDate.now().plusDays(1):date.toLocalDate();},planId);
+        if(value==null||!value.isAfter(LocalDate.now()))throw new BadRequestException("PRICING_PLAN_EFFECTIVE_DATE_INVALID");return value;
+    }
+    private void requireCapabilityRemovalConfirmation(UUID planId,List<CapabilityPrice> current,List<CapabilityPrice> proposed,boolean confirmed){
+        if(confirmed)return;
+        Map<CommercialCapability,CapabilityInclusionType> next=(proposed==null?List.<CapabilityPrice>of():proposed).stream().collect(java.util.stream.Collectors.toMap(CapabilityPrice::capability,PlatformBillingService::normalizeInclusion));
+        for(CapabilityPrice capability:current){
+            if(normalizeInclusion(capability)==CapabilityInclusionType.NOT_AVAILABLE||next.getOrDefault(capability.capability(),CapabilityInclusionType.NOT_AVAILABLE)!=CapabilityInclusionType.NOT_AVAILABLE)continue;
+            Integer active=jdbc.queryForObject("select count(*) from tenant_subscription_capabilities c join tenant_subscriptions s on s.id=c.subscription_id where s.pricing_plan_id=? and c.capability=? and c.status='ACTIVE'",Integer.class,planId,capability.capability().name());
+            if(active!=null&&active>0)throw new ConflictException(active+" active merchant subscriptions currently use "+capability.capability().name()+"; confirmation is required");
+        }
+    }
     private static String subscriberPolicy(String value){return allowed(value,List.of("NEW_SUBSCRIPTIONS_ONLY","APPLY_NEXT_BILLING_CYCLE"),"subscriber policy");}
     private static void validateCapabilities(List<CapabilityPrice> capabilities){Set<CommercialCapability> seen=EnumSet.noneOf(CommercialCapability.class);for(CapabilityPrice value:capabilities==null?List.<CapabilityPrice>of():capabilities){if(!seen.add(value.capability()))throw new BadRequestException("PRICING_PLAN_CAPABILITY_DUPLICATE");CapabilityInclusionType type=normalizeInclusion(value);if(type==CapabilityInclusionType.PAID_ADD_ON&&(value.billingUnit()==null||value.monthlyPricePerStore()==null))throw new BadRequestException("Paid add-on requires price and billing unit");if(type!=CapabilityInclusionType.PAID_ADD_ON&&value.monthlyPricePerStore()!=null&&value.monthlyPricePerStore().signum()!=0)throw new BadRequestException("Included or unavailable capability cannot have a separate price");}}
 

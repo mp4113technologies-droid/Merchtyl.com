@@ -81,6 +81,16 @@ class SubscriptionBillingServiceTest {
         assertThat(result.lines()).extracting(SubscriptionBillingService.CalculatedLine::lineType).containsExactly("BASE_SUBSCRIPTION");
     }
 
+    @Test
+    void billsLotteryThroughGenericCapabilityLine() {
+        var result=service.calculate(new SubscriptionBillingService.Input("Retail",new BigDecimal("50"),1,null,null,new BigDecimal("10"),null,null,1,0,0,null,null,BigDecimal.ZERO,BigDecimal.ZERO,false,
+                List.of(new SubscriptionBillingService.CapabilityUsage("LOTTERY","Lottery add-on",1,new BigDecimal("12.50")))));
+        assertThat(result.lines()).extracting(SubscriptionBillingService.CalculatedLine::lineType)
+                .containsExactly("BASE_SUBSCRIPTION","CAPABILITY_ADD_ON");
+        assertThat(result.lines().get(1).description()).isEqualTo("Lottery add-on");
+        assertThat(result.total()).isEqualByComparingTo("62.50");
+    }
+
     private static SubscriptionBillingService.Input input(String base, int stores, int registers, int users, String discountType, String discount, String tax) {
         return new SubscriptionBillingService.Input("Growth Plan", new BigDecimal(base), 1, 2, 5,
                 new BigDecimal("20"), new BigDecimal("10"), new BigDecimal("5"), stores, registers, users,
