@@ -162,7 +162,7 @@ type AppProps = {
 
 function LoadingState() {
   return (
-    <Stack minHeight="100vh" alignItems="center" justifyContent="center" spacing={2} role="status" aria-live="polite">
+    <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} role="status" aria-live="polite">
       <CircularProgress aria-label="Loading application" />
       <Typography color="text.secondary">Loading workspace</Typography>
     </Stack>
@@ -226,8 +226,8 @@ function PosLayout() {
   });
 
   return (
-    <Box sx={{ width: '100vw', minHeight: '100vh', bgcolor: 'background.default' }}>
-      <Box component="header" sx={{ px: { xs: 1.5, sm: 2 }, py: 1, bgcolor: 'primary.dark', color: 'primary.contrastText', display: 'flex', gap: 2, alignItems: 'center' }}>
+    <Box sx={{ width: '100%', minWidth: 0, minHeight: '100dvh', bgcolor: 'background.default' }}>
+      <Box component="header" sx={{ px: { xs: 1, sm: 2 }, py: 1, bgcolor: 'primary.dark', color: 'primary.contrastText', display: 'flex', flexWrap: 'wrap', gap: { xs: 1, sm: 2 }, alignItems: 'center' }}>
         <Button component={Link} to="/store-menu" color="inherit" startIcon={<ArrowBackIcon />}>
           Back to Store Menu
         </Button>
@@ -237,7 +237,7 @@ function PosLayout() {
           <Typography variant="caption">{currentUser?.displayName ?? session?.displayName}</Typography>
         </Box>
       </Box>
-      <Box component="main" sx={{ p: { xs: 1, md: 2 }, minHeight: 'calc(100vh - 56px)' }}>
+      <Box component="main" sx={{ p: { xs: 1, md: 2 }, minWidth: 0, minHeight: 'calc(100dvh - 56px)' }}>
         <Outlet />
       </Box>
     </Box>
@@ -279,7 +279,7 @@ function StoreMenuPage() {
   ].filter((item) => item.visible);
 
   return (
-    <Stack spacing={3} sx={{ maxWidth: 900 }}>
+    <Stack spacing={3} sx={{ width: '100%', maxWidth: 1100, mx: 'auto', minWidth: 0 }}>
       <Box>
         <Typography variant="h4" component="h1">Store Menu</Typography>
         <Typography color="text.secondary">Store operations available to this account.</Typography>
@@ -306,7 +306,7 @@ function StoreMenuPage() {
         <Typography variant="h6" sx={{ mb: 2 }}>Store Operations</Typography>
         <Grid container spacing={2}>
           {operations.map((item) => (
-            <Grid item xs={12} sm={6} key={item.to}>
+            <Grid item xs={12} sm={6} lg={4} key={item.to}>
               <Button component={Link} to={item.to} variant="outlined" fullWidth sx={{ minHeight: 64 }}>{item.label}</Button>
             </Grid>
           ))}
@@ -389,13 +389,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   ];
 
   return (
-    <Stack sx={{ height: '100%' }}>
+    <Stack sx={{ height: '100%', minHeight: 0, overflowY: 'auto' }}>
       <Toolbar sx={{ gap: 1.5 }}>
         <StorefrontIcon color="primary" />
         <Typography variant="h6" component="div">Merchtyl</Typography>
       </Toolbar>
       <Divider />
-      <List component="nav" sx={{ px: 1, py: 2 }}>
+      <List component="nav" sx={{ px: 1, py: 2, minWidth: 0 }}>
         {navItems.map((item) => (
           <ListItemButton
             key={item.to}
@@ -484,7 +484,7 @@ function AppShell() {
   }, [isDesktop, mobileOpen]);
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box sx={{ display: 'flex', width: '100%', minWidth: 0, minHeight: '100dvh', bgcolor: 'background.default' }}>
       <Box
         component="a"
         href="#main-content"
@@ -523,7 +523,7 @@ function AppShell() {
           ml: { md: `${drawerWidth}px` }
         }}
       >
-        <Toolbar sx={{ gap: 2 }}>
+        <Toolbar sx={{ gap: { xs: 0.5, sm: 2 }, px: { xs: 1, sm: 2 } }}>
           <IconButton
             color="inherit"
             edge="start"
@@ -543,8 +543,14 @@ function AppShell() {
             </Avatar>
             <Typography variant="body2" color="text.secondary">{roles[0] ?? 'User'}</Typography>
           </Stack>
-          <Button color="inherit" startIcon={<LogoutIcon />} onClick={() => void logout()}>
-            Sign out
+          <Button
+            color="inherit"
+            aria-label="Sign out"
+            startIcon={<LogoutIcon />}
+            onClick={() => void logout()}
+            sx={{ minWidth: { xs: 40, sm: 'auto' }, px: { xs: 1, sm: 2 }, '& .MuiButton-startIcon': { mr: { xs: 0, sm: 1 } } }}
+          >
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sign out</Box>
           </Button>
           <Tooltip title="Keyboard shortcuts">
             <IconButton color="inherit" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
@@ -562,7 +568,7 @@ function AppShell() {
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', md: 'none' },
-            '& .MuiDrawer-paper': { width: drawerWidth }
+            '& .MuiDrawer-paper': { width: { xs: 'calc(100vw - 24px)', sm: drawerWidth }, maxWidth: drawerWidth }
           }}
         >
           <Box ref={mobileNavRef}>
@@ -591,12 +597,13 @@ function AppShell() {
         aria-label="Workspace content"
         sx={{
           flexGrow: 1,
-          width: { md: `calc(100% - ${drawerWidth}px)` },
+          width: 0,
+          minWidth: 0,
           outline: 'none'
         }}
       >
         <Toolbar />
-        <Box sx={{ p: { xs: 2, sm: 3, lg: 4 } }}>
+        <Box sx={{ width: '100%', maxWidth: 1920, mx: 'auto', minWidth: 0, p: { xs: 2, sm: 3, lg: 4 } }}>
           <Outlet />
         </Box>
       </Box>

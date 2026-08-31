@@ -1344,7 +1344,7 @@ export function PlatformLoginPage() {
   }
 
   return (
-    <Stack minHeight="100vh" alignItems="center" justifyContent="center" sx={{ bgcolor: 'background.default', p: 2 }}>
+    <Stack minHeight="100dvh" alignItems="center" justifyContent="center" sx={{ bgcolor: 'background.default', p: 2 }}>
       <Paper component="form" onSubmit={submit} variant="outlined" sx={{ width: '100%', maxWidth: 420, p: 3, borderRadius: 1 }}>
         <Stack spacing={2}>
           <Stack direction="row" spacing={1} alignItems="center">

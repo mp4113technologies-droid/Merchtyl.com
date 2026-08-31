@@ -75,7 +75,7 @@ export function AuthPage() {
   });
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: { xs: 4, md: 8 } }}>
+    <Box sx={{ minHeight: '100dvh', bgcolor: 'background.default', py: { xs: 4, md: 8 } }}>
       <Container maxWidth="sm">
         <Stack spacing={3}>
           <Stack spacing={1} alignItems="center">

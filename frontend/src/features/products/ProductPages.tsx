@@ -446,7 +446,7 @@ function ProductForm({
       {error ? <Alert severity="error">{error}</Alert> : null}
       {disabled ? <Alert severity="info">This account can view products but cannot change product records.</Alert> : null}
 
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 3 } }}>
         <Stack spacing={2}>
           <Typography variant="h6" component="h2">Product details</Typography>
           <Grid container spacing={2}>
@@ -583,7 +583,7 @@ function ProductForm({
 
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
         <Stack spacing={2}>
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>Variants</Typography>
             {!disabled ? (
               <Button
@@ -598,7 +598,7 @@ function ProductForm({
           </Stack>
           {variants.fields.length === 0 ? <Typography color="text.secondary">No variants configured.</Typography> : null}
           {variants.fields.map((variant, index) => (
-            <Paper key={variant.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
+            <Paper key={variant.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
               <Grid container spacing={2} alignItems="flex-start">
                 <Grid item xs={12} sm={3}>
                   <TextInput control={form.control} name={`variants.${index}.sku`} label="Variant SKU" disabled={disabled} />
@@ -631,9 +631,9 @@ function ProductForm({
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 3 } }}>
         <Stack spacing={2}>
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>Barcodes</Typography>
             {!disabled ? (
               <Button
@@ -648,7 +648,7 @@ function ProductForm({
           </Stack>
           {barcodes.fields.length === 0 ? <Typography color="text.secondary">No barcodes configured.</Typography> : null}
           {barcodes.fields.map((barcode, index) => (
-            <Paper key={barcode.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
+            <Paper key={barcode.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
               <Grid container spacing={2} alignItems="flex-start">
                 <Grid item xs={12} sm={5}>
                   <TextInput control={form.control} name={`barcodes.${index}.barcode`} label="Barcode" disabled={disabled} />
@@ -1057,13 +1057,13 @@ export function NewProductPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ minWidth: 0 }}>
         <Tooltip title="Back to products">
           <IconButton component={Link} to="/products" aria-label="Back to products">
             <ArrowBackIcon />
           </IconButton>
         </Tooltip>
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Typography variant="h5" component="h1">New product</Typography>
           <Typography color="text.secondary">Create a sellable item with variants, barcodes, pricing, and behavior.</Typography>
         </Box>

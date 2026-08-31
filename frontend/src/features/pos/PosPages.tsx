@@ -1207,14 +1207,14 @@ export function PosCartPage() {
   }, [barcodeMutation, cartLocked, current.data, paymentDialogOpen, pendingAgeVerification]);
 
   return (
-    <Stack spacing={2} sx={{ minHeight: 'calc(100vh - 88px)' }}>
+    <Stack spacing={2} sx={{ minHeight: 'calc(100dvh - 88px)', minWidth: 0 }}>
       <GlobalStyles styles={receiptPrintStyles} />
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2}>
         <Box>
           <Typography variant="h5" component="h1">Checkout</Typography>
           <Typography color="text.secondary">Scan, verify pricing and tax, then record payment.</Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
           <Button component={Link} to="/pos/held-sales" variant="outlined" startIcon={<PauseCircleOutlineIcon />}>
             Held sales
           </Button>
@@ -1269,8 +1269,8 @@ export function PosCartPage() {
             onNewSale={() => rememberSale(null)}
           />
         ) : (
-        <Grid container spacing={3}>
-          <Grid item xs={12} lg={8}>
+        <Grid container spacing={{ xs: 2, md: 3 }}>
+          <Grid item xs={12} md={8} sx={{ minWidth: 0 }}>
             <Stack spacing={2}>
               <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack spacing={2}>
@@ -1364,8 +1364,8 @@ export function PosCartPage() {
             </Stack>
           </Grid>
 
-          <Grid item xs={12} lg={4}>
-            <Stack spacing={2}>
+          <Grid item xs={12} md={4} sx={{ minWidth: 0 }}>
+            <Stack spacing={2} sx={{ position: { md: 'sticky' }, top: { md: 72 }, maxHeight: { md: 'calc(100dvh - 88px)' }, overflowY: { md: 'auto' } }}>
               <TotalsPanel sale={activeSale} currencyCode={currencyCode} />
               <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack spacing={1.5}>
