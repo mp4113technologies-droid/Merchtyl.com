@@ -54,6 +54,7 @@ import {
   type ProductUpdatePayload
 } from '../../api/client';
 import type { CatalogueReference, Product, ProductCapability, SellableType, TaxCategory, UserRole } from '../../api/types';
+import { compactFilterBarSx } from '../../app/responsive';
 import { useSession } from '../../app/session';
 
 type ProductFilterForm = {
@@ -355,6 +356,12 @@ function ProductStatusChip({ active }: { active: boolean }) {
   return <Chip label={active ? 'Active' : 'Inactive'} color={active ? 'success' : 'default'} size="small" />;
 }
 
+const productSelectMenuProps = {
+  PaperProps: {
+    sx: { maxHeight: 'min(320px, calc(100dvh - 96px))', maxWidth: 'calc(100vw - 32px)' }
+  }
+};
+
 function ProductForm({
   categories,
   brands,
@@ -442,53 +449,61 @@ function ProductForm({
   };
 
   return (
-    <Stack component="form" spacing={3} noValidate aria-busy={loading} onSubmit={form.handleSubmit(onSubmit)}>
+    <Stack
+      component="form"
+      data-testid="product-form"
+      spacing={{ xs: 2, lg: 3 }}
+      noValidate
+      aria-busy={loading}
+      onSubmit={form.handleSubmit(onSubmit)}
+      sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}
+    >
       {error ? <Alert severity="error">{error}</Alert> : null}
       {disabled ? <Alert severity="info">This account can view products but cannot change product records.</Alert> : null}
 
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 3 } }}>
-        <Stack spacing={2}>
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
+        <Stack spacing={{ xs: 1.5, lg: 2 }}>
           <Typography variant="h6" component="h2">Product details</Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={4}>
+          <Grid container spacing={{ xs: 1.5, lg: 2 }}>
+            <Grid item xs={12} md={4}>
               <TextInput control={form.control} name="sku" label="SKU" disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={8}>
+            <Grid item xs={12} md={8}>
               <TextInput control={form.control} name="name" label="Name" disabled={disabled} />
             </Grid>
             <Grid item xs={12}>
-              <TextInput control={form.control} name="description" label="Description" multiline minRows={3} disabled={disabled} />
+              <TextInput control={form.control} name="description" label="Description" multiline minRows={2} disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} md={6} xl={4}>
               <Controller
                 name="sellableType"
                 control={form.control}
                 render={({ field, fieldState }) => (
-                  <TextField {...field} select label="Sellable type" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
+                  <TextField {...field} select label="Sellable type" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth SelectProps={{ MenuProps: productSelectMenuProps }}>
                     {sellableTypes.map((type) => <MenuItem key={type} value={type}>{type.replaceAll('_', ' ')}</MenuItem>)}
                   </TextField>
                 )}
               />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} md={6} xl={4}>
               <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} md={6} xl={4}>
               <ReferenceSelect control={form.control} name="brandId" label="Brand" options={brands} disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} md={6} xl={4}>
               <ReferenceSelect control={form.control} name="unitOfMeasureId" label="Unit" options={units} disabled={disabled} showCode={false} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} md={6} xl={4}>
               <TextInput control={form.control} name="cost" label="Cost" type="number" disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} md={6} xl={4}>
               <TextInput control={form.control} name="price" label="Price" type="number" disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} md={6}>
               <TextInput control={form.control} name="imageUrl" label="Product image URL" disabled={disabled} />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} md={6}>
               <Controller
                 name="taxCategoryId"
                 control={form.control}
@@ -508,9 +523,10 @@ function ProductForm({
                           ? 'No tax categories are configured.'
                           : fieldState.error?.message}
                     fullWidth
+                    SelectProps={{ MenuProps: productSelectMenuProps }}
                   >
                     <MenuItem value="">Select Tax Category</MenuItem>
-                    {taxCategories.map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}
+                    {taxCategories.map((category) => <MenuItem key={category.id} value={category.id} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{category.name}</MenuItem>)}
                   </TextField>
                 )}
               />
@@ -547,19 +563,20 @@ function ProductForm({
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
-        <Stack spacing={2}>
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
+        <Stack spacing={{ xs: 1.5, lg: 2 }}>
           <Typography variant="h6" component="h2">Capabilities</Typography>
           <Controller
             name="capabilities"
             control={form.control}
             render={({ field }) => (
-              <FormGroup sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 0.5 }}>
+              <FormGroup sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' }, gap: 0.5, minWidth: 0 }}>
                 {productCapabilities.filter((capability) => capability !== 'REQUIRE_AGE_VERIFICATION').map((capability) => {
                   const checked = field.value.includes(capability);
                   return (
                     <FormControlLabel
                       key={capability}
+                      sx={{ minWidth: 0, m: 0, '& .MuiFormControlLabel-label': { overflowWrap: 'anywhere' } }}
                       control={(
                         <Checkbox
                           checked={checked}
@@ -581,8 +598,8 @@ function ProductForm({
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
-        <Stack spacing={2}>
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
+        <Stack spacing={{ xs: 1.5, lg: 2 }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>Variants</Typography>
             {!disabled ? (
@@ -599,24 +616,24 @@ function ProductForm({
           {variants.fields.length === 0 ? <Typography color="text.secondary">No variants configured.</Typography> : null}
           {variants.fields.map((variant, index) => (
             <Paper key={variant.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
-              <Grid container spacing={2} alignItems="flex-start">
-                <Grid item xs={12} sm={3}>
+              <Grid container spacing={{ xs: 1.5, lg: 2 }} alignItems="flex-start">
+                <Grid item xs={12} md={6} xl={3}>
                   <TextInput control={form.control} name={`variants.${index}.sku`} label="Variant SKU" disabled={disabled} />
                 </Grid>
-                <Grid item xs={12} sm={5}>
+                <Grid item xs={12} md={6} xl={5}>
                   <TextInput control={form.control} name={`variants.${index}.name`} label="Variant name" disabled={disabled} />
                 </Grid>
-                <Grid item xs={6} sm={2}>
+                <Grid item xs={12} sm={6} xl={2}>
                   <TextInput control={form.control} name={`variants.${index}.cost`} label="Cost" type="number" disabled={disabled} />
                 </Grid>
-                <Grid item xs={6} sm={2}>
+                <Grid item xs={12} sm={6} xl={2}>
                   <TextInput control={form.control} name={`variants.${index}.price`} label="Price" type="number" disabled={disabled} />
                 </Grid>
                 <Grid item xs={12}>
                   <TextInput control={form.control} name={`variants.${index}.description`} label="Variant description" disabled={disabled} />
                 </Grid>
                 <Grid item xs={12}>
-                  <Stack direction="row" spacing={1} alignItems="center">
+                  <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
                     <SwitchInput control={form.control} name={`variants.${index}.active`} label="Active" disabled={disabled} />
                     {!disabled ? (
                       <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => removeVariant(index)}>
@@ -631,8 +648,8 @@ function ProductForm({
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 3 } }}>
-        <Stack spacing={2}>
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
+        <Stack spacing={{ xs: 1.5, lg: 2 }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>Barcodes</Typography>
             {!disabled ? (
@@ -649,11 +666,11 @@ function ProductForm({
           {barcodes.fields.length === 0 ? <Typography color="text.secondary">No barcodes configured.</Typography> : null}
           {barcodes.fields.map((barcode, index) => (
             <Paper key={barcode.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
-              <Grid container spacing={2} alignItems="flex-start">
-                <Grid item xs={12} sm={5}>
+              <Grid container spacing={{ xs: 1.5, lg: 2 }} alignItems="flex-start">
+                <Grid item xs={12} md={6} xl={5}>
                   <TextInput control={form.control} name={`barcodes.${index}.barcode`} label="Barcode" disabled={disabled} />
                 </Grid>
-                <Grid item xs={12} sm={4}>
+                <Grid item xs={12} md={6} xl={4} sx={{ minWidth: 0 }}>
                   <Controller
                     name={`barcodes.${index}.variantId`}
                     control={form.control}
@@ -673,15 +690,23 @@ function ProductForm({
                         error={Boolean(fieldState.error)}
                         helperText={fieldState.error?.message}
                         fullWidth
-                        SelectProps={{ displayEmpty: true, renderValue: (value) => value === '' ? 'Base Variant' : variantOptions.find((variant) => variant.value === value)?.label ?? 'Select variant' }}
+                        SelectProps={{
+                          displayEmpty: true,
+                          MenuProps: productSelectMenuProps,
+                          renderValue: (value) => (
+                            <Box component="span" sx={{ display: 'block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {value === '' ? 'Base Variant' : variantOptions.find((variant) => variant.value === value)?.label ?? 'Select variant'}
+                            </Box>
+                          )
+                        }}
                       >
                         <MenuItem value="">Base Variant</MenuItem>
-                        {variantOptions.map((variant) => <MenuItem key={variant.clientId} value={variant.value}>{variant.label}</MenuItem>)}
+                        {variantOptions.map((variant) => <MenuItem key={variant.clientId} value={variant.value} sx={{ maxWidth: '100%', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{variant.label}</MenuItem>)}
                       </TextField>
                     )}
                   />
                 </Grid>
-                <Grid item xs={12} sm={3}>
+                <Grid item xs={12} xl={3}>
                   <Stack spacing={1}>
                     <SwitchInput control={form.control} name={`barcodes.${index}.primaryBarcode`} label="Primary" disabled={disabled} />
                     <SwitchInput control={form.control} name={`barcodes.${index}.active`} label="Active" disabled={disabled} />
@@ -701,16 +726,25 @@ function ProductForm({
       </Paper>
 
       {!disabled ? (
-        <Button
-          type="submit"
-          variant="contained"
-          startIcon={loading ? <CircularProgress color="inherit" size={18} /> : <SaveIcon />}
-          disabled={loading}
-          aria-busy={loading}
-          sx={{ alignSelf: 'flex-start' }}
+        <Paper
+          data-testid="product-action-bar"
+          elevation={4}
+          square
+          sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, sm: 0 }, px: { xs: 2, sm: 1.5 }, py: 1.25, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
         >
-          {loading ? 'Saving' : submitLabel}
-        </Button>
+          <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
+            <Button component={Link} to="/products" variant="outlined">Cancel</Button>
+            <Button
+              type="submit"
+              variant="contained"
+              startIcon={loading ? <CircularProgress color="inherit" size={18} /> : <SaveIcon />}
+              disabled={loading}
+              aria-busy={loading}
+            >
+              {loading ? 'Saving' : submitLabel}
+            </Button>
+          </Stack>
+        </Paper>
       ) : null}
     </Stack>
   );
@@ -776,9 +810,9 @@ function ReferenceSelect({
       name={name}
       control={control}
       render={({ field, fieldState }) => (
-        <TextField {...field} select label={label} disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
+        <TextField {...field} select label={label} disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth SelectProps={{ MenuProps: productSelectMenuProps }}>
           <MenuItem value="">None</MenuItem>
-          {options.map((option) => <MenuItem key={option.id} value={option.id}>{showCode ? referenceLabel(option) : option.name}</MenuItem>)}
+          {options.map((option) => <MenuItem key={option.id} value={option.id} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{showCode ? referenceLabel(option) : option.name}</MenuItem>)}
         </TextField>
       )}
     />
@@ -864,7 +898,7 @@ export function ProductsPage() {
   const pendingStatusProductId = statusMutation.isPending ? statusMutation.variables?.id : undefined;
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="h5" component="h1">Products</Typography>
@@ -885,9 +919,7 @@ export function ProductsPage() {
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Stack
           component="form"
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={2}
-          sx={{ p: 2 }}
+          sx={compactFilterBarSx}
           noValidate
           aria-label="Product filters"
           onSubmit={(event) => {
@@ -899,11 +931,11 @@ export function ProductsPage() {
           <TextField label="Name" value={filters.name} onChange={(event) => setFilters((value) => ({ ...value, name: event.target.value }))} fullWidth />
           <TextField label="SKU" value={filters.sku} onChange={(event) => setFilters((value) => ({ ...value, sku: event.target.value }))} fullWidth />
           <TextField label="Barcode" value={filters.barcode} onChange={(event) => setFilters((value) => ({ ...value, barcode: event.target.value }))} fullWidth />
-          <TextField select label="Category" value={filters.categoryId} onChange={(event) => setFilters((value) => ({ ...value, categoryId: event.target.value }))} fullWidth sx={{ minWidth: { md: 180 } }}>
+          <TextField select label="Category" value={filters.categoryId} onChange={(event) => setFilters((value) => ({ ...value, categoryId: event.target.value }))} fullWidth>
             <MenuItem value="">All categories</MenuItem>
             {(references.categories.data?.content ?? []).map((category) => <MenuItem key={category.id} value={category.id}>{referenceLabel(category)}</MenuItem>)}
           </TextField>
-          <TextField select label="Brand" value={filters.brandId} onChange={(event) => setFilters((value) => ({ ...value, brandId: event.target.value }))} fullWidth sx={{ minWidth: { md: 180 } }}>
+          <TextField select label="Brand" value={filters.brandId} onChange={(event) => setFilters((value) => ({ ...value, brandId: event.target.value }))} fullWidth>
             <MenuItem value="">All brands</MenuItem>
             {(references.brands.data?.content ?? []).map((brand) => <MenuItem key={brand.id} value={brand.id}>{referenceLabel(brand)}</MenuItem>)}
           </TextField>
@@ -913,13 +945,12 @@ export function ProductsPage() {
             value={filters.active}
             onChange={(event) => setFilters((value) => ({ ...value, active: event.target.value as ProductFilterForm['active'] }))}
             fullWidth
-            sx={{ minWidth: { md: 140 } }}
           >
             <MenuItem value="">Any</MenuItem>
             <MenuItem value="true">Active</MenuItem>
             <MenuItem value="false">Inactive</MenuItem>
           </TextField>
-          <Button type="submit" variant="outlined" startIcon={<SearchIcon />} sx={{ minWidth: 112, alignSelf: { md: 'stretch' } }}>
+          <Button type="submit" variant="outlined" startIcon={<SearchIcon />}>
             Search
           </Button>
         </Stack>
@@ -1074,11 +1105,11 @@ export function NewProductPage() {
       {references.units.isError ? <Alert severity="error">{errorMessage(references.units.error)}</Alert> : null}
       {stores.isError ? <Alert severity="error">{errorMessage(stores.error)}</Alert> : null}
       {!stores.isLoading ? (
-        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
           <Typography variant="h6" component="h2">Assigned stores</Typography>
-          <FormGroup row>
+          <FormGroup row sx={{ minWidth: 0 }}>
             {(stores.data ?? []).map((store) => (
-              <FormControlLabel key={store.storeId} label={store.storeName} control={(
+              <FormControlLabel key={store.storeId} label={store.storeName} sx={{ minWidth: 0, '& .MuiFormControlLabel-label': { overflowWrap: 'anywhere' } }} control={(
                 <Checkbox checked={storeIds.includes(store.storeId)} onChange={(_, checked) => setStoreIds((current) => checked
                   ? [...current, store.storeId]
                   : current.filter((id) => id !== store.storeId))} />
@@ -1182,7 +1213,7 @@ export function ProductDetailPage() {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Button component={Link} to="/products" startIcon={<ArrowBackIcon />} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
           Products

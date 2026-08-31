@@ -314,6 +314,9 @@ describe('Product pages', () => {
     render(<App initialEntries={['/products/new']} />);
 
     expect(await screen.findByRole('heading', { name: 'New product' })).toBeInTheDocument();
+    expect(await screen.findByTestId('product-form')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(screen.getByTestId('product-action-bar')).toHaveStyle({ position: 'sticky', bottom: '0' });
+    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/products');
     expect(screen.queryByLabelText('Tax category ID')).not.toBeInTheDocument();
     expect(await screen.findByRole('combobox', { name: 'Unit' })).toHaveTextContent('Each');
     expect(screen.queryByText('00000000-0000-0000-0000-000000000803')).not.toBeInTheDocument();
@@ -337,6 +340,7 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Price')[1], '3.25');
 
     await userEvent.click(screen.getByRole('button', { name: 'Add barcode' }));
+    expect(screen.getByRole('button', { name: 'Create product' })).toBeVisible();
     await userEvent.click(screen.getByRole('combobox', { name: 'Assign To Variant' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Large — TEA-LARGE' }));
     await userEvent.type(screen.getByLabelText('Barcode'), '987654321098');
@@ -391,6 +395,8 @@ describe('Product pages', () => {
     render(<App initialEntries={[`/products/${baseBarcodeProduct.id}`]} />);
 
     const assignment = await screen.findByRole('combobox', { name: 'Assign To Variant' });
+    expect(await screen.findByTestId('product-form')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(screen.getByTestId('product-action-bar')).toHaveStyle({ position: 'sticky', bottom: '0' });
     expect(assignment).toHaveTextContent('Base Variant');
     await userEvent.click(assignment);
     await userEvent.click(await screen.findByRole('option', { name: 'Large — COFFEE-LARGE' }));

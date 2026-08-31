@@ -86,6 +86,14 @@ export const theme = createTheme({
         }
       }
     },
+    MuiDialogContent: {
+      styleOverrides: {
+        root: {
+          overflowY: 'auto',
+          minWidth: 0
+        }
+      }
+    },
     MuiDrawer: {
       styleOverrides: {
         paper: {
@@ -96,7 +104,8 @@ export const theme = createTheme({
     MuiMenu: {
       styleOverrides: {
         paper: {
-          maxWidth: 'calc(100vw - 32px)'
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: 'calc(100dvh - 96px)'
         }
       }
     },
@@ -106,6 +115,23 @@ export const theme = createTheme({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap'
+        }
+      }
+    },
+    MuiCardContent: {
+      styleOverrides: {
+        root: {
+          '@media (max-width:1199.95px)': {
+            padding: 16,
+            '&:last-child': { paddingBottom: 16 }
+          }
+        }
+      }
+    },
+    MuiToolbar: {
+      styleOverrides: {
+        root: {
+          '@media (max-width:1199.95px)': { minHeight: 56 }
         }
       }
     },
@@ -137,6 +163,13 @@ export const theme = createTheme({
         root: {
           minWidth: 0,
           maxWidth: '100%'
+        }
+      }
+    },
+    MuiFormHelperText: {
+      styleOverrides: {
+        root: {
+          overflowWrap: 'anywhere'
         }
       }
     }

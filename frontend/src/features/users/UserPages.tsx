@@ -57,6 +57,7 @@ import {
   type UserAdminUpdatePayload
 } from '../../api/client';
 import type { AssignedStore, Register, RoleAdmin, Store, UserAdmin, UserRole } from '../../api/types';
+import { compactFilterBarSx } from '../../app/responsive';
 import { useSession } from '../../app/session';
 
 const employeeRoleOptions = ['STORE_MANAGER', 'CASHIER', 'KITCHEN'] satisfies UserRole[];
@@ -528,9 +529,7 @@ export function UsersPage() {
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Stack
           component="form"
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={2}
-          sx={{ p: 2 }}
+          sx={compactFilterBarSx}
           onSubmit={(event) => {
             event.preventDefault();
             setPage(0);
@@ -543,7 +542,6 @@ export function UsersPage() {
             label="Store"
             value={filters.storeId}
             onChange={(event) => setFilters((value) => ({ ...value, storeId: event.target.value }))}
-            sx={{ minWidth: 190 }}
           >
             <MenuItem value="">Any</MenuItem>
             {(storeOptions.data ?? []).map((store) => <MenuItem key={store.storeId} value={store.storeId}>{`${store.storeName} (${store.storeCode})`}</MenuItem>)}
@@ -553,7 +551,6 @@ export function UsersPage() {
             label="Role"
             value={filters.role}
             onChange={(event) => setFilters((value) => ({ ...value, role: event.target.value as UserFilterForm['role'] }))}
-            sx={{ minWidth: 150 }}
           >
             <MenuItem value="">Any</MenuItem>
             {employeeRoleOptions.map((role) => <MenuItem key={role} value={role}>{role}</MenuItem>)}
@@ -563,13 +560,12 @@ export function UsersPage() {
             label="Status"
             value={filters.enabled}
             onChange={(event) => setFilters((value) => ({ ...value, enabled: event.target.value as UserFilterForm['enabled'] }))}
-            sx={{ minWidth: 150 }}
           >
             <MenuItem value="">Any</MenuItem>
             <MenuItem value="true">Active</MenuItem>
             <MenuItem value="false">Inactive</MenuItem>
           </TextField>
-          <Button type="submit" variant="outlined" startIcon={<SearchIcon />} sx={{ minWidth: 112 }}>
+          <Button type="submit" variant="outlined" startIcon={<SearchIcon />}>
             Search
           </Button>
         </Stack>

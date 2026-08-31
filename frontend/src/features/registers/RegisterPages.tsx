@@ -49,6 +49,7 @@ import {
   type RegisterUpdatePayload
 } from '../../api/client';
 import type { Register, Store, UserRole } from '../../api/types';
+import { compactFilterBarSx } from '../../app/responsive';
 import { useSession } from '../../app/session';
 
 type RegisterFilterForm = {
@@ -359,9 +360,7 @@ export function RegistersPage() {
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Stack
           component="form"
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={2}
-          sx={{ p: 2 }}
+          sx={compactFilterBarSx}
           onSubmit={(event) => {
             event.preventDefault();
             setPage(0);
@@ -373,7 +372,6 @@ export function RegistersPage() {
             label="Store"
             value={filters.storeId}
             onChange={(event) => setFilters((value) => ({ ...value, storeId: event.target.value }))}
-            sx={{ minWidth: { md: 240 } }}
           >
             <MenuItem value="">All stores</MenuItem>
             {(stores.data?.content ?? []).map((store) => (
@@ -387,13 +385,12 @@ export function RegistersPage() {
             label="Status"
             value={filters.active}
             onChange={(event) => setFilters((value) => ({ ...value, active: event.target.value as RegisterFilterForm['active'] }))}
-            sx={{ minWidth: 150 }}
           >
             <MenuItem value="">Any</MenuItem>
             <MenuItem value="true">Active</MenuItem>
             <MenuItem value="false">Inactive</MenuItem>
           </TextField>
-          <Button type="submit" variant="outlined" startIcon={<SearchIcon />} sx={{ minWidth: 112 }}>
+          <Button type="submit" variant="outlined" startIcon={<SearchIcon />}>
             Search
           </Button>
         </Stack>

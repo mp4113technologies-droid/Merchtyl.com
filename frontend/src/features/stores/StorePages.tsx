@@ -66,6 +66,7 @@ import type {
   UserRole,
   StoreCapability
 } from '../../api/types';
+import { compactFilterBarSx } from '../../app/responsive';
 import { useSession } from '../../app/session';
 
 type StoreFilterForm = {
@@ -663,9 +664,7 @@ export function StoresPage() {
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Stack
           component="form"
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={2}
-          sx={{ p: 2 }}
+          sx={compactFilterBarSx}
           noValidate
           aria-label="Store filters"
           onSubmit={(event) => {
@@ -684,13 +683,12 @@ export function StoresPage() {
             value={filters.active}
             onChange={(event) => setFilters((value) => ({ ...value, active: event.target.value as StoreFilterForm['active'] }))}
             fullWidth
-            sx={{ minWidth: { md: 150 } }}
           >
             <MenuItem value="">Any</MenuItem>
             <MenuItem value="true">Active</MenuItem>
             <MenuItem value="false">Inactive</MenuItem>
           </TextField>
-          <Button type="submit" variant="outlined" startIcon={<SearchIcon />} sx={{ minWidth: 112, alignSelf: { md: 'stretch' } }}>
+          <Button type="submit" variant="outlined" startIcon={<SearchIcon />}>
             Search
           </Button>
         </Stack>

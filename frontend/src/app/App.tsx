@@ -279,12 +279,12 @@ function StoreMenuPage() {
   ].filter((item) => item.visible);
 
   return (
-    <Stack spacing={3} sx={{ width: '100%', maxWidth: 1100, mx: 'auto', minWidth: 0 }}>
+    <Stack spacing={{ xs: 2, lg: 3 }} sx={{ width: '100%', maxWidth: 1100, mx: 'auto', minWidth: 0 }}>
       <Box>
         <Typography variant="h4" component="h1">Store Menu</Typography>
         <Typography color="text.secondary">Store operations available to this account.</Typography>
       </Box>
-      <Paper variant="outlined" sx={{ p: 3 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, lg: 3 } }}>
         {activeSession ? (
           <Stack spacing={1.5}>
             <Typography variant="overline" color="text.secondary">Active register session</Typography>
@@ -306,7 +306,7 @@ function StoreMenuPage() {
         <Typography variant="h6" sx={{ mb: 2 }}>Store Operations</Typography>
         <Grid container spacing={2}>
           {operations.map((item) => (
-            <Grid item xs={12} sm={6} lg={4} key={item.to}>
+            <Grid item xs={12} sm={6} md={4} key={item.to}>
               <Button component={Link} to={item.to} variant="outlined" fullWidth sx={{ minHeight: 64 }}>{item.label}</Button>
             </Grid>
           ))}
@@ -429,7 +429,7 @@ function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const { currentUser, session, logout } = useSession();
-  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+  const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
   const location = useLocation();
   const mainRef = useRef<HTMLElement | null>(null);
   const desktopNavRef = useRef<HTMLElement | null>(null);
@@ -519,8 +519,8 @@ function AppShell() {
         sx={{
           borderBottom: '1px solid',
           borderColor: 'divider',
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          ml: { md: `${drawerWidth}px` }
+          width: { lg: `calc(100% - ${drawerWidth}px)` },
+          ml: { lg: `${drawerWidth}px` }
         }}
       >
         <Toolbar sx={{ gap: { xs: 0.5, sm: 2 }, px: { xs: 1, sm: 2 } }}>
@@ -529,7 +529,7 @@ function AppShell() {
             edge="start"
             aria-label="Open navigation"
             onClick={() => setMobileOpen(true)}
-            sx={{ display: { md: 'none' } }}
+            sx={{ display: { lg: 'none' } }}
           >
             <MenuIcon />
           </IconButton>
@@ -560,14 +560,14 @@ function AppShell() {
         </Toolbar>
       </AppBar>
 
-      <Box component="nav" aria-label="Primary navigation" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
+      <Box component="nav" aria-label="Primary navigation" sx={{ width: { lg: drawerWidth }, flexShrink: { lg: 0 } }}>
         <Drawer
           variant="temporary"
           open={mobileOpen && !isDesktop}
           onClose={() => setMobileOpen(false)}
           ModalProps={{ keepMounted: true }}
           sx={{
-            display: { xs: 'block', md: 'none' },
+            display: { xs: 'block', lg: 'none' },
             '& .MuiDrawer-paper': { width: { xs: 'calc(100vw - 24px)', sm: drawerWidth }, maxWidth: drawerWidth }
           }}
         >
@@ -579,7 +579,7 @@ function AppShell() {
           variant="permanent"
           open
           sx={{
-            display: { xs: 'none', md: 'block' },
+            display: { xs: 'none', lg: 'block' },
             '& .MuiDrawer-paper': { width: drawerWidth, boxSizing: 'border-box' }
           }}
         >
@@ -603,7 +603,7 @@ function AppShell() {
         }}
       >
         <Toolbar />
-        <Box sx={{ width: '100%', maxWidth: 1920, mx: 'auto', minWidth: 0, p: { xs: 2, sm: 3, lg: 4 } }}>
+        <Box sx={{ width: '100%', maxWidth: 1920, mx: 'auto', minWidth: 0, p: { xs: 2, lg: 3, xl: 4 } }}>
           <Outlet />
         </Box>
       </Box>
