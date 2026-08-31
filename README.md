@@ -66,7 +66,7 @@ Browser -> Vercel frontend -> Railway (Spring Boot) -> PostgreSQL/Neon
 
 ### 1. Configure the Railway backend service
 
-Create a Railway service from this repository and set its **Root Directory** to `backend`. Use `mvn clean package -DskipTests` as the build command and `java -jar target/merchtyl-backend-*.jar` as the start command. Railway detects Maven from `backend/pom.xml`, while `backend/.java-version` pins Java 21. Configure at least:
+Create a Railway service from this repository and set its **Root Directory** to `backend`. Use `mvn clean package -DskipTests` as the build command and `java -jar target/merchtyl-backend.jar` as the start command. Railway detects Maven from `backend/pom.xml`, while `backend/.java-version` pins Java 21. Configure at least:
 
 The importable `railway.env.json` file contains the required Railway variables with safe placeholders. Replace every `REPLACE_WITH_...` value before importing it into Railway; never commit the completed file containing real secrets.
 
@@ -152,7 +152,7 @@ MERCHTYL_EMAIL_PROVIDER='resend' \
 MERCHTYL_EMAIL_FROM_ADDRESS='notifications@YOUR_VERIFIED_DOMAIN' \
 RESEND_ENABLED='true' \
 RESEND_API_KEY='YOUR_RESEND_API_KEY' \
-java -jar backend/target/merchtyl-backend-*.jar
+java -jar backend/target/merchtyl-backend.jar
 ```
 
 Check `http://localhost:8080/actuator/health` after startup.
