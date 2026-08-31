@@ -195,6 +195,7 @@ public class ProductService {
         requireAllProductStoresManaged(product, authentication);
         requireCurrentVersion(product, request.version());
         ProductValues values = values(request);
+        requireOwnedChildIds(product, values);
         requireUniqueCodesForUpdate(tenantId, id, values);
         ProductResponse before = ProductResponse.from(product);
         product.update(values);
@@ -288,6 +289,7 @@ public class ProductService {
     private List<ProductVariantValues> variantValues(List<ProductVariantRequest> requests) {
         return nullSafe(requests).stream()
                 .map(request -> new ProductVariantValues(
+                        request.id(),
                         normalizeSku(request.sku(), "variant sku"),
                         cleanRequired(request.name(), "variant name"),
                         optionalText(request.description()),
@@ -300,7 +302,9 @@ public class ProductService {
     private List<ProductBarcodeValues> barcodeValues(List<ProductBarcodeRequest> requests) {
         return nullSafe(requests).stream()
                 .map(request -> new ProductBarcodeValues(
+                        request.id(),
                         cleanRequired(request.barcode(), "barcode"),
+                        request.variantId(),
                         normalizeOptionalSku(request.variantSku(), "barcode variantSku"),
                         request.primaryBarcode(),
                         request.active()))
@@ -326,6 +330,10 @@ public class ProductService {
 
     private void requireUniqueCodesForCreate(UUID tenantId, ProductValues values) {
         requireInternallyUnique(values);
+        if (values.variants().stream().anyMatch(variant -> variant.id() != null)
+                || values.barcodes().stream().anyMatch(barcode -> barcode.id() != null || barcode.variantId() != null)) {
+            throw new BadRequestException("Existing variant and barcode identifiers are not valid when creating a product");
+        }
         if (productSkuExists(tenantId, values.sku()) || variantSkuExists(tenantId, values.sku())) {
             throw new ConflictException("SKU already exists");
         }
@@ -336,7 +344,7 @@ public class ProductService {
         }
         for (ProductBarcodeValues barcode : values.barcodes()) {
             if (barcodeExists(tenantId, barcode.barcode())) {
-                throw new ConflictException("Barcode already exists");
+                throw barcodeAlreadyAssigned();
             }
         }
     }
@@ -370,7 +378,7 @@ public class ProductService {
         }
         for (ProductBarcodeValues barcode : values.barcodes()) {
             if (productBarcodeRepository.existsByTenantIdAndBarcodeIgnoreCaseAndProductIdNot(tenantId, barcode.barcode(), productId)) {
-                throw new ConflictException("Barcode already exists");
+                throw barcodeAlreadyAssigned();
             }
         }
     }
@@ -391,12 +399,50 @@ public class ProductService {
 
         Set<String> barcodes = new HashSet<>();
         values.barcodes().forEach(barcode -> addUnique(barcodes, barcode.barcode().toUpperCase(Locale.ROOT), "Duplicate barcode in request"));
+        Set<UUID> variantIds = new HashSet<>();
+        values.variants().stream().map(ProductVariantValues::id).filter(java.util.Objects::nonNull)
+                .forEach(id -> {
+                    if (!variantIds.add(id)) throw new BadRequestException("Duplicate variant identifier in request");
+                });
+        Set<UUID> barcodeIds = new HashSet<>();
+        values.barcodes().stream().map(ProductBarcodeValues::id).filter(java.util.Objects::nonNull)
+                .forEach(id -> {
+                    if (!barcodeIds.add(id)) throw new BadRequestException("Duplicate barcode identifier in request");
+                });
+    }
+
+    private void requireOwnedChildIds(Product product, ProductValues values) {
+        Set<UUID> variantIds = product.getVariants().stream().map(ProductVariant::getId).collect(Collectors.toSet());
+        Set<UUID> requestedVariantIds = values.variants().stream().map(ProductVariantValues::id)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        Set<UUID> barcodeIds = product.getBarcodes().stream().map(ProductBarcode::getId).collect(Collectors.toSet());
+        if (values.variants().stream().map(ProductVariantValues::id).filter(java.util.Objects::nonNull)
+                .anyMatch(id -> !variantIds.contains(id))) {
+            throw new BadRequestException("PRODUCT_VARIANT_INVALID");
+        }
+        if (values.barcodes().stream().map(ProductBarcodeValues::id).filter(java.util.Objects::nonNull)
+                .anyMatch(id -> !barcodeIds.contains(id))) {
+            throw new BadRequestException("BARCODE_INVALID");
+        }
+        if (values.barcodes().stream().map(ProductBarcodeValues::variantId).filter(java.util.Objects::nonNull)
+                .anyMatch(id -> !variantIds.contains(id) || !requestedVariantIds.contains(id))) {
+            throw new BadRequestException("PRODUCT_VARIANT_INVALID");
+        }
+    }
+
+    private static ConflictException barcodeAlreadyAssigned() {
+        return new ConflictException("Barcode is already assigned to another product or variant.");
     }
 
     private Product save(Product product) {
         try {
             return productRepository.saveAndFlush(product);
         } catch (DataIntegrityViolationException exception) {
+            String detail = exception.getMostSpecificCause().getMessage();
+            if (detail != null && (detail.contains("uq_product_barcodes_tenant_barcode_lower")
+                    || detail.contains("product_barcodes_barcode_key"))) {
+                throw barcodeAlreadyAssigned();
+            }
             throw new ConflictException("Product unique value already exists");
         }
     }

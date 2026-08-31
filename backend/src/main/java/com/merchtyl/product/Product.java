@@ -22,6 +22,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -115,7 +118,7 @@ public class Product extends BaseUuidEntity {
         this.decimalQuantityAllowed = values.decimalQuantityAllowed();
         this.imageUrl = values.imageUrl();
         this.taxCategoryId = values.taxCategoryId();
-        replaceChildren(values.variants(), values.barcodes());
+        reconcileChildren(values.variants(), values.barcodes());
         if (tenantId != null) {
             variants.forEach(variant -> variant.assignTenant(tenantId));
             barcodes.forEach(barcode -> barcode.assignTenant(tenantId));
@@ -148,35 +151,92 @@ public class Product extends BaseUuidEntity {
         return tenantId;
     }
 
-    private void replaceChildren(List<ProductVariantValues> variantValues, List<ProductBarcodeValues> barcodeValues) {
-        barcodes.clear();
-        replaceVariants(variantValues);
-        replaceBarcodes(barcodeValues);
+    private void reconcileChildren(List<ProductVariantValues> variantValues, List<ProductBarcodeValues> barcodeValues) {
+        Set<ProductVariant> retainedVariants = reconcileVariants(variantValues);
+        reconcileBarcodes(barcodeValues);
+        variants.removeIf(variant -> !retainedVariants.contains(variant));
     }
 
-    private void replaceVariants(List<ProductVariantValues> values) {
-        variants.clear();
-        values.forEach(value -> variants.add(new ProductVariant(this, value)));
+    private Set<ProductVariant> reconcileVariants(List<ProductVariantValues> values) {
+        Map<UUID, ProductVariant> existingById = new HashMap<>();
+        variants.forEach(variant -> existingById.put(variant.getId(), variant));
+        Set<ProductVariant> retained = new HashSet<>();
+        for (ProductVariantValues value : values) {
+            ProductVariant variant;
+            if (value.id() == null) {
+                variant = existingById.values().stream()
+                        .filter(candidate -> candidate.getSku().equals(value.sku()))
+                        .findFirst().orElse(null);
+                if (variant == null) {
+                    variant = new ProductVariant(this, value);
+                    variants.add(variant);
+                } else {
+                    existingById.remove(variant.getId());
+                    variant.update(value);
+                }
+            } else {
+                variant = existingById.remove(value.id());
+                if (variant == null) {
+                    throw new IllegalArgumentException("PRODUCT_VARIANT_INVALID");
+                }
+                variant.update(value);
+            }
+            retained.add(variant);
+        }
+        return retained;
     }
 
-    private void replaceBarcodes(List<ProductBarcodeValues> values) {
-        barcodes.clear();
-        values.forEach(value -> barcodes.add(new ProductBarcode(this, variantBySku(value.variantSku()), value)));
+    private void reconcileBarcodes(List<ProductBarcodeValues> values) {
+        Map<UUID, ProductBarcode> existingById = new HashMap<>();
+        barcodes.forEach(barcode -> existingById.put(barcode.getId(), barcode));
+        Set<ProductBarcode> retained = new HashSet<>();
+        for (ProductBarcodeValues value : values) {
+            ProductVariant variant = variant(value.variantId(), value.variantSku());
+            ProductBarcode barcode;
+            if (value.id() == null) {
+                barcode = existingById.values().stream()
+                        .filter(candidate -> candidate.getBarcode().equalsIgnoreCase(value.barcode()))
+                        .findFirst().orElse(null);
+                if (barcode == null) {
+                    barcode = new ProductBarcode(this, variant, value);
+                    barcodes.add(barcode);
+                } else {
+                    existingById.remove(barcode.getId());
+                    barcode.update(value, variant);
+                }
+            } else {
+                barcode = existingById.remove(value.id());
+                if (barcode == null) {
+                    throw new IllegalArgumentException("BARCODE_INVALID");
+                }
+                barcode.update(value, variant);
+            }
+            retained.add(barcode);
+        }
+        barcodes.removeIf(barcode -> !retained.contains(barcode));
     }
 
     private void replaceCapabilities(Set<ProductCapability> capabilities) {
-        capabilityAssignments.clear();
-        capabilities.forEach(capability -> capabilityAssignments.add(new ProductCapabilityAssignment(this, capability)));
+        capabilityAssignments.removeIf(assignment -> !capabilities.contains(assignment.getCapability()));
+        Set<ProductCapability> existing = capabilityAssignments.stream()
+                .map(ProductCapabilityAssignment::getCapability)
+                .collect(Collectors.toSet());
+        capabilities.stream().filter(capability -> !existing.contains(capability))
+                .forEach(capability -> capabilityAssignments.add(new ProductCapabilityAssignment(this, capability)));
     }
 
-    private ProductVariant variantBySku(String sku) {
-        if (sku == null) {
+    private ProductVariant variant(UUID variantId, String sku) {
+        if (variantId == null && sku == null) {
             return null;
         }
-        return variants.stream()
-                .filter(variant -> variant.getSku().equals(sku))
+        ProductVariant variant = variants.stream()
+                .filter(candidate -> variantId != null ? candidate.getId().equals(variantId) : candidate.getSku().equals(sku))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Barcode variant SKU does not belong to product"));
+                .orElseThrow(() -> new IllegalArgumentException("PRODUCT_VARIANT_INVALID"));
+        if (sku != null && !variant.getSku().equals(sku)) {
+            throw new IllegalArgumentException("PRODUCT_VARIANT_INVALID");
+        }
+        return variant;
     }
 
     public String getSku() {

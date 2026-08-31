@@ -263,6 +263,7 @@ type RefreshPayload = {
 };
 
 export type ProductVariantPayload = {
+  id?: string;
   sku: string;
   name: string;
   description?: string;
@@ -272,7 +273,9 @@ export type ProductVariantPayload = {
 };
 
 export type ProductBarcodePayload = {
+  id?: string;
   barcode: string;
+  variantId?: string;
   variantSku?: string;
   primaryBarcode: boolean;
   active: boolean;

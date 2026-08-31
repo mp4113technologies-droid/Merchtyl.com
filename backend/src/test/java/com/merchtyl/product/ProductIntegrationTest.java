@@ -231,6 +231,19 @@ class ProductIntegrationTest {
     }
 
     @Test
+    void updateKeepsExistingBarcodeWithoutDatabaseConstraintFailure() throws Exception {
+        String token = registerAndGetToken("owner-barcode-edit@products.test", "Owner");
+        JsonNode created = createProduct(token, "cola", "Test Cola", "123456789012", true);
+
+        mockMvc.perform(put("/api/v1/products/{id}", created.get("id").asText())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson("cola", "Test Cola", "123456789012", created.get("version").asLong(), true)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.barcodes[0].barcode").value("123456789012"));
+    }
+
+    @Test
     void duplicateSkuAndBarcodeAreRejected() throws Exception {
         String token = registerAndGetToken("owner@products.test", "Owner");
         createProduct(token, "coffee-12oz", "House Coffee", "012345678905", true);
@@ -247,7 +260,7 @@ class ProductIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productJson("tea-12oz", "Iced Tea", "012345678905", true)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("Barcode already exists"));
+                .andExpect(jsonPath("$.message").value("Barcode is already assigned to another product or variant."));
     }
 
     @Test

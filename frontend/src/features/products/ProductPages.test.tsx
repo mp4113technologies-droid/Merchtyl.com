@@ -337,7 +337,7 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Price')[1], '3.25');
 
     await userEvent.click(screen.getByRole('button', { name: 'Add barcode' }));
-    await userEvent.click(screen.getByRole('combobox', { name: 'Variant' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Assign To Variant' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Large — TEA-LARGE' }));
     await userEvent.type(screen.getByLabelText('Barcode'), '987654321098');
     await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
@@ -358,6 +358,56 @@ describe('Product pages', () => {
         && body.taxCategoryId !== 'Standard Tax'
         && body.capabilities.includes('ALLOW_DISCOUNT');
     })).toBe(true);
+  });
+
+  it('selects and persists the real base variant without losing the controlled value', async () => {
+    storeSession(['OWNER']);
+    const baseBarcodeProduct = product({
+      taxCategoryId: '00000000-0000-0000-0000-000000000901',
+      barcodes: [{
+        id: '00000000-0000-0000-0000-000000001203',
+        barcode: '123456789012',
+        variantId: null,
+        variantSku: null,
+        primaryBarcode: true,
+        active: true,
+        createdAt: '2026-07-22T12:00:00Z',
+        updatedAt: '2026-07-22T12:00:00Z',
+        version: 0
+      }]
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      const referenceResponse = mockReferenceEndpoints(url);
+      if (referenceResponse) return referenceResponse;
+      if (url.pathname.endsWith(`/api/v1/products/${baseBarcodeProduct.id}`) && init?.method === 'PUT') {
+        return jsonResponse({ ...baseBarcodeProduct, version: 1 });
+      }
+      if (url.pathname.endsWith(`/api/v1/products/${baseBarcodeProduct.id}`)) return jsonResponse(baseBarcodeProduct);
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={[`/products/${baseBarcodeProduct.id}`]} />);
+
+    const assignment = await screen.findByRole('combobox', { name: 'Assign To Variant' });
+    expect(assignment).toHaveTextContent('Base Variant');
+    await userEvent.click(assignment);
+    await userEvent.click(await screen.findByRole('option', { name: 'Large — COFFEE-LARGE' }));
+    expect(assignment).toHaveTextContent('Large — COFFEE-LARGE');
+    await userEvent.click(assignment);
+    await userEvent.click(await screen.findByRole('option', { name: 'Base Variant' }));
+    expect(assignment).toHaveTextContent('Base Variant');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
+      if (!String(input).includes(`/products/${baseBarcodeProduct.id}`) || init?.method !== 'PUT') return false;
+      const body = JSON.parse(String(init.body));
+      return body.variants[0].id === baseBarcodeProduct.variants[0].id
+        && body.barcodes[0].id === baseBarcodeProduct.barcodes[0].id
+        && body.barcodes[0].variantId == null
+        && body.barcodes[0].variantSku == null;
+    })).toBe(true));
   });
 
   it('validates, edits, and deactivates a product', async () => {

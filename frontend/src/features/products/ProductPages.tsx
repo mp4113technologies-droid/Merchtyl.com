@@ -99,6 +99,7 @@ const productCapabilities = [
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const variantSchema = z.object({
+  id: z.string().regex(uuidPattern).optional(),
   sku: z.string().trim().min(1, 'Variant SKU is required').max(64, 'Variant SKU must be 64 characters or fewer')
     .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
   name: z.string().trim().min(1, 'Variant name is required').max(180, 'Variant name must be 180 characters or fewer'),
@@ -109,7 +110,9 @@ const variantSchema = z.object({
 });
 
 const barcodeSchema = z.object({
+  id: z.string().regex(uuidPattern).optional(),
   barcode: z.string().trim().min(1, 'Barcode is required').max(128, 'Barcode must be 128 characters or fewer'),
+  variantId: z.string().optional(),
   variantSku: z.string().max(64, 'Variant SKU must be 64 characters or fewer').optional(),
   primaryBarcode: z.boolean(),
   active: z.boolean()
@@ -256,6 +259,7 @@ function productFormValues(product: Product): ProductFormValues {
     imageUrl: product.imageUrl ?? '',
     taxCategoryId: product.taxCategoryId ?? '',
     variants: product.variants.map((variant) => ({
+      id: variant.id,
       sku: variant.sku,
       name: variant.name,
       description: variant.description ?? '',
@@ -264,7 +268,9 @@ function productFormValues(product: Product): ProductFormValues {
       active: variant.active
     })),
     barcodes: product.barcodes.map((barcode) => ({
+      id: barcode.id,
       barcode: barcode.barcode,
+      variantId: barcode.variantId ?? undefined,
       variantSku: barcode.variantSku ?? '',
       primaryBarcode: barcode.primaryBarcode,
       active: barcode.active
@@ -302,6 +308,7 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
     imageUrl: optionalText(values.imageUrl),
     taxCategoryId: optionalText(values.taxCategoryId),
     variants: values.variants.map((variant) => ({
+      id: variant.id,
       sku: variant.sku.trim().toUpperCase(),
       name: variant.name.trim(),
       description: optionalText(variant.description),
@@ -310,7 +317,9 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
       active: variant.active
     })),
     barcodes: values.barcodes.map((barcode) => ({
+      id: barcode.id,
       barcode: barcode.barcode.trim(),
+      variantId: barcode.variantId && uuidPattern.test(barcode.variantId) ? barcode.variantId : undefined,
       variantSku: optionalText(barcode.variantSku)?.toUpperCase(),
       primaryBarcode: barcode.primaryBarcode,
       active: barcode.active
@@ -379,31 +388,36 @@ function ProductForm({
     resolver: zodResolver(productSchema),
     defaultValues
   });
-  const variants = useFieldArray({ control: form.control, name: 'variants' });
-  const barcodes = useFieldArray({ control: form.control, name: 'barcodes' });
+  const variants = useFieldArray({ control: form.control, name: 'variants', keyName: 'fieldKey' });
+  const barcodes = useFieldArray({ control: form.control, name: 'barcodes', keyName: 'fieldKey' });
   const watchedVariants = useWatch({ control: form.control, name: 'variants' }) ?? [];
   const watchedBarcodes = useWatch({ control: form.control, name: 'barcodes' }) ?? [];
   const previousVariantSkus = React.useRef(new Map<string, string>());
-  const variantOptions = watchedVariants.reduce<Array<{ clientId: string; sku: string; label: string }>>((options, variant, index) => {
+  const variantOptions = watchedVariants.reduce<Array<{ clientId: string; value: string; id?: string; sku: string; label: string }>>((options, variant, index) => {
     const sku = variant.sku.trim().toUpperCase();
     if (!sku || options.some((option) => option.sku === sku)) return options;
     const name = variant.name.trim();
-    options.push({ clientId: variants.fields[index]?.id ?? `variant-${index}`, sku, label: name ? `${name} — ${sku}` : sku });
+    const clientId = variants.fields[index]?.fieldKey ?? `variant-${index}`;
+    options.push({ clientId, value: variant.id ?? sku, id: variant.id, sku, label: name ? `${name} — ${sku}` : sku });
     return options;
   }, []);
 
   React.useEffect(() => {
     const nextSkus = new Map<string, string>();
     watchedVariants.forEach((variant, index) => {
-      const clientId = variants.fields[index]?.id;
+      const clientId = variants.fields[index]?.fieldKey;
       if (!clientId) return;
       const nextSku = variant.sku.trim().toUpperCase();
       const previousSku = previousVariantSkus.current.get(clientId);
       nextSkus.set(clientId, nextSku);
       if (previousSku && nextSku && previousSku !== nextSku) {
         watchedBarcodes.forEach((barcode, barcodeIndex) => {
-          if (barcode.variantSku?.trim().toUpperCase() === previousSku) {
+          if (!barcode.variantId && barcode.variantSku?.trim().toUpperCase() === previousSku) {
             form.setValue(`barcodes.${barcodeIndex}.variantSku`, nextSku, { shouldDirty: true, shouldValidate: true });
+            form.setValue(`barcodes.${barcodeIndex}.variantId`, nextSku, { shouldDirty: true });
+          } else if (barcode.variantId === previousSku) {
+            form.setValue(`barcodes.${barcodeIndex}.variantSku`, nextSku, { shouldDirty: true, shouldValidate: true });
+            form.setValue(`barcodes.${barcodeIndex}.variantId`, nextSku, { shouldDirty: true });
           }
         });
       }
@@ -416,7 +430,7 @@ function ProductForm({
     if (!variant) return;
     const sku = variant.sku.trim().toUpperCase();
     const linkedBarcodeIndexes = watchedBarcodes
-      .map((barcode, barcodeIndex) => barcode.variantSku?.trim().toUpperCase() === sku ? barcodeIndex : -1)
+      .map((barcode, barcodeIndex) => barcode.variantId === variant.id || (!barcode.variantId && barcode.variantSku?.trim().toUpperCase() === sku) ? barcodeIndex : -1)
       .filter((barcodeIndex) => barcodeIndex >= 0);
     if (linkedBarcodeIndexes.length > 0) {
       const label = variant.name.trim() || sku;
@@ -584,7 +598,7 @@ function ProductForm({
           </Stack>
           {variants.fields.length === 0 ? <Typography color="text.secondary">No variants configured.</Typography> : null}
           {variants.fields.map((variant, index) => (
-            <Paper key={variant.id} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
+            <Paper key={variant.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
               <Grid container spacing={2} alignItems="flex-start">
                 <Grid item xs={12} sm={3}>
                   <TextInput control={form.control} name={`variants.${index}.sku`} label="Variant SKU" disabled={disabled} />
@@ -626,7 +640,7 @@ function ProductForm({
                 type="button"
                 variant="outlined"
                 startIcon={<AddIcon />}
-                onClick={() => barcodes.append({ barcode: '', variantSku: '', primaryBarcode: barcodes.fields.length === 0, active: true })}
+                onClick={() => barcodes.append({ barcode: '', variantId: undefined, variantSku: '', primaryBarcode: barcodes.fields.length === 0, active: true })}
               >
                 Add barcode
               </Button>
@@ -634,19 +648,35 @@ function ProductForm({
           </Stack>
           {barcodes.fields.length === 0 ? <Typography color="text.secondary">No barcodes configured.</Typography> : null}
           {barcodes.fields.map((barcode, index) => (
-            <Paper key={barcode.id} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
+            <Paper key={barcode.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
               <Grid container spacing={2} alignItems="flex-start">
                 <Grid item xs={12} sm={5}>
                   <TextInput control={form.control} name={`barcodes.${index}.barcode`} label="Barcode" disabled={disabled} />
                 </Grid>
                 <Grid item xs={12} sm={4}>
                   <Controller
-                    name={`barcodes.${index}.variantSku`}
+                    name={`barcodes.${index}.variantId`}
                     control={form.control}
                     render={({ field, fieldState }) => (
-                      <TextField {...field} select label="Variant" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
-                        <MenuItem value="">Base product</MenuItem>
-                        {variantOptions.map((variant) => <MenuItem key={variant.clientId} value={variant.sku}>{variant.label}</MenuItem>)}
+                      <TextField
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(event) => {
+                          const selected = String(event.target.value);
+                          const option = variantOptions.find((variant) => variant.value === selected);
+                          field.onChange(option?.value ?? undefined);
+                          form.setValue(`barcodes.${index}.variantSku`, option?.sku ?? '', { shouldDirty: true, shouldValidate: true });
+                        }}
+                        select
+                        label="Assign To Variant"
+                        disabled={disabled}
+                        error={Boolean(fieldState.error)}
+                        helperText={fieldState.error?.message}
+                        fullWidth
+                        SelectProps={{ displayEmpty: true, renderValue: (value) => value === '' ? 'Base Variant' : variantOptions.find((variant) => variant.value === value)?.label ?? 'Select variant' }}
+                      >
+                        <MenuItem value="">Base Variant</MenuItem>
+                        {variantOptions.map((variant) => <MenuItem key={variant.clientId} value={variant.value}>{variant.label}</MenuItem>)}
                       </TextField>
                     )}
                   />
