@@ -1,3 +1,0 @@
-Merchtyl
-
-This is a transactional email configuration test for {{recipient}}.
