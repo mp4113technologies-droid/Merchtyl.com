@@ -80,6 +80,9 @@ record BusinessDayResponse(
         Instant closedAt,
         UUID closedBy,
         String closedByName,
+        Instant reopenedAt,
+        UUID reopenedBy,
+        String reopenedByName,
         String reopenReason,
         String forceCloseReason,
         @Schema(description = "Optimistic-lock version. Send this value in lifecycle requests.", example = "2")
@@ -103,6 +106,9 @@ record BusinessDayResponse(
                 day.getClosedAt(),
                 day.getClosedBy() == null ? null : day.getClosedBy().getId(),
                 day.getClosedBy() == null ? null : display(day.getClosedBy()),
+                day.getReopenedAt(),
+                day.getReopenedBy() == null ? null : day.getReopenedBy().getId(),
+                day.getReopenedBy() == null ? null : display(day.getReopenedBy()),
                 day.getReopenReason(),
                 day.getForceCloseReason(),
                 day.getVersion());

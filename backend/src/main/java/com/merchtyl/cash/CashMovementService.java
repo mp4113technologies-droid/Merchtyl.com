@@ -177,6 +177,9 @@ public class CashMovementService {
         if (session.getStatus() != RegisterSessionStatus.OPEN) {
             throw new ConflictException("Register session is not open");
         }
+        if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+            throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
+        }
         return session;
     }
 

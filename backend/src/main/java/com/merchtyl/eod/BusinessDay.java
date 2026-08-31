@@ -60,6 +60,13 @@ public class BusinessDay extends BaseUuidEntity {
     @Column(length = 1000)
     private String reopenReason;
 
+    @Column
+    private Instant reopenedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reopened_by", foreignKey = @ForeignKey(name = "fk_business_days_reopened_by"))
+    private User reopenedBy;
+
     @Column(length = 1000)
     private String forceCloseReason;
 
@@ -91,10 +98,12 @@ public class BusinessDay extends BaseUuidEntity {
 
     public void reopen(User actor, Instant at, String reason) {
         this.status = BusinessDayStatus.REOPENED;
-        this.closingStartedBy = actor;
-        this.closingStartedAt = at;
+        this.closingStartedBy = null;
+        this.closingStartedAt = null;
         this.closedBy = null;
         this.closedAt = null;
+        this.reopenedBy = actor;
+        this.reopenedAt = at;
         this.reopenReason = reason;
     }
 
@@ -140,6 +149,14 @@ public class BusinessDay extends BaseUuidEntity {
 
     public String getReopenReason() {
         return reopenReason;
+    }
+
+    public Instant getReopenedAt() {
+        return reopenedAt;
+    }
+
+    public User getReopenedBy() {
+        return reopenedBy;
     }
 
     public String getForceCloseReason() {

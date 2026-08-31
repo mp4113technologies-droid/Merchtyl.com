@@ -12,6 +12,8 @@ import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.device.Device;
 import com.merchtyl.device.DeviceRepository;
+import com.merchtyl.eod.BusinessDay;
+import com.merchtyl.eod.BusinessDayService;
 import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
 import com.merchtyl.security.User;
@@ -73,6 +75,8 @@ public class RegisterSessionService {
     private UserRoleRepository userRoleRepository;
     @Autowired(required = false)
     private RolePermissionRepository rolePermissionRepository;
+    @Autowired(required = false)
+    private BusinessDayService businessDayService;
 
     @Autowired
     public RegisterSessionService(
@@ -176,6 +180,9 @@ public class RegisterSessionService {
         }
         validateActive(store, register);
         validateRelationships(store, register);
+        BusinessDay businessDay = businessDayService == null
+                ? null
+                : businessDayService.requireOpenBusinessDayForUpdate(store.getId());
         if (registerSessionRepository.findFirstByRegister_IdAndStatusOrderByOpenedAtDesc(
                 register.getId(), RegisterSessionStatus.OPEN).isPresent()) {
             throw new ConflictException("REGISTER_OPENING_CASH_IMMUTABLE");
@@ -194,6 +201,7 @@ public class RegisterSessionService {
         RegisterSession session = new RegisterSession(
                 store,
                 register,
+                businessDay,
                 device,
                 cashier,
                 openingCash,

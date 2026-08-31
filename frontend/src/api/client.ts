@@ -1900,6 +1900,10 @@ export function getCurrentBusinessDay(token: string, storeId: string) {
   return request<BusinessDay | undefined>(`/business-days/current${queryString({ storeId })}`, undefined, token);
 }
 
+export function getLatestBusinessDay(token: string, storeId: string) {
+  return request<BusinessDay | undefined>(`/business-days/latest${queryString({ storeId })}`, undefined, token);
+}
+
 export function listBusinessDays(token: string, params: BusinessDaySearchParams = {}) {
   return request<BusinessDayListResponse>(`/business-days${queryString(params)}`, undefined, token);
 }

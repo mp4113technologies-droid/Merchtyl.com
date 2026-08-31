@@ -266,6 +266,9 @@ public class LotterySaleService {
             if (session.getStatus() != RegisterSessionStatus.OPEN) {
                 throw new ConflictException("Register session is not open");
             }
+            if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+                throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
+            }
             validateUserCanUseSession(actor, session, authentication);
         }
 
@@ -353,6 +356,9 @@ public class LotterySaleService {
         if (paymentMethod == PaymentMethod.CASH) {
             if (session.getStatus() != RegisterSessionStatus.OPEN) {
                 throw new ConflictException("Register session is not open");
+            }
+            if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+                throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
             }
             validateUserCanUseSession(actor, session, authentication);
         }

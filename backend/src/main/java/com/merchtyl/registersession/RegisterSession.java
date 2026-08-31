@@ -1,6 +1,8 @@
 package com.merchtyl.registersession;
 
 import com.merchtyl.device.Device;
+import com.merchtyl.eod.BusinessDay;
+import com.merchtyl.eod.BusinessDayStatus;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.register.Register;
 import com.merchtyl.security.User;
@@ -27,6 +29,10 @@ public class RegisterSession extends BaseUuidEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "register_id", nullable = false)
     private Register register;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "business_day_id")
+    private BusinessDay businessDay;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "device_id")
@@ -75,12 +81,14 @@ public class RegisterSession extends BaseUuidEntity {
     RegisterSession(
             Store store,
             Register register,
+            BusinessDay businessDay,
             Device device,
             User assignedCashier,
             BigDecimal openingCash,
             Instant openedAt) {
         this.store = store;
         this.register = register;
+        this.businessDay = businessDay;
         this.device = device;
         this.assignedCashier = assignedCashier;
         this.openedBy = assignedCashier;
@@ -90,12 +98,32 @@ public class RegisterSession extends BaseUuidEntity {
         initializeIdAndTimestamps();
     }
 
+    RegisterSession(
+            Store store,
+            Register register,
+            Device device,
+            User assignedCashier,
+            BigDecimal openingCash,
+            Instant openedAt) {
+        this(store, register, null, device, assignedCashier, openingCash, openedAt);
+    }
+
     public Store getStore() {
         return store;
     }
 
     public Register getRegister() {
         return register;
+    }
+
+    public BusinessDay getBusinessDay() {
+        return businessDay;
+    }
+
+    public boolean isBusinessDayOperational() {
+        return businessDay == null
+                || businessDay.getStatus() == BusinessDayStatus.OPEN
+                || businessDay.getStatus() == BusinessDayStatus.REOPENED;
     }
 
     public Device getDevice() {

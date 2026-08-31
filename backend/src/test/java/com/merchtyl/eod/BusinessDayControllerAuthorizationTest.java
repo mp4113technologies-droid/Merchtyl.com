@@ -97,6 +97,7 @@ class BusinessDayControllerAuthorizationTest {
 
     @Test
     void managerCanPreviewBusinessDayClose() throws Exception {
+        when(businessDayService.get(DAY_ID)).thenReturn(response());
         when(businessDayService.previewClosing(DAY_ID)).thenReturn(preview());
 
         mockMvc.perform(get("/api/v1/business-days/{id}/preview", DAY_ID)
@@ -125,6 +126,9 @@ class BusinessDayControllerAuthorizationTest {
                 Instant.parse("2026-07-29T23:05:00Z"),
                 UUID.fromString("00000000-0000-0000-0000-000000001003"),
                 "Manager One",
+                null,
+                null,
+                null,
                 null,
                 null,
                 1);

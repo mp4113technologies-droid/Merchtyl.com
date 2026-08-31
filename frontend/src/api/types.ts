@@ -461,6 +461,9 @@ export type BusinessDay = {
   closedAt: string | null;
   closedBy: string | null;
   closedByName: string | null;
+  reopenedAt: string | null;
+  reopenedBy: string | null;
+  reopenedByName: string | null;
   reopenReason: string | null;
   forceCloseReason: string | null;
   version: number;

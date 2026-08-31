@@ -143,7 +143,9 @@ public class SaleService {
                 session,
                 actor,
                 request.customerId(),
-                Instant.now(clock).atZone(ZoneId.of(session.getStore().getTimezone())).toLocalDate(),
+                session.getBusinessDay() == null
+                        ? Instant.now(clock).atZone(ZoneId.of(session.getStore().getTimezone())).toLocalDate()
+                        : session.getBusinessDay().getBusinessDate(),
                 cleanOptional(request.saleChannel()),
                 session.getStore().getCurrencyCode(),
                 session.getStore().isPricesIncludeTax());
@@ -534,6 +536,9 @@ public class SaleService {
                 .orElseThrow(() -> new NotFoundException("Register session not found"));
         if (session.getStatus() != RegisterSessionStatus.OPEN) {
             throw new ConflictException("Register session is not open");
+        }
+        if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+            throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
         }
         return session;
     }

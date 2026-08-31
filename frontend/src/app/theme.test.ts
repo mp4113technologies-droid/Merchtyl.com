@@ -22,5 +22,6 @@ describe('responsive application theme', () => {
     expect(dialogPaper.maxHeight).toBe('calc(100dvh - 32px)');
     expect(drawerPaper.maxWidth).toBe('calc(100vw - 24px)');
     expect(menuPaper.maxWidth).toBe('calc(100vw - 32px)');
+    expect(menuPaper.maxHeight).toBe('calc(100dvh - 96px)');
   });
 });

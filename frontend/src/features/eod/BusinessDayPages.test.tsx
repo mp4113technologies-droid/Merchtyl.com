@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
 import type { AuthResponse, BusinessDay, ClosingValidation, CurrentUserResponse, EndOfDayClosingPreview, EndOfDayReport, Store, StoreListResponse, UserRole } from '../../api/types';
@@ -54,7 +54,7 @@ function store(): Store {
   };
 }
 
-function businessDay(): BusinessDay {
+function businessDay(overrides: Partial<BusinessDay> = {}): BusinessDay {
   return {
     id: dayId,
     storeId,
@@ -72,9 +72,13 @@ function businessDay(): BusinessDay {
     closedAt: null,
     closedBy: null,
     closedByName: null,
+    reopenedAt: null,
+    reopenedBy: null,
+    reopenedByName: null,
     reopenReason: null,
     forceCloseReason: null,
-    version: 0
+    version: 0,
+    ...overrides
   };
 }
 
@@ -232,6 +236,7 @@ describe('Business day pages', () => {
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
       if (url.pathname.endsWith('/api/v1/business-days/current')) return jsonResponse(businessDay());
+      if (url.pathname.endsWith('/api/v1/business-days/latest')) return jsonResponse(businessDay());
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse(validation());
       return jsonResponse({}, 404);
     });
@@ -242,6 +247,61 @@ describe('Business day pages', () => {
     expect(await screen.findByText('2026-07-29')).toBeInTheDocument();
     expect(await screen.findByText('Register session remains open: FRONT')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('switches Store business-day state and reopens the selected closed day', async () => {
+    storeSession(['MANAGER']);
+    const airportStoreId = '00000000-0000-0000-0000-000000001211';
+    const airportDayId = '00000000-0000-0000-0000-000000001212';
+    const airportStore = { ...store(), id: airportStoreId, code: 'AIR', name: 'Airport Store' };
+    const closedAirportDay = businessDay({
+      id: airportDayId,
+      storeId: airportStoreId,
+      storeCode: 'AIR',
+      storeName: 'Airport Store',
+      status: 'CLOSED',
+      closedAt: '2026-07-30T02:00:00Z',
+      closedBy: '00000000-0000-0000-0000-000000001204',
+      closedByName: 'Manager One',
+      version: 3
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store(), airportStore]) satisfies StoreListResponse);
+      if (url.pathname.endsWith('/api/v1/business-days/current')) {
+        return url.searchParams.get('storeId') === airportStoreId
+          ? Promise.resolve(new Response(null, { status: 204 }))
+          : jsonResponse(businessDay());
+      }
+      if (url.pathname.endsWith('/api/v1/business-days/latest')) {
+        return jsonResponse(url.searchParams.get('storeId') === airportStoreId ? closedAirportDay : businessDay());
+      }
+      if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse(validation());
+      if (url.pathname.endsWith(`/api/v1/business-days/${airportDayId}/reopen`) && init?.method === 'POST') {
+        return jsonResponse({ ...closedAirportDay, status: 'REOPENED', reopenedAt: '2026-07-30T02:10:00Z', reopenedBy: closedAirportDay.closedBy, reopenedByName: 'Manager One', version: 4 });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByText('OPEN')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('combobox', { name: 'Store' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Airport Store (AIR)' }));
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Airport Store (AIR)' })).not.toBeInTheDocument());
+    await waitFor(() => expect(document.body.style.overflow).not.toBe('hidden'));
+    expect(await screen.findByText('CLOSED')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reopen business day' }));
+    const reopenDialog = await screen.findByRole('dialog');
+    await userEvent.type(within(reopenDialog).getByRole('textbox', { name: 'Reason for reopening' }), 'Store reopened for additional evening sales');
+    await userEvent.click(within(reopenDialog).getByRole('button', { name: 'Reopen' }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
+      if (!String(input).includes(`/business-days/${airportDayId}/reopen`) || init?.method !== 'POST') return false;
+      const body = JSON.parse(String(init.body));
+      return body.version === 3 && body.reason === 'Store reopened for additional evening sales';
+    })).toBe(true));
   });
 
   it('renders a report and exports CSV from the immutable report endpoint', async () => {
@@ -270,6 +330,7 @@ describe('Business day pages', () => {
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
       if (url.pathname.endsWith('/api/v1/business-days/current')) return jsonResponse(businessDay());
+      if (url.pathname.endsWith('/api/v1/business-days/latest')) return jsonResponse(businessDay());
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse({ ...validation(), closable: true, blockers: [] });
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/preview`)) return jsonResponse(closingPreview());
       return jsonResponse({}, 404);

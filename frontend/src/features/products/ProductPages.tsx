@@ -456,7 +456,14 @@ function ProductForm({
       noValidate
       aria-busy={loading}
       onSubmit={form.handleSubmit(onSubmit)}
-      sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        '& .MuiGrid-item': { minWidth: 0 },
+        '& .MuiFormControl-root': { minWidth: 0, maxWidth: '100%' },
+        '& .MuiInputBase-root': { minWidth: 0, maxWidth: '100%' }
+      }}
     >
       {error ? <Alert severity="error">{error}</Alert> : null}
       {disabled ? <Alert severity="info">This account can view products but cannot change product records.</Alert> : null}
@@ -615,7 +622,7 @@ function ProductForm({
           </Stack>
           {variants.fields.length === 0 ? <Typography color="text.secondary">No variants configured.</Typography> : null}
           {variants.fields.map((variant, index) => (
-            <Paper key={variant.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
+            <Paper key={variant.fieldKey} data-testid="product-variant-card" elevation={0} sx={{ width: '100%', maxWidth: '100%', minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
               <Grid container spacing={{ xs: 1.5, lg: 2 }} alignItems="flex-start">
                 <Grid item xs={12} md={6} xl={3}>
                   <TextInput control={form.control} name={`variants.${index}.sku`} label="Variant SKU" disabled={disabled} />
@@ -665,7 +672,7 @@ function ProductForm({
           </Stack>
           {barcodes.fields.length === 0 ? <Typography color="text.secondary">No barcodes configured.</Typography> : null}
           {barcodes.fields.map((barcode, index) => (
-            <Paper key={barcode.fieldKey} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
+            <Paper key={barcode.fieldKey} data-testid="product-barcode-card" elevation={0} sx={{ width: '100%', maxWidth: '100%', minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
               <Grid container spacing={{ xs: 1.5, lg: 2 }} alignItems="flex-start">
                 <Grid item xs={12} md={6} xl={5}>
                   <TextInput control={form.control} name={`barcodes.${index}.barcode`} label="Barcode" disabled={disabled} />
@@ -1087,8 +1094,8 @@ export function NewProductPage() {
   const loadingOptions = references.categories.isLoading || references.brands.isLoading || references.units.isLoading;
 
   return (
-    <Stack spacing={3}>
-      <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ minWidth: 0 }}>
+    <Stack spacing={{ xs: 2, lg: 3 }} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
+      <Stack direction="row" spacing={{ xs: 1, sm: 2 }} alignItems="flex-start" sx={{ minWidth: 0 }}>
         <Tooltip title="Back to products">
           <IconButton component={Link} to="/products" aria-label="Back to products">
             <ArrowBackIcon />
@@ -1105,7 +1112,7 @@ export function NewProductPage() {
       {references.units.isError ? <Alert severity="error">{errorMessage(references.units.error)}</Alert> : null}
       {stores.isError ? <Alert severity="error">{errorMessage(stores.error)}</Alert> : null}
       {!stores.isLoading ? (
-        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
+        <Paper elevation={0} sx={{ width: '100%', maxWidth: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 1.5, lg: 3 }, minWidth: 0 }}>
           <Typography variant="h6" component="h2">Assigned stores</Typography>
           <FormGroup row sx={{ minWidth: 0 }}>
             {(stores.data ?? []).map((store) => (
@@ -1213,7 +1220,7 @@ export function ProductDetailPage() {
   }
 
   return (
-    <Stack spacing={3} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
+    <Stack spacing={{ xs: 2, lg: 3 }} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Button component={Link} to="/products" startIcon={<ArrowBackIcon />} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
           Products

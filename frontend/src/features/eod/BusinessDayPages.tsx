@@ -17,6 +17,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
   Grid,
   IconButton,
@@ -45,6 +49,7 @@ import {
   getBusinessDayClosingPreview,
   getBusinessDayClosingValidation,
   getCurrentBusinessDay,
+  getLatestBusinessDay,
   getEndOfDayReport,
   getEndOfDayReportPrintHtml,
   listBusinessDays,
@@ -63,6 +68,10 @@ function canManageBusinessDay(roles: UserRole[]) {
 
 function canForceOrReopen(roles: UserRole[]) {
   return roles.includes('OWNER') || roles.includes('TENANT_OWNER');
+}
+
+function canReopenBusinessDay(roles: UserRole[]) {
+  return canForceOrReopen(roles) || roles.includes('MANAGER') || roles.includes('STORE_MANAGER');
 }
 
 function useRoles() {
@@ -153,10 +162,13 @@ export function BusinessDayPage() {
   const roles = useRoles();
   const allowed = canManageBusinessDay(roles);
   const canForce = canForceOrReopen(roles);
+  const canReopen = canReopenBusinessDay(roles);
   const { getValidAccessToken } = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [storeId, setStoreId] = React.useState('');
+  const [reopenOpen, setReopenOpen] = React.useState(false);
+  const [reopenReason, setReopenReason] = React.useState('');
 
   const stores = useQuery({
     queryKey: ['stores', 'business-day'],
@@ -172,14 +184,20 @@ export function BusinessDayPage() {
 
   const current = useQuery({
     queryKey: ['business-day', 'current', storeId],
-    queryFn: async () => getCurrentBusinessDay(await getValidAccessToken(), storeId),
+    queryFn: async () => (await getCurrentBusinessDay(await getValidAccessToken(), storeId)) ?? null,
+    enabled: allowed && Boolean(storeId)
+  });
+
+  const latest = useQuery({
+    queryKey: ['business-day', 'latest', storeId],
+    queryFn: async () => (await getLatestBusinessDay(await getValidAccessToken(), storeId)) ?? null,
     enabled: allowed && Boolean(storeId)
   });
 
   const validation = useQuery({
     queryKey: ['business-day', 'validation', current.data?.id],
     queryFn: async () => getBusinessDayClosingValidation(await getValidAccessToken(), current.data!.id),
-    enabled: allowed && Boolean(current.data?.id)
+    enabled: allowed && Boolean(current.data?.id) && current.data?.status !== 'CLOSED'
   });
 
   const open = useMutation({
@@ -196,11 +214,27 @@ export function BusinessDayPage() {
     }
   });
 
+  const reopen = useMutation({
+    mutationFn: async (day: BusinessDay) => reopenBusinessDay(await getValidAccessToken(), day.id, {
+      version: day.version,
+      reason: reopenReason.trim()
+    }, idempotencyKey('reopen')),
+    onSuccess: async (day) => {
+      setReopenOpen(false);
+      setReopenReason('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['business-day', 'current', day.storeId] }),
+        queryClient.invalidateQueries({ queryKey: ['business-day', 'latest', day.storeId] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session'] })
+      ]);
+    }
+  });
+
   if (!allowed) {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  const day = current.data;
+  const day = current.data ?? latest.data;
   const storeRows = stores.data?.content ?? [];
 
   return (
@@ -218,12 +252,13 @@ export function BusinessDayPage() {
         </Tooltip>
       </Stack>
 
-      {current.isLoading || stores.isLoading ? <LoadingPanel label="Loading business-day status" /> : null}
+      {current.isLoading || latest.isLoading || stores.isLoading ? <LoadingPanel label="Loading business-day status" /> : null}
       {current.isError ? <Alert severity="error">{errorMessage(current.error)}</Alert> : null}
       {open.isError ? <Alert severity="error">{errorMessage(open.error)}</Alert> : null}
       {startClosing.isError ? <Alert severity="error">{errorMessage(startClosing.error)}</Alert> : null}
+      {reopen.isError ? <Alert severity="error">{errorMessage(reopen.error)}</Alert> : null}
 
-      {!current.isLoading && !day ? (
+      {!current.isLoading && !latest.isLoading && !day ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
           <Stack spacing={2}>
             <Typography variant="h6">No active business day</Typography>
@@ -247,18 +282,19 @@ export function BusinessDayPage() {
           <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
             <Stack spacing={2}>
               <Typography variant="h6">Closing readiness</Typography>
-              {validation.isLoading ? <LoadingPanel label="Checking closing blockers" /> : <BlockerList blockers={validation.data?.blockers ?? []} />}
+              {day.status === 'CLOSED'
+                ? <Typography color="text.secondary">This Store business day is closed. Reopening preserves the existing report and register history.</Typography>
+                : validation.isLoading ? <LoadingPanel label="Checking closing blockers" /> : <BlockerList blockers={validation.data?.blockers ?? []} />}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <Button variant="contained" onClick={() => startClosing.mutate(day)} disabled={day.status === 'CLOSED' || startClosing.isPending}>
-                  Start closing
-                </Button>
-                <Button component={Link} to="/business-day/close" variant="outlined" disabled={day.status === 'CLOSED'}>
-                  Close
-                </Button>
+                {day.status !== 'CLOSED' ? <Button variant="contained" onClick={() => startClosing.mutate(day)} disabled={startClosing.isPending}>Start closing</Button> : null}
+                {day.status !== 'CLOSED' ? <Button component={Link} to="/business-day/close" variant="outlined">Close</Button> : null}
                 {canForce ? (
                   <Button component={Link} to="/business-day/close?force=true" color="warning" disabled={day.status === 'CLOSED'}>
                     Force close
                   </Button>
+                ) : null}
+                {day.status === 'CLOSED' && canReopen ? (
+                  <Button color="warning" startIcon={<RestartAltIcon />} onClick={() => setReopenOpen(true)}>Reopen business day</Button>
                 ) : null}
                 <Button component={Link} to="/business-day/history" startIcon={<HistoryOutlinedIcon />}>
                   History
@@ -268,6 +304,17 @@ export function BusinessDayPage() {
           </Paper>
         </>
       ) : null}
+      <Dialog open={reopenOpen} onClose={() => setReopenOpen(false)} fullWidth maxWidth="sm" transitionDuration={0}>
+        <DialogTitle>Reopen Business Day — {day?.businessDate}</DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>This allows new register activity against the same Store Business Day. Closed register sessions remain closed.</Typography>
+          <TextField autoFocus fullWidth required multiline minRows={3} label="Reason for reopening" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReopenOpen(false)}>Cancel</Button>
+          <Button color="warning" variant="contained" disabled={!day || !reopenReason.trim() || reopen.isPending} onClick={() => day && reopen.mutate(day)}>Reopen</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -547,9 +594,10 @@ function ReportTable({ title, rows }: { title: string; rows: React.ReactNode }) 
 export function EndOfDayReportDetailPage() {
   const roles = useRoles();
   const allowed = canManageBusinessDay(roles);
-  const canReopen = canForceOrReopen(roles);
+  const canReopen = canReopenBusinessDay(roles);
   const { id } = useParams();
   const { getValidAccessToken } = useSession();
+  const queryClient = useQueryClient();
   const [reopenReason, setReopenReason] = React.useState('');
   const report = useQuery({
     queryKey: ['end-of-day-report', id],
@@ -558,7 +606,14 @@ export function EndOfDayReportDetailPage() {
   });
   const reopen = useMutation({
     mutationFn: async (data: EndOfDayReport) => reopenBusinessDay(await getValidAccessToken(), data.businessDayId, { version: data.businessDayVersion, reason: reopenReason }, idempotencyKey('reopen')),
-    onSuccess: () => void report.refetch()
+    onSuccess: async (reopened) => {
+      await Promise.all([
+        report.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['business-day', 'current', reopened.storeId] }),
+        queryClient.invalidateQueries({ queryKey: ['business-day', 'validation', reopened.id] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session'] })
+      ]);
+    }
   });
   const print = useMutation({
     mutationFn: async (data: EndOfDayReport) => getEndOfDayReportPrintHtml(await getValidAccessToken(), data.id),

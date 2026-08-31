@@ -45,6 +45,7 @@ import {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { compactFilterBarSx } from '../../app/responsive';
 import {
   activateOwnerInvitation,
   closePlatformTenant,
@@ -367,23 +368,23 @@ export function PlatformMerchantsPage() {
           <Typography variant="h4" component="h1">Merchants</Typography>
           <Button component={Link} to="/platform/merchants/new" variant="contained" startIcon={<AddIcon />}>New merchant</Button>
         </Stack>
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+        <Paper variant="outlined">
+          <Stack sx={compactFilterBarSx}>
             <TextField label="Search merchants..." value={searchInput} onChange={(event) => setSearchInput(event.target.value)} inputProps={{ maxLength: 100 }} fullWidth />
-            <TextField select label="Status" value={status} onChange={(event) => setParam('status', event.target.value)} sx={{ minWidth: 180 }}>
+            <TextField select label="Status" value={status} onChange={(event) => setParam('status', event.target.value)}>
               <MenuItem value="">All statuses</MenuItem>
               {['PENDING_ONBOARDING', 'PENDING_OWNER_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED', 'REJECTED'].map((value) => <MenuItem key={value} value={value}>{value.replaceAll('_', ' ')}</MenuItem>)}
             </TextField>
-            <TextField select label="Country" value={country} onChange={(event) => setCountryFilter(event.target.value)} sx={{ minWidth: 160 }}>
+            <TextField select label="Country" value={country} onChange={(event) => setCountryFilter(event.target.value)}>
               <MenuItem value="">All countries</MenuItem>
               {(countries.data ?? []).map((item) => <MenuItem key={item.alpha2Code} value={item.alpha2Code}>{item.name}</MenuItem>)}
             </TextField>
-            <TextField select label="Province / State" value={province} disabled={!country} onChange={(event) => setParam('province', event.target.value)} sx={{ minWidth: 180 }}>
+            <TextField select label="Province / State" value={province} disabled={!country} onChange={(event) => setParam('province', event.target.value)}>
               <MenuItem value="">All regions</MenuItem>
               {(provinces.data ?? []).map((item) => <MenuItem key={item.code} value={item.code}>{item.name}</MenuItem>)}
             </TextField>
           </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 2 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ px: 2, pb: 2 }}>
             <TextField label="Created from" type="date" value={createdFrom} onChange={(event) => setParam('createdFrom', event.target.value)} InputLabelProps={{ shrink: true }} />
             <TextField label="Created to" type="date" value={createdTo} onChange={(event) => setParam('createdTo', event.target.value)} InputLabelProps={{ shrink: true }} />
             <Button onClick={clearFilters}>Clear filters</Button>

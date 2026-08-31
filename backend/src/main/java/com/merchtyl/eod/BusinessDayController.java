@@ -64,8 +64,16 @@ public class BusinessDayController {
     @GetMapping("/current")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
     @Operation(summary = "Get current business day", description = "Requires BUSINESS_DAY_VIEW. Returns 204 when the store has no active business day.")
-    ResponseEntity<BusinessDayResponse> current(@RequestParam UUID storeId) {
-        BusinessDayResponse response = businessDayService.current(storeId);
+    ResponseEntity<BusinessDayResponse> current(@RequestParam UUID storeId, Authentication authentication) {
+        BusinessDayResponse response = businessDayService.current(storeId, authentication);
+        return response == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/latest")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
+    @Operation(summary = "Get latest business day for a store", description = "Returns the latest open or closed Store business day without using merchant-wide state.")
+    ResponseEntity<BusinessDayResponse> latest(@RequestParam UUID storeId, Authentication authentication) {
+        BusinessDayResponse response = businessDayService.latest(storeId, authentication);
         return response == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(response);
     }
 
@@ -78,33 +86,42 @@ public class BusinessDayController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
             @RequestParam(required = false) BusinessDayStatus status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        if (storeId != null) {
+            businessDayService.assertStoreAccess(storeId, authentication);
+        }
         return businessDayService.search(storeId, dateFrom, dateTo, status, page, size);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
-    BusinessDayResponse get(@PathVariable UUID id) {
-        return businessDayService.get(id);
+    BusinessDayResponse get(@PathVariable UUID id, Authentication authentication) {
+        BusinessDayResponse response = businessDayService.get(id);
+        businessDayService.assertStoreAccess(response.storeId(), authentication);
+        return response;
     }
 
     @GetMapping("/{id}/validation")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
     @Operation(summary = "Validate closing readiness", description = "Requires BUSINESS_DAY_VIEW. Returns all closing blockers, not only the first blocker.")
-    ClosingValidationResponse validation(@PathVariable UUID id) {
+    ClosingValidationResponse validation(@PathVariable UUID id, Authentication authentication) {
+        businessDayService.assertStoreAccess(businessDayService.get(id).storeId(), authentication);
         return businessDayService.validateClosing(id);
     }
 
     @GetMapping("/{id}/preview")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_CLOSE)")
     @Operation(summary = "Preview EOD close totals", description = "Requires BUSINESS_DAY_CLOSE. Calculates close totals without mutating the business day or creating a report.")
-    EndOfDayClosingPreviewResponse preview(@PathVariable UUID id) {
+    EndOfDayClosingPreviewResponse preview(@PathVariable UUID id, Authentication authentication) {
+        businessDayService.assertStoreAccess(businessDayService.get(id).storeId(), authentication);
         return businessDayService.previewClosing(id);
     }
 
     @GetMapping("/closing-reminder")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
-    ClosingReminderResponse closingReminder(@RequestParam UUID storeId) {
+    ClosingReminderResponse closingReminder(@RequestParam UUID storeId, Authentication authentication) {
+        businessDayService.assertStoreAccess(storeId, authentication);
         return businessDayService.closingReminder(storeId);
     }
 

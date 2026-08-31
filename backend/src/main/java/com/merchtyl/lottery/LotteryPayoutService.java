@@ -350,6 +350,9 @@ public class LotteryPayoutService {
         if (session.getStatus() != RegisterSessionStatus.OPEN) {
             throw new ConflictException("Register session is not open");
         }
+        if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+            throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
+        }
         validateUserCanUseSession(actor, session, authentication);
 
         LotteryPayoutCashAvailabilityResponse availability = availability(session, activePolicy, payout.getId());
@@ -401,6 +404,9 @@ public class LotteryPayoutService {
         if (session.getStatus() != RegisterSessionStatus.OPEN) {
             throw new ConflictException("Register session is not open");
         }
+        if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+            throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
+        }
         validateUserCanUseSession(actor, session, authentication);
 
         Instant reversedAt = Instant.now(clock);
@@ -438,6 +444,9 @@ public class LotteryPayoutService {
                 .orElseThrow(() -> new NotFoundException("Register session not found"));
         if (session.getStatus() != RegisterSessionStatus.OPEN) {
             throw new ConflictException("Register session is not open");
+        }
+        if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+            throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
         }
         requireActiveContext(session.getStore(), session.getRegister(), session.getDevice());
         featureService.requireEnabled(FeatureCode.LOTTERY_SALES, session.getStore().getId(), session.getRegister().getId());
@@ -534,6 +543,9 @@ public class LotteryPayoutService {
         if (method == LotteryPayoutMethod.CASH) {
             if (session.getStatus() != RegisterSessionStatus.OPEN) {
                 throw new ConflictException("Register session is not open");
+            }
+            if (session.getBusinessDay() != null && !session.isBusinessDayOperational()) {
+                throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
             }
             validateUserCanUseSession(actor, session, authentication);
         }

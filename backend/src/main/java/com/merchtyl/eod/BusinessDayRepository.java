@@ -19,27 +19,39 @@ import java.util.UUID;
 
 public interface BusinessDayRepository extends JpaRepository<BusinessDay, UUID>, JpaSpecificationExecutor<BusinessDay> {
     @Override
-    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy"})
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
     Page<BusinessDay> findAll(Specification<BusinessDay> specification, Pageable pageable);
 
     @Override
-    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy"})
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
     Optional<BusinessDay> findById(UUID id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy"})
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
     @Query("select day from BusinessDay day where day.id = :id")
     Optional<BusinessDay> findByIdForUpdate(@Param("id") UUID id);
 
-    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy"})
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
     Optional<BusinessDay> findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(
             UUID storeId,
             Collection<BusinessDayStatus> statuses);
+
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
+    Optional<BusinessDay> findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(UUID storeId);
 
     boolean existsByStore_IdAndStatusIn(UUID storeId, Collection<BusinessDayStatus> statuses);
 
     boolean existsByStore_IdAndBusinessDate(UUID storeId, LocalDate businessDate);
 
-    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy"})
+    boolean existsByStore_IdAndBusinessDateGreaterThan(UUID storeId, LocalDate businessDate);
+
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
     List<BusinessDay> findByStore_IdAndStatusIn(UUID storeId, Collection<BusinessDayStatus> statuses);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
+    @Query("select day from BusinessDay day where day.store.id = :storeId and day.status in :statuses order by day.businessDate desc, day.openedAt desc")
+    List<BusinessDay> findActiveByStoreIdForUpdate(
+            @Param("storeId") UUID storeId,
+            @Param("statuses") Collection<BusinessDayStatus> statuses);
 }

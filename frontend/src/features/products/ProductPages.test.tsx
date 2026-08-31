@@ -332,6 +332,7 @@ describe('Product pages', () => {
     await userEvent.click(screen.getByLabelText('ALLOW DISCOUNT'));
 
     await userEvent.click(screen.getByRole('button', { name: 'Add variant' }));
+    expect(screen.getByTestId('product-variant-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
     await userEvent.type(screen.getByLabelText('Variant SKU'), 'tea-large');
     await userEvent.type(screen.getByLabelText('Variant name'), 'Large');
     await userEvent.clear(screen.getAllByLabelText('Cost')[1]);
@@ -340,6 +341,7 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Price')[1], '3.25');
 
     await userEvent.click(screen.getByRole('button', { name: 'Add barcode' }));
+    expect(screen.getByTestId('product-barcode-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
     expect(screen.getByRole('button', { name: 'Create product' })).toBeVisible();
     await userEvent.click(screen.getByRole('combobox', { name: 'Assign To Variant' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Large — TEA-LARGE' }));
@@ -396,6 +398,8 @@ describe('Product pages', () => {
 
     const assignment = await screen.findByRole('combobox', { name: 'Assign To Variant' });
     expect(await screen.findByTestId('product-form')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(screen.getByTestId('product-variant-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(screen.getByTestId('product-barcode-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
     expect(screen.getByTestId('product-action-bar')).toHaveStyle({ position: 'sticky', bottom: '0' });
     expect(assignment).toHaveTextContent('Base Variant');
     await userEvent.click(assignment);

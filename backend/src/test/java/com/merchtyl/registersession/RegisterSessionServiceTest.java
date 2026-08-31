@@ -9,6 +9,8 @@ import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.ForbiddenOperationException;
 import com.merchtyl.device.Device;
 import com.merchtyl.device.DeviceRepository;
+import com.merchtyl.eod.BusinessDay;
+import com.merchtyl.eod.BusinessDayService;
 import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
 import com.merchtyl.security.User;
@@ -58,6 +60,7 @@ class RegisterSessionServiceTest {
     private final AuditService auditService = mock(AuditService.class);
     private final CashLedgerService cashLedgerService = mock(CashLedgerService.class);
     private final RegisterSessionProperties properties = new RegisterSessionProperties();
+    private final BusinessDayService businessDayService = mock(BusinessDayService.class);
     private final RegisterSessionService service = new RegisterSessionService(
             registerSessionRepository,
             storeRepository,
@@ -74,6 +77,7 @@ class RegisterSessionServiceTest {
     private Register register;
     private Device device;
     private User cashier;
+    private BusinessDay businessDay;
 
     @BeforeEach
     void setUp() {
@@ -81,6 +85,8 @@ class RegisterSessionServiceTest {
         register = mock(Register.class);
         device = mock(Device.class);
         cashier = new User("cashier@example.local", "Cashier One", "hash");
+        businessDay = mock(BusinessDay.class);
+        ReflectionTestUtils.setField(service, "businessDayService", businessDayService);
 
         when(store.getId()).thenReturn(STORE_ID);
         when(store.isActive()).thenReturn(true);
@@ -98,6 +104,7 @@ class RegisterSessionServiceTest {
         when(deviceRepository.findById(DEVICE_ID)).thenReturn(Optional.of(device));
         when(deviceRepository.findByIdForUpdate(DEVICE_ID)).thenReturn(Optional.of(device));
         when(userRepository.findByEmailIgnoreCase("cashier@example.local")).thenReturn(Optional.of(cashier));
+        when(businessDayService.requireOpenBusinessDayForUpdate(STORE_ID)).thenReturn(businessDay);
         when(registerSessionRepository.saveAndFlush(any(RegisterSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(cashLedgerService.expectedCash(any(RegisterSession.class))).thenReturn(new BigDecimal("125.50"));
         when(cashLedgerService.breakdown(any(RegisterSession.class))).thenReturn(new CashLedgerBreakdownResponse(
@@ -133,6 +140,9 @@ class RegisterSessionServiceTest {
         assertThat(response.expectedCash()).isEqualByComparingTo("125.50");
         assertThat(response.openedAt()).isEqualTo(NOW);
         verify(cashLedgerService).appendOpeningFloat(any(RegisterSession.class), org.mockito.ArgumentMatchers.eq(cashier));
+        ArgumentCaptor<RegisterSession> savedSession = ArgumentCaptor.forClass(RegisterSession.class);
+        verify(registerSessionRepository).saveAndFlush(savedSession.capture());
+        assertThat(savedSession.getValue().getBusinessDay()).isSameAs(businessDay);
 
         ArgumentCaptor<CreateAuditRecordCommand> audit = ArgumentCaptor.forClass(CreateAuditRecordCommand.class);
         verify(auditService).record(audit.capture());
@@ -140,6 +150,19 @@ class RegisterSessionServiceTest {
         assertThat(audit.getValue().entityType()).isEqualTo("REGISTER_SESSION");
         assertThat(audit.getValue().storeId()).isEqualTo(STORE_ID);
         assertThat(audit.getValue().registerId()).isEqualTo(REGISTER_ID);
+    }
+
+    @Test
+    void rejectsRegisterOpenWhenStoreBusinessDayIsClosed() {
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        when(businessDayService.requireOpenBusinessDayForUpdate(STORE_ID))
+                .thenThrow(new ConflictException("BUSINESS_DAY_NOT_OPEN"));
+
+        assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_CASHIER")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("BUSINESS_DAY_NOT_OPEN");
+
+        verify(registerSessionRepository, never()).saveAndFlush(any());
     }
 
     @Test

@@ -50,6 +50,7 @@ import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
 import jakarta.persistence.OptimisticLockException;
@@ -59,6 +60,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,6 +91,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class BusinessDayService {
+    private static final Logger log = LoggerFactory.getLogger(BusinessDayService.class);
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MONEY_SCALE = 2;
     private static final int QUANTITY_SCALE = 4;
@@ -121,6 +125,8 @@ public class BusinessDayService {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    @Autowired(required = false)
+    private StoreAccessService storeAccessService;
 
     @Autowired
     public BusinessDayService(
@@ -220,6 +226,7 @@ public class BusinessDayService {
         }
         Store store = store(request.storeId());
         User actor = currentUser(authentication);
+        requireStoreManagement(authentication, store.getId());
         BusinessDayConfiguration configuration = configuration(store);
         LocalDate businessDate = request.businessDate() == null
                 ? Instant.now(clock).atZone(ZoneId.of(store.getTimezone())).toLocalDate()
@@ -237,6 +244,8 @@ public class BusinessDayService {
         BusinessDay saved = saveDay(new BusinessDay(store, businessDate, store.getTimezone(), actor, Instant.now(clock)));
         BusinessDayResponse response = BusinessDayResponse.from(saved);
         audit(actor, AuditAction.BUSINESS_DAY_OPENED, saved, null, response, request.overrideReason());
+        log.info("business_day_event event=BUSINESS_DAY_OPENED tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={}",
+                actor.getTenantId(), saved.getStore().getId(), saved.getId(), saved.getBusinessDate(), actor.getId());
         return response;
     }
 
@@ -248,6 +257,35 @@ public class BusinessDayService {
         return businessDayRepository.findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(storeId, ACTIVE_DAY_STATUSES)
                 .map(BusinessDayResponse::from)
                 .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BusinessDayResponse current(UUID storeId, Authentication authentication) {
+        requireStoreAccess(authentication, storeId);
+        return current(storeId);
+    }
+
+    @Transactional(readOnly = true)
+    public BusinessDayResponse latest(UUID storeId) {
+        if (storeId == null) {
+            throw new BadRequestException("storeId is required");
+        }
+        return businessDayRepository.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId)
+                .map(BusinessDayResponse::from)
+                .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BusinessDayResponse latest(UUID storeId, Authentication authentication) {
+        requireStoreAccess(authentication, storeId);
+        return latest(storeId);
+    }
+
+    public void assertStoreAccess(UUID storeId, Authentication authentication) {
+        if (storeId == null) {
+            throw new BadRequestException("storeId is required");
+        }
+        requireStoreAccess(authentication, storeId);
     }
 
     @Transactional(readOnly = true)
@@ -313,6 +351,7 @@ public class BusinessDayService {
     public BusinessDayResponse startClosing(UUID id, Authentication authentication) {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
+        requireStoreManagement(authentication, day.getStore().getId());
         if (day.getStatus() == BusinessDayStatus.CLOSED) {
             throw new ConflictException("Business day is already closed");
         }
@@ -346,6 +385,7 @@ public class BusinessDayService {
     public EndOfDayReportResponse close(UUID id, BusinessDayCloseRequest request, Authentication authentication) {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
+        requireStoreManagement(authentication, day.getStore().getId());
         requireVersion(day, request == null ? null : request.version());
         if (day.getStatus() == BusinessDayStatus.CLOSED) {
             return reportRepository.findFirstByBusinessDay_IdOrderByRevisionDesc(day.getId())
@@ -364,6 +404,7 @@ public class BusinessDayService {
     public EndOfDayReportResponse forceClose(UUID id, BusinessDayForceCloseRequest request, Authentication authentication) {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
+        requireStoreManagement(authentication, day.getStore().getId());
         BusinessDayConfiguration configuration = configuration(day.getStore());
         if (!configuration.isAllowForceClose()) {
             throw new ConflictException("Force close is disabled for this store");
@@ -382,6 +423,7 @@ public class BusinessDayService {
     public BusinessDayResponse reopen(UUID id, BusinessDayReopenRequest request, Authentication authentication) {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
+        requireStoreManagement(authentication, day.getStore().getId());
         requireVersion(day, request == null ? null : request.version());
         if (day.getStatus() != BusinessDayStatus.CLOSED) {
             throw new ConflictException("Only closed business days can be reopened");
@@ -389,12 +431,33 @@ public class BusinessDayService {
         if (!reportRepository.existsByBusinessDay_Id(day.getId())) {
             throw new ConflictException("Business day cannot be reopened before an end-of-day report exists");
         }
+        if (businessDayRepository.existsByStore_IdAndBusinessDateGreaterThan(day.getStore().getId(), day.getBusinessDate())) {
+            audit(actor, AuditAction.BUSINESS_DAY_REOPEN_REJECTED, day, null, null, "LATER_BUSINESS_DAY_EXISTS");
+            throw new ConflictException("LATER_BUSINESS_DAY_EXISTS");
+        }
+        if (!businessDayRepository.findByStore_IdAndStatusIn(day.getStore().getId(), ACTIVE_DAY_STATUSES).isEmpty()) {
+            audit(actor, AuditAction.BUSINESS_DAY_REOPEN_REJECTED, day, null, null, "BUSINESS_DAY_ALREADY_OPEN");
+            throw new ConflictException("BUSINESS_DAY_ALREADY_OPEN");
+        }
         String reason = cleanRequired(request.reason(), "reason");
         day.reopen(actor, Instant.now(clock), reason);
         saveDay(day);
         BusinessDayResponse response = BusinessDayResponse.from(day);
         audit(actor, AuditAction.BUSINESS_DAY_REOPENED, day, null, response, reason);
+        log.info("business_day_event event=BUSINESS_DAY_REOPENED tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={}",
+                actor.getTenantId(), day.getStore().getId(), day.getId(), day.getBusinessDate(), actor.getId());
         return response;
+    }
+
+    @Transactional
+    public BusinessDay requireOpenBusinessDayForUpdate(UUID storeId) {
+        if (storeId == null) {
+            throw new BadRequestException("storeId is required");
+        }
+        return businessDayRepository.findActiveByStoreIdForUpdate(storeId, ACTIVE_DAY_STATUSES).stream()
+                .filter(day -> day.getStatus() == BusinessDayStatus.OPEN || day.getStatus() == BusinessDayStatus.REOPENED)
+                .findFirst()
+                .orElseThrow(() -> new ConflictException("BUSINESS_DAY_NOT_OPEN"));
     }
 
     @Transactional(readOnly = true)
@@ -406,7 +469,8 @@ public class BusinessDayService {
             return new ClosingReminderResponse(storeId, current == null ? null : current.id(), false, 0, false, null);
         }
         LocalTime localTime = Instant.now(clock).atZone(ZoneId.of(store.getTimezone())).toLocalTime();
-        long openRegisters = registerSessions(store.getId(), current.businessDate(), store.getTimezone()).stream()
+        BusinessDay currentDay = day(current.id());
+        long openRegisters = registerSessions(currentDay).stream()
                 .filter(session -> session.getStatus() == RegisterSessionStatus.OPEN)
                 .count();
         boolean past = !localTime.isBefore(configuration.getClosingReminderTime());
@@ -511,6 +575,9 @@ public class BusinessDayService {
         audit(actor, forceCloseReason == null ? AuditAction.BUSINESS_DAY_CLOSED : AuditAction.BUSINESS_DAY_FORCE_CLOSED, day, null, response, forceCloseReason);
         auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.END_OF_DAY_REPORT_GENERATED, "END_OF_DAY_REPORT", savedReport.getId(), day.getStore().getId(), null, null, response, null));
         auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.END_OF_DAY_SIGN_OFF_COMPLETED, "END_OF_DAY_SIGN_OFF", savedReport.getSignOff().getId(), day.getStore().getId(), null, null, response.signOff(), null));
+        log.info("business_day_event event={} tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={}",
+                forceCloseReason == null ? "BUSINESS_DAY_CLOSED" : "BUSINESS_DAY_FORCE_CLOSED",
+                actor.getTenantId(), day.getStore().getId(), day.getId(), day.getBusinessDate(), actor.getId());
         return response;
     }
 
@@ -683,7 +750,7 @@ public class BusinessDayService {
         List<Sale> sales = saleRepository.findAll(saleSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("completedAt").and(Sort.by("id")));
         List<Refund> refunds = refundRepository.findAll(refundSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("occurredAt").and(Sort.by("id")));
         List<Sale> voidedSales = saleRepository.findAll(voidedSaleSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("updatedAt").and(Sort.by("id")));
-        List<RegisterSession> sessions = registerSessions(day.getStore().getId(), day.getBusinessDate(), day.getTimezone());
+        List<RegisterSession> sessions = registerSessions(day);
         Map<UUID, CashLedgerBreakdownResponse> cashBreakdowns = cashLedgerService.breakdowns(sessions);
         List<CashMovement> cashMovements = cashMovementRepository.findAll(cashMovementSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("occurredAt").and(Sort.by("id")));
         List<InventoryTransaction> inventoryTransactions = inventoryTransactionRepository.findAll(inventoryTransactionSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("occurredAt").and(Sort.by("id")));
@@ -733,7 +800,7 @@ public class BusinessDayService {
         if (day.getStatus() != BusinessDayStatus.OPEN && day.getStatus() != BusinessDayStatus.CLOSING && day.getStatus() != BusinessDayStatus.REOPENED) {
             blockers.add(blocker("INVALID_STATUS", "Business day must be open or closing", day.getId()));
         }
-        for (RegisterSession session : registerSessions(day.getStore().getId(), day.getBusinessDate(), day.getTimezone())) {
+        for (RegisterSession session : registerSessions(day)) {
             if (session.getStatus() == RegisterSessionStatus.OPEN) {
                 blockers.add(blocker("OPEN_REGISTER_SESSION", "Register session remains open: " + session.getRegister().getCode(), session.getId()));
             }
@@ -968,8 +1035,8 @@ public class BusinessDayService {
         return values;
     }
 
-    private List<RegisterSession> registerSessions(UUID storeId, LocalDate businessDate, String timezone) {
-        return registerSessionRepository.findAll(registerSessionSpec(storeId, businessDate, timezone), Sort.by("openedAt").and(Sort.by("id")));
+    private List<RegisterSession> registerSessions(BusinessDay day) {
+        return registerSessionRepository.findAll(registerSessionSpec(day), Sort.by("openedAt").and(Sort.by("id")));
     }
 
     private void validateSignOff(BusinessDayConfiguration configuration, BigDecimal cashVariance, String notes, String varianceExplanation, Boolean confirmationAccepted) {
@@ -1037,6 +1104,18 @@ public class BusinessDayService {
 
     private void audit(User actor, AuditAction action, BusinessDay day, Object before, Object after, String reason) {
         auditService.record(new CreateAuditRecordCommand(actor.getId(), action, "BUSINESS_DAY", day.getId(), day.getStore().getId(), null, before, after, reason));
+    }
+
+    private void requireStoreManagement(Authentication authentication, UUID storeId) {
+        if (storeAccessService != null) {
+            storeAccessService.requireStoreManagement(authentication, storeId);
+        }
+    }
+
+    private void requireStoreAccess(Authentication authentication, UUID storeId) {
+        if (storeAccessService != null) {
+            storeAccessService.requireStoreAccess(authentication, storeId);
+        }
     }
 
     private String snapshot(Object value) {
@@ -1249,13 +1328,17 @@ public class BusinessDayService {
                 cb.equal(root.get("businessDate"), businessDate));
     }
 
-    private static Specification<RegisterSession> registerSessionSpec(UUID storeId, LocalDate businessDate, String timezone) {
-        Instant start = businessDate.atStartOfDay().atZone(ZoneId.of(timezone)).toInstant();
-        Instant end = businessDate.plusDays(1).atStartOfDay().atZone(ZoneId.of(timezone)).toInstant();
+    private static Specification<RegisterSession> registerSessionSpec(BusinessDay day) {
+        Instant start = day.getBusinessDate().atStartOfDay().atZone(ZoneId.of(day.getTimezone())).toInstant();
+        Instant end = day.getBusinessDate().plusDays(1).atStartOfDay().atZone(ZoneId.of(day.getTimezone())).toInstant();
         return (root, query, cb) -> cb.and(
-                cb.equal(root.get("store").get("id"), storeId),
-                cb.greaterThanOrEqualTo(root.get("openedAt"), start),
-                cb.lessThan(root.get("openedAt"), end));
+                cb.equal(root.get("store").get("id"), day.getStore().getId()),
+                cb.or(
+                        cb.equal(root.get("businessDay").get("id"), day.getId()),
+                        cb.and(
+                                cb.isNull(root.get("businessDay")),
+                                cb.greaterThanOrEqualTo(root.get("openedAt"), start),
+                                cb.lessThan(root.get("openedAt"), end))));
     }
 
     private static Specification<CashMovement> cashMovementSpec(UUID storeId, LocalDate businessDate, String timezone) {
