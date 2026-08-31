@@ -28,7 +28,6 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/eod/EndOfDayReportControllerAuthorizationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/features/FeatureControllerAuthorizationTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/features/FeatureIntegrationTest.java
-/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/foodmenu/FoodMenuServiceTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/idempotency/IdempotencyEndpointTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/idempotency/IdempotencyServiceTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/idempotency/InMemoryIdempotencyStore.java
@@ -56,9 +55,7 @@
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/lottery/LotterySettlementServiceTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/admin/PlatformAdministrationServiceActivationLinkExposureTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/admin/PlatformMerchantPaginationTest.java
-/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/billing/BillingQuantityServiceTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/billing/PlatformBillingControllerAuthorizationTest.java
-/Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/billing/RegisterOverageServiceTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/billing/SubscriptionBillingServiceTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/openapi/OpenApiDisabledTest.java
 /Users/aditya/MP4113_Workspace/Merchtyl.com/backend/src/test/java/com/merchtyl/platform/openapi/OpenApiDocumentationTest.java

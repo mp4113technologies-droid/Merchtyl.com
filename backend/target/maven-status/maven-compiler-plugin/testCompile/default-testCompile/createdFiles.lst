@@ -76,7 +76,6 @@ com/merchtyl/security/RefreshTokenServiceTest.class
 com/merchtyl/common/ErrorHandlingAndCorrelationIdTest$TestRequest.class
 com/merchtyl/tax/TaxGroupCategoryControllerAuthorizationTest$TestApplication.class
 com/merchtyl/idempotency/IdempotencyServiceTest.class
-com/merchtyl/foodmenu/FoodMenuServiceTest.class
 com/merchtyl/platform/openapi/OpenApiDocumentationTest$TestApplication.class
 com/merchtyl/security/StoreAccessServiceTest.class
 com/merchtyl/tax/CanadianTaxSeedDataTest.class
@@ -94,7 +93,6 @@ com/merchtyl/refunds/RefundControllerAuthorizationTest$TestApplication.class
 com/merchtyl/lottery/LotteryPayoutPolicyControllerAuthorizationTest$TestSecurityConfig.class
 com/merchtyl/supplier/SupplierIntegrationTest.class
 com/merchtyl/cash/CashMovementControllerAuthorizationTest$TestSecurityConfig.class
-com/merchtyl/platform/billing/BillingQuantityServiceTest.class
 com/merchtyl/platform/web/RequestLoggingFilterMemoryTest.class
 com/merchtyl/lottery/LotteryOperatorServiceTest.class
 com/merchtyl/receipts/ReceiptControllerAuthorizationTest.class
@@ -123,7 +121,6 @@ com/merchtyl/sales/SaleServiceTest.class
 com/merchtyl/sales/SaleServiceTest$1.class
 com/merchtyl/refunds/RefundServiceTest$InMemoryStore.class
 com/merchtyl/reports/InventoryReportControllerAuthorizationTest$TestApplication.class
-com/merchtyl/platform/billing/RegisterOverageServiceTest.class
 com/merchtyl/registersession/RegisterSessionControllerAuthorizationTest$TestApplication.class
 com/merchtyl/cash/CashMovementServiceTest.class
 com/merchtyl/audit/AuditControllerAuthorizationTest.class
