@@ -8,6 +8,9 @@ import com.merchtyl.platform.admin.PlatformDtos.LifecycleRequest;
 import com.merchtyl.platform.admin.PlatformDtos.MerchantGeographyValidationRequest;
 import com.merchtyl.platform.admin.PlatformDtos.MerchantGeographyValidationResponse;
 import com.merchtyl.platform.admin.PlatformDtos.MerchantOnboardingRequest;
+import com.merchtyl.platform.admin.PlatformDtos.MerchantStoreCapabilityResponse;
+import com.merchtyl.platform.admin.PlatformDtos.StoreCapabilityChangePreview;
+import com.merchtyl.platform.admin.PlatformDtos.StoreCapabilityUpdateRequest;
 import com.merchtyl.platform.admin.PlatformDtos.OnboardingResponse;
 import com.merchtyl.platform.admin.PlatformDtos.OwnerActivationRequest;
 import com.merchtyl.platform.admin.PlatformDtos.OwnerActivationStatusResponse;
@@ -65,13 +68,16 @@ public class PlatformAdministrationController {
     private final AuditService auditService;
     private final PasswordResetService passwordResetService;
     private final PlatformAdminManagementService platformAdmins;
+    private final PlatformStoreCapabilityService storeCapabilities;
 
     public PlatformAdministrationController(PlatformAdministrationService platformService, AuditService auditService,
-                                            PasswordResetService passwordResetService, PlatformAdminManagementService platformAdmins) {
+                                            PasswordResetService passwordResetService, PlatformAdminManagementService platformAdmins,
+                                            PlatformStoreCapabilityService storeCapabilities) {
         this.platformService = platformService;
         this.auditService = auditService;
         this.passwordResetService = passwordResetService;
         this.platformAdmins = platformAdmins;
+        this.storeCapabilities = storeCapabilities;
     }
 
     @PostMapping("/auth/login")
@@ -176,6 +182,30 @@ public class PlatformAdministrationController {
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).TENANT_VIEW)")
     TenantDetailResponse tenant(@PathVariable UUID tenantId) {
         return platformService.getTenant(tenantId);
+    }
+
+    @GetMapping("/tenants/{tenantId}/stores")
+    @Operation(summary = "List merchant stores and operational capabilities")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).TENANT_VIEW)")
+    List<MerchantStoreCapabilityResponse> tenantStores(@PathVariable UUID tenantId) {
+        return storeCapabilities.stores(tenantId);
+    }
+
+    @PostMapping("/tenants/{tenantId}/stores/{storeId}/capabilities/preview")
+    @Operation(summary = "Preview store capability entitlement and pricing changes")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).TENANT_UPDATE)")
+    StoreCapabilityChangePreview previewStoreCapabilities(@PathVariable UUID tenantId, @PathVariable UUID storeId,
+                                                           @Valid @RequestBody StoreCapabilityUpdateRequest request) {
+        return storeCapabilities.preview(tenantId, storeId, request);
+    }
+
+    @PutMapping("/tenants/{tenantId}/stores/{storeId}/capabilities")
+    @Operation(summary = "Update one merchant store's operational capabilities")
+    @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).TENANT_UPDATE)")
+    MerchantStoreCapabilityResponse updateStoreCapabilities(@PathVariable UUID tenantId, @PathVariable UUID storeId,
+                                                             @Valid @RequestBody StoreCapabilityUpdateRequest request,
+                                                             Authentication authentication) {
+        return storeCapabilities.update(tenantId, storeId, request, authentication);
     }
 
     @PostMapping("/tenants/{tenantId}/users/{userId}/send-password-reset")

@@ -47,10 +47,11 @@ export function FoodPosPage() {
   const add = useMutation({ mutationFn: async (product: FoodMenuItem) => { const token = await getValidAccessToken(); const active = await draft(token); return addFoodMenuItemToSale(token, current.data?.storeId ?? '', product.id, active.id, 1); }, onSuccess: setSale });
   const quantity = useMutation({ mutationFn: async ({ itemId, value }: { itemId: string; value: number }) => updateSaleItemQuantity(await getValidAccessToken(), sale?.id ?? '', itemId, { quantity: value }), onSuccess: setSale });
   const remove = useMutation({ mutationFn: async (itemId: string) => removeSaleItem(await getValidAccessToken(), sale?.id ?? '', itemId), onSuccess: setSale });
-  const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: (updated) => { setSale(updated); setPaymentOpen(false); } });
+  const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: (updated) => { setSale(updated); setPaymentOpen(!updated.paymentComplete); } });
   const complete = useMutation({ mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()), onSuccess: setSale });
   const receipt = useQuery({ queryKey: ['food-pos-receipt', sale?.id], queryFn: async () => getSaleReceipt(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const busy = add.isPending || quantity.isPending || remove.isPending || payment.isPending || complete.isPending;
+  const canManageMenu = currentUser?.permissions?.some(permission => permission === 'PRODUCT_MANAGE' || permission === 'FOOD_ORDER_UPDATE');
 
   if (currentUser && !permitted) return <Alert severity="error">FOOD_POS_ACCESS is required.</Alert>;
   if (configuration.isError) return <Alert severity="error">This store is not enabled for FOOD_SERVICE.</Alert>;
@@ -61,6 +62,11 @@ export function FoodPosPage() {
     <Stack spacing={2} sx={{ minHeight: 'calc(100dvh - 88px)', minWidth: 0 }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}><RestaurantIcon color="primary" fontSize="large" /><Box sx={{ minWidth: 0 }}><Typography variant="h4">{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography color="text.secondary" noWrap>{store?.name}</Typography></Box></Stack>
       {(current.isLoading || configuration.isLoading) ? <CircularProgress aria-label="Loading Food POS" /> : null}
+      {categories.isSuccess && products.isSuccess && categories.data.length === 0 && products.data.length === 0 ? (
+        <Alert severity="info" action={canManageMenu ? <Button component={Link} to="/food-menu">Create Restaurant Menu</Button> : undefined}>
+          {canManageMenu ? 'No Restaurant Menu has been configured for this store.' : 'No Restaurant Menu has been configured for this store. Ask a manager to configure the Restaurant Menu.'}
+        </Alert>
+      ) : null}
       <Grid container spacing={2} sx={{ flex: 1 }}>
         <Grid item xs={12} md={8} sx={{ minWidth: 0 }}>
           <Stack spacing={2}>

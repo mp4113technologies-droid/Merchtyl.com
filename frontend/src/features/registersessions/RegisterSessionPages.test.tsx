@@ -291,11 +291,11 @@ describe('Register session pages', () => {
     expect(screen.getAllByRole('link', { name: /Open register|Open/i }).length).toBeGreaterThan(0);
   });
 
-  it('opens a register session without loading or requiring a device', async () => {
+  it('opens a food register without a device and routes to Food POS', async () => {
     storeSession(['CASHIER']);
     const mainStore = store();
-    const frontRegister = register();
-    const opened = registerSession();
+    const frontRegister = { ...register(), type: 'FOOD_SERVICE' as const };
+    const opened = { ...registerSession(), registerType: 'FOOD_SERVICE' as const };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) {
@@ -343,6 +343,7 @@ describe('Register session pages', () => {
       const openIndex = fetchMock.mock.calls.indexOf(openCall!);
       expect(fetchMock.mock.calls.slice(0, openIndex).some(([input]) => new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/devices'))).toBe(false);
     });
+    expect(await screen.findByText('FOOD_POS_ACCESS is required.')).toBeInTheDocument();
   });
 
   it('requires explicit owner confirmation before overriding an active cashier session', async () => {

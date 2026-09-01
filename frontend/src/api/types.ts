@@ -132,6 +132,45 @@ export type TenantDetail = {
   onboarding: TenantOnboarding;
 };
 
+export type MerchantStoreCapability = {
+  storeId: string;
+  storeCode: string;
+  storeName: string;
+  active: boolean;
+  capabilities: StoreCapability[];
+  kitchenDisplayName: string | null;
+  version: number;
+};
+
+export type StoreCapabilityUpdatePayload = {
+  capabilities: StoreCapability[];
+  kitchenDisplayName?: string | null;
+  confirmPaidAddOns: boolean;
+  version: number;
+};
+
+export type StoreCapabilityPriceImpact = {
+  capability: 'RETAIL_POS' | 'FOOD_SERVICE' | 'LOTTERY';
+  inclusionType: 'INCLUDED' | 'PAID_ADD_ON' | 'NOT_AVAILABLE';
+  billingUnit: 'PER_MERCHANT' | 'PER_STORE' | 'PER_USER' | 'PER_REGISTER' | null;
+  currentQuantity: number;
+  newQuantity: number;
+  unitPrice: number;
+  currentMonthlyAmount: number;
+  newMonthlyAmount: number;
+};
+
+export type StoreCapabilityChangePreview = {
+  tenantId: string;
+  storeId: string;
+  currentCapabilities: StoreCapability[];
+  proposedCapabilities: StoreCapability[];
+  currency: string;
+  effectiveDate: string;
+  impacts: StoreCapabilityPriceImpact[];
+  confirmationRequired: boolean;
+};
+
 export type PlatformDashboard = {
   totalActiveMerchants: number;
   pendingOnboardings: number;
@@ -378,9 +417,9 @@ export type ProductCapability =
   | 'NON_REFUNDABLE';
 
 export type FoodMenuCategory = { id: string; storeId: string; name: string; displayOrder: number; active: boolean; imageUrl: string | null; version: number };
-export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string; productName: string; displayName: string; price: number; displayOrder: number; available: boolean; imageUrl: string | null; version: number };
+export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; version: number };
 export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
-export type FoodMenuItemPayload = { productId: string; categoryId: string; displayName: string; price: number; displayOrder: number; available: boolean; imageUrl?: string };
+export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string };
 
 export type ProductVariant = {
   id: string;
@@ -697,7 +736,7 @@ export type Store = {
   kitchenUsersCount?: number;
 };
 
-export type StoreCapability = 'RETAIL' | 'FOOD_SERVICE';
+export type StoreCapability = 'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY';
 
 export type StoreListResponse = PageResponse<Store>;
 
@@ -972,6 +1011,7 @@ export type Register = {
   name: string;
   locationDescription: string | null;
   active: boolean;
+  type?: 'RETAIL' | 'FOOD_SERVICE';
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -1478,6 +1518,7 @@ export type RegisterSession = {
   id: string;
   storeId: string;
   registerId: string;
+  registerType?: 'RETAIL' | 'FOOD_SERVICE';
   deviceId: string | null;
   deviceName?: string | null;
   assignedCashierId: string;

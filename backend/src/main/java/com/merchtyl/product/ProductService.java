@@ -482,6 +482,7 @@ public class ProductService {
                 .and(equalReference("brand", request.brandId()))
                 .and(equalReference("unitOfMeasure", request.unitOfMeasureId()))
                 .and(equalBoolean("active", request.active()))
+                .and(equalBoolean("restaurantMenuManaged", false))
                 .and(barcodeEquals(request.barcode()));
     }
 

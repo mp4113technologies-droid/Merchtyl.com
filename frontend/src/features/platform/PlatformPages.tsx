@@ -50,6 +50,8 @@ import {
   activateOwnerInvitation,
   closePlatformTenant,
   createPlatformTenant,
+  getApiErrorMessage,
+  getApiFieldErrors,
   deleteEmptyPlatformTenant,
   getEmailProviderStatus,
   getOwnerActivationStatus,
@@ -64,6 +66,7 @@ import {
   listTenantEmailDeliveries,
   listTenantStatusHistory,
   listPlatformTenants,
+  listPlatformTenantStores,
   listReferenceAdministrativeDivisions,
   listReferenceCountries,
   listReferenceCountryCurrencies,
@@ -78,13 +81,15 @@ import {
   sendPlatformUserPasswordReset,
   unlockPlatformUser,
   suspendPlatformTenant,
+  previewPlatformStoreCapabilities,
+  updatePlatformStoreCapabilities,
   updatePlatformTenantSubscription
 } from '../../api/client';
 import type { MerchantOnboardingPayload, OwnerInvitationResendPayload, TenantLifecyclePayload, TenantSubscriptionPayload } from '../../api/client';
-import type { EmailDelivery, OwnerActivationStatus, TenantDeletionEligibility, TenantDetail, TenantSummary } from '../../api/types';
+import type { EmailDelivery, MerchantStoreCapability, OwnerActivationStatus, StoreCapability, StoreCapabilityChangePreview, TenantDeletionEligibility, TenantDetail, TenantSummary } from '../../api/types';
 import { useSession } from '../../app/session';
 
-const steps = ['Merchant details', 'Business defaults', 'Initial owner', 'Subscription', 'Review', 'Completion'];
+const steps = ['Merchant details', 'Business defaults', 'Initial owner', 'Pricing Plan', 'Review', 'Completion'];
 
 function usePlatformToken() {
   const { session, currentUser, getValidAccessToken } = useSession();
@@ -534,10 +539,18 @@ export function NewPlatformMerchantPage() {
     onSuccess: (tenant) => {
       setCreated(tenant);
       setActiveStep(5);
+    },
+    onError: (error) => {
+      const fields = getApiFieldErrors(error);
+      if (fields.tenantCode || fields.businessNumber) setActiveStep(0);
+      else if (fields.ownerEmail) setActiveStep(2);
+      else if (fields.pricingPlanId) setActiveStep(3);
     }
   });
+  const fieldErrors = getApiFieldErrors(mutation.error);
 
   function field<K extends keyof MerchantOnboardingPayload>(key: K, value: MerchantOnboardingPayload[K]) {
+    if (mutation.error) mutation.reset();
     setForm((current) => {
       const next = { ...current, [key]: value };
       if (key === 'countryCode') {
@@ -590,13 +603,13 @@ export function NewPlatformMerchantPage() {
         <Stepper activeStep={activeStep} alternativeLabel>
           {steps.map((step) => <Step key={step}><StepLabel>{step}</StepLabel></Step>)}
         </Stepper>
-        {mutation.error && <Alert severity="error">{mutation.error.message}</Alert>}
+        {mutation.error && <Alert severity="error">{Object.keys(fieldErrors).length ? 'Merchant could not be created. Review the highlighted fields.' : getApiErrorMessage(mutation.error, 'Something went wrong while saving the merchant.')}</Alert>}
         {activeStep === 0 && (
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}><TextField fullWidth required label="Legal business name" value={form.legalBusinessName} onChange={(e) => field('legalBusinessName', e.target.value)} /></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth required label="Operating name" value={form.operatingName} onChange={(e) => field('operatingName', e.target.value)} /></Grid>
-            <Grid item xs={12} md={4}><TextField fullWidth required label="Tenant code" value={form.tenantCode} onChange={(e) => field('tenantCode', e.target.value.toUpperCase())} /></Grid>
-            <Grid item xs={12} md={4}><TextField fullWidth label="Business number" value={form.businessNumber} onChange={(e) => field('businessNumber', e.target.value)} /></Grid>
+            <Grid item xs={12} md={4}><TextField fullWidth required label="Tenant code" value={form.tenantCode} error={Boolean(fieldErrors.tenantCode)} helperText={fieldErrors.tenantCode} onChange={(e) => field('tenantCode', e.target.value.toUpperCase())} /></Grid>
+            <Grid item xs={12} md={4}><TextField fullWidth label="Business number" value={form.businessNumber} error={Boolean(fieldErrors.businessNumber)} helperText={fieldErrors.businessNumber} onChange={(e) => field('businessNumber', e.target.value)} /></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth label="Industry type" value={form.industryType} onChange={(e) => field('industryType', e.target.value)} /></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth type="number" label="Estimated store count" value={form.estimatedStoreCount} onChange={(e) => field('estimatedStoreCount', Number(e.target.value))} /></Grid>
           </Grid>
@@ -634,7 +647,7 @@ export function NewPlatformMerchantPage() {
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}><TextField fullWidth required label="Owner first name" value={form.ownerFirstName} onChange={(e) => field('ownerFirstName', e.target.value)} /></Grid>
             <Grid item xs={12} sm={6}><TextField fullWidth required label="Owner last name" value={form.ownerLastName} onChange={(e) => field('ownerLastName', e.target.value)} /></Grid>
-            <Grid item xs={12} sm={6}><TextField fullWidth required type="email" label="Owner email" value={form.ownerEmail} onChange={(e) => field('ownerEmail', e.target.value)} /></Grid>
+            <Grid item xs={12} sm={6}><TextField fullWidth required type="email" label="Owner email" value={form.ownerEmail} error={Boolean(fieldErrors.ownerEmail)} helperText={fieldErrors.ownerEmail} onChange={(e) => field('ownerEmail', e.target.value)} /></Grid>
             <Grid item xs={12} sm={6}><TextField fullWidth label="Owner phone" value={form.ownerPhone} onChange={(e) => field('ownerPhone', e.target.value)} /></Grid>
           </Grid>
         )}
@@ -646,7 +659,7 @@ export function NewPlatformMerchantPage() {
               {form.storeCapabilities.includes('FOOD_SERVICE') ? <TextField fullWidth sx={{ mt: 1 }} label="Kitchen / Food Service Name" value={form.kitchenDisplayName} placeholder={`${form.operatingName || 'Store'} Kitchen`} onChange={(event) => field('kitchenDisplayName', event.target.value)} /> : null}
               {form.storeCapabilities.length === 0 ? <Alert severity="error">Select at least one operation.</Alert> : null}
             </Paper></Grid>
-            <Grid item xs={12} md={6}><TextField fullWidth select required label="Subscription Plan" value={form.pricingPlanId} onChange={(e) => field('pricingPlanId', e.target.value)} helperText={pricingPlans.isLoading ? 'Loading active pricing plans...' : undefined}>
+            <Grid item xs={12} md={6}><TextField fullWidth select required label="Pricing Plan" value={form.pricingPlanId} error={Boolean(fieldErrors.pricingPlanId)} onChange={(e) => field('pricingPlanId', e.target.value)} helperText={fieldErrors.pricingPlanId ?? (pricingPlans.isLoading ? 'Loading active pricing plans...' : undefined)}>
               {(pricingPlans.data ?? []).map((plan) => <MenuItem key={plan.id} value={plan.id}>{plan.name} — {new Intl.NumberFormat(undefined, { style: 'currency', currency: plan.currency }).format(plan.basePrice)}/month</MenuItem>)}
             </TextField></Grid>
             {selectedPlan && <Grid item xs={12}><Paper variant="outlined" sx={{ p: 2 }}><Typography variant="h6">{selectedPlan.name}</Typography>
@@ -681,7 +694,7 @@ export function NewPlatformMerchantPage() {
         )}
         {activeStep === 5 && created && (
           <Alert severity="success" icon={<CheckCircleIcon />}>
-            Merchant {created.tenant.displayName} created with code {created.tenant.tenantCode}. {created.tenant.countryCode}/{created.tenant.administrativeDivisionCode}; {created.tenant.defaultCurrencyCode}; {created.tenant.primaryTimezone}; tax region {created.tenant.defaultTaxRegionCode}. Owner {created.tenant.primaryOwnerEmail}. Onboarding: {created.onboarding.currentStage.replaceAll('_', ' ')}.
+            Merchant {created.tenant.displayName} created with code {created.tenant.tenantCode} on Pricing Plan {selectedPlan?.name}. {created.tenant.countryCode}/{created.tenant.administrativeDivisionCode}; {created.tenant.defaultCurrencyCode}; {created.tenant.primaryTimezone}; tax region {created.tenant.defaultTaxRegionCode}. Owner {created.tenant.primaryOwnerEmail}. Onboarding: {created.onboarding.currentStage.replaceAll('_', ' ')}.
           </Alert>
         )}
         <Stack direction="row" gap={1}>
@@ -860,6 +873,9 @@ export function PlatformMerchantDetailPage() {
               unlocking={unlockOwner.isPending}
             />
           </Grid>
+          <Grid item xs={12}>
+            <MerchantStoreCapabilities tenantId={tenantId} canEdit={isSuperAdmin} />
+          </Grid>
           <Grid item xs={12} md={6}>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
               <Typography variant="h6">Subscription & Billing</Typography>
@@ -992,6 +1008,115 @@ export function PlatformMerchantDetailPage() {
       </Dialog>
       </>
     </RequirePlatform>
+  );
+}
+
+const capabilityLabels: Record<StoreCapability, string> = {
+  RETAIL: 'Retail POS',
+  FOOD_SERVICE: 'Restaurant / Kitchen POS',
+  LOTTERY: 'Lottery'
+};
+
+function MerchantStoreCapabilities({ tenantId, canEdit }: { tenantId: string; canEdit: boolean }) {
+  const { getValidAccessToken } = usePlatformToken();
+  const queryClient = useQueryClient();
+  const stores = useAuthedQuery(['platform-tenant-stores', tenantId], (token) => listPlatformTenantStores(token, tenantId), Boolean(tenantId));
+  const [editing, setEditing] = useState<MerchantStoreCapability | null>(null);
+  const [selected, setSelected] = useState<StoreCapability[]>([]);
+  const [kitchenName, setKitchenName] = useState('');
+  const [preview, setPreview] = useState<StoreCapabilityChangePreview | null>(null);
+
+  const save = useMutation({
+    mutationFn: async (confirmPaidAddOns: boolean) => {
+      if (!editing) throw new Error('Store is unavailable');
+      const token = await getValidAccessToken();
+      const payload = { capabilities: selected, kitchenDisplayName: kitchenName || null, confirmPaidAddOns, version: editing.version };
+      if (!confirmPaidAddOns) {
+        const next = await previewPlatformStoreCapabilities(token, tenantId, editing.storeId, payload);
+        if (next.confirmationRequired) { setPreview(next); return null; }
+      }
+      return updatePlatformStoreCapabilities(token, tenantId, editing.storeId, payload);
+    },
+    onSuccess: (updated) => {
+      if (!updated) return;
+      queryClient.invalidateQueries({ queryKey: ['platform-tenant-stores', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-billing-subscription', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-pricing-preview', tenantId] });
+      setEditing(null);
+      setPreview(null);
+    }
+  });
+
+  function open(store: MerchantStoreCapability) {
+    setEditing(store);
+    setSelected(store.capabilities);
+    setKitchenName(store.kitchenDisplayName ?? `${store.storeName} Kitchen`);
+    setPreview(null);
+    save.reset();
+  }
+
+  function toggle(capability: StoreCapability, checked: boolean) {
+    setSelected((current) => checked ? Array.from(new Set([...current, capability])) : current.filter((value) => value !== capability));
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 1, minWidth: 0 }}>
+      <Stack spacing={2}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
+          <Box><Typography variant="h6">Store Operations & Capabilities</Typography><Typography color="text.secondary">Capabilities are managed independently for each store.</Typography></Box>
+        </Stack>
+        {stores.isLoading && <CircularProgress size={24} aria-label="Loading merchant stores" />}
+        {stores.error && <Alert severity="error">{getApiErrorMessage(stores.error, 'Merchant stores could not be loaded.')}</Alert>}
+        <Grid container spacing={2}>
+          {(stores.data ?? []).map((store) => (
+            <Grid item xs={12} md={6} key={store.storeId} sx={{ minWidth: 0 }}>
+              <Paper variant="outlined" sx={{ p: 2, height: '100%', minWidth: 0 }}>
+                <Stack spacing={1.5}>
+                  <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
+                    <Box sx={{ minWidth: 0 }}><Typography fontWeight={700} noWrap title={store.storeName}>{store.storeName}</Typography><Typography variant="body2" color="text.secondary">{store.storeCode}</Typography></Box>
+                    {canEdit && <Button size="small" onClick={() => open(store)}>Edit</Button>}
+                  </Stack>
+                  <Stack direction="row" gap={1} flexWrap="wrap">
+                    {store.capabilities.map((capability) => <Chip key={capability} label={capabilityLabels[capability]} size="small" color="primary" variant="outlined" />)}
+                  </Stack>
+                  {store.capabilities.includes('FOOD_SERVICE') && <Typography variant="body2">Kitchen display: {store.kitchenDisplayName}</Typography>}
+                </Stack>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+      </Stack>
+      <Dialog open={Boolean(editing)} onClose={() => !save.isPending && setEditing(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Edit Store Capabilities — {editing?.storeName}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {save.error && <Alert severity="error">{getApiErrorMessage(save.error, 'Store capabilities could not be updated.')}</Alert>}
+            {(['RETAIL', 'FOOD_SERVICE', 'LOTTERY'] as StoreCapability[]).map((capability) => (
+              <FormControlLabel key={capability} control={<Checkbox checked={selected.includes(capability)} onChange={(_, checked) => toggle(capability, checked)} />} label={capabilityLabels[capability]} />
+            ))}
+            {selected.includes('FOOD_SERVICE') && <TextField fullWidth label="Kitchen Display Name" value={kitchenName} onChange={(event) => setKitchenName(event.target.value)} inputProps={{ maxLength: 180 }} />}
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setEditing(null)}>Cancel</Button><Button variant="contained" disabled={save.isPending || selected.length === 0} onClick={() => save.mutate(false)}>Review & Save</Button></DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(preview)} onClose={() => !save.isPending && setPreview(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Confirm Pricing Change</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="info">Operational access activates immediately. The updated quantity is reflected on the next billing cycle; no mid-cycle proration is created.</Alert>
+            {(preview?.impacts ?? []).map((impact) => (
+              <Paper variant="outlined" sx={{ p: 2 }} key={impact.capability}>
+                <Typography fontWeight={700}>{capabilityLabels[impact.capability === 'RETAIL_POS' ? 'RETAIL' : impact.capability]}</Typography>
+                <Typography>{impact.currentQuantity} → {impact.newQuantity} {impact.billingUnit?.replace('PER_', 'per ').toLowerCase()}</Typography>
+                <Typography>{new Intl.NumberFormat(undefined, { style: 'currency', currency: preview?.currency ?? 'CAD' }).format(impact.currentMonthlyAmount)} → {new Intl.NumberFormat(undefined, { style: 'currency', currency: preview?.currency ?? 'CAD' }).format(impact.newMonthlyAmount)} / month</Typography>
+              </Paper>
+            ))}
+            <Typography variant="body2" color="text.secondary">Effective billing date: {preview?.effectiveDate}</Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setPreview(null)}>Cancel</Button><Button variant="contained" disabled={save.isPending} onClick={() => save.mutate(true)}>Confirm Change</Button></DialogActions>
+      </Dialog>
+    </Paper>
   );
 }
 

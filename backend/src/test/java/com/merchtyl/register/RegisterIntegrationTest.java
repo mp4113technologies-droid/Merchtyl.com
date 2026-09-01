@@ -294,7 +294,8 @@ class RegisterIntegrationTest {
                   "code": "%s",
                   "name": "%s",
                   "locationDescription": "Front counter",
-                  "active": %s
+                  "active": %s,
+                  "type": "RETAIL"
                 }
                 """.formatted(storeId, code, name, active);
     }
@@ -307,6 +308,7 @@ class RegisterIntegrationTest {
                   "name": "%s",
                   "locationDescription": "Checkout lane",
                   "active": %s,
+                  "type": "RETAIL",
                   "version": %d
                 }
                 """.formatted(storeId, code, name, active, version);

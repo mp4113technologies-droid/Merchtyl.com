@@ -31,16 +31,25 @@ public class Register extends BaseUuidEntity {
     @Column(nullable = false)
     private boolean active;
 
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "register_type", nullable = false, length = 30)
+    private RegisterType type;
+
     protected Register() {
     }
 
-    Register(Store store, String code, String name, String locationDescription, boolean active) {
+    Register(Store store, String code, String name, String locationDescription, boolean active, RegisterType type) {
         this.store = store;
         this.code = code;
         this.name = name;
         this.locationDescription = locationDescription;
         this.active = active;
+        this.type = type;
         initializeIdAndTimestamps();
+    }
+
+    Register(Store store, String code, String name, String locationDescription, boolean active) {
+        this(store, code, name, locationDescription, active, RegisterType.RETAIL);
     }
 
     void update(RegisterValues values) {
@@ -49,6 +58,7 @@ public class Register extends BaseUuidEntity {
         this.name = values.name();
         this.locationDescription = values.locationDescription();
         this.active = values.active();
+        this.type = values.type();
     }
 
     void setActive(boolean active) {
@@ -74,4 +84,6 @@ public class Register extends BaseUuidEntity {
     public boolean isActive() {
         return active;
     }
+
+    public RegisterType getType() { return type; }
 }

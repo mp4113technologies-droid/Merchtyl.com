@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
 
@@ -14,12 +14,33 @@ describe('Food menu management',()=>{
       if(url.pathname.endsWith('/auth/me'))return json({userId:'owner',email:'owner@test',displayName:'Owner',roles:['OWNER'],permissions:['FOOD_POS_ACCESS','FOOD_ORDER_UPDATE','PRODUCT_MANAGE']});
       if(url.pathname.endsWith('/stores'))return json(page([{id:storeId,name:'Kitchen',code:'K',capabilities:['FOOD_SERVICE']}]));
       if(url.pathname.endsWith('/food-menu/categories'))return json([{id:'cat',storeId,name:'Pizza',displayOrder:1,active:true,imageUrl:null,version:0}]);
-      if(url.pathname.endsWith('/food-menu/items')&&(!init?.method||init.method==='GET'))return json([{id:'item',storeId,categoryId:'cat',categoryName:'Pizza',productId:'product',productName:'Base Pizza',displayName:'Pepperoni',price:14,displayOrder:2,available:true,imageUrl:null,version:0}]);
+      if(url.pathname.endsWith('/food-menu/items')&&(!init?.method||init.method==='GET'))return json([{id:'item',storeId,categoryId:'cat',categoryName:'Pizza',productId:null,productName:null,displayName:'Pepperoni',description:null,price:14,inventoryTracked:false,madeToOrder:true,displayOrder:2,available:true,imageUrl:null,version:0}]);
       if(url.pathname.endsWith('/products'))return json(page([]));
       if(url.pathname.endsWith('/availability'))return json({}); return json({},500);});
     render(<App initialEntries={['/food-menu']}/>);
     expect(await screen.findByText('Pepperoni')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('checkbox',{name:'Available'}));
     expect(calls).toContain(`PATCH /api/v1/stores/${storeId}/food-menu/items/item/availability`);
+  });
+
+  it('creates a made-to-order item without selecting a Retail Product',async()=>{
+    let submitted:Record<string,unknown>|undefined;
+    vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),location.origin);
+      if(url.pathname.endsWith('/auth/me'))return json({userId:'owner',email:'adviamcreatives@gmail.com',displayName:'Owner',roles:['TENANT_OWNER'],permissions:['FOOD_POS_ACCESS','FOOD_ORDER_UPDATE']});
+      if(url.pathname.endsWith('/stores'))return json(page([{id:storeId,name:'adviam',code:'STORE1234',capabilities:['FOOD_SERVICE']}]))
+      if(url.pathname.endsWith('/food-menu/categories'))return json([{id:'cat',storeId,name:'Snacks',displayOrder:1,active:true,imageUrl:null,version:0}]);
+      if(url.pathname.endsWith('/food-menu/items')&&init?.method==='POST'){submitted=JSON.parse(String(init.body));return json({},201);}
+      if(url.pathname.endsWith('/food-menu/items'))return json([]);
+      if(url.pathname.endsWith('/products'))return json(page([]));return json({},500);});
+    render(<App initialEntries={['/food-menu']}/>);
+    expect(await screen.findByRole('heading',{name:'Restaurant Menu'})).toBeInTheDocument();
+    const addButton=screen.getByRole('button',{name:'Add Menu Item'});await waitFor(()=>expect(addButton).toBeEnabled());await userEvent.click(addButton);
+    await userEvent.click(screen.getByLabelText('Restaurant Category'));
+    await userEvent.click(await screen.findByRole('option',{name:'Snacks'}));
+    await userEvent.type(screen.getByLabelText('Name'),'Samosa');
+    await userEvent.clear(screen.getByLabelText('Price'));await userEvent.type(screen.getByLabelText('Price'),'2.49');
+    await userEvent.click(screen.getByRole('button',{name:'Add'}));
+    expect(submitted).toEqual(expect.objectContaining({displayName:'Samosa',categoryId:'cat',price:2.49}));
+    expect(submitted?.productId).toBeUndefined();
   });
 });

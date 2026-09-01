@@ -421,7 +421,7 @@ public class SaleService {
     @Transactional
     public SaleResponse recordPayment(UUID saleId, SalePaymentRequest request, Authentication authentication) {
         User actor = actor(authentication);
-        Sale sale = findSale(saleId);
+        Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
         requireDraft(sale);
         if (sale.getItems().isEmpty() || sale.getTotalAmount().signum() <= 0) {

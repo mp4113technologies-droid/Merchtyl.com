@@ -50,7 +50,8 @@ class RegisterControllerAuthorizationTest {
               "code": "FRONT-1",
               "name": "Front Register",
               "locationDescription": "Front counter",
-              "active": true
+              "active": true,
+              "type": "RETAIL"
             }
             """;
 

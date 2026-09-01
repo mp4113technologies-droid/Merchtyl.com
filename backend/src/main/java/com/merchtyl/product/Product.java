@@ -75,6 +75,9 @@ public class Product extends BaseUuidEntity {
     @Column(nullable = false)
     private boolean decimalQuantityAllowed;
 
+    @Column(nullable = false)
+    private boolean restaurantMenuManaged;
+
     @Column(length = 1000)
     private String imageUrl;
 
@@ -130,6 +133,17 @@ public class Product extends BaseUuidEntity {
         this.active = active;
     }
 
+    public void markRestaurantMenuManaged() {
+        this.restaurantMenuManaged = true;
+    }
+
+    public void updateRestaurantMenuBacking(String name, String description, BigDecimal price, UUID taxCategoryId) {
+        this.name = name;
+        this.description = description;
+        this.price = price;
+        this.taxCategoryId = taxCategoryId;
+    }
+
     public void setTaxCategoryId(UUID taxCategoryId) {
         this.taxCategoryId = taxCategoryId;
     }
@@ -149,6 +163,10 @@ public class Product extends BaseUuidEntity {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public boolean isRestaurantMenuManaged() {
+        return restaurantMenuManaged;
     }
 
     private void reconcileChildren(List<ProductVariantValues> variantValues, List<ProductBarcodeValues> barcodeValues) {

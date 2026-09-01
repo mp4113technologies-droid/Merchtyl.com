@@ -96,7 +96,7 @@ const storeSchema = z.object({
   pricesIncludeTax: z.boolean(),
   negativeStockAllowed: z.boolean(),
   active: z.boolean()
-  ,capabilities: z.array(z.enum(['RETAIL', 'FOOD_SERVICE'])).min(1, 'Select at least one operation'),
+  ,capabilities: z.array(z.enum(['RETAIL', 'FOOD_SERVICE', 'LOTTERY'])).min(1, 'Select at least one operation'),
   kitchenDisplayName: z.string().max(180, 'Kitchen name must be 180 characters or fewer').optional()
 });
 
@@ -427,7 +427,7 @@ function StoreForm({
         <Typography color="text.secondary" sx={{ mb: 1 }}>What does this location operate?</Typography>
         <Controller name="capabilities" control={form.control} render={({ field, fieldState }) => (
           <Stack>
-            {([['RETAIL', 'Convenience / Retail Store', 'Barcode scanning, retail inventory and standard POS'], ['FOOD_SERVICE', 'Kitchen / Food Service', 'Food menu, tile POS and kitchen operations']] as const).map(([value, label, description]) => (
+            {([['RETAIL', 'Convenience / Retail Store', 'Barcode scanning, retail inventory and standard POS'], ['FOOD_SERVICE', 'Kitchen / Food Service', 'Food menu, tile POS and kitchen operations'], ['LOTTERY', 'Lottery', 'Lottery sales, payouts and reconciliation']] as const).map(([value, label, description]) => (
               <FormControlLabel key={value} control={<Checkbox checked={field.value.includes(value)} disabled={disabled} onChange={(_, checked) => field.onChange(checked ? [...field.value, value] : field.value.filter((item: StoreCapability) => item !== value))} />} label={<Box><Typography>{label}</Typography><Typography variant="body2" color="text.secondary">{description}</Typography></Box>} />
             ))}
             {fieldState.error ? <Typography color="error" variant="caption">{fieldState.error.message}</Typography> : null}

@@ -11,6 +11,7 @@ public record RegisterRequest(
         @NotBlank @Size(max = 64) String code,
         @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String locationDescription,
-        boolean active
+        boolean active,
+        @NotNull RegisterType type
 ) {
 }

@@ -4,11 +4,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import com.merchtyl.cash.CashLedgerBreakdownResponse;
 import java.util.UUID;
+import com.merchtyl.register.RegisterType;
 
 public record RegisterSessionResponse(
         UUID id,
         UUID storeId,
         UUID registerId,
+        RegisterType registerType,
         UUID deviceId,
         String deviceName,
         UUID assignedCashierId,
@@ -41,7 +43,7 @@ public record RegisterSessionResponse(
             UUID closedByUserId, String closedByEmail, String closedByDisplayName, Instant closedAt,
             String forceCloseReason, CashLedgerBreakdownResponse reconciliation, Instant openedAt,
             Instant createdAt, Instant updatedAt, long version) {
-        this(id, storeId, registerId, deviceId, null, assignedCashierId, assignedCashierEmail,
+        this(id, storeId, registerId, RegisterType.RETAIL, deviceId, null, assignedCashierId, assignedCashierEmail,
                 assignedCashierDisplayName, assignedCashierId, assignedCashierDisplayName, status, openingCash, expectedCash, countedCash,
                 expectedCashAtClose, differenceCash, closedByUserId, closedByEmail, closedByDisplayName,
                 closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version);
@@ -52,6 +54,7 @@ public record RegisterSessionResponse(
                 session.getId(),
                 session.getStore().getId(),
                 session.getRegister().getId(),
+                session.getRegister().getType(),
                 session.getDevice() == null ? null : session.getDevice().getId(),
                 session.getDevice() == null ? null : session.getDevice().getDisplayName(),
                 session.getAssignedCashier().getId(),
@@ -82,6 +85,7 @@ public record RegisterSessionResponse(
                 session.getId(),
                 session.getStore().getId(),
                 session.getRegister().getId(),
+                session.getRegister().getType(),
                 session.getDevice() == null ? null : session.getDevice().getId(),
                 session.getDevice() == null ? null : session.getDevice().getDisplayName(),
                 session.getAssignedCashier().getId(),

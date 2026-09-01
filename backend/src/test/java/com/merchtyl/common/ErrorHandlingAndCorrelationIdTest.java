@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -80,6 +81,25 @@ class ErrorHandlingAndCorrelationIdTest {
                 .andExpect(jsonPath("$.status").value(403));
     }
 
+    @Test
+    void knownDatabaseConstraintReturnsSafeDomainErrorAndFieldViolation() throws Exception {
+        mockMvc.perform(get("/test/duplicate-tenant"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TENANT_CODE_ALREADY_EXISTS"))
+                .andExpect(jsonPath("$.message").value("A merchant with this tenant code already exists."))
+                .andExpect(jsonPath("$.violations[0].field").value("tenantCode"))
+                .andExpect(jsonPath("$.violations[0].code").value("TENANT_CODE_ALREADY_EXISTS"));
+    }
+
+    @Test
+    void unknownUniqueConstraintReturnsSanitizedFallback() throws Exception {
+        mockMvc.perform(get("/test/unknown-duplicate"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESOURCE_ALREADY_EXISTS"))
+                .andExpect(jsonPath("$.message").value("A record with the same unique information already exists."))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unknown_secret_constraint"))));
+    }
+
     @RestController
     @RequestMapping("/test")
     static class TestController {
@@ -96,6 +116,22 @@ class ErrorHandlingAndCorrelationIdTest {
         @GetMapping("/forbidden")
         void forbidden() {
             throw new ForbiddenOperationException("Operation is not allowed");
+        }
+
+        @GetMapping("/duplicate-tenant")
+        void duplicateTenant() {
+            throw integrity("uq_tenants_tenant_code");
+        }
+
+        @GetMapping("/unknown-duplicate")
+        void unknownDuplicate() {
+            throw integrity("unknown_secret_constraint");
+        }
+
+        private static DataIntegrityViolationException integrity(String constraint) {
+            var sql = new java.sql.SQLException("technical detail", "23505");
+            var hibernate = new org.hibernate.exception.ConstraintViolationException("write failed", sql, constraint);
+            return new DataIntegrityViolationException("persistence failed", hibernate);
         }
 
         @PostMapping("/validate")

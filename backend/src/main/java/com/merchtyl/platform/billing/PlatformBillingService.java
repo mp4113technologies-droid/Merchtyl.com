@@ -102,6 +102,11 @@ public class PlatformBillingService {
                 select p.*, (select count(*) from tenant_subscriptions s where s.pricing_plan_id=p.id and s.status in ('TRIAL','ACTIVE','PAST_DUE')) active_merchants
                 from platform_pricing_plans p
                 where p.status='ACTIVE' and p.effective_from<=current_date and (p.effective_to is null or p.effective_to>=current_date)
+                  and exists (
+                    select 1 from platform_pricing_plan_versions v
+                    where v.pricing_plan_id=p.id and v.status='ACTIVE' and v.effective_from<=now()
+                      and (v.effective_to is null or v.effective_to>=now())
+                  )
                 order by p.name,p.id
                 """, PlatformBillingService::plan).stream().map(this::withCapabilityPrices).toList();
     }
@@ -109,17 +114,28 @@ public class PlatformBillingService {
     @Transactional
     public PlanResponse createPlan(PlanRequest request, Authentication authentication) {
         validatePlan(request);
+        String planCode = code(request.code());
+        if (Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from platform_pricing_plans where code=?)",
+                Boolean.class,
+                planCode))) {
+            throw new ConflictException("PRICING_PLAN_CODE_ALREADY_EXISTS: A pricing plan with code '%s' already exists.".formatted(planCode));
+        }
         UUID id = UUID.randomUUID();
         UUID actor = platformActor(authentication);
-        jdbc.update("""
-                insert into platform_pricing_plans(id,code,name,description,status,billing_interval,base_price,one_time_onboarding_fee,currency_code,trial_days,
-                  included_stores,included_registers,included_users,additional_store_price,additional_register_price,additional_user_price,
-                  tax_behavior,effective_from,effective_to,created_by)
-                values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, id, code(request.code()), request.name().trim(), clean(request.description()), status(request.status()), interval(request.billingInterval()),
-                request.basePrice(), request.oneTimeOnboardingFee(), request.currency().toUpperCase(Locale.ROOT), request.trialDays(), request.includedStores(), request.includedRegisters(),
-                request.includedUsers(), request.additionalStorePrice(), request.additionalRegisterPrice(), request.additionalUserPrice(),
-                taxBehavior(request.taxBehavior()), Date.valueOf(request.effectiveFrom()), date(request.effectiveTo()), actor);
+        try {
+            jdbc.update("""
+                    insert into platform_pricing_plans(id,code,name,description,status,billing_interval,base_price,one_time_onboarding_fee,currency_code,trial_days,
+                      included_stores,included_registers,included_users,additional_store_price,additional_register_price,additional_user_price,
+                      tax_behavior,effective_from,effective_to,created_by)
+                    values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, id, planCode, request.name().trim(), clean(request.description()), status(request.status()), interval(request.billingInterval()),
+                    request.basePrice(), request.oneTimeOnboardingFee(), request.currency().toUpperCase(Locale.ROOT), request.trialDays(), request.includedStores(), request.includedRegisters(),
+                    request.includedUsers(), request.additionalStorePrice(), request.additionalRegisterPrice(), request.additionalUserPrice(),
+                    taxBehavior(request.taxBehavior()), Date.valueOf(request.effectiveFrom()), date(request.effectiveTo()), actor);
+        } catch (DuplicateKeyException duplicate) {
+            throw new ConflictException("PRICING_PLAN_CODE_ALREADY_EXISTS: A pricing plan with code '%s' already exists.".formatted(planCode));
+        }
         replacePlanCapabilityPrices(id, request.capabilityPrices());
         snapshotPlan(id, 1, request, actor);
         PlanResponse response = plan(id);
@@ -131,6 +147,10 @@ public class PlatformBillingService {
     public PlanResponse updatePlan(UUID id, PlanRequest request, Authentication authentication) {
         validatePlan(request);
         PlanResponse before = plan(id);
+        boolean pricingChanged = pricingChanged(before, request);
+        if (!"ACTIVE".equals(before.status()) && "ACTIVE".equals(status(request.status()))) {
+            validateActivation(id, request, pricingChanged);
+        }
         int updated = jdbc.update("""
                 update platform_pricing_plans set code=?,name=?,description=?,status=?,billing_interval=?,base_price=?,one_time_onboarding_fee=?,currency_code=?,trial_days=?,
                   included_stores=?,included_registers=?,included_users=?,additional_store_price=?,additional_register_price=?,additional_user_price=?,
@@ -142,7 +162,12 @@ public class PlatformBillingService {
         if (updated == 0) throw new NotFoundException("Pricing plan not found");
         UUID actor = platformActor(authentication);
         replacePlanCapabilityPrices(id, request.capabilityPrices());
-        snapshotPlan(id, Math.toIntExact(before.version() + 2), request, actor);
+        if (pricingChanged) {
+            int nextVersion = Objects.requireNonNull(jdbc.queryForObject(
+                    "select coalesce(max(version_number),0)+1 from platform_pricing_plan_versions where pricing_plan_id=?",
+                    Integer.class, id));
+            snapshotPlan(id, nextVersion, request, actor);
+        }
         PlanResponse after = plan(id);
         AuditAction action = !before.status().equals(after.status()) && after.status().equals("ACTIVE")
                 ? AuditAction.PRICING_PLAN_ACTIVATED
@@ -516,12 +541,12 @@ public class PlatformBillingService {
     private void replacePlanCapabilityPrices(UUID planId, List<CapabilityPrice> prices) {
         jdbc.update("delete from platform_pricing_plan_capability_prices where pricing_plan_id=?",planId);
         if(prices==null)return;
-        prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON).forEach(price->jdbc.update("insert into platform_pricing_plan_capability_prices(pricing_plan_id,capability,monthly_price_per_store) values (?,?,?)",planId,price.capability().name(),price.monthlyPricePerStore()));
+        prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON&&price.billingUnit()==BillingUnit.PER_STORE).forEach(price->jdbc.update("insert into platform_pricing_plan_capability_prices(pricing_plan_id,capability,monthly_price_per_store) values (?,?,?)",planId,price.capability().name(),price.monthlyPricePerStore()));
     }
 
     private void replaceSubscriptionCapabilitySnapshots(UUID subscriptionId, List<CapabilityPrice> prices) {
         jdbc.update("delete from tenant_subscription_capability_price_snapshots where subscription_id=?",subscriptionId);
-        prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON).forEach(price->jdbc.update("insert into tenant_subscription_capability_price_snapshots(subscription_id,capability,monthly_price_per_store) values (?,?,?)",subscriptionId,price.capability().name(),price.monthlyPricePerStore()));
+        prices.stream().filter(price->normalizeInclusion(price)==CapabilityInclusionType.PAID_ADD_ON&&price.billingUnit()==BillingUnit.PER_STORE).forEach(price->jdbc.update("insert into tenant_subscription_capability_price_snapshots(subscription_id,capability,monthly_price_per_store) values (?,?,?)",subscriptionId,price.capability().name(),price.monthlyPricePerStore()));
     }
 
     private Map<String,Integer> tenantCapabilityCounts(UUID tenantId) {
@@ -611,7 +636,7 @@ public class PlatformBillingService {
         }
     }
     private static String subscriberPolicy(String value){return allowed(value,List.of("NEW_SUBSCRIPTIONS_ONLY","APPLY_NEXT_BILLING_CYCLE"),"subscriber policy");}
-    private static void validateCapabilities(List<CapabilityPrice> capabilities){Set<CommercialCapability> seen=EnumSet.noneOf(CommercialCapability.class);for(CapabilityPrice value:capabilities==null?List.<CapabilityPrice>of():capabilities){if(!seen.add(value.capability()))throw new BadRequestException("PRICING_PLAN_CAPABILITY_DUPLICATE");CapabilityInclusionType type=normalizeInclusion(value);if(type==CapabilityInclusionType.PAID_ADD_ON&&(value.billingUnit()==null||value.monthlyPricePerStore()==null))throw new BadRequestException("Paid add-on requires price and billing unit");if(type!=CapabilityInclusionType.PAID_ADD_ON&&value.monthlyPricePerStore()!=null&&value.monthlyPricePerStore().signum()!=0)throw new BadRequestException("Included or unavailable capability cannot have a separate price");}}
+    private static void validateCapabilities(List<CapabilityPrice> capabilities){Set<CommercialCapability> seen=EnumSet.noneOf(CommercialCapability.class);for(CapabilityPrice value:capabilities==null?List.<CapabilityPrice>of():capabilities){if(value==null||value.capability()==null)throw new BadRequestException("Capability is required");if(!seen.add(value.capability()))throw new BadRequestException("PRICING_PLAN_CAPABILITY_DUPLICATE");CapabilityInclusionType type=normalizeInclusion(value);if(value.monthlyPricePerStore()!=null&&value.monthlyPricePerStore().signum()<0)throw new BadRequestException("Capability price must be zero or greater");if(type==CapabilityInclusionType.PAID_ADD_ON&&(value.billingUnit()==null||value.monthlyPricePerStore()==null))throw new BadRequestException("Paid add-on requires price and billing unit");if(type!=CapabilityInclusionType.PAID_ADD_ON&&value.billingUnit()!=null)throw new BadRequestException("Included or unavailable capability cannot have a billing unit");if(type!=CapabilityInclusionType.PAID_ADD_ON&&value.monthlyPricePerStore()!=null&&value.monthlyPricePerStore().signum()!=0)throw new BadRequestException("Included or unavailable capability cannot have a separate price");}}
 
     private Map<String, Object> merchant(UUID tenantId) {
         return jdbc.queryForMap("""
@@ -716,6 +741,61 @@ public class PlatformBillingService {
         status(request.status()); interval(request.billingInterval()); taxBehavior(request.taxBehavior());
         validateCapabilities(request.capabilityPrices());
         if (request.effectiveTo() != null && request.effectiveTo().isBefore(request.effectiveFrom())) throw new BadRequestException("Plan effective end date cannot precede start date");
+    }
+
+    private void validateActivation(UUID planId, PlanRequest request, boolean pricingChanged) {
+        LocalDate today = LocalDate.now();
+        if (pricingChanged) {
+            if (request.effectiveFrom().isAfter(today) || (request.effectiveTo() != null && request.effectiveTo().isBefore(today))) {
+                throw new BadRequestException("PRICING_PLAN_NO_EFFECTIVE_VERSION: This plan does not have an effective pricing version");
+            }
+            return;
+        }
+        Boolean effectiveVersion = jdbc.queryForObject("""
+                select exists(select 1 from platform_pricing_plan_versions
+                  where pricing_plan_id=? and status='ACTIVE' and effective_from<=now()
+                    and (effective_to is null or effective_to>=now()))
+                """, Boolean.class, planId);
+        if (!Boolean.TRUE.equals(effectiveVersion)) {
+            throw new BadRequestException("PRICING_PLAN_NO_EFFECTIVE_VERSION: This plan does not have an effective pricing version");
+        }
+    }
+
+    private static boolean pricingChanged(PlanResponse before, PlanRequest request) {
+        return !Objects.equals(before.billingInterval(), interval(request.billingInterval()))
+                || decimalChanged(before.basePrice(), request.basePrice())
+                || decimalChanged(before.oneTimeOnboardingFee(), request.oneTimeOnboardingFee())
+                || !Objects.equals(before.currency(), request.currency().toUpperCase(Locale.ROOT))
+                || before.trialDays() != request.trialDays()
+                || !Objects.equals(before.includedStores(), request.includedStores())
+                || !Objects.equals(before.includedRegisters(), request.includedRegisters())
+                || !Objects.equals(before.includedUsers(), request.includedUsers())
+                || decimalChanged(before.additionalStorePrice(), request.additionalStorePrice())
+                || decimalChanged(before.additionalRegisterPrice(), request.additionalRegisterPrice())
+                || decimalChanged(before.additionalUserPrice(), request.additionalUserPrice())
+                || !Objects.equals(before.taxBehavior(), taxBehavior(request.taxBehavior()))
+                || !Objects.equals(before.effectiveFrom(), request.effectiveFrom())
+                || !Objects.equals(before.effectiveTo(), request.effectiveTo())
+                || !capabilitiesEqual(before.capabilityPrices(), request.capabilityPrices());
+    }
+
+    private static boolean capabilitiesEqual(List<CapabilityPrice> left, List<CapabilityPrice> right) {
+        Map<CommercialCapability, CapabilityPrice> expected = (left == null ? List.<CapabilityPrice>of() : left).stream()
+                .collect(java.util.stream.Collectors.toMap(CapabilityPrice::capability, value -> value));
+        Map<CommercialCapability, CapabilityPrice> actual = (right == null ? List.<CapabilityPrice>of() : right).stream()
+                .collect(java.util.stream.Collectors.toMap(CapabilityPrice::capability, value -> value));
+        if (!expected.keySet().equals(actual.keySet())) return false;
+        return expected.entrySet().stream().allMatch(entry -> {
+            CapabilityPrice value = actual.get(entry.getKey());
+            CapabilityPrice original = entry.getValue();
+            return normalizeInclusion(original) == normalizeInclusion(value)
+                    && original.billingUnit() == value.billingUnit()
+                    && !decimalChanged(original.monthlyPricePerStore(), value.monthlyPricePerStore());
+        });
+    }
+
+    private static boolean decimalChanged(BigDecimal left, BigDecimal right) {
+        return left == null ? right != null : right == null || left.compareTo(right) != 0;
     }
     private static void validateSubscription(SubscriptionRequest request, PlanResponse plan) {
         subscriptionStatus(request.status()); interval(request.billingInterval()); discountType(request.discountType());

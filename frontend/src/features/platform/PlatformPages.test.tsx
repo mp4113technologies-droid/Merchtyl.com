@@ -193,6 +193,7 @@ describe('Platform merchant owner activation', () => {
 
   it('shows owner activation status and submits a confirmed resend reason', async () => {
     let resent = false;
+    let capabilities = ['RETAIL'];
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/api/v1/auth/me')) {
@@ -200,6 +201,17 @@ describe('Platform merchant owner activation', () => {
       }
       if (url.endsWith(`/api/v1/platform/tenants/${tenantId}`)) {
         return jsonResponse(tenantDetail());
+      }
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/stores`)) {
+        return jsonResponse([{ storeId: 'store-1', storeCode: 'DOWNTOWN', storeName: 'Downtown', active: true, capabilities, kitchenDisplayName: capabilities.includes('FOOD_SERVICE') ? 'Sweetshop' : null, version: capabilities.length - 1 }]);
+      }
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/stores/store-1/capabilities/preview`) && init?.method === 'POST') {
+        return jsonResponse({ tenantId, storeId: 'store-1', currentCapabilities: ['RETAIL'], proposedCapabilities: ['RETAIL', 'FOOD_SERVICE'], currency: 'USD', effectiveDate: '2026-09-01', impacts: [], confirmationRequired: false });
+      }
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/stores/store-1/capabilities`) && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body)) as { capabilities: string[]; kitchenDisplayName: string };
+        capabilities = body.capabilities;
+        return jsonResponse({ storeId: 'store-1', storeCode: 'DOWNTOWN', storeName: 'Downtown', active: true, capabilities, kitchenDisplayName: body.kitchenDisplayName, version: 1 });
       }
       if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/owner-invitation`)) {
         return jsonResponse(resent
@@ -274,6 +286,16 @@ describe('Platform merchant owner activation', () => {
         })
       );
     });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Resend Activation Email' })).not.toBeInTheDocument());
+
+    expect(await screen.findByText('Downtown')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const capabilityDialog = await screen.findByRole('dialog', { name: /Edit Store Capabilities/ });
+    await userEvent.click(within(capabilityDialog).getByRole('checkbox', { name: 'Restaurant / Kitchen POS' }));
+    await userEvent.clear(within(capabilityDialog).getByLabelText('Kitchen Display Name'));
+    await userEvent.type(within(capabilityDialog).getByLabelText('Kitchen Display Name'), 'Sweetshop');
+    await userEvent.click(within(capabilityDialog).getByRole('button', { name: 'Review & Save' }));
+    expect(await screen.findByText('Kitchen display: Sweetshop')).toBeInTheDocument();
   });
 });
 
@@ -434,7 +456,7 @@ describe('Pricing-plan-driven merchant onboarding', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(screen.queryByRole('textbox', { name: 'Plan' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('combobox', { name: 'Subscription Plan' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Pricing Plan' }));
     await userEvent.click(await screen.findByRole('option', { name: /Growth/ }));
     expect(screen.getByText(/Monthly Base:/)).toHaveTextContent('$99.00');
     expect(screen.getByText(/One-Time Onboarding:/)).toHaveTextContent('$199.00');

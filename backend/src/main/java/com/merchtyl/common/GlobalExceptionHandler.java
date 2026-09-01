@@ -32,15 +32,46 @@ import java.util.List;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private final DatabaseConstraintErrorMapper databaseErrors = new DatabaseConstraintErrorMapper();
 
     @ExceptionHandler(BadRequestException.class)
     ResponseEntity<ApiError> badRequest(BadRequestException exception, HttpServletRequest request) {
+        DomainMessage domain = domainMessage(exception.getMessage());
+        if (domain != null) return error(HttpStatus.BAD_REQUEST, domain.code(), domain.message(), request, domainViolations(domain));
         return error(HttpStatus.BAD_REQUEST, "bad_request", exception.getMessage(), request, List.of());
     }
 
     @ExceptionHandler(ConflictException.class)
     ResponseEntity<ApiError> conflict(ConflictException exception, HttpServletRequest request) {
+        DomainMessage domain = domainMessage(exception.getMessage());
+        if (domain != null) return error(HttpStatus.CONFLICT, domain.code(), domain.message(), request, domainViolations(domain));
         return error(HttpStatus.CONFLICT, "conflict", exception.getMessage(), request, List.of());
+    }
+
+    private static DomainMessage domainMessage(String value) {
+        if (value == null) return null;
+        int separator = value.indexOf(':');
+        if (separator < 1) return null;
+        String code = value.substring(0, separator);
+        return code.matches("[A-Z][A-Z0-9_]+")
+                ? new DomainMessage(code, value.substring(separator + 1).trim()) : null;
+    }
+
+    private record DomainMessage(String code, String message) {}
+
+    private static List<ApiError.FieldViolation> domainViolations(DomainMessage domain) {
+        String field = switch (domain.code()) {
+            case "TENANT_CODE_ALREADY_EXISTS" -> "tenantCode";
+            case "OWNER_EMAIL_ALREADY_EXISTS" -> "ownerEmail";
+            case "BUSINESS_NUMBER_ALREADY_EXISTS" -> "businessNumber";
+            case "PRICING_PLAN_NOT_FOUND", "PRICING_PLAN_NOT_ACTIVE", "PRICING_PLAN_NO_EFFECTIVE_VERSION" -> "pricingPlanId";
+            case "PRICING_PLAN_CODE_ALREADY_EXISTS" -> "code";
+            case "BARCODE_ALREADY_EXISTS" -> "barcode";
+            case "SKU_ALREADY_EXISTS" -> "sku";
+            case "REGISTER_CODE_ALREADY_EXISTS", "STORE_CODE_ALREADY_EXISTS" -> "code";
+            default -> null;
+        };
+        return field == null ? List.of() : List.of(new ApiError.FieldViolation(field, domain.code(), domain.message()));
     }
 
     @ExceptionHandler(NotFoundException.class)
@@ -136,15 +167,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({DataIntegrityViolationException.class, ObjectOptimisticLockingFailureException.class})
     ResponseEntity<ApiError> databaseConflict(RuntimeException exception, HttpServletRequest request) {
-        log.warn("database_failure category={} exception_type={} method={} path={} correlation_id={}",
-                exception instanceof ObjectOptimisticLockingFailureException
-                        ? "optimistic_locking_failure"
-                        : "constraint_violation",
-                exception.getClass().getName(),
-                request.getMethod(),
-                request.getRequestURI(),
-                MDC.get(CorrelationIdFilter.MDC_KEY));
-        return error(HttpStatus.CONFLICT, "database_conflict", "A conflicting data change occurred", request, List.of());
+        if (exception instanceof ObjectOptimisticLockingFailureException) {
+            log.warn("event=DATABASE_WRITE_FAILED category=optimistic_locking_failure exception_type={} method={} path={} correlation_id={}",
+                    exception.getClass().getName(), request.getMethod(), request.getRequestURI(), MDC.get(CorrelationIdFilter.MDC_KEY));
+            return error(HttpStatus.CONFLICT, "CONCURRENT_MODIFICATION", "This record was changed by another request. Refresh and try again.", request, List.of());
+        }
+        DatabaseConstraintErrorMapper.Analysis analysis = databaseErrors.analyze(exception, request.getRequestURI());
+        DatabaseConstraintErrorMapper.DomainError domain = analysis.domainError();
+        String logMessage = "event=DATABASE_WRITE_FAILED operation={} domain={} exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user={}";
+        Object[] values = {request.getMethod() + " " + request.getRequestURI(), domain.code(), exception.getClass().getName(), analysis.databaseExceptionClass(), analysis.sqlState(), analysis.constraintName(),
+                LogSanitizer.clean(analysis.technicalDetail()), request.getMethod(), request.getRequestURI(),
+                MDC.get(CorrelationIdFilter.MDC_KEY), MDC.get("tenantId"), MDC.get("storeId"), user()};
+        if (domain.expected()) log.warn(logMessage, values); else log.error(logMessage, values);
+        return error(domain.status(), domain.code(), domain.message(), request, domain.violations());
     }
 
     @ExceptionHandler(DataAccessException.class)

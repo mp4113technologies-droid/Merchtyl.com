@@ -100,9 +100,7 @@ public class StoreService {
                 values.negativeStockAllowed(),
                 values.active());
         UUID tenantId = currentTenantId(authentication);
-        if (request.capabilities() != null && request.capabilities().contains(StoreCapability.FOOD_SERVICE)) {
-            entitlements.requireOrActivate(tenantId, CommercialCapability.FOOD_SERVICE);
-        }
+        activateNewEntitlements(tenantId, Set.of(), request.capabilities());
         store.assignTenant(tenantId);
         store.configureOperations(validCapabilities(request.capabilities()), kitchenDisplayName(request.name(), request.capabilities(), request.kitchenDisplayName()));
         StoreResponse response = response(save(store));
@@ -185,17 +183,13 @@ public class StoreService {
         }
 
         StoreResponse before = response(store);
-        boolean previouslyFoodEnabled = store.getCapabilities().contains(StoreCapability.FOOD_SERVICE);
+        Set<StoreCapability> previousCapabilities = store.getCapabilities();
         UUID tenantId = currentTenantId(authentication);
-        if (request.capabilities() != null && request.capabilities().contains(StoreCapability.FOOD_SERVICE) && !previouslyFoodEnabled) {
-            entitlements.requireOrActivate(tenantId, CommercialCapability.FOOD_SERVICE);
-        }
+        activateNewEntitlements(tenantId, previousCapabilities, request.capabilities());
         store.update(values);
         store.configureOperations(validCapabilities(request.capabilities()), kitchenDisplayName(request.name(), request.capabilities(), request.kitchenDisplayName()));
         StoreResponse after = response(save(store));
-        if (previouslyFoodEnabled && !after.capabilities().contains(StoreCapability.FOOD_SERVICE)) {
-            entitlements.deactivateIfUnused(tenantId, CommercialCapability.FOOD_SERVICE);
-        }
+        deactivateRemovedEntitlements(tenantId, id, previousCapabilities, after.capabilities());
         audit(authentication, AuditAction.STORE_UPDATED, id, before, after, null);
         auditGeographyChanges(authentication, id, before, after);
         return after;
@@ -235,6 +229,22 @@ public class StoreService {
             throw new BadRequestException("At least one store capability is required");
         }
         return Set.copyOf(capabilities);
+    }
+
+    private void activateNewEntitlements(UUID tenantId, Set<StoreCapability> previous, Set<StoreCapability> proposed) {
+        if (proposed == null) return;
+        proposed.stream().filter(capability -> capability != StoreCapability.RETAIL && !previous.contains(capability))
+                .forEach(capability -> entitlements.requireOrActivate(tenantId, CommercialCapability.valueOf(capability.name())));
+    }
+
+    private void deactivateRemovedEntitlements(UUID tenantId, UUID storeId, Set<StoreCapability> previous, Set<StoreCapability> proposed) {
+        if (previous.contains(StoreCapability.FOOD_SERVICE) && !proposed.contains(StoreCapability.FOOD_SERVICE)) {
+            Integer open = jdbcTemplate.queryForObject("select count(*) from register_sessions session join registers register on register.id=session.register_id where register.store_id=? and register.register_type='FOOD_SERVICE' and session.status='OPEN'", Integer.class, storeId);
+            if (open != null && open > 0) throw new ConflictException("CAPABILITY_CHANGE_BLOCKED: Close active Food Service register sessions before disabling Food Service");
+            jdbcTemplate.update("update registers set active=false,updated_at=now(),version=version+1 where store_id=? and register_type='FOOD_SERVICE' and active=true", storeId);
+        }
+        previous.stream().filter(capability -> capability != StoreCapability.RETAIL && !proposed.contains(capability))
+                .forEach(capability -> entitlements.deactivateIfUnused(tenantId, CommercialCapability.valueOf(capability.name())));
     }
 
     private String kitchenDisplayName(String storeName, Set<StoreCapability> capabilities, String requestedName) {

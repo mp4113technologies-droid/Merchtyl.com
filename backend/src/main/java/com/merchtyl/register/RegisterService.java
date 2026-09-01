@@ -11,6 +11,10 @@ import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
+import com.merchtyl.store.StoreCapability;
+import com.merchtyl.platform.billing.CommercialCapability;
+import com.merchtyl.platform.billing.SubscriptionEntitlementService;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -30,16 +34,20 @@ public class RegisterService {
     private final StoreRepository storeRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final SubscriptionEntitlementService entitlements;
+    private final JdbcTemplate jdbcTemplate;
 
     public RegisterService(
             RegisterRepository registerRepository,
             StoreRepository storeRepository,
             UserRepository userRepository,
-            AuditService auditService) {
+            AuditService auditService, SubscriptionEntitlementService entitlements, JdbcTemplate jdbcTemplate) {
         this.registerRepository = registerRepository;
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.entitlements = entitlements;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
@@ -55,7 +63,7 @@ public class RegisterService {
                 values.code(),
                 values.name(),
                 values.locationDescription(),
-                values.active());
+                values.active(), values.type());
         RegisterResponse response = RegisterResponse.from(save(register));
         audit(authentication, AuditAction.REGISTER_CREATED, response.storeId(), response.id(), null, response, null);
         return response;
@@ -94,6 +102,7 @@ public class RegisterService {
         }
 
         RegisterResponse before = RegisterResponse.from(register);
+        if (register.getType() != values.type()) requireNoOpenSession(id);
         register.update(values);
         RegisterResponse after = RegisterResponse.from(save(register));
         audit(authentication, AuditAction.REGISTER_UPDATED, after.storeId(), id, before, after, null);
@@ -126,21 +135,36 @@ public class RegisterService {
     }
 
     private RegisterValues values(RegisterRequest request) {
+        Store store = findStore(request.storeId());
         return new RegisterValues(
-                findStore(request.storeId()),
+                store,
                 normalizeCode(request.code()),
                 cleanRequired(request.name(), "name"),
                 cleanOptional(request.locationDescription()),
-                request.active());
+                request.active(), validateType(store, request.type()));
     }
 
     private RegisterValues values(RegisterUpdateRequest request) {
+        Store store = findStore(request.storeId());
         return new RegisterValues(
-                findStore(request.storeId()),
+                store,
                 normalizeCode(request.code()),
                 cleanRequired(request.name(), "name"),
                 cleanOptional(request.locationDescription()),
-                request.active());
+                request.active(), validateType(store, request.type()));
+    }
+
+    private RegisterType validateType(Store store, RegisterType type) {
+        StoreCapability capability = type == RegisterType.RETAIL ? StoreCapability.RETAIL : StoreCapability.FOOD_SERVICE;
+        if (!store.getCapabilities().contains(capability))
+            throw new ConflictException("REGISTER_TYPE_NOT_SUPPORTED_BY_STORE: Register type is not supported by this store");
+        if (type == RegisterType.FOOD_SERVICE) entitlements.requireActive(store.getTenantId(), CommercialCapability.FOOD_SERVICE);
+        return type;
+    }
+
+    private void requireNoOpenSession(UUID registerId) {
+        Integer open = jdbcTemplate.queryForObject("select count(*) from register_sessions where register_id=? and status='OPEN'", Integer.class, registerId);
+        if (open != null && open > 0) throw new ConflictException("REGISTER_TYPE_CHANGE_BLOCKED: Close the active register session before changing register type");
     }
 
     private Store findStore(UUID storeId) {

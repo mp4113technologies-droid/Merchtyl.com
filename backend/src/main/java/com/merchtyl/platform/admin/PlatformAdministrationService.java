@@ -86,6 +86,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -205,23 +206,35 @@ public class PlatformAdministrationService {
         String ownerEmail = normalizeEmail(ownerEmail(request));
         String ownerDisplayName = cleanRequired(ownerFirstName(request), "ownerFirstName") + " "
                 + cleanRequired(ownerLastName(request), "ownerLastName");
+        validateOnboardingUniqueness(tenantCode, ownerEmail);
         Map<String, Object> pricingPlan = jdbcTemplate.queryForList("""
-                select id,code,name,status,billing_interval,base_price,currency_code,trial_days,included_stores,included_users,
-                       additional_store_price,one_time_onboarding_fee
+                select id,code,name,status
                 from platform_pricing_plans where id=?
                 """, request.pricingPlanId()).stream().findFirst()
                 .orElseThrow(() -> new BadRequestException("PRICING_PLAN_NOT_FOUND"));
         if (!"ACTIVE".equals(pricingPlan.get("status"))) throw new BadRequestException("PRICING_PLAN_NOT_ACTIVE");
-        if (!geography.currency().getCode().equals(pricingPlan.get("currency_code"))) {
+        Map<String, Object> pricingVersion = jdbcTemplate.queryForList("""
+                select id,billing_interval,base_price,currency_code,trial_days,included_stores,included_users,
+                       additional_store_price,one_time_onboarding_fee,included_registers_per_store,
+                       additional_register_price,additional_user_price,effective_from
+                from platform_pricing_plan_versions
+                where pricing_plan_id=? and status='ACTIVE' and effective_from<=now()
+                  and (effective_to is null or effective_to>=now())
+                order by effective_from desc,version_number desc limit 1
+                """, request.pricingPlanId()).stream().findFirst()
+                .orElseThrow(() -> new BadRequestException("PRICING_PLAN_NO_EFFECTIVE_VERSION: This pricing plan does not have an effective pricing version"));
+        if (!geography.currency().getCode().equals(pricingVersion.get("currency_code"))) {
             throw new BadRequestException("Selected pricing plan currency must match merchant currency");
         }
+        UUID pricingVersionId = (UUID) pricingVersion.get("id");
+        validateSelectedStoreCapabilities(pricingVersionId, request.storeCapabilities());
         log.info("billing_event event=MERCHANT_PRICING_PLAN_SELECTED tenant_id={} subscription_public_id={} plan_code={}",
                 tenantId, subscriptionId, pricingPlan.get("code"));
-        int trialDays = ((Number) pricingPlan.get("trial_days")).intValue();
+        int trialDays = ((Number) pricingVersion.get("trial_days")).intValue();
         String subscriptionStatus = trialDays > 0 ? "TRIAL" : "ACTIVE";
         LocalDate subscriptionStart = LocalDate.now();
         LocalDate billingStart = trialDays > 0 ? subscriptionStart.plusDays(trialDays) : subscriptionStart;
-        LocalDate billingEnd = "YEARLY".equals(pricingPlan.get("billing_interval")) ? billingStart.plusYears(1).minusDays(1) : billingStart.plusMonths(1).minusDays(1);
+        LocalDate billingEnd = "YEARLY".equals(pricingVersion.get("billing_interval")) ? billingStart.plusYears(1).minusDays(1) : billingStart.plusMonths(1).minusDays(1);
 
         try {
             jdbcTemplate.update("""
@@ -284,26 +297,22 @@ public class PlatformAdministrationService {
                     insert into tenant_subscriptions (id,tenant_id,plan_code,status,starts_at,trial_ends_at,renews_at,
                       maximum_stores,maximum_users,features,pricing_plan_id,billing_interval,current_period_start,current_period_end,
                       next_billing_date,base_price_snapshot,currency_code,plan_name_snapshot,plan_code_snapshot,included_stores_snapshot,
-                      additional_store_price_snapshot,onboarding_fee_snapshot,pricing_effective_from)
-                    values (?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                      additional_store_price_snapshot,onboarding_fee_snapshot,pricing_effective_from,pricing_plan_version_id,
+                      included_registers_per_store_snapshot,additional_register_price_snapshot,included_users_snapshot,additional_user_price_snapshot)
+                    values (?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     subscriptionId,
                     tenantId,
                     pricingPlan.get("code"), subscriptionStatus, timestamp(now), trialDays > 0 ? timestamp(billingStart.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()) : null,
-                    timestamp(billingStart.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()), pricingPlan.get("included_stores"),
-                    pricingPlan.get("included_users"),
-                    "{}", pricingPlan.get("id"), pricingPlan.get("billing_interval"),
+                    timestamp(billingStart.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()), pricingVersion.get("included_stores"),
+                    pricingVersion.get("included_users"),
+                    "{}", pricingPlan.get("id"), pricingVersion.get("billing_interval"),
                     java.sql.Date.valueOf(billingStart), java.sql.Date.valueOf(billingEnd), java.sql.Date.valueOf(billingStart),
-                    pricingPlan.get("base_price"), pricingPlan.get("currency_code"), pricingPlan.get("name"), pricingPlan.get("code"),
-                    pricingPlan.get("included_stores"), pricingPlan.get("additional_store_price"), pricingPlan.get("one_time_onboarding_fee"),
-                    java.sql.Date.valueOf(subscriptionStart));
+                    pricingVersion.get("base_price"), pricingVersion.get("currency_code"), pricingPlan.get("name"), pricingPlan.get("code"),
+                    pricingVersion.get("included_stores"), pricingVersion.get("additional_store_price"), pricingVersion.get("one_time_onboarding_fee"),
+                    java.sql.Date.valueOf(subscriptionStart), pricingVersionId, pricingVersion.get("included_registers_per_store"),
+                    pricingVersion.get("additional_register_price"), pricingVersion.get("included_users"), pricingVersion.get("additional_user_price"));
             jdbcTemplate.update("""
-                    insert into tenant_subscription_capability_price_snapshots(subscription_id,capability,monthly_price_per_store)
-                    select ?,capability,monthly_price_per_store from platform_pricing_plan_capability_prices where pricing_plan_id=?
-                    """, subscriptionId, pricingPlan.get("id"));
-            UUID pricingVersionId=jdbcTemplate.query("select id from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE' and effective_from<=now() order by version_number desc limit 1",(rs,row)->rs.getObject(1,UUID.class),pricingPlan.get("id")).stream().findFirst().orElse(null);
-            jdbcTemplate.update("update tenant_subscriptions set pricing_plan_version_id=? where id=?",pricingVersionId,subscriptionId);
-            if(pricingVersionId!=null)jdbcTemplate.update("""
                     insert into tenant_subscription_capabilities(id,subscription_id,capability,status,inclusion_type_snapshot,billing_unit_snapshot,unit_price_snapshot,effective_from)
                     select gen_random_uuid(),?,capability,case when inclusion_type='INCLUDED' then 'ACTIVE' else 'INACTIVE' end,inclusion_type,billing_unit,unit_price,?
                     from platform_pricing_plan_version_capabilities where pricing_plan_version_id=? and inclusion_type<>'NOT_AVAILABLE'
@@ -370,7 +379,7 @@ public class PlatformAdministrationService {
                     Map.of("tenantId", tenantId, "ownerUserId", savedOwner.getId(), "email", ownerEmail, "expiresAt", invite.response().expiresAt()), null);
             return getTenant(tenantId);
         } catch (DuplicateKeyException exception) {
-            throw new ConflictException("Merchant tenant or owner already exists");
+            throw exception;
         }
     }
 
@@ -1757,6 +1766,39 @@ public class PlatformAdministrationService {
             candidate = prefix + "-" + suffix++;
         }
         return candidate;
+    }
+
+    private void validateSelectedStoreCapabilities(UUID pricingVersionId, Set<com.merchtyl.store.StoreCapability> requested) {
+        Set<com.merchtyl.store.StoreCapability> capabilities = requested == null
+                ? Set.of(com.merchtyl.store.StoreCapability.RETAIL)
+                : requested;
+        if (capabilities.isEmpty()) throw new BadRequestException("At least one store capability is required");
+        Map<String, String> configured = jdbcTemplate.query("""
+                select capability,inclusion_type from platform_pricing_plan_version_capabilities
+                where pricing_plan_version_id=?
+                """, rs -> {
+            Map<String, String> values = new HashMap<>();
+            while (rs.next()) values.put(rs.getString(1), rs.getString(2));
+            return values;
+        }, pricingVersionId);
+        for (com.merchtyl.store.StoreCapability capability : capabilities) {
+            String commercialCapability = capability == com.merchtyl.store.StoreCapability.RETAIL
+                    ? "RETAIL_POS" : capability.name();
+            if (!Set.of("INCLUDED", "PAID_ADD_ON").contains(configured.get(commercialCapability))) {
+                throw new BadRequestException("PLAN_CAPABILITY_NOT_AVAILABLE: " + commercialCapability + " is not available on the selected pricing plan");
+            }
+        }
+    }
+
+    private void validateOnboardingUniqueness(String tenantCode, String ownerEmail) {
+        if (Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "select exists(select 1 from tenants where tenant_code=?)", Boolean.class, tenantCode))) {
+            throw new ConflictException("TENANT_CODE_ALREADY_EXISTS: A merchant with this tenant code already exists");
+        }
+        if (Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "select exists(select 1 from security_users where lower(email)=lower(?))", Boolean.class, ownerEmail))) {
+            throw new ConflictException("OWNER_EMAIL_ALREADY_EXISTS: A user with this email already exists");
+        }
     }
 
     private String requestedTenantCode(MerchantOnboardingRequest request) {

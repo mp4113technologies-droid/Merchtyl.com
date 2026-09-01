@@ -4,6 +4,7 @@ import com.merchtyl.security.RoleName;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -132,6 +133,49 @@ public final class PlatformDtos {
             MerchantProfileResponse merchantProfile,
             SubscriptionResponse subscription,
             OnboardingResponse onboarding
+    ) {
+    }
+
+    public record MerchantStoreCapabilityResponse(
+            UUID storeId,
+            String storeCode,
+            String storeName,
+            boolean active,
+            Set<com.merchtyl.store.StoreCapability> capabilities,
+            String kitchenDisplayName,
+            long version
+    ) {
+    }
+
+    public record StoreCapabilityUpdateRequest(
+            @NotEmpty Set<com.merchtyl.store.StoreCapability> capabilities,
+            @Size(max = 180) String kitchenDisplayName,
+            boolean confirmPaidAddOns,
+            @NotNull Long version
+    ) {
+    }
+
+    public record StoreCapabilityPriceImpact(
+            com.merchtyl.platform.billing.CommercialCapability capability,
+            com.merchtyl.platform.billing.CapabilityInclusionType inclusionType,
+            com.merchtyl.platform.billing.BillingUnit billingUnit,
+            int currentQuantity,
+            int newQuantity,
+            java.math.BigDecimal unitPrice,
+            java.math.BigDecimal currentMonthlyAmount,
+            java.math.BigDecimal newMonthlyAmount
+    ) {
+    }
+
+    public record StoreCapabilityChangePreview(
+            UUID tenantId,
+            UUID storeId,
+            Set<com.merchtyl.store.StoreCapability> currentCapabilities,
+            Set<com.merchtyl.store.StoreCapability> proposedCapabilities,
+            String currency,
+            LocalDate effectiveDate,
+            List<StoreCapabilityPriceImpact> impacts,
+            boolean confirmationRequired
     ) {
     }
 

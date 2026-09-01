@@ -48,7 +48,14 @@ class BillingQuantityServiceTest {
     void lotteryRegisterCountUsesLotteryEnabledStores(){
         when(jdbc.queryForObject(anyString(),eq(Integer.class),eq(tenantId))).thenReturn(3);
         assertThat(service.quantity(tenantId,CommercialCapability.LOTTERY,BillingUnit.PER_REGISTER)).isEqualTo(3);
-        assertSqlContains("lottery_payout_policies","p.active=true","s.tenant_id=?");
+        assertSqlContains("store_capabilities","c.capability='LOTTERY'","s.tenant_id=?");
+    }
+
+    @Test
+    void lotteryStoreCountUsesStoreCapabilityRatherThanOperationalHistory(){
+        when(jdbc.queryForObject(anyString(),eq(Integer.class),eq(tenantId))).thenReturn(2);
+        assertThat(service.quantity(tenantId,CommercialCapability.LOTTERY,BillingUnit.PER_STORE)).isEqualTo(2);
+        assertSqlContains("store_capabilities","c.capability='LOTTERY'","s.active=true");
     }
 
     private void assertSqlContains(String... fragments){

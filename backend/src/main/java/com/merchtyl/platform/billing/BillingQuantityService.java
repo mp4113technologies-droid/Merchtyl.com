@@ -29,7 +29,7 @@ public class BillingQuantityService {
     int storeCount(UUID tenantId, CommercialCapability capability) {
         return switch (capability) {
             case FOOD_SERVICE -> count("select count(distinct s.id) from stores s join store_capabilities c on c.store_id=s.id where s.tenant_id=? and s.active=true and c.capability='FOOD_SERVICE'", tenantId);
-            case LOTTERY -> count("select count(distinct s.id) from lottery_payout_policies p join stores s on s.id=p.store_id where s.tenant_id=? and s.active=true and p.active=true", tenantId);
+            case LOTTERY -> count("select count(distinct s.id) from stores s join store_capabilities c on c.store_id=s.id where s.tenant_id=? and s.active=true and c.capability='LOTTERY'", tenantId);
             default -> count("select count(*) from stores where tenant_id=? and active=true", tenantId);
         };
     }
@@ -37,7 +37,7 @@ public class BillingQuantityService {
     int registerCount(UUID tenantId, CommercialCapability capability) {
         return switch (capability) {
             case FOOD_SERVICE -> count("select count(distinct r.id) from registers r join stores s on s.id=r.store_id join store_capabilities c on c.store_id=s.id where s.tenant_id=? and s.active=true and r.active=true and c.capability='FOOD_SERVICE'", tenantId);
-            case LOTTERY -> count("select count(distinct r.id) from registers r join stores s on s.id=r.store_id join lottery_payout_policies p on p.store_id=s.id where s.tenant_id=? and s.active=true and r.active=true and p.active=true", tenantId);
+            case LOTTERY -> count("select count(distinct r.id) from registers r join stores s on s.id=r.store_id join store_capabilities c on c.store_id=s.id where s.tenant_id=? and s.active=true and r.active=true and c.capability='LOTTERY'", tenantId);
             default -> count("select count(*) from registers r join stores s on s.id=r.store_id where s.tenant_id=? and s.active=true and r.active=true", tenantId);
         };
     }

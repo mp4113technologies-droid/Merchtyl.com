@@ -12,6 +12,7 @@ public record RegisterUpdateRequest(
         @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String locationDescription,
         boolean active,
+        @NotNull RegisterType type,
         @NotNull Long version
 ) {
 }

@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { PlatformBillingOverviewPage, PlatformInvoicesPage, PlatformPricingPlansPage, PlatformSubscriptionsPage } from './PlatformBillingPages';
 
 const api = vi.hoisted(() => ({
-  overview: vi.fn(), plans: vi.fn(), capabilities: vi.fn(), history: vi.fn(), schedule: vi.fn(), cancelVersion: vi.fn(), invoices: vi.fn(), tenants: vi.fn(), assign: vi.fn(), createPlan: vi.fn(), send: vi.fn(), payment: vi.fn(), voidInvoice: vi.fn(), download: vi.fn()
+  overview: vi.fn(), plans: vi.fn(), capabilities: vi.fn(), history: vi.fn(), schedule: vi.fn(), updatePlan: vi.fn(), cancelVersion: vi.fn(), invoices: vi.fn(), tenants: vi.fn(), assign: vi.fn(), createPlan: vi.fn(), send: vi.fn(), payment: vi.fn(), voidInvoice: vi.fn(), download: vi.fn()
 }));
 
 vi.mock('../../app/session', () => ({ useSession: () => ({ getValidAccessToken: async () => 'token', session: { roles: ['PLATFORM_SUPER_ADMIN'] }, currentUser: { roles: ['PLATFORM_SUPER_ADMIN'], permissions: ['PLATFORM_SUBSCRIPTION_UPDATE'] } }) }));
@@ -15,6 +15,7 @@ vi.mock('../../api/client', () => ({
   listPlatformBillingCapabilities: api.capabilities,
   listPlatformPricingHistory: api.history,
   schedulePlatformPricingVersion: api.schedule,
+  updatePlatformPricingPlan: api.updatePlan,
   cancelPlatformPricingVersion: api.cancelVersion,
   listPlatformInvoices: api.invoices,
   createPlatformPricingPlan: api.createPlan,
@@ -42,6 +43,7 @@ describe('platform billing pages', () => {
     api.capabilities.mockResolvedValue([{capability:'RETAIL_POS',displayName:'Retail POS',supportedBillingUnits:units},{capability:'FOOD_SERVICE',displayName:'Food Service / Kitchen',supportedBillingUnits:units}]);
     api.history.mockResolvedValue([{id:'version-1',pricingPlanId:'plan',versionNumber:1,status:'ACTIVE',effectiveFrom:'2026-01-01',effectiveTo:null,subscriberPolicy:'NEW_SUBSCRIPTIONS_ONLY',pricing:{basePrice:99,additionalStorePrice:20,currency:'CAD'},usedForBilling:true,createdAt:'',version:0}]);
     api.schedule.mockResolvedValue({id:'version-2'});
+    api.updatePlan.mockResolvedValue({id:'plan',status:'ACTIVE'});
     api.tenants.mockResolvedValue({ content: [{ id: 'tenant', displayName: 'ABC Convenience', operatingName: 'ABC Convenience' }], page: 0, size: 100, totalElements: 1, totalPages: 1 });
     api.assign.mockResolvedValue({ id: 'subscription' });
     api.invoices.mockResolvedValue({ content: [{ id: 'invoice', invoiceNumber: 'MTL-2026-000001', tenantId: 'tenant', merchantName: 'ABC Convenience', subscriptionId: 'subscription', pricingPlanId: 'plan', planCode: 'GROWTH', billingPeriodStart: '2026-08-01', billingPeriodEnd: '2026-08-31', issueDate: '2026-08-01', dueDate: '2026-08-31', currency: 'CAD', subtotal: 99, discountTotal: 20, taxTotal: 10.27, total: 89.27, amountPaid: 0, amountOutstanding: 89.27, status: 'ISSUED', billingEmail: 'billing@example.com', billingAddress: null, taxLabel: 'Tax', taxRate: 0.13, notes: null, issuedAt: '', sentAt: null, paidAt: null, voidedAt: null, lines: [] }], page: 0, size: 20, totalElements: 1, totalPages: 1 });
@@ -104,6 +106,17 @@ describe('platform billing pages', () => {
     await userEvent.clear(screen.getByLabelText('Additional Register Price'));
     await userEvent.type(screen.getByLabelText('Additional Register Price'),'10');
     expect(screen.getByRole('button',{name:'Create'})).toBeEnabled();
+  });
+
+  it('activates a draft plan through the plan lifecycle endpoint', async () => {
+    api.plans.mockResolvedValueOnce({ content: [{ id: 'draft-plan', code: 'DRAFT', name: 'Draft Plan', description: null, status: 'DRAFT', billingInterval: 'MONTHLY', basePrice: 10, oneTimeOnboardingFee: 0, currency: 'CAD', trialDays: 0, includedStores: 1, includedRegisters: 2, includedUsers: 5, additionalStorePrice: 0, additionalRegisterPrice: 10, additionalUserPrice: 0, capabilityPrices: [], taxBehavior: 'EXCLUSIVE', effectiveFrom: '2026-08-01', effectiveTo: null, activeMerchants: 0, createdAt: '', updatedAt: '', version: 0 }], page: 0, size: 20, totalElements: 1, totalPages: 1 });
+    renderPage(<PlatformPricingPlansPage />);
+    await userEvent.click((await screen.findAllByText('Draft Plan'))[0]);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Status' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'ACTIVE' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Pricing Changes' }));
+    expect(api.updatePlan).toHaveBeenCalledWith('token', 'draft-plan', expect.objectContaining({ status: 'ACTIVE' }));
+    expect(api.schedule).not.toHaveBeenCalled();
   });
 
   it('submits permission-gated merchant pricing overrides without changing the plan', async () => {

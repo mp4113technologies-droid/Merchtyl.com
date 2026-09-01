@@ -7,6 +7,7 @@ record RegisterValues(
         String code,
         String name,
         String locationDescription,
-        boolean active
+        boolean active,
+        RegisterType type
 ) {
 }

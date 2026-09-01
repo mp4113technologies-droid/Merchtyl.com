@@ -343,7 +343,7 @@ export type StorePayload = {
   pricesIncludeTax: boolean;
   negativeStockAllowed: boolean;
   active: boolean;
-  capabilities: Array<'RETAIL' | 'FOOD_SERVICE'>;
+  capabilities: Array<'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY'>;
   kitchenDisplayName?: string;
 };
 
@@ -519,6 +519,7 @@ export type RegisterPayload = {
   name: string;
   locationDescription?: string;
   active: boolean;
+  type: 'RETAIL' | 'FOOD_SERVICE';
 };
 
 export type RegisterUpdatePayload = RegisterPayload & {
@@ -1427,6 +1428,19 @@ export class ApiClientError extends Error {
   }
 }
 
+export function getApiFieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiClientError)) return {};
+  return Object.fromEntries(error.violations.map((violation) => [violation.field, violation.message]));
+}
+
+export function getApiErrorMessage(error: unknown, fallback = 'The request could not be completed.'): string {
+  if (!(error instanceof ApiClientError)) return error instanceof Error ? error.message : fallback;
+  if (error.status >= 500) {
+    return error.correlationId ? `${fallback} Reference: ${error.correlationId}` : fallback;
+  }
+  return error.message || fallback;
+}
+
 const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')}/api/v1`;
 
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
@@ -1618,6 +1632,24 @@ export function listPlatformTenants(token: string, params: PlatformTenantListPar
 
 export function getPlatformTenant(token: string, tenantId: string) {
   return request<TenantDetail>(`/platform/tenants/${tenantId}`, undefined, token);
+}
+
+export function listPlatformTenantStores(token: string, tenantId: string) {
+  return request<import('./types').MerchantStoreCapability[]>(`/platform/tenants/${tenantId}/stores`, undefined, token);
+}
+
+export function previewPlatformStoreCapabilities(token: string, tenantId: string, storeId: string,
+  payload: import('./types').StoreCapabilityUpdatePayload) {
+  return request<import('./types').StoreCapabilityChangePreview>(`/platform/tenants/${tenantId}/stores/${storeId}/capabilities/preview`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }, token);
+}
+
+export function updatePlatformStoreCapabilities(token: string, tenantId: string, storeId: string,
+  payload: import('./types').StoreCapabilityUpdatePayload) {
+  return request<import('./types').MerchantStoreCapability>(`/platform/tenants/${tenantId}/stores/${storeId}/capabilities`, {
+    method: 'PUT', body: JSON.stringify(payload)
+  }, token);
 }
 
 export function getOwnerActivationStatus(token: string, tenantId: string) {

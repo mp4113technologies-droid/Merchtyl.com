@@ -267,7 +267,7 @@ class SaleServiceTest {
     @Test
     void splitPaymentsCalculatePaidBalanceAndCashChange() {
         Sale sale = payableSale();
-        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
 
         SaleResponse debit = service.recordPayment(sale.getId(), new SalePaymentRequest(
                 PaymentMethod.DEBIT,
@@ -301,9 +301,35 @@ class SaleServiceTest {
     }
 
     @Test
+    void cashTenThenDebitThirtyPaysFortyDollarSale() {
+        Sale sale = payableSale();
+        sale.getItems().getFirst().setCalculatedAmounts(new BigDecimal("40.00"), BigDecimal.ZERO.setScale(2), new BigDecimal("40.00"));
+        sale.setTotals(new BigDecimal("40.00"), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), new BigDecimal("40.00"));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse cash = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("10.00"), new BigDecimal("10.00"), null, null), cashierAuth());
+
+        assertThat(cash.paidAmount()).isEqualByComparingTo("10.00");
+        assertThat(cash.balanceDue()).isEqualByComparingTo("30.00");
+        assertThat(cash.paymentComplete()).isFalse();
+
+        SaleResponse debit = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("30.00"), null, "terminal-456", null), cashierAuth());
+
+        assertThat(debit.payments()).extracting(PaymentResponse::method, PaymentResponse::amount)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(PaymentMethod.CASH, new BigDecimal("10.00")),
+                        org.assertj.core.groups.Tuple.tuple(PaymentMethod.DEBIT, new BigDecimal("30.00")));
+        assertThat(debit.paidAmount()).isEqualByComparingTo("40.00");
+        assertThat(debit.balanceDue()).isEqualByComparingTo("0.00");
+        assertThat(debit.paymentComplete()).isTrue();
+    }
+
+    @Test
     void paymentValidationRejectsOverpayInsufficientCashAndMissingCardReference() {
         Sale sale = payableSale();
-        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
 
         assertThatThrownBy(() -> service.recordPayment(sale.getId(), new SalePaymentRequest(
                 PaymentMethod.CREDIT,
@@ -337,6 +363,7 @@ class SaleServiceTest {
     void cartCannotChangeAfterCompletedPaymentIsRecorded() {
         Sale sale = payableSale();
         when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
         service.recordPayment(sale.getId(), new SalePaymentRequest(
                 PaymentMethod.CASH,
                 new BigDecimal("5.00"),

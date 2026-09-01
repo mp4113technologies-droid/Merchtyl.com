@@ -30,6 +30,7 @@ import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlin
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import RestaurantIcon from '@mui/icons-material/Restaurant';
 import {
   Alert,
   AppBar,
@@ -265,12 +266,18 @@ function StoreMenuPage() {
   const activeSession = current.data?.status === 'OPEN' ? current.data : null;
   const store = stores.data?.content.find((item) => item.id === activeSession?.storeId);
   const register = registers.data?.content.find((item) => item.id === activeSession?.registerId);
+  const foodServiceEnabled = activeSession
+    ? Boolean(store?.capabilities?.includes('FOOD_SERVICE'))
+    : Boolean(stores.data?.content.some((item) => item.capabilities?.includes('FOOD_SERVICE')));
+  const retailEnabled = activeSession
+    ? Boolean(store?.capabilities?.includes('RETAIL'))
+    : Boolean(stores.data?.content.some((item) => item.capabilities?.includes('RETAIL')));
   const isCashier = roles.includes('CASHIER');
   const operations = [
-    { label: 'Retail POS', to: '/pos', visible: permissions.includes('POS_ACCESS') },
-    { label: 'Food Menu', to: '/food-menu', visible: permissions.includes('FOOD_POS_ACCESS') },
-    { label: 'Orders', to: '/sales', visible: permissions.includes('FOOD_ORDER_VIEW') },
-    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: permissions.includes('FOOD_POS_ACCESS') },
+    { label: 'Retail POS', to: '/pos', visible: retailEnabled && permissions.includes('POS_ACCESS') },
+    { label: 'Restaurant Menu', to: '/food-menu', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
+    { label: 'Orders', to: '/sales', visible: foodServiceEnabled && permissions.includes('FOOD_ORDER_VIEW') },
+    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
     { label: 'Inventory / Product Lookup', to: '/inventory', visible: true },
     { label: 'Returns', to: '/returns', visible: true },
     { label: 'Current Register', to: '/register/current', visible: true },
@@ -291,7 +298,7 @@ function StoreMenuPage() {
             <Typography variant="h6">{register ? `${register.name} (${register.code})` : activeSession.registerId}</Typography>
             <Typography>{store ? `${store.name} (${store.code})` : activeSession.storeId} • OPEN</Typography>
             <Typography variant="body2" color="text.secondary">Opened {new Date(activeSession.openedAt).toLocaleString()}</Typography>
-            <Button component={Link} to="/pos" variant="contained" startIcon={<PointOfSaleOutlinedIcon />} sx={{ alignSelf: 'flex-start' }}>
+            <Button component={Link} to={activeSession.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} variant="contained" startIcon={<PointOfSaleOutlinedIcon />} sx={{ alignSelf: 'flex-start' }}>
               Return to POS
             </Button>
           </Stack>
@@ -340,6 +347,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     enabled: canViewRegisters,
     refetchInterval: 30_000
   });
+  const accessibleStores = useQuery({
+    queryKey: ['stores', 'navigation'],
+    queryFn: async () => listStores(await getValidAccessToken(), { page: 0, size: 100 }),
+    enabled: canViewStores
+  });
+  const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
+  const permissions = currentUser?.permissions ?? [];
   const navItems = [
     ...(canViewPlatform ? [{ label: 'Platform', to: '/platform', icon: <ShieldOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Merchants', to: '/platform/merchants', icon: <StorefrontIcon /> }] : []),
@@ -350,6 +364,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     ...(!canViewPlatform ? [{ label: 'Dashboard', to: '/', icon: <DashboardOutlinedIcon /> }] : []),
     ...(canViewMerchantBilling ? [{ label: 'Subscription & Billing', to: '/billing', icon: <PaymentsOutlinedIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'POS', to: '/pos', icon: <PointOfSaleOutlinedIcon /> }] : []),
+    ...(foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') ? [{ label: 'Restaurant Menu', to: '/food-menu', icon: <RestaurantIcon /> }] : []),
+    ...(foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') ? [{ label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'Held sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon /> }] : []),
     ...(canViewStores ? [{ label: 'Stores', to: '/stores', icon: <StoreMallDirectoryOutlinedIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'Registers', to: '/registers', icon: <PointOfSaleOutlinedIcon /> }] : []),
@@ -416,7 +432,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Typography variant="body2" fontWeight={700} noWrap>
             Register {activeRegister.data.registerId.slice(0, 8)} • OPEN
           </Typography>
-          <Button component={Link} to="/pos" size="small" variant="contained" fullWidth sx={{ mt: 1 }} onClick={onNavigate}>
+          <Button component={Link} to={activeRegister.data.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} size="small" variant="contained" fullWidth sx={{ mt: 1 }} onClick={onNavigate}>
             Return to POS
           </Button>
         </Box>

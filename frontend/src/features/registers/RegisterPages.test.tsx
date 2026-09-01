@@ -131,7 +131,7 @@ describe('Register pages', () => {
 
   it('renders registers and filters by store', async () => {
     storeSession(['OWNER']);
-    const mainStore = store();
+    const mainStore = store({ capabilities: ['RETAIL', 'FOOD_SERVICE'] });
     const secondStore = store({
       id: '00000000-0000-0000-0000-000000000903',
       code: 'SECOND',
@@ -197,12 +197,13 @@ describe('Register pages', () => {
 
   it('creates a register and opens the edit page', async () => {
     storeSession(['OWNER']);
-    const mainStore = store();
+    const mainStore = store({ capabilities: ['RETAIL', 'FOOD_SERVICE'] });
     const created = register({
       id: '00000000-0000-0000-0000-000000000905',
       code: 'LANE-2',
       name: 'Lane Two',
       locationDescription: 'Checkout lane two'
+      ,type: 'FOOD_SERVICE'
     });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
@@ -225,6 +226,8 @@ describe('Register pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'New register' })).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText('Code'), 'lane-2');
+    await userEvent.click(screen.getByLabelText('Register Type'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Restaurant / Kitchen POS' }));
     await userEvent.type(screen.getByLabelText('Name'), 'Lane Two');
     await userEvent.type(screen.getByLabelText('Location description'), 'Checkout lane two');
     await userEvent.click(screen.getByRole('button', { name: 'Create register' }));
@@ -232,7 +235,7 @@ describe('Register pages', () => {
     expect(await screen.findByRole('heading', { name: 'Lane Two' })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
-      return url.pathname.endsWith('/api/v1/registers') && init?.method === 'POST';
+      return url.pathname.endsWith('/api/v1/registers') && init?.method === 'POST' && JSON.parse(String(init.body)).type === 'FOOD_SERVICE';
     })).toBe(true);
   });
 

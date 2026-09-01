@@ -754,8 +754,9 @@ describe('POS pages', () => {
     })).toBe(true);
   });
 
-  it('validates cash tender before recording payment', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+  it('accepts cash below the remaining balance as a partial payment', async () => {
+    let submittedPayment: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) {
         return common;
@@ -770,6 +771,10 @@ describe('POS pages', () => {
       if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
         return jsonResponse(sale('DRAFT'));
       }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST') {
+        submittedPayment = JSON.parse(String(init.body));
+        return jsonResponse(saleWithPayments([payment('CASH', 1, 1, 0, cashPaymentId)]));
+      }
       return jsonResponse({}, 404);
     });
 
@@ -780,12 +785,12 @@ describe('POS pages', () => {
     await userEvent.clear(screen.getByRole('spinbutton', { name: 'Cash tendered' }));
     await userEvent.type(screen.getByRole('spinbutton', { name: 'Cash tendered' }), '1');
 
-    expect(await screen.findByText('Cash tendered must cover the payment amount.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record payment' })).toBeDisabled();
-    expect(fetchMock.mock.calls.some(([input, init]) => {
-      const url = new URL(String(input), window.location.origin);
-      return url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST';
-    })).toBe(false);
+    expect(await screen.findByText('$1.00')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+    await screen.findByText('Payments recorded');
+    expect(submittedPayment).toMatchObject({ method: 'CASH', amount: 1, cashTendered: 1 });
+    expect(screen.getByText('Remaining')).toBeInTheDocument();
+    expect(screen.getAllByText('$4.75').length).toBeGreaterThan(0);
   });
 
   it('does not print or complete a sale when the payment API fails', async () => {

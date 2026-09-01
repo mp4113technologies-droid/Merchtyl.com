@@ -1007,9 +1007,9 @@ export function RegisterOpenPage() {
       openingCash: values.openingCash,
       ...(deviceEnforcementEnabled && values.deviceId ? { deviceId: values.deviceId } : {})
     }),
-    onSuccess: async () => {
+    onSuccess: async (session) => {
       await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
-      navigate('/register/current');
+      navigate(session.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos');
     },
     onError: async (error, values) => {
       if (!(error instanceof ApiClientError) || error.status !== 409) return;
@@ -1031,11 +1031,11 @@ export function RegisterOpenPage() {
         version: existingSession.version
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (session) => {
       setExistingSession(null);
       await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
       await queryClient.invalidateQueries({ queryKey: ['register-sessions'] });
-      navigate('/register/current');
+      navigate(session.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos');
     }
   });
 
@@ -1235,7 +1235,7 @@ export function RegisterOpenPage() {
           <Button onClick={() => { setExistingSession(null); form.setValue('registerId', ''); }}>Cancel</Button>
           <Button onClick={() => navigate('/register/history')}>View Session</Button>
           {existingSession?.assignedCashierId === currentUser?.userId ? (
-            <Button variant="contained" onClick={() => navigate('/register/current')}>Resume Register</Button>
+            <Button variant="contained" onClick={() => navigate(existingSession?.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos')}>Resume Register</Button>
           ) : null}
           {canForceClose ? (
             <Button color="error" disabled={!overrideReason.trim() || forceCloseMutation.isPending} onClick={() => forceCloseMutation.mutate()}>

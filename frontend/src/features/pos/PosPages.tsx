@@ -408,21 +408,24 @@ export function PaymentDialog({
 
   const parsedAmount = Number(amount);
   const parsedCashTendered = Number(cashTendered);
-  const changeDue = method === 'CASH' && Number.isFinite(parsedCashTendered) && Number.isFinite(parsedAmount)
-    ? roundedMoney(Math.max(0, parsedCashTendered - parsedAmount))
+  const appliedAmount = method === 'CASH' && Number.isFinite(parsedCashTendered)
+    ? roundedMoney(Math.min(Math.max(0, parsedCashTendered), balanceDue))
+    : roundedMoney(parsedAmount);
+  const changeDue = method === 'CASH' && Number.isFinite(parsedCashTendered)
+    ? roundedMoney(Math.max(0, parsedCashTendered - balanceDue))
     : 0;
   const validation = (() => {
     if (!sale || sale.items.length === 0) {
       return 'Add at least one item before taking payment.';
     }
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    if (!Number.isFinite(appliedAmount) || appliedAmount <= 0) {
       return 'Payment amount must be greater than zero.';
     }
-    if (parsedAmount > balanceDue) {
+    if (appliedAmount > balanceDue) {
       return 'Payment amount cannot exceed the remaining balance.';
     }
-    if (method === 'CASH' && (!Number.isFinite(parsedCashTendered) || parsedCashTendered < parsedAmount)) {
-      return 'Cash tendered must cover the payment amount.';
+    if (method === 'CASH' && (!Number.isFinite(parsedCashTendered) || parsedCashTendered <= 0)) {
+      return 'Cash tendered must be greater than zero.';
     }
     return null;
   })();
@@ -449,7 +452,7 @@ export function PaymentDialog({
     }
     onSubmit({
       method,
-      amount: roundedMoney(parsedAmount),
+      amount: appliedAmount,
       cashTendered: method === 'CASH' ? roundedMoney(parsedCashTendered) : undefined,
       reference: reference.trim() || undefined,
       notes: notes.trim() || undefined
@@ -462,9 +465,10 @@ export function PaymentDialog({
         <DialogTitle>Take payment</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Remaining balance</Typography>
-              <Typography variant="h6">{money(balanceDue, currencyCode)}</Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between">
+              <Box><Typography variant="caption" color="text.secondary">Total</Typography><Typography variant="h6">{money(sale?.totalAmount ?? 0, currencyCode)}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Paid</Typography><Typography variant="h6">{money(sale?.paidAmount ?? 0, currencyCode)}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Remaining</Typography><Typography variant="h6">{money(balanceDue, currencyCode)}</Typography></Box>
             </Stack>
             {sale && sale.payments.length > 0 ? (
               <Paper variant="outlined" sx={{ p: 1.5 }}>
@@ -493,7 +497,7 @@ export function PaymentDialog({
                 ))}
               </Select>
             </FormControl>
-            <TextField
+            {method !== 'CASH' ? <TextField
               label="Payment amount"
               type="number"
               value={amount}
@@ -502,7 +506,7 @@ export function PaymentDialog({
               onChange={(event) => setAmount(event.target.value)}
               InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
               fullWidth
-            />
+            /> : null}
             {method === 'CASH' ? (
               <Stack spacing={1.5}>
                 <TextField
@@ -531,6 +535,10 @@ export function PaymentDialog({
                     <Button fullWidth variant="outlined" disabled={busy} onClick={() => appendCashInput('clear')}>Clear</Button>
                   </Grid>
                 </Grid>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary">Cash applied</Typography>
+                  <Typography variant="h6">{money(appliedAmount, currencyCode)}</Typography>
+                </Stack>
                 <Stack direction="row" justifyContent="space-between">
                   <Typography color="text.secondary">Change due</Typography>
                   <Typography variant="h6">{money(changeDue, currencyCode)}</Typography>

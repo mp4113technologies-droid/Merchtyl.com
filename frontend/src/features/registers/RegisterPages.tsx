@@ -61,6 +61,7 @@ type RegisterFilterForm = {
 
 const registerSchema = z.object({
   storeId: z.string().uuid('Select a store'),
+  type: z.enum(['RETAIL', 'FOOD_SERVICE']),
   code: z.string().trim().min(1, 'Register code is required').max(64, 'Register code must be 64 characters or fewer')
     .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
   name: z.string().trim().min(1, 'Name is required').max(180, 'Name must be 180 characters or fewer'),
@@ -69,10 +70,11 @@ const registerSchema = z.object({
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
-type RegisterTextFieldName = Exclude<keyof RegisterFormValues, 'storeId' | 'active'>;
+type RegisterTextFieldName = Exclude<keyof RegisterFormValues, 'storeId' | 'type' | 'active'>;
 
 const emptyRegisterForm: RegisterFormValues = {
   storeId: '',
+  type: 'RETAIL',
   code: '',
   name: '',
   locationDescription: '',
@@ -99,6 +101,7 @@ function useRegisterPermissions() {
 function registerFormValues(register: Register): RegisterFormValues {
   return {
     storeId: register.storeId,
+    type: register.type ?? 'RETAIL',
     code: register.code,
     name: register.name,
     locationDescription: register.locationDescription ?? '',
@@ -109,6 +112,7 @@ function registerFormValues(register: Register): RegisterFormValues {
 function cleanPayload(values: RegisterFormValues): RegisterPayload {
   return {
     storeId: values.storeId,
+    type: values.type,
     code: values.code.trim(),
     name: values.name.trim(),
     locationDescription: optionalText(values.locationDescription),
@@ -182,6 +186,17 @@ function RegisterForm({
     defaultValues,
     values: defaultValues
   });
+  const selectedStore = stores.find((store) => store.id === form.watch('storeId'));
+  const selectedCapabilities = selectedStore?.capabilities ?? ['RETAIL'];
+  const allowedTypes = [
+    ...(selectedCapabilities.includes('RETAIL') ? ['RETAIL' as const] : []),
+    ...(selectedCapabilities.includes('FOOD_SERVICE') ? ['FOOD_SERVICE' as const] : [])
+  ];
+
+  React.useEffect(() => {
+    if (allowedTypes.length === 1) form.setValue('type', allowedTypes[0], { shouldValidate: true });
+    else if (allowedTypes.length > 1 && !allowedTypes.includes(form.getValues('type'))) form.setValue('type', allowedTypes[0]);
+  }, [allowedTypes.join('|'), form]);
 
   return (
     <Stack component="form" spacing={3} onSubmit={form.handleSubmit(onSubmit)}>
@@ -210,6 +225,13 @@ function RegisterForm({
               </TextField>
             )}
           />
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <Controller name="type" control={form.control} render={({ field, fieldState }) => (
+            <TextField {...field} select fullWidth label="Register Type" disabled={disabled || allowedTypes.length <= 1} error={Boolean(fieldState.error)} helperText={fieldState.error?.message ?? (allowedTypes.length === 1 ? 'Automatically selected from Store capabilities' : undefined)}>
+              {allowedTypes.map((type) => <MenuItem key={type} value={type}>{type === 'RETAIL' ? 'Retail POS' : 'Restaurant / Kitchen POS'}</MenuItem>)}
+            </TextField>
+          )} />
         </Grid>
         <Grid item xs={12} sm={4}>
           <TextInput control={form.control} name="code" label="Code" disabled={disabled} />
@@ -414,6 +436,7 @@ export function RegistersPage() {
                 <TableRow>
                   <TableCell>Register</TableCell>
                   <TableCell>Store</TableCell>
+                  <TableCell>Type</TableCell>
                   <TableCell>Location</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Actions</TableCell>
@@ -431,6 +454,7 @@ export function RegistersPage() {
                       </Button>
                     </TableCell>
                     <TableCell>{storeLabel(storeMap.get(register.storeId))}</TableCell>
+                    <TableCell><Chip size="small" label={register.type === 'FOOD_SERVICE' ? 'Restaurant / Kitchen POS' : 'Retail POS'} /></TableCell>
                     <TableCell>{register.locationDescription ?? 'No location set'}</TableCell>
                     <TableCell><RegisterStatusChip active={register.active} /></TableCell>
                     <TableCell align="right">
@@ -459,7 +483,7 @@ export function RegistersPage() {
                 ))}
                 {(registers.data?.content.length ?? 0) === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5}>
+                    <TableCell colSpan={6}>
                       <Typography color="text.secondary" textAlign="center" sx={{ py: 5 }}>
                         No registers match the current filters.
                       </Typography>
