@@ -22,12 +22,13 @@ function authResponse(roles: UserRole[] = ['MANAGER']): AuthResponse {
   };
 }
 
-function currentUser(roles: UserRole[] = ['MANAGER']): CurrentUserResponse {
+function currentUser(roles: UserRole[] = ['MANAGER'], permissions?: string[]): CurrentUserResponse {
   return {
     userId: '00000000-0000-0000-0000-000000001204',
     email: 'manager@example.local',
     displayName: 'Manager One',
-    roles
+    roles,
+    permissions
   };
 }
 
@@ -301,7 +302,7 @@ describe('Business day pages', () => {
     await waitFor(() => expect(screen.queryByRole('option', { name: 'Airport Store (AIR)' })).not.toBeInTheDocument());
     await waitFor(() => expect(document.body.style.overflow).not.toBe('hidden'));
     expect(await screen.findByText('CLOSED')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Reopen business day' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reopen Business Day' }));
     const reopenDialog = await screen.findByRole('dialog');
     await userEvent.type(within(reopenDialog).getByRole('textbox', { name: 'Reason for reopening' }), 'Store reopened for additional evening sales');
     await userEvent.click(within(reopenDialog).getByRole('button', { name: 'Reopen' }));
@@ -325,7 +326,7 @@ describe('Business day pages', () => {
         currentBusinessDate: '2026-09-01',
         currentBusinessDay: null,
         previousBusinessDay: previous,
-        state: 'NOT_OPENED',
+        state: 'HISTORICAL_CLOSED',
         availableAction: 'OPEN'
       });
       return jsonResponse({}, 404);
@@ -333,9 +334,84 @@ describe('Business day pages', () => {
 
     render(<App initialEntries={['/business-day']} />);
 
-    expect(await screen.findByRole('button', { name: 'Open business day' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reopen business day' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Open Business Day' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reopen Business Day' })).not.toBeInTheDocument();
     expect(screen.getByText('Previous business day: 2026-08-31 — CLOSED')).toBeInTheDocument();
+  });
+
+  it.each([
+    { label: 'Tenant Owner', roles: ['TENANT_OWNER'] as UserRole[] },
+    { label: 'Manager', roles: ['MANAGER'] as UserRole[] }
+  ])(
+    '$label closes the exact previous business day and then sees Open Business Day',
+    async ({ roles }) => {
+      storeSession(roles);
+      const previous = businessDay({ businessDate: '2026-09-01', status: 'OPEN', version: 4 });
+      let previousOpen = true;
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        const url = new URL(String(input), window.location.origin);
+        if (url.pathname.endsWith('/api/v1/auth/me')) {
+          return jsonResponse(currentUser(roles, ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN', 'BUSINESS_DAY_CLOSE']));
+        }
+        if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
+        if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse(previousOpen ? {
+          storeId,
+          currentBusinessDate: '2026-09-02',
+          currentBusinessDay: null,
+          previousBusinessDay: previous,
+          state: 'PREVIOUS_DAY_STILL_OPEN',
+          availableAction: 'NONE'
+        } : {
+          storeId,
+          currentBusinessDate: '2026-09-02',
+          currentBusinessDay: null,
+          previousBusinessDay: { ...previous, status: 'CLOSED', version: 5 },
+          state: 'HISTORICAL_CLOSED',
+          availableAction: 'OPEN'
+        });
+        if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') {
+          previousOpen = false;
+          return jsonResponse(report());
+        }
+        return jsonResponse({}, 404);
+      });
+
+      render(<App initialEntries={['/business-day']} />);
+
+      expect(await screen.findByText('Previous Business Day Still Open')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open Business Day' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Close Previous Business Day' }));
+      const dialog = await screen.findByRole('dialog');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close Previous Business Day' }));
+
+      await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
+        if (!String(input).includes(`/business-days/${previous.id}/close`) || init?.method !== 'POST') return false;
+        const body = JSON.parse(String(init.body));
+        return body.version === 4 && body.confirmationAccepted === true;
+      })).toBe(true));
+      expect(await screen.findByRole('button', { name: 'Open Business Day' })).toBeInTheDocument();
+    }
+  );
+
+  it('shows the previous-day blocker without a close action when close permission is absent', async () => {
+    storeSession(['CASHIER']);
+    const previous = businessDay({ businessDate: '2026-09-01', status: 'OPEN' });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['CASHIER'], ['BUSINESS_DAY_VIEW']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId, currentBusinessDate: '2026-09-02', currentBusinessDay: null,
+        previousBusinessDay: previous, state: 'PREVIOUS_DAY_STILL_OPEN', availableAction: 'NONE'
+      });
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByText('Previous Business Day Still Open')).toBeInTheDocument();
+    expect(screen.getByText('Ask an Owner or Manager to close it.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close Previous Business Day' })).not.toBeInTheDocument();
   });
 
   it('renders a report and exports CSV from the immutable report endpoint', async () => {

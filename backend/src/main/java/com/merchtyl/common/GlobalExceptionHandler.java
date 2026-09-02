@@ -101,7 +101,10 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(),
                 request.getMethod(),
                 exception.getClass().getName());
-        return error(HttpStatus.FORBIDDEN, "forbidden", exception.getMessage(), request, List.of());
+        DomainMessage domain = domainMessage(exception.getMessage());
+        return domain == null
+                ? error(HttpStatus.FORBIDDEN, "forbidden", exception.getMessage(), request, List.of())
+                : error(HttpStatus.FORBIDDEN, domain.code(), domain.message(), request, domainViolations(domain));
     }
 
     @ExceptionHandler(BadCredentialsException.class)

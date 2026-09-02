@@ -16,6 +16,7 @@ public record SaleResponse(
         SaleStatus status,
         LocalDate businessDate,
         String saleChannel,
+        String foodOrderToken,
         String currencyCode,
         boolean pricesIncludeTax,
         BigDecimal subtotalAmount,
@@ -36,6 +37,20 @@ public record SaleResponse(
         Instant updatedAt,
         long version
 ) {
+    public SaleResponse(
+            UUID id, UUID storeId, UUID registerId, UUID registerSessionId, UUID createdBy, UUID customerId,
+            SaleStatus status, LocalDate businessDate, String saleChannel, String currencyCode,
+            boolean pricesIncludeTax, BigDecimal subtotalAmount, BigDecimal discountAmount,
+            BigDecimal estimatedTaxAmount, BigDecimal totalAmount, Instant heldAt, Instant cancelledAt,
+            UUID completedBy, Instant completedAt, List<SaleItemResponse> items, List<PaymentResponse> payments,
+            BigDecimal paidAmount, BigDecimal balanceDue, BigDecimal changeDue, boolean paymentComplete,
+            Instant createdAt, Instant updatedAt, long version) {
+        this(id, storeId, registerId, registerSessionId, createdBy, customerId, status, businessDate,
+                saleChannel, null, currencyCode, pricesIncludeTax, subtotalAmount, discountAmount,
+                estimatedTaxAmount, totalAmount, heldAt, cancelledAt, completedBy, completedAt, items,
+                payments, paidAmount, balanceDue, changeDue, paymentComplete, createdAt, updatedAt, version);
+    }
+
     static SaleResponse from(Sale sale) {
         BigDecimal paidAmount = money(sale.getPayments().stream()
                 .map(Payment::getAmount)
@@ -54,6 +69,7 @@ public record SaleResponse(
                 sale.getStatus(),
                 sale.getBusinessDate(),
                 sale.getSaleChannel(),
+                sale.getFoodOrderToken(),
                 sale.getCurrencyCode(),
                 sale.isPricesIncludeTax(),
                 sale.getSubtotalAmount(),

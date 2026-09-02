@@ -513,7 +513,7 @@ export type BusinessDayOperationalState = {
   currentBusinessDate: string;
   currentBusinessDay: BusinessDay | null;
   previousBusinessDay: BusinessDay | null;
-  state: 'NOT_OPENED' | 'OPEN' | 'CLOSED_TODAY' | 'PREVIOUS_DAY_STILL_OPEN';
+  state: 'NO_BUSINESS_DAY_TODAY' | 'OPEN' | 'CLOSED_TODAY' | 'HISTORICAL_CLOSED' | 'PREVIOUS_DAY_STILL_OPEN';
   availableAction: 'OPEN' | 'REOPEN' | 'NONE';
 };
 
@@ -1773,6 +1773,7 @@ export type Sale = {
   status: SaleStatus;
   businessDate: string;
   saleChannel: string | null;
+  foodOrderToken?: string | null;
   currencyCode: string;
   pricesIncludeTax: boolean;
   subtotalAmount: number;
@@ -1975,6 +1976,32 @@ export type ReceiptDocument = {
   payments: ReceiptPayment[];
   cashTendered: number;
   changeDue: number;
+  tokenNumber?: string | null;
+};
+
+export type PrintDocumentType = 'CUSTOMER_RECEIPT' | 'KITCHEN_TICKET';
+
+export type KitchenTicketItem = {
+  saleItemId: string;
+  name: string;
+  quantity: number;
+  modifiers: string[];
+  preparationInstructions: string | null;
+};
+
+export type KitchenTicket = {
+  documentType: 'KITCHEN_TICKET';
+  saleId: string;
+  tokenNumber: string;
+  storeName: string;
+  registerName: string;
+  cashierName: string;
+  orderTime: string;
+  orderType: string | null;
+  tableNumber: string | null;
+  items: KitchenTicketItem[];
+  orderNotes: string | null;
+  reprint: boolean;
 };
 
 export type Receipt = {

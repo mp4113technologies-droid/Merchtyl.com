@@ -113,6 +113,7 @@ import type {
   TaxTypeListResponse,
   RoleAdmin,
   Receipt,
+  KitchenTicket,
   Refund,
   RefundListResponse,
   Return,
@@ -792,6 +793,8 @@ export type RegisterSessionClosePayload = {
   countedCash: number;
   version: number;
 };
+
+export type RegisterSessionTransitionPayload = { version: number };
 
 export type RegisterSessionForceClosePayload = RegisterSessionClosePayload & {
   reason: string;
@@ -2399,6 +2402,18 @@ export function closeRegisterSession(token: string, id: string, payload: Registe
   }, token);
 }
 
+export function startRegisterSessionClosing(token: string, id: string, payload: RegisterSessionTransitionPayload) {
+  return request<RegisterSession>(`/register-sessions/${id}/start-closing`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }, token);
+}
+
+export function cancelRegisterSessionClosing(token: string, id: string, payload: RegisterSessionTransitionPayload) {
+  return request<RegisterSession>(`/register-sessions/${id}/cancel-closing`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }, token);
+}
+
 export function forceCloseRegisterSession(token: string, id: string, payload: RegisterSessionForceClosePayload) {
   return request<RegisterSession>(`/register-sessions/${id}/force-close`, {
     method: 'POST',
@@ -2537,6 +2552,14 @@ export function reprintSaleReceipt(token: string, id: string) {
   return request<Receipt>(`/sales/${id}/receipt/reprint`, {
     method: 'POST'
   }, token);
+}
+
+export function getKitchenTicket(token: string, id: string) {
+  return request<KitchenTicket>(`/sales/${id}/kitchen-ticket`, undefined, token);
+}
+
+export function reprintKitchenTicket(token: string, id: string) {
+  return request<KitchenTicket>(`/sales/${id}/kitchen-ticket/reprint`, { method: 'POST' }, token);
 }
 
 export function getPlatformBillingOverview(token: string) {

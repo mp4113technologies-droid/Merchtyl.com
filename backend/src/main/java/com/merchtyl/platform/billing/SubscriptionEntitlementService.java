@@ -1,5 +1,6 @@
 package com.merchtyl.platform.billing;
 import com.merchtyl.common.ConflictException;
+import com.merchtyl.common.ForbiddenOperationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +25,28 @@ public class SubscriptionEntitlementService {
     }
 
     @Transactional(readOnly = true) public void requireActive(UUID tenantId, CommercialCapability capability) {
-        Integer active = jdbc.queryForObject("select count(*) from tenant_subscription_capabilities capability join tenant_subscriptions subscription on subscription.id=capability.subscription_id where subscription.tenant_id=? and subscription.status in ('ACTIVE','TRIAL') and capability.capability=? and capability.status='ACTIVE'", Integer.class, tenantId, capability.name());
-        if (active == null || active == 0) throw new ConflictException(capability.name()+"_NOT_ENTITLED: The merchant subscription does not entitle this capability");
+        Integer active = jdbc.queryForObject("""
+                select count(*)
+                from tenant_subscriptions subscription
+                where subscription.tenant_id=?
+                  and subscription.status in ('ACTIVE','TRIAL')
+                  and (
+                    exists (
+                      select 1
+                      from platform_pricing_plan_version_capabilities plan_capability
+                      where plan_capability.pricing_plan_version_id=subscription.pricing_plan_version_id
+                        and plan_capability.capability=?
+                        and plan_capability.inclusion_type='INCLUDED'
+                    )
+                    or exists (
+                      select 1
+                      from tenant_subscription_capabilities subscription_capability
+                      where subscription_capability.subscription_id=subscription.id
+                        and subscription_capability.capability=?
+                        and subscription_capability.status='ACTIVE'
+                    )
+                  )
+                """, Integer.class, tenantId, capability.name(), capability.name());
+        if (active == null || active == 0) throw new ForbiddenOperationException("MERCHANT_CAPABILITY_NOT_ENABLED: The merchant subscription does not enable " + capability.name() + ".");
     }
 }

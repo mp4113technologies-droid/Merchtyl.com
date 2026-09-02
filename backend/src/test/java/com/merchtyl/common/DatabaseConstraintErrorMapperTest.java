@@ -18,6 +18,7 @@ class DatabaseConstraintErrorMapperTest {
     @CsvSource({
             "uq_tenants_tenant_code,TENANT_CODE_ALREADY_EXISTS,tenantCode",
             "uq_security_users_email,USER_EMAIL_ALREADY_EXISTS,email",
+            "uq_security_users_email_lower,USER_EMAIL_ALREADY_EXISTS,email",
             "uq_stores_code,STORE_CODE_ALREADY_EXISTS,code",
             "uq_product_barcodes_tenant_barcode_lower,BARCODE_ALREADY_EXISTS,barcode",
             "uq_products_tenant_sku_lower,SKU_ALREADY_EXISTS,sku",

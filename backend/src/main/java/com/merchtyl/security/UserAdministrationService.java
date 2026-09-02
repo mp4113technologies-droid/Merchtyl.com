@@ -6,6 +6,7 @@ import com.merchtyl.audit.CreateAuditRecordCommand;
 import com.merchtyl.auth.PasswordPolicyService;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
+import com.merchtyl.common.DatabaseConstraintErrorMapper;
 import com.merchtyl.common.ForbiddenOperationException;
 import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
@@ -355,7 +356,12 @@ public class UserAdministrationService {
         try {
             return userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
-            throw duplicateEmail();
+            String constraintName = new DatabaseConstraintErrorMapper().analyze(exception).constraintName();
+            if ("uq_security_users_email".equals(constraintName)
+                    || "uq_security_users_email_lower".equals(constraintName)) {
+                throw duplicateEmail();
+            }
+            throw exception;
         }
     }
 
@@ -523,8 +529,18 @@ public class UserAdministrationService {
 
     private void replaceRegisterAssignments(User actor, User user, Set<UUID> registerIds, Set<UUID> storeIds) {
         validateRegisterAssignments(actor, registerIds, storeIds);
-        userRegisterAssignmentRepository.deleteByUser(user);
+        List<UserRegisterAssignment> existing = userRegisterAssignmentRepository.findByUser(user);
+        Set<UUID> existingRegisterIds = existing.stream()
+                .map(assignment -> assignment.getRegister().getId())
+                .collect(Collectors.toUnmodifiableSet());
+        List<UserRegisterAssignment> removed = existing.stream()
+                .filter(assignment -> !registerIds.contains(assignment.getRegister().getId()))
+                .toList();
+        if (!removed.isEmpty()) {
+            userRegisterAssignmentRepository.deleteAll(removed);
+        }
         registerIds.stream()
+                .filter(registerId -> !existingRegisterIds.contains(registerId))
                 .map(registerId -> registerRepository.findById(registerId)
                         .orElseThrow(() -> new NotFoundException("Register not found")))
                 .forEach(register -> userRegisterAssignmentRepository.save(new UserRegisterAssignment(user, register)));

@@ -29,6 +29,7 @@ import com.merchtyl.product.StoreProductRepository;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
+import com.merchtyl.register.RegisterType;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.tax.TaxCalculationRequest;
@@ -84,6 +85,8 @@ public class SaleService {
     private StoreProductRepository storeProductRepository;
     @Autowired
     private ProductVariantRepository productVariantRepository;
+    @Autowired
+    private FoodOrderTokenService foodOrderTokenService;
 
     @Autowired
     public SaleService(
@@ -412,6 +415,11 @@ public class SaleService {
             deductInventory(sale, item, completedAt, authentication);
         }
         appendCashLedgerEntries(sale, actor, completedAt);
+        if (foodOrderTokenService != null
+                && sale.getRegister().getType() == RegisterType.FOOD_SERVICE
+                && sale.getFoodOrderToken() == null) {
+            sale.assignFoodOrderToken(foodOrderTokenService.nextToken(sale.getRegisterSession()));
+        }
         sale.complete(actor, completedAt);
         SaleResponse response = SaleResponse.from(save(sale));
         audit(actor, AuditAction.SALE_COMPLETED, response, null);

@@ -13,6 +13,9 @@ import com.merchtyl.eod.BusinessDay;
 import com.merchtyl.eod.BusinessDayService;
 import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
+import com.merchtyl.register.RegisterCapabilityService;
+import com.merchtyl.register.RegisterType;
+import com.merchtyl.security.RolePermissionRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRegisterAssignmentRepository;
 import com.merchtyl.security.UserRepository;
@@ -61,6 +64,7 @@ class RegisterSessionServiceTest {
     private final CashLedgerService cashLedgerService = mock(CashLedgerService.class);
     private final RegisterSessionProperties properties = new RegisterSessionProperties();
     private final BusinessDayService businessDayService = mock(BusinessDayService.class);
+    private final RolePermissionRepository rolePermissionRepository = mock(RolePermissionRepository.class);
     private final RegisterSessionService service = new RegisterSessionService(
             registerSessionRepository,
             storeRepository,
@@ -87,6 +91,7 @@ class RegisterSessionServiceTest {
         cashier = new User("cashier@example.local", "Cashier One", "hash");
         businessDay = mock(BusinessDay.class);
         ReflectionTestUtils.setField(service, "businessDayService", businessDayService);
+        ReflectionTestUtils.setField(service, "rolePermissionRepository", rolePermissionRepository);
 
         when(store.getId()).thenReturn(STORE_ID);
         when(store.isActive()).thenReturn(true);
@@ -104,6 +109,7 @@ class RegisterSessionServiceTest {
         when(deviceRepository.findById(DEVICE_ID)).thenReturn(Optional.of(device));
         when(deviceRepository.findByIdForUpdate(DEVICE_ID)).thenReturn(Optional.of(device));
         when(userRepository.findByEmailIgnoreCase("cashier@example.local")).thenReturn(Optional.of(cashier));
+        when(rolePermissionRepository.findPermissionCodesByUser(cashier)).thenReturn(List.of("POS_ACCESS"));
         when(businessDayService.requireOpenBusinessDayForUpdate(STORE_ID)).thenReturn(businessDay);
         when(registerSessionRepository.saveAndFlush(any(RegisterSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(cashLedgerService.expectedCash(any(RegisterSession.class))).thenReturn(new BigDecimal("125.50"));
@@ -153,6 +159,50 @@ class RegisterSessionServiceTest {
     }
 
     @Test
+    void opensFoodServiceRegisterOnlyAfterCapabilityAndPermissionChecks() {
+        RegisterCapabilityService capabilities = mock(RegisterCapabilityService.class);
+        RolePermissionRepository permissions = mock(RolePermissionRepository.class);
+        ReflectionTestUtils.setField(service, "registerCapabilityService", capabilities);
+        ReflectionTestUtils.setField(service, "rolePermissionRepository", permissions);
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(permissions.findPermissionCodesByUser(cashier)).thenReturn(List.of("FOOD_POS_ACCESS"));
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+
+        RegisterSessionResponse response = service.open(openRequest(), authentication("ROLE_KITCHEN"));
+
+        assertThat(response.status()).isEqualTo(RegisterSessionStatus.OPEN);
+        verify(capabilities).requireEnabled(store, RegisterType.FOOD_SERVICE);
+    }
+
+    @Test
+    void rejectsFoodServiceRegisterWhenUserLacksFoodPermission() {
+        RegisterCapabilityService capabilities = mock(RegisterCapabilityService.class);
+        RolePermissionRepository permissions = mock(RolePermissionRepository.class);
+        ReflectionTestUtils.setField(service, "registerCapabilityService", capabilities);
+        ReflectionTestUtils.setField(service, "rolePermissionRepository", permissions);
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(permissions.findPermissionCodesByUser(cashier)).thenReturn(List.of("REGISTER_SESSION_OPEN"));
+
+        assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_CASHIER")))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("REGISTER_TYPE_NOT_ALLOWED");
+        verify(registerSessionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsKitchenUserOpeningRetailRegisterWithoutRetailPosPermission() {
+        when(rolePermissionRepository.findPermissionCodesByUser(cashier))
+                .thenReturn(List.of("REGISTER_SESSION_OPEN", "FOOD_POS_ACCESS"));
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_KITCHEN")))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("REGISTER_TYPE_NOT_ALLOWED");
+
+        verify(registerSessionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void rejectsRegisterOpenWhenStoreBusinessDayIsClosed() {
         when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
         when(businessDayService.requireOpenBusinessDayForUpdate(STORE_ID))
@@ -199,7 +249,8 @@ class RegisterSessionServiceTest {
 
     @Test
     void rejectsSecondOpenSessionForRegister() {
-        when(registerSessionRepository.existsByRegister_IdAndStatus(REGISTER_ID, RegisterSessionStatus.OPEN)).thenReturn(true);
+        when(registerSessionRepository.existsByRegister_IdAndStatusIn(REGISTER_ID, List.of(
+                RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING))).thenReturn(true);
 
         assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_MANAGER")))
                 .isInstanceOf(ConflictException.class)
@@ -213,8 +264,8 @@ class RegisterSessionServiceTest {
     void rejectsOpeningCashSubmissionWhenRegisterAlreadyHasOpenSession() {
         RegisterSession existing = new RegisterSession(
                 store, register, device, cashier, new BigDecimal("200.00"), NOW.minusSeconds(3600));
-        when(registerSessionRepository.findFirstByRegister_IdAndStatusOrderByOpenedAtDesc(
-                REGISTER_ID, RegisterSessionStatus.OPEN)).thenReturn(Optional.of(existing));
+        when(registerSessionRepository.findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(
+                REGISTER_ID, List.of(RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING))).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> service.open(
                 new RegisterSessionOpenRequest(STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("999.00")),
@@ -229,7 +280,8 @@ class RegisterSessionServiceTest {
     @Test
     void cashierCannotOpenSecondRegisterSession() {
         when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
-        when(registerSessionRepository.existsByAssignedCashier_IdAndStatus(cashier.getId(), RegisterSessionStatus.OPEN))
+        when(registerSessionRepository.existsByAssignedCashier_IdAndStatusIn(cashier.getId(), List.of(
+                RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING)))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_CASHIER")))
@@ -260,9 +312,8 @@ class RegisterSessionServiceTest {
                 cashier,
                 new BigDecimal("25.00"),
                 NOW);
-        when(registerSessionRepository.findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusOrderByOpenedAtDesc(
-                "browser:test",
-                RegisterSessionStatus.OPEN)).thenReturn(Optional.of(session));
+        when(registerSessionRepository.findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusInOrderByOpenedAtDesc(
+                "browser:test", List.of(RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING))).thenReturn(Optional.of(session));
 
         RegisterSessionResponse response = service.current(null, "browser:test", authentication("ROLE_CASHIER"));
 
@@ -282,9 +333,8 @@ class RegisterSessionServiceTest {
                 otherCashier,
                 new BigDecimal("25.00"),
                 NOW);
-        when(registerSessionRepository.findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusOrderByOpenedAtDesc(
-                "browser:test",
-                RegisterSessionStatus.OPEN)).thenReturn(Optional.of(session));
+        when(registerSessionRepository.findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusInOrderByOpenedAtDesc(
+                "browser:test", List.of(RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING))).thenReturn(Optional.of(session));
 
         RegisterSessionResponse response = service.current(null, "browser:test", authentication("ROLE_CASHIER"));
 
@@ -330,7 +380,8 @@ class RegisterSessionServiceTest {
                 cashier,
                 new BigDecimal("125.50"),
                 NOW);
-        when(registerSessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
         RegisterSessionResponse response = service.close(
                 session.getId(),
@@ -358,7 +409,8 @@ class RegisterSessionServiceTest {
                 cashier,
                 new BigDecimal("125.50"),
                 NOW);
-        when(registerSessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service.close(
                 session.getId(),
@@ -368,6 +420,54 @@ class RegisterSessionServiceTest {
                 .hasMessage("Register session was modified by another transaction");
 
         verify(registerSessionRepository, never()).saveAndFlush(session);
+    }
+
+    @Test
+    void startClosingThenCancelRestoresSameSessionWithoutResettingOperationalData() {
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        UUID sessionId = session.getId();
+        when(registerSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
+
+        RegisterSessionResponse closing = service.startClosing(sessionId,
+                new RegisterSessionTransitionRequest(0L), authentication("ROLE_CASHIER"));
+        RegisterSessionResponse reopened = service.cancelClosing(sessionId,
+                new RegisterSessionTransitionRequest(closing.version()), authentication("ROLE_CASHIER"));
+
+        assertThat(closing.status()).isEqualTo(RegisterSessionStatus.CLOSING);
+        assertThat(reopened.status()).isEqualTo(RegisterSessionStatus.OPEN);
+        assertThat(reopened.id()).isEqualTo(sessionId);
+        assertThat(session.getOpeningCash()).isEqualByComparingTo("125.50");
+        assertThat(session.getBusinessDay()).isSameAs(businessDay);
+        assertThat(session.getCountedCash()).isNull();
+        assertThat(session.getClosedAt()).isNull();
+        verify(cashLedgerService, org.mockito.Mockito.times(2)).breakdown(session);
+    }
+
+    @Test
+    void cancelClosingRejectsClosedSession() {
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        session.startClosing();
+        session.close(new BigDecimal("130.00"), new BigDecimal("130.50"), cashier, NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.cancelClosing(session.getId(),
+                new RegisterSessionTransitionRequest(0L), authentication("ROLE_CASHIER")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("REGISTER_SESSION_NOT_CLOSING");
+    }
+
+    @Test
+    void completeClosingRejectsSessionThatNeverStartedClosing() {
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.close(session.getId(),
+                new RegisterSessionCloseRequest(new BigDecimal("130.00"), 0L), authentication("ROLE_CASHIER")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("REGISTER_SESSION_NOT_CLOSING");
     }
 
     @Test

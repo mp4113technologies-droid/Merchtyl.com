@@ -187,6 +187,27 @@ class UserAdministrationServiceTest {
     }
 
     @Test
+    void replacingRegisterAssignmentsKeepsExistingRowsInsteadOfReinsertingThem() {
+        User actor = tenantUser("owner@example.local", "Owner");
+        User user = tenantUser("cashier@example.local", "Cashier");
+        Store store = store(STORE_ID, "MAIN");
+        Register register = mock(Register.class);
+        UserRegisterAssignment existing = new UserRegisterAssignment(user, register);
+
+        when(register.getId()).thenReturn(REGISTER_ID);
+        when(register.getStore()).thenReturn(store);
+        when(registerRepository.findById(REGISTER_ID)).thenReturn(Optional.of(register));
+        when(storeRepository.findByIdAndTenantId(STORE_ID, TENANT_ID)).thenReturn(Optional.of(store));
+        when(userRegisterAssignmentRepository.findByUser(user)).thenReturn(List.of(existing));
+
+        ReflectionTestUtils.invokeMethod(service, "replaceRegisterAssignments",
+                actor, user, Set.of(REGISTER_ID), Set.of(STORE_ID));
+
+        verify(userRegisterAssignmentRepository, never()).deleteAll(any());
+        verify(userRegisterAssignmentRepository, never()).save(any());
+    }
+
+    @Test
     void roleAndAssignmentUpdateRejectsRegisterOutsideAssignedStores() {
         User user = new User("manager@example.local", "Manager", "hash");
         user.assignTenant(TENANT_ID);

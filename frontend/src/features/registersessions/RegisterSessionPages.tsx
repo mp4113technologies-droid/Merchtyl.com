@@ -35,17 +35,19 @@ import { Controller, useForm } from 'react-hook-form';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
+  cancelRegisterSessionClosing,
   closeRegisterSession,
+  createCashMovement,
   forceCloseRegisterSession,
   getCurrentRegisterSession,
-  createCashMovement,
-  listRegisterSessions,
   listCashMovements,
   listDevices,
   listRegisters,
+  listRegisterSessions,
   listStores,
-  openRegisterSession
-  ,overrideRegisterSession
+  openRegisterSession,
+  overrideRegisterSession,
+  startRegisterSessionClosing
 } from '../../api/client';
 import { registerSessionKeys } from './registerSessionKeys';
 import { ApiClientError } from '../../api/client';
@@ -101,15 +103,22 @@ const closeSchema = z.object({
 
 type CloseFormValues = z.infer<typeof closeSchema>;
 
-function canUseRegisterSessions(roles: UserRole[]) {
-  return roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER' || role === 'CASHIER');
+function canUseRegisterSessions(roles: UserRole[], permissions: string[]) {
+  if (permissions.length > 0) {
+    return permissions.includes('REGISTER_SESSION_OPEN')
+      || permissions.includes('REGISTER_SESSION_VIEW')
+      || permissions.includes('REGISTER_SESSION_OPERATE');
+  }
+  return roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER'
+    || role === 'STORE_MANAGER' || role === 'CASHIER' || role === 'KITCHEN');
 }
 
 function useRegisterSessionPermissions() {
   const { currentUser, session } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
+  const permissions = currentUser?.permissions ?? [];
   return {
-    canUse: canUseRegisterSessions(roles),
+    canUse: canUseRegisterSessions(roles, permissions),
     canForceClose: roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER'),
     canOverride: roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER')
   };
@@ -342,6 +351,9 @@ function CurrentSessionSummary({
 export function RegisterCurrentPage() {
   const { getValidAccessToken } = useSession();
   const { canUse } = useRegisterSessionPermissions();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [startClosingOpen, setStartClosingOpen] = React.useState(false);
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
 
   const current = useQuery({
@@ -368,6 +380,18 @@ export function RegisterCurrentPage() {
     enabled: canUse && Boolean(current.data)
   });
 
+  const startClosing = useMutation({
+    mutationFn: async () => {
+      if (!current.data) throw new Error('No current register session');
+      return startRegisterSessionClosing(await getValidAccessToken(), current.data.id, { version: current.data.version });
+    },
+    onSuccess: async () => {
+      setStartClosingOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
+      navigate('/register/close');
+    }
+  });
+
   if (!canUse) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -390,13 +414,16 @@ export function RegisterCurrentPage() {
         <Button component={Link} to="/register/cash-movements" variant="outlined" startIcon={<PaymentsOutlinedIcon />}>
           Cash movements
         </Button>
-        <Button component={Link} to="/register/close" variant="outlined" startIcon={<ReceiptLongOutlinedIcon />}>
-          Close register
-        </Button>
+        {current.data?.status === 'CLOSING' ? (
+          <Button component={Link} to="/register/close" variant="outlined" startIcon={<ReceiptLongOutlinedIcon />}>Complete Closing</Button>
+        ) : (
+          <Button variant="outlined" startIcon={<ReceiptLongOutlinedIcon />} disabled={!current.data} onClick={() => setStartClosingOpen(true)}>Start Closing</Button>
+        )}
       </Stack>
 
       {current.isLoading ? <LoadingPanel label="Loading current register" /> : null}
       {current.isError ? <Alert severity="error">{errorMessage(current.error)}</Alert> : null}
+      {startClosing.isError ? <Alert severity="error">{errorMessage(startClosing.error)}</Alert> : null}
       {!current.isLoading && !current.isError && !current.data ? (
         <Alert severity="info" action={<Button component={Link} to="/register/open">Open</Button>}>
           No register session is open for this user.
@@ -413,6 +440,16 @@ export function RegisterCurrentPage() {
           devices={devices.data?.content ?? []}
         />
       ) : null}
+      <Dialog open={startClosingOpen} onClose={() => setStartClosingOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Start register closing?</DialogTitle>
+        <DialogContent>
+          <Typography>This will begin the cash reconciliation process. You can cancel before the register is finalized.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStartClosingOpen(false)}>Cancel</Button>
+          <Button variant="contained" disabled={startClosing.isPending} onClick={() => startClosing.mutate()}>Start Closing</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -483,6 +520,18 @@ export function RegisterClosePage() {
     }
   });
 
+  const cancelClosingMutation = useMutation({
+    mutationFn: async () => {
+      if (!current.data) throw new Error('No current register session');
+      return cancelRegisterSessionClosing(await getValidAccessToken(), current.data.id, { version: current.data.version });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
+      await queryClient.invalidateQueries({ queryKey: ['register-sessions'] });
+      navigate('/register/current');
+    }
+  });
+
   if (!canUse) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -510,6 +559,8 @@ export function RegisterClosePage() {
       ) : null}
       {closeMutation.isError ? <Alert severity="error">{errorMessage(closeMutation.error)}</Alert> : null}
       {forceCloseMutation.isError ? <Alert severity="error">{errorMessage(forceCloseMutation.error)}</Alert> : null}
+      {cancelClosingMutation.isError ? <Alert severity="error">{errorMessage(cancelClosingMutation.error)}</Alert> : null}
+      {current.data?.status === 'OPEN' ? <Alert severity="info">Start closing from the current register screen before completing reconciliation.</Alert> : null}
 
       {current.data ? (
         <Grid container spacing={3}>
@@ -549,9 +600,13 @@ export function RegisterClosePage() {
                     type="submit"
                     variant="contained"
                     startIcon={<ReceiptLongOutlinedIcon />}
-                    disabled={closeMutation.isPending || forceCloseMutation.isPending}
+                    disabled={current.data.status !== 'CLOSING' || closeMutation.isPending || forceCloseMutation.isPending}
                   >
-                    Close register
+                    Complete Closing
+                  </Button>
+                  <Button type="button" variant="outlined" disabled={current.data.status !== 'CLOSING' || cancelClosingMutation.isPending || closeMutation.isPending}
+                    onClick={() => cancelClosingMutation.mutate()}>
+                    Cancel Closing
                   </Button>
                   {canForceClose ? (
                     <Button

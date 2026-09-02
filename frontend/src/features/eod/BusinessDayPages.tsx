@@ -79,6 +79,17 @@ function useRoles() {
   return currentUser?.roles ?? session?.roles ?? [];
 }
 
+function useBusinessDayAccess() {
+  const { currentUser, session } = useSession();
+  const roles = currentUser?.roles ?? session?.roles ?? [];
+  const permissions = currentUser?.permissions ?? [];
+  return {
+    roles,
+    canView: permissions.length > 0 ? permissions.includes('BUSINESS_DAY_VIEW') : canManageBusinessDay(roles),
+    canClose: permissions.length > 0 ? permissions.includes('BUSINESS_DAY_CLOSE') : canManageBusinessDay(roles)
+  };
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Request failed';
 }
@@ -159,8 +170,7 @@ function downloadBlob(filename: string, blob: Blob) {
 }
 
 export function BusinessDayPage() {
-  const roles = useRoles();
-  const allowed = canManageBusinessDay(roles);
+  const { roles, canView: allowed, canClose } = useBusinessDayAccess();
   const canForce = canForceOrReopen(roles);
   const canReopen = canReopenBusinessDay(roles);
   const { getValidAccessToken } = useSession();
@@ -169,6 +179,7 @@ export function BusinessDayPage() {
   const [storeId, setStoreId] = React.useState('');
   const [reopenOpen, setReopenOpen] = React.useState(false);
   const [reopenReason, setReopenReason] = React.useState('');
+  const [closePreviousOpen, setClosePreviousOpen] = React.useState(false);
 
   const stores = useQuery({
     queryKey: ['stores', 'business-day'],
@@ -223,6 +234,23 @@ export function BusinessDayPage() {
     }
   });
 
+  const closePrevious = useMutation({
+    mutationFn: async (previousDay: BusinessDay) => closeBusinessDay(await getValidAccessToken(), previousDay.id, {
+      version: previousDay.version,
+      managerNotes: 'Closed from previous business day recovery action.',
+      varianceExplanation: '',
+      confirmationAccepted: true
+    }, idempotencyKey('close-previous')),
+    onSuccess: async () => {
+      setClosePreviousOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['business-day'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session'] }),
+        queryClient.invalidateQueries({ queryKey: ['end-of-day'] })
+      ]);
+    }
+  });
+
   if (!allowed) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -251,14 +279,15 @@ export function BusinessDayPage() {
       {open.isError ? <Alert severity="error">{errorMessage(open.error)}</Alert> : null}
       {startClosing.isError ? <Alert severity="error">{errorMessage(startClosing.error)}</Alert> : null}
       {reopen.isError ? <Alert severity="error">{errorMessage(reopen.error)}</Alert> : null}
+      {closePrevious.isError ? <Alert severity="error">{errorMessage(closePrevious.error)}</Alert> : null}
 
-      {!operationalState.isLoading && operationalState.data?.state === 'NOT_OPENED' ? (
+      {!operationalState.isLoading && (operationalState.data?.state === 'NO_BUSINESS_DAY_TODAY' || operationalState.data?.state === 'HISTORICAL_CLOSED') ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
           <Stack spacing={2}>
             <Typography variant="h6">Business date {operationalState.data.currentBusinessDate}</Typography>
             <Typography color="text.secondary">Not opened. Open a new business day before register sales and closing reconciliation.</Typography>
             <Button variant="contained" startIcon={<LockOpenOutlinedIcon />} disabled={!storeId || open.isPending} onClick={() => open.mutate()}>
-              Open business day
+              Open Business Day
             </Button>
             {previousDay ? <Typography variant="body2" color="text.secondary">Previous business day: {previousDay.businessDate} — {previousDay.status}</Typography> : null}
           </Stack>
@@ -267,7 +296,18 @@ export function BusinessDayPage() {
 
       {!operationalState.isLoading && operationalState.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? (
         <Alert severity="warning">
-          Previous business day {previousDay?.businessDate} is still open. Close it before opening {operationalState.data.currentBusinessDate}.
+          <Stack spacing={1.5}>
+            <Typography fontWeight={700}>Previous Business Day Still Open</Typography>
+            <Typography>
+              {previousDay?.businessDate} must be closed before opening {operationalState.data.currentBusinessDate}.
+            </Typography>
+            {previousDay && canClose ? (
+              <Button color="warning" variant="contained" sx={{ alignSelf: 'flex-start' }}
+                disabled={closePrevious.isPending} onClick={() => setClosePreviousOpen(true)}>
+                Close Previous Business Day
+              </Button>
+            ) : <Typography variant="body2">Ask an Owner or Manager to close it.</Typography>}
+          </Stack>
         </Alert>
       ) : null}
 
@@ -294,8 +334,8 @@ export function BusinessDayPage() {
                     Force close
                   </Button>
                 ) : null}
-                {day.status === 'CLOSED' && canReopen ? (
-                  <Button color="warning" startIcon={<RestartAltIcon />} onClick={() => setReopenOpen(true)}>Reopen business day</Button>
+                {operationalState.data?.state === 'CLOSED_TODAY' && day.status === 'CLOSED' && canReopen ? (
+                  <Button color="warning" startIcon={<RestartAltIcon />} onClick={() => setReopenOpen(true)}>Reopen Business Day</Button>
                 ) : null}
                 <Button component={Link} to="/business-day/history" startIcon={<HistoryOutlinedIcon />}>
                   History
@@ -314,6 +354,21 @@ export function BusinessDayPage() {
         <DialogActions>
           <Button onClick={() => setReopenOpen(false)}>Cancel</Button>
           <Button color="warning" variant="contained" disabled={!day || !reopenReason.trim() || reopen.isPending} onClick={() => day && reopen.mutate(day)}>Reopen</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={closePreviousOpen} onClose={() => setClosePreviousOpen(false)} fullWidth maxWidth="sm" transitionDuration={0}>
+        <DialogTitle>Close Previous Business Day?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Close {previousDay?.businessDate} for {previousDay?.storeName}? Any open register sessions must be closed first.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClosePreviousOpen(false)}>Cancel</Button>
+          <Button color="warning" variant="contained" disabled={!previousDay || closePrevious.isPending}
+            onClick={() => previousDay && closePrevious.mutate(previousDay)}>
+            {closePrevious.isPending ? 'Closing…' : 'Close Previous Business Day'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Stack>

@@ -6,11 +6,13 @@ import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularPr
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { addFoodMenuItemToSale, completeSale, createSaleDraft, getCurrentRegisterSession, getFoodServiceConfiguration, getSaleReceipt, listFoodMenuCategories, listFoodMenuItems, listStores, recordSalePayment, removeSaleItem, updateSaleItemQuantity } from '../../api/client';
-import type { FoodMenuItem, PaymentMethod, Sale } from '../../api/types';
+import { addFoodMenuItemToSale, completeSale, createSaleDraft, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, listFoodMenuCategories, listFoodMenuItems, listStores, recordSalePayment, removeSaleItem, reprintKitchenTicket, reprintSaleReceipt, updateSaleItemQuantity } from '../../api/client';
+import type { FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { PaymentDialog } from './PosPages';
+import { loadReceiptPrinterPreferences } from './receiptPrinter';
+import { printFoodDocuments, type FoodPrintDocument, type FoodPrintStatus } from './foodOrderPrinter';
 
 function money(value: number, currency = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
@@ -25,6 +27,10 @@ export function FoodPosPage() {
   const [categoryId, setCategoryId] = React.useState<string | null>(null);
   const [sale, setSale] = React.useState<Sale | null>(null);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
+  const [printStates, setPrintStates] = React.useState<Record<FoodPrintDocument, { status: FoodPrintStatus; error?: string }>>({
+    KITCHEN_TICKET: { status: 'READY' },
+    CUSTOMER_RECEIPT: { status: 'READY' }
+  });
   const deviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const permitted = currentUser?.permissions?.includes('FOOD_POS_ACCESS') ?? false;
   const current = useQuery({ queryKey: ['register-session', 'food-pos', deviceIdentifier], queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier }), enabled: permitted });
@@ -50,13 +56,51 @@ export function FoodPosPage() {
   const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: (updated) => { setSale(updated); setPaymentOpen(!updated.paymentComplete); } });
   const complete = useMutation({ mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()), onSuccess: setSale });
   const receipt = useQuery({ queryKey: ['food-pos-receipt', sale?.id], queryFn: async () => getSaleReceipt(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
+  const kitchenTicket = useQuery({ queryKey: ['food-pos-kitchen-ticket', sale?.id], queryFn: async () => getKitchenTicket(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const busy = add.isPending || quantity.isPending || remove.isPending || payment.isPending || complete.isPending;
   const canManageMenu = currentUser?.permissions?.some(permission => permission === 'PRODUCT_MANAGE' || permission === 'FOOD_ORDER_UPDATE');
 
   if (currentUser && !permitted) return <Alert severity="error">FOOD_POS_ACCESS is required.</Alert>;
   if (configuration.isError) return <Alert severity="error">This store is not enabled for FOOD_SERVICE.</Alert>;
   if (!current.isLoading && !current.data) return <Alert severity="info" action={<Button component={Link} to="/register/open">Open register</Button>}>Open a register session to use Food POS.</Alert>;
-  if (sale?.status === 'COMPLETED') return <Stack spacing={3}><Typography variant="h4">Order complete</Typography><Alert severity="success">Payment, ledger posting and receipt completed through Merchtyl checkout.</Alert><Typography>Receipt: {receipt.data?.receiptNumber ?? 'Loading…'}</Typography><Button variant="contained" onClick={() => setSale(null)}>New order</Button></Stack>;
+  async function printDocuments(documents: FoodPrintDocument[]) {
+    if (!receipt.data || !kitchenTicket.data) return;
+    const preferences = loadReceiptPrinterPreferences();
+    const selected = new Set(documents);
+    await printFoodDocuments(kitchenTicket.data, receipt.data.document, preferences,
+      (document) => selected.has(document) && printStates[document].status !== 'PRINTED',
+      (document, status, error) => setPrintStates((currentStates) => ({ ...currentStates, [document]: { status, error } })));
+  }
+
+  async function reprintDocument(document: FoodPrintDocument) {
+    if (!sale) return;
+    const token = await getValidAccessToken();
+    const preferences = loadReceiptPrinterPreferences();
+    const ticket: KitchenTicket = document === 'KITCHEN_TICKET'
+      ? await reprintKitchenTicket(token, sale.id)
+      : kitchenTicket.data!;
+    const customerReceipt: ReceiptDocument = document === 'CUSTOMER_RECEIPT'
+      ? (await reprintSaleReceipt(token, sale.id)).document
+      : receipt.data!.document;
+    setPrintStates((states) => ({ ...states, [document]: { status: 'READY' } }));
+    await printFoodDocuments(ticket, customerReceipt, preferences, (candidate) => candidate === document,
+      (candidate, status, error) => setPrintStates((states) => ({ ...states, [candidate]: { status, error } })));
+  }
+
+  if (sale?.status === 'COMPLETED') return <Stack spacing={3} sx={{ maxWidth: 700 }}>
+    <Typography variant="h4">Order completed</Typography>
+    <Alert severity="success">Order {sale.foodOrderToken ?? ''} completed successfully. Printing does not affect payment or inventory.</Alert>
+    <Typography variant="h3" fontWeight={900}>TOKEN {sale.foodOrderToken ?? '…'}</Typography>
+    <Typography>Receipt: {receipt.data?.receiptNumber ?? 'Loading…'}</Typography>
+    <PrintState label="Kitchen Ticket" value={printStates.KITCHEN_TICKET} />
+    <PrintState label="Customer Receipt" value={printStates.CUSTOMER_RECEIPT} />
+    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+      <Button variant="contained" disabled={!receipt.data || !kitchenTicket.data} onClick={() => void printDocuments(['KITCHEN_TICKET', 'CUSTOMER_RECEIPT'])}>Print Both</Button>
+      <Button variant="outlined" disabled={!kitchenTicket.data} onClick={() => void (printStates.KITCHEN_TICKET.status === 'PRINTED' ? reprintDocument('KITCHEN_TICKET') : printDocuments(['KITCHEN_TICKET']))}>{printStates.KITCHEN_TICKET.status === 'FAILED' ? 'Retry Kitchen Ticket' : printStates.KITCHEN_TICKET.status === 'PRINTED' ? 'Reprint Kitchen Ticket' : 'Kitchen Ticket'}</Button>
+      <Button variant="outlined" disabled={!receipt.data} onClick={() => void (printStates.CUSTOMER_RECEIPT.status === 'PRINTED' ? reprintDocument('CUSTOMER_RECEIPT') : printDocuments(['CUSTOMER_RECEIPT']))}>{printStates.CUSTOMER_RECEIPT.status === 'FAILED' ? 'Retry Customer Receipt' : printStates.CUSTOMER_RECEIPT.status === 'PRINTED' ? 'Reprint Customer Receipt' : 'Customer Receipt'}</Button>
+      <Button onClick={() => setSale(null)}>New Order</Button>
+    </Stack>
+  </Stack>;
 
   return (
     <Stack spacing={2} sx={{ minHeight: 'calc(100dvh - 88px)', minWidth: 0 }}>
@@ -90,4 +134,10 @@ export function FoodPosPage() {
       <PaymentDialog open={paymentOpen} sale={sale} busy={payment.isPending} onClose={() => setPaymentOpen(false)} onSubmit={(value) => payment.mutate(value)} />
     </Stack>
   );
+}
+
+function PrintState({ label, value }: { label: string; value: { status: FoodPrintStatus; error?: string } }) {
+  return <Alert severity={value.status === 'FAILED' ? 'error' : value.status === 'PRINTED' ? 'success' : 'info'}>
+    {label}: {value.status === 'FAILED' ? `Print failed${value.error ? ` — ${value.error}` : ''}` : value.status.charAt(0) + value.status.slice(1).toLowerCase()}
+  </Alert>;
 }

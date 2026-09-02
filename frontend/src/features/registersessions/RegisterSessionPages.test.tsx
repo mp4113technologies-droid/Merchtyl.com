@@ -32,13 +32,22 @@ function authResponse(roles: UserRole[] = ['CASHIER']): AuthResponse {
   };
 }
 
-function currentUser(roles: UserRole[] = ['CASHIER']): CurrentUserResponse {
+function currentUser(roles: UserRole[] = ['CASHIER'], permissions?: string[]): CurrentUserResponse {
   return {
     userId: '00000000-0000-0000-0000-000000000904',
     email: 'cashier@example.local',
     displayName: 'Cashier One',
-    roles
+    roles,
+    permissions
   };
+}
+
+function foodStore(): Store {
+  return { ...store(), capabilities: ['FOOD_SERVICE'] };
+}
+
+function foodRegister(): Register {
+  return { ...register(), type: 'FOOD_SERVICE' };
 }
 
 function store(): Store {
@@ -291,15 +300,45 @@ describe('Register session pages', () => {
     expect(screen.getAllByRole('link', { name: /Open register|Open/i }).length).toBeGreaterThan(0);
   });
 
-  it('opens a food register without a device and routes to Food POS', async () => {
+  it('confirms starting closing and restores the closing screen after navigation', async () => {
     storeSession(['CASHIER']);
-    const mainStore = store();
-    const frontRegister = { ...register(), type: 'FOOD_SERVICE' as const };
+    let current = registerSession();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['CASHIER']));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse(current);
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/devices')) return jsonResponse(page<Device>([device()]));
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${current.id}/start-closing`) && init?.method === 'POST') {
+        current = { ...current, status: 'CLOSING', version: 1 };
+        return jsonResponse(current);
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/current']} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Start Closing' }));
+    expect(screen.getByRole('heading', { name: 'Start register closing?' })).toBeInTheDocument();
+    expect(screen.getByText('This will begin the cash reconciliation process. You can cancel before the register is finalized.')).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('button', { name: 'Start Closing' }).at(-1)!);
+
+    expect(await screen.findByRole('heading', { name: 'Close register' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel Closing' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Complete Closing' })).toBeEnabled();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/start-closing'))).toBe(true);
+  });
+
+  it('opens a food register without a device and routes to Food POS', async () => {
+    storeSession(['KITCHEN']);
+    const mainStore = foodStore();
+    const frontRegister = foodRegister();
     const opened = { ...registerSession(), registerType: 'FOOD_SERVICE' as const };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) {
-        return jsonResponse(currentUser(['CASHIER']));
+        return jsonResponse(currentUser(['KITCHEN'], ['REGISTER_SESSION_OPEN', 'REGISTER_SESSION_VIEW', 'REGISTER_SESSION_OPERATE', 'FOOD_POS_ACCESS']));
       }
       if (url.pathname.endsWith('/api/v1/stores')) {
         return jsonResponse(page<Store>([mainStore]) satisfies StoreListResponse);
@@ -317,6 +356,9 @@ describe('Register session pages', () => {
       if (url.pathname.endsWith('/api/v1/register-sessions/current')) {
         return jsonResponse(opened);
       }
+      if (url.pathname.endsWith('/api/v1/food-service/configuration')) return jsonResponse({ enabled: true, kitchenDisplayName: 'Kitchen POS' });
+      if (url.pathname.endsWith('/api/v1/food-menu/categories')) return jsonResponse([]);
+      if (url.pathname.endsWith('/api/v1/food-menu/items')) return jsonResponse([]);
       return apiError('Unexpected request');
     });
 
@@ -343,7 +385,8 @@ describe('Register session pages', () => {
       const openIndex = fetchMock.mock.calls.indexOf(openCall!);
       expect(fetchMock.mock.calls.slice(0, openIndex).some(([input]) => new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/devices'))).toBe(false);
     });
-    expect(await screen.findByText('FOOD_POS_ACCESS is required.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Restaurant / Kitchen POS' })).toBeInTheDocument();
+    expect(screen.queryByText('Unauthorized')).not.toBeInTheDocument();
   });
 
   it('requires explicit owner confirmation before overriding an active cashier session', async () => {
@@ -462,7 +505,7 @@ describe('Register session pages', () => {
 
   it('closes the current register with counted cash and version', async () => {
     storeSession(['CASHIER']);
-    const opened = registerSession();
+    const opened = { ...registerSession(), status: 'CLOSING' as const };
     const closed = closedRegisterSession();
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
@@ -487,7 +530,7 @@ describe('Register session pages', () => {
     expect(await screen.findByText('Expected cash')).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText('Counted cash'));
     await userEvent.type(screen.getByLabelText('Counted cash'), '115.00');
-    await userEvent.click(screen.getByRole('button', { name: 'Close register' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Complete Closing' }));
 
     await waitFor(() => {
       const closeCall = fetchMock.mock.calls.find(([input, init]) => {
@@ -500,6 +543,33 @@ describe('Register session pages', () => {
         version: 0
       });
     });
+  });
+
+  it('cancels closing and returns the same session to the current register', async () => {
+    storeSession(['CASHIER']);
+    const sessionId = registerSession().id;
+    let current: RegisterSession = { ...registerSession(), status: 'CLOSING' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['CASHIER']));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse(current);
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/devices')) return jsonResponse(page<Device>([device()]));
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${sessionId}/cancel-closing`) && init?.method === 'POST') {
+        current = { ...current, status: 'OPEN', version: 1 };
+        return jsonResponse(current);
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/close']} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel Closing' }));
+    expect(await screen.findByRole('heading', { name: 'Current register' })).toBeInTheDocument();
+    expect(current.id).toBe(sessionId);
+    expect(current.openingCash).toBe(125.5);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/cancel-closing'))).toBe(true);
   });
 
   it('shows every lottery reconciliation category on the current session screen', async () => {

@@ -16,6 +16,7 @@ import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,8 @@ public class ReceiptService {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    @Autowired
+    private StoreAccessService storeAccessService;
 
     @Autowired
     public ReceiptService(
@@ -69,6 +72,7 @@ public class ReceiptService {
 
     @Transactional
     public ReceiptResponse getForSale(UUID saleId, Authentication authentication) {
+        requireSaleAccess(saleId, authentication);
         Receipt receipt = receiptRepository.findBySale_Id(saleId)
                 .orElseGet(() -> createReceipt(saleId, authentication));
         return response(receipt);
@@ -76,6 +80,7 @@ public class ReceiptService {
 
     @Transactional
     public ReceiptResponse reprintForSale(UUID saleId, Authentication authentication) {
+        requireSaleAccess(saleId, authentication);
         User actor = actor(authentication);
         Receipt receipt = receiptRepository.findForUpdateBySale_Id(saleId)
                 .orElseGet(() -> createReceipt(saleId, authentication));
@@ -101,6 +106,15 @@ public class ReceiptService {
         ReceiptResponse response = ReceiptResponse.from(saved, document);
         audit(actor, AuditAction.RECEIPT_GENERATED, saved, response, "Receipt generated");
         return saved;
+    }
+
+    private void requireSaleAccess(UUID saleId, Authentication authentication) {
+        if (storeAccessService == null) {
+            return;
+        }
+        Sale sale = saleRepository.findById(saleId)
+                .orElseThrow(() -> new NotFoundException("Sale not found"));
+        storeAccessService.requireStoreAccess(authentication, sale.getStore().getId());
     }
 
     private ReceiptDocumentDto buildDocument(Sale sale) {
@@ -158,7 +172,8 @@ public class ReceiptService {
                         .map(this::payment)
                         .toList(),
                 cashTendered,
-                changeDue);
+                changeDue,
+                sale.getFoodOrderToken());
     }
 
     private ReceiptItemDto item(SaleItem item) {

@@ -56,6 +56,20 @@ public class RegisterSessionController {
         return registerSessionService.close(id, request, authentication);
     }
 
+    @PostMapping("/{id}/start-closing")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_CLOSE)")
+    RegisterSessionResponse startClosing(@org.springframework.web.bind.annotation.PathVariable UUID id,
+            @Valid @RequestBody RegisterSessionTransitionRequest request, Authentication authentication) {
+        return registerSessionService.startClosing(id, request, authentication);
+    }
+
+    @PostMapping("/{id}/cancel-closing")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_CLOSE)")
+    RegisterSessionResponse cancelClosing(@org.springframework.web.bind.annotation.PathVariable UUID id,
+            @Valid @RequestBody RegisterSessionTransitionRequest request, Authentication authentication) {
+        return registerSessionService.cancelClosing(id, request, authentication);
+    }
+
     @PostMapping("/{id}/force-close")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_FORCE_CLOSE)")
     RegisterSessionResponse forceClose(

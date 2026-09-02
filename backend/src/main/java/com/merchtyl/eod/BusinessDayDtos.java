@@ -120,9 +120,10 @@ record BusinessDayResponse(
 }
 
 enum BusinessDayOperationalState {
-    NOT_OPENED,
+    NO_BUSINESS_DAY_TODAY,
     OPEN,
     CLOSED_TODAY,
+    HISTORICAL_CLOSED,
     PREVIOUS_DAY_STILL_OPEN
 }
 

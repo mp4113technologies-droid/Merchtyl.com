@@ -100,6 +100,7 @@ class BusinessDayServiceTest {
         when(day.getStatus()).thenReturn(BusinessDayStatus.CLOSED);
         when(day.getVersion()).thenReturn(3L);
         when(store.getId()).thenReturn(storeId);
+        lenient().when(store.getTimezone()).thenReturn("UTC");
         lenient().when(reports.existsByBusinessDay_Id(dayId)).thenReturn(true);
     }
 
@@ -162,8 +163,31 @@ class BusinessDayServiceTest {
         assertThat(response.currentBusinessDate()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(response.currentBusinessDay()).isNull();
         assertThat(response.previousBusinessDay().id()).isEqualTo(dayId);
-        assertThat(response.state()).isEqualTo(BusinessDayOperationalState.NOT_OPENED);
+        assertThat(response.state()).isEqualTo(BusinessDayOperationalState.HISTORICAL_CLOSED);
         assertThat(response.availableAction()).isEqualTo(BusinessDayAvailableAction.OPEN);
+    }
+
+    @Test
+    void openPreviousDayBlocksOpeningNewStoreLocalDateAndReturnsConcreteDay() {
+        useClock(Clock.fixed(Instant.parse("2026-09-02T03:10:00Z"), ZoneOffset.UTC));
+        when(stores.findById(storeId)).thenReturn(Optional.of(store));
+        when(store.getTimezone()).thenReturn("America/Moncton");
+        when(day.getBusinessDate()).thenReturn(LocalDate.of(2026, 9, 1));
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(businessDays.findByStore_IdAndBusinessDate(storeId, LocalDate.of(2026, 9, 2))).thenReturn(Optional.empty());
+        when(businessDays.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId)).thenReturn(Optional.of(day));
+        when(businessDays.findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(storeId, List.of(
+                BusinessDayStatus.OPEN, BusinessDayStatus.CLOSING, BusinessDayStatus.REOPENED))).thenReturn(Optional.of(day));
+        stubResponseFields();
+
+        BusinessDayOperationalStateResponse response = service.operationalState(storeId, authentication);
+
+        assertThat(response.currentBusinessDate()).isEqualTo(LocalDate.of(2026, 9, 2));
+        assertThat(response.currentBusinessDay()).isNull();
+        assertThat(response.previousBusinessDay().id()).isEqualTo(dayId);
+        assertThat(response.previousBusinessDay().businessDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(response.state()).isEqualTo(BusinessDayOperationalState.PREVIOUS_DAY_STILL_OPEN);
+        assertThat(response.availableAction()).isEqualTo(BusinessDayAvailableAction.NONE);
     }
 
     @Test
@@ -181,6 +205,15 @@ class BusinessDayServiceTest {
         assertThat(response.currentBusinessDay().id()).isEqualTo(dayId);
         assertThat(response.state()).isEqualTo(BusinessDayOperationalState.CLOSED_TODAY);
         assertThat(response.availableAction()).isEqualTo(BusinessDayAvailableAction.REOPEN);
+    }
+
+    @Test
+    void historicalClosedDayCannotBeReopened() {
+        useClock(Clock.fixed(Instant.parse("2026-09-01T12:00:00Z"), ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> service.reopen(dayId, new BusinessDayReopenRequest(3L, "Late sales"), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("HISTORICAL_BUSINESS_DAY");
     }
 
     private void stubResponseFields() {

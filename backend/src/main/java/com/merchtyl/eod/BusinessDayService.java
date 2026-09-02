@@ -254,7 +254,9 @@ public class BusinessDayService {
         if (storeId == null) {
             throw new BadRequestException("storeId is required");
         }
-        return businessDayRepository.findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(storeId, ACTIVE_DAY_STATUSES)
+        Store store = store(storeId);
+        return businessDayRepository.findByStore_IdAndBusinessDate(storeId, currentBusinessDate(store))
+                .filter(day -> ACTIVE_DAY_STATUSES.contains(day.getStatus()))
                 .map(BusinessDayResponse::from)
                 .orElse(null);
     }
@@ -301,8 +303,8 @@ public class BusinessDayService {
                 currentBusinessDate,
                 null,
                 latestDay == null ? null : BusinessDayResponse.from(latestDay),
-                BusinessDayOperationalState.NOT_OPENED,
-                BusinessDayAvailableAction.OPEN);
+                    latestDay == null ? BusinessDayOperationalState.NO_BUSINESS_DAY_TODAY : BusinessDayOperationalState.HISTORICAL_CLOSED,
+                    BusinessDayAvailableAction.OPEN);
     }
 
     @Transactional(readOnly = true)
@@ -471,6 +473,10 @@ public class BusinessDayService {
         requireVersion(day, request == null ? null : request.version());
         if (day.getStatus() != BusinessDayStatus.CLOSED) {
             throw new ConflictException("Only closed business days can be reopened");
+        }
+        if (!day.getBusinessDate().equals(currentBusinessDate(day.getStore()))) {
+            audit(actor, AuditAction.BUSINESS_DAY_REOPEN_REJECTED, day, null, null, "HISTORICAL_BUSINESS_DAY");
+            throw new ConflictException("HISTORICAL_BUSINESS_DAY: Only today's closed business day can be reopened");
         }
         if (!reportRepository.existsByBusinessDay_Id(day.getId())) {
             throw new ConflictException("Business day cannot be reopened before an end-of-day report exists");

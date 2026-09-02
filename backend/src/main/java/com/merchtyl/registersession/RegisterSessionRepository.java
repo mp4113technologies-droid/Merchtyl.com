@@ -14,6 +14,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,14 +27,23 @@ public interface RegisterSessionRepository extends JpaRepository<RegisterSession
     @EntityGraph(attributePaths = {"store", "register", "device", "assignedCashier", "openedBy", "closedBy"})
     List<RegisterSession> findAll(Specification<RegisterSession> specification, Sort sort);
 
-    boolean existsByRegister_IdAndStatus(UUID registerId, RegisterSessionStatus status);
+    boolean existsByRegister_IdAndStatusIn(UUID registerId, Collection<RegisterSessionStatus> statuses);
 
     @EntityGraph(attributePaths = {"store", "register", "device", "assignedCashier", "openedBy", "closedBy"})
-    Optional<RegisterSession> findFirstByRegister_IdAndStatusOrderByOpenedAtDesc(
+    Optional<RegisterSession> findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(
             UUID registerId,
-            RegisterSessionStatus status);
+            Collection<RegisterSessionStatus> statuses);
 
-    boolean existsByDevice_IdAndStatus(UUID deviceId, RegisterSessionStatus status);
+    @EntityGraph(attributePaths = {"store", "register", "businessDay", "device", "assignedCashier", "openedBy", "closedBy"})
+    Optional<RegisterSession> findFirstByDevice_IdAndStatusInOrderByOpenedAtDesc(UUID deviceId, Collection<RegisterSessionStatus> statuses);
+
+    @EntityGraph(attributePaths = {"store", "register", "businessDay", "device", "assignedCashier", "openedBy", "closedBy"})
+    Optional<RegisterSession> findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusInOrderByOpenedAtDesc(String deviceIdentifier, Collection<RegisterSessionStatus> statuses);
+
+    @EntityGraph(attributePaths = {"store", "register", "businessDay", "device", "assignedCashier", "openedBy", "closedBy"})
+    Optional<RegisterSession> findFirstByAssignedCashier_IdAndStatusInOrderByOpenedAtDesc(UUID assignedCashierId, Collection<RegisterSessionStatus> statuses);
+
+    boolean existsByDevice_IdAndStatusIn(UUID deviceId, Collection<RegisterSessionStatus> statuses);
 
     Optional<RegisterSession> findFirstByDevice_IdAndStatusOrderByOpenedAtDesc(UUID deviceId, RegisterSessionStatus status);
 
@@ -45,7 +55,7 @@ public interface RegisterSessionRepository extends JpaRepository<RegisterSession
             UUID assignedCashierId,
             RegisterSessionStatus status);
 
-    boolean existsByAssignedCashier_IdAndStatus(UUID assignedCashierId, RegisterSessionStatus status);
+    boolean existsByAssignedCashier_IdAndStatusIn(UUID assignedCashierId, Collection<RegisterSessionStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from RegisterSession session where session.id = :id")

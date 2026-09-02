@@ -37,7 +37,7 @@ import { merchantUserKeys } from './merchantUserKeys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import { PASSWORD_POLICY_HELP, passwordValueSchema, validPassword } from '../auth/passwordPolicy';
 import {
@@ -62,19 +62,8 @@ import { useSession } from '../../app/session';
 
 const employeeRoleOptions = ['STORE_MANAGER', 'CASHIER', 'KITCHEN'] satisfies UserRole[];
 type EmployeeUserRole = typeof employeeRoleOptions[number];
-const tenantRoleOptions = ['STORE_MANAGER', 'MANAGER', 'CASHIER'] as const;
-type TenantUserRole = typeof tenantRoleOptions[number];
-
-function isTenantUserRole(role: UserRole): role is TenantUserRole {
-  return (tenantRoleOptions as readonly UserRole[]).includes(role);
-}
-
 function isEmployeeRole(role: UserRole): role is EmployeeUserRole {
   return (employeeRoleOptions as readonly UserRole[]).includes(role);
-}
-
-function normalizeEmployeeRole(role: TenantUserRole): EmployeeUserRole {
-  return role === 'MANAGER' ? 'STORE_MANAGER' : role;
 }
 
 type UserFilterForm = {
@@ -88,7 +77,7 @@ type UserFilterForm = {
 const userSchema = z.object({
   email: z.string().trim().email('Enter a valid email').max(320, 'Email must be 320 characters or fewer'),
   displayName: z.string().trim().min(1, 'Display name is required').max(160, 'Display name must be 160 characters or fewer'),
-  password: passwordValueSchema.optional(),
+  password: z.union([z.literal(''), passwordValueSchema]).optional(),
   enabled: z.boolean(),
   locked: z.boolean(),
   roles: z.array(z.enum(['STORE_MANAGER', 'CASHIER', 'KITCHEN'])).min(1, 'Select one role').max(1, 'Select one role'),
@@ -127,13 +116,17 @@ function useUserPermissions() {
 }
 
 function userFormValues(user: UserAdmin): UserFormValues {
+  const roles = user.roles.flatMap((role): EmployeeUserRole[] => {
+    if (role === 'MANAGER') return ['STORE_MANAGER'];
+    return isEmployeeRole(role) ? [role] : [];
+  });
   return {
     email: user.email,
     displayName: user.displayName,
     password: '',
     enabled: user.enabled,
     locked: user.locked,
-    roles: user.roles.filter(isTenantUserRole).map(normalizeEmployeeRole),
+    roles,
     storeIds: user.storeIds,
     registerIds: user.registerIds
   };
@@ -367,14 +360,18 @@ function UserForm({
     resolver: zodResolver(mode === 'create'
       ? userSchema.extend({ password: passwordValueSchema })
       : userSchema),
-    defaultValues,
-    values: defaultValues
+    defaultValues
   });
+  React.useEffect(() => {
+    form.reset(defaultValues);
+  }, [defaultValues, form]);
   const values = form.watch();
+  const validationFailed = form.formState.submitCount > 0 && Object.keys(form.formState.errors).length > 0;
 
   return (
     <Stack component="form" spacing={3} onSubmit={form.handleSubmit(onSubmit)}>
       {error ? <Alert severity="error">{error}</Alert> : null}
+      {validationFailed ? <Alert severity="error">Please correct the highlighted user details before saving.</Alert> : null}
       {disabled ? <Alert severity="info">This account can view users but cannot change user settings.</Alert> : null}
 
       <Grid container spacing={2}>
@@ -457,7 +454,7 @@ function UserForm({
 
       {!disabled ? (
         <Button type="submit" variant="contained" startIcon={<SaveIcon />} disabled={loading} sx={{ alignSelf: 'flex-start' }}>
-          {mode === 'create' ? 'Create user' : 'Save changes'}
+          {loading ? 'Saving…' : mode === 'create' ? 'Create user' : 'Save changes'}
         </Button>
       ) : null}
     </Stack>
@@ -468,6 +465,8 @@ export function UsersPage() {
   const { getValidAccessToken } = useSession();
   const { canView, canManage } = useUserPermissions();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const successMessage = (location.state as { successMessage?: string } | null)?.successMessage;
   const [filters, setFilters] = React.useState<UserFilterForm>({ search: '', role: '', storeId: '', status: '', enabled: '' });
   const [appliedFilters, setAppliedFilters] = React.useState<UserFilterForm>(filters);
   const [page, setPage] = React.useState(0);
@@ -509,6 +508,7 @@ export function UsersPage() {
 
   return (
     <Stack spacing={3}>
+      {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="h5" component="h1">Employees</Typography>
@@ -710,6 +710,7 @@ export function UserDetailPage() {
   const { id } = useParams();
   const { getValidAccessToken } = useSession();
   const { canView, canManage } = useUserPermissions();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const options = useAssignmentOptions(canView);
   const [savedMessage, setSavedMessage] = React.useState('');
@@ -720,6 +721,7 @@ export function UserDetailPage() {
     queryFn: async () => getUser(await getValidAccessToken(), id ?? ''),
     enabled: canView && Boolean(id)
   });
+  const editDefaults = React.useMemo(() => user.data ? userFormValues(user.data) : emptyUserForm, [user.data]);
 
   const updateMutation = useMutation({
     mutationFn: async (values: UserFormValues) => {
@@ -744,9 +746,9 @@ export function UserDetailPage() {
       });
     },
     onSuccess: async (updated) => {
-      setSavedMessage('User saved.');
-      await queryClient.setQueryData(['users', id], updated);
+      await queryClient.setQueryData(merchantUserKeys.detail(id), updated);
       await queryClient.invalidateQueries({ queryKey: merchantUserKeys.all });
+      navigate('/users', { state: { successMessage: 'User updated successfully' } });
     }
   });
 
@@ -824,7 +826,7 @@ export function UserDetailPage() {
 
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
         <UserForm
-          defaultValues={userFormValues(user.data)}
+          defaultValues={editDefaults}
           stores={(options.stores.data ?? []).map(assignableStoreToStore)}
           registers={options.registers.data?.content ?? []}
           roles={options.roles.data ?? []}

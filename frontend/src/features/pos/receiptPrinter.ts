@@ -116,6 +116,10 @@ export class BrowserReceiptPrinter implements ReceiptPrinter {
   }
 
   async print(receipt: ReceiptDocument) {
+    await this.printHtml(receiptHtml(receipt, this.widthMm));
+  }
+
+  async printHtml(html: string) {
     if (!(await this.isAvailable())) {
       throw new Error('Browser receipt printing is unavailable');
     }
@@ -126,7 +130,7 @@ export class BrowserReceiptPrinter implements ReceiptPrinter {
     }
 
     printWindow.document.open();
-    printWindow.document.write(receiptHtml(receipt, this.widthMm));
+    printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -162,13 +166,17 @@ export class QzTrayReceiptPrinter implements ReceiptPrinter {
   }
 
   async print(receipt: ReceiptDocument) {
+    await this.printHtml(receiptHtml(receipt, this.widthMm), `Merchtyl receipt ${receipt.receiptNumber}`);
+  }
+
+  async printHtml(html: string, jobName: string) {
     if (!this.printerName) {
       throw new Error('Configure a QZ Tray printer name before printing.');
     }
 
     const qz = await this.connect();
     const matchedPrinterName = await this.findPrinter(qz);
-    const config = qz.configs.create(matchedPrinterName, { jobName: `Merchtyl receipt ${receipt.receiptNumber}` });
+    const config = qz.configs.create(matchedPrinterName, { jobName });
 
     if (this.cashDrawerPulse.enabled) {
       await this.printCashDrawerPulse(qz, config);
@@ -178,7 +186,7 @@ export class QzTrayReceiptPrinter implements ReceiptPrinter {
       type: 'pixel',
       format: 'html',
       flavor: 'plain',
-      data: receiptHtml(receipt, this.widthMm)
+      data: html
     }];
 
     for (let copy = 0; copy < this.copies; copy += 1) {
@@ -312,6 +320,31 @@ export async function printReceiptWithFallback(
   return { printer: 'BROWSER' };
 }
 
+export async function printHtmlWithFallback(
+  html: string,
+  jobName: string,
+  preferences: ReceiptPrinterPreferences
+): Promise<ReceiptPrintResult> {
+  const normalized = normalizeReceiptPrinterPreferences(preferences);
+  if (normalized.mode === 'QZ_TRAY') {
+    try {
+      await new QzTrayReceiptPrinter({
+        printerName: normalized.qzPrinterName,
+        widthMm: normalized.widthMm,
+        copies: normalized.copies,
+        cashDrawerPulse: { ...normalized.cashDrawerPulse, enabled: false }
+      }).printHtml(html, jobName);
+      return { printer: 'QZ_TRAY' };
+    } catch (error) {
+      if (!normalized.fallbackToBrowser) throw error;
+      await printHtmlWithBrowser(html, normalized);
+      return { printer: 'BROWSER', fallbackReason: errorMessage(error) };
+    }
+  }
+  await printHtmlWithBrowser(html, normalized);
+  return { printer: 'BROWSER' };
+}
+
 export function testReceiptDocument(): ReceiptDocument {
   const now = new Date().toISOString();
   return {
@@ -373,7 +406,8 @@ export function testReceiptDocument(): ReceiptDocument {
       completedAt: now
     }],
     cashTendered: 1,
-    changeDue: 0
+    changeDue: 0,
+    tokenNumber: null
   };
 }
 
@@ -410,6 +444,7 @@ export function receiptHtml(receipt: ReceiptDocument, widthMm = 80) {
     .row { display: flex; justify-content: space-between; gap: 4mm; }
     .row span:first-child { min-width: 0; overflow-wrap: anywhere; }
     .total { font-weight: 700; font-size: 13px; }
+    .token { margin: 3mm 0; text-align: center; font-size: 22px; font-weight: 900; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 1mm 0; vertical-align: top; }
     th { text-align: left; border-bottom: 1px solid #aaa; }
@@ -461,6 +496,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
   return `
     <h1>${escapeHtml(receipt.brandName)}</h1>
     <div class="center muted">${escapeHtml(receipt.brandTagline)}</div>
+    ${receipt.tokenNumber ? `<div class="token">TOKEN ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="rule"></div>
     <div class="center">
       <strong>${escapeHtml(receipt.store.name)}</strong><br>
@@ -491,6 +527,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="row"><span>Cash tendered</span><strong>${formatMoney(receipt.cashTendered, receipt.currencyCode)}</strong></div>
     <div class="row"><span>Change</span><strong>${formatMoney(receipt.changeDue, receipt.currencyCode)}</strong></div>
     <div class="rule"></div>
+    ${receipt.tokenNumber ? `<div class="token">TOKEN ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="center">Thank you</div>
   `;
 }
@@ -536,6 +573,16 @@ async function printWithBrowser(receipt: ReceiptDocument, preferences: ReceiptPr
   }
   for (let copy = 0; copy < preferences.copies; copy += 1) {
     await printer.print(receipt);
+  }
+}
+
+async function printHtmlWithBrowser(html: string, preferences: ReceiptPrinterPreferences) {
+  const printer = new BrowserReceiptPrinter({ widthMm: preferences.widthMm });
+  if (!(await printer.isAvailable())) {
+    throw new Error('Browser receipt printing is unavailable');
+  }
+  for (let copy = 0; copy < preferences.copies; copy += 1) {
+    await printer.printHtml(html);
   }
 }
 

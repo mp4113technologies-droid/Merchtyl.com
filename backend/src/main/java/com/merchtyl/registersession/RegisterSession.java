@@ -178,6 +178,20 @@ public class RegisterSession extends BaseUuidEntity {
         return forceCloseReason;
     }
 
+    void startClosing() {
+        this.status = RegisterSessionStatus.CLOSING;
+    }
+
+    void cancelClosing() {
+        this.status = RegisterSessionStatus.OPEN;
+        this.countedCash = null;
+        this.expectedCashAtClose = null;
+        this.differenceCash = null;
+        this.closedBy = null;
+        this.closedAt = null;
+        this.forceCloseReason = null;
+    }
+
     void close(BigDecimal countedCash, BigDecimal expectedCash, User closedBy, Instant closedAt) {
         this.status = RegisterSessionStatus.CLOSED;
         this.countedCash = countedCash;

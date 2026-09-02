@@ -16,6 +16,8 @@ import com.merchtyl.eod.BusinessDay;
 import com.merchtyl.eod.BusinessDayService;
 import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
+import com.merchtyl.register.RegisterCapabilityService;
+import com.merchtyl.register.RegisterType;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRegisterAssignmentRepository;
 import com.merchtyl.security.UserRepository;
@@ -52,6 +54,8 @@ public class RegisterSessionService {
     private static final Logger log = LoggerFactory.getLogger(RegisterSessionService.class);
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MONEY_SCALE = 2;
+    private static final java.util.List<RegisterSessionStatus> CURRENT_STATUSES = java.util.List.of(
+            RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING);
 
     private final RegisterSessionRepository registerSessionRepository;
     private final StoreRepository storeRepository;
@@ -77,6 +81,8 @@ public class RegisterSessionService {
     private RolePermissionRepository rolePermissionRepository;
     @Autowired(required = false)
     private BusinessDayService businessDayService;
+    @Autowired(required = false)
+    private RegisterCapabilityService registerCapabilityService;
 
     @Autowired
     public RegisterSessionService(
@@ -180,11 +186,19 @@ public class RegisterSessionService {
         }
         validateActive(store, register);
         validateRelationships(store, register);
+        RegisterType registerType = register.getType() == null ? RegisterType.RETAIL : register.getType();
+        if (registerCapabilityService != null) {
+            registerCapabilityService.requireEnabled(store, registerType);
+        }
+        String requiredPosPermission = registerType == RegisterType.FOOD_SERVICE ? "FOOD_POS_ACCESS" : "POS_ACCESS";
+        if (!hasPermission(cashier, requiredPosPermission)) {
+            throw new ForbiddenOperationException("REGISTER_TYPE_NOT_ALLOWED: User is not permitted to use this register type.");
+        }
         BusinessDay businessDay = businessDayService == null
                 ? null
                 : businessDayService.requireOpenBusinessDayForUpdate(store.getId());
-        if (registerSessionRepository.findFirstByRegister_IdAndStatusOrderByOpenedAtDesc(
-                register.getId(), RegisterSessionStatus.OPEN).isPresent()) {
+        if (registerSessionRepository.findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(
+                register.getId(), CURRENT_STATUSES).isPresent()) {
             throw new ConflictException("REGISTER_OPENING_CASH_IMMUTABLE");
         }
         BigDecimal openingCash = normalizeOpeningCash(request.openingCash());
@@ -192,8 +206,8 @@ public class RegisterSessionService {
             validateDevice(store, register, device);
         }
         validateCashier(cashier, register, authentication);
-        if (isCashier(authentication)
-                && registerSessionRepository.existsByAssignedCashier_IdAndStatus(cashier.getId(), RegisterSessionStatus.OPEN)) {
+        if (isStoreOperator(authentication)
+                && registerSessionRepository.existsByAssignedCashier_IdAndStatusIn(cashier.getId(), CURRENT_STATUSES)) {
             throw new ConflictException("CASHIER_ALREADY_HAS_OPEN_SESSION");
         }
         enforceSingleOpenSession(register.getId(), device == null ? null : device.getId());
@@ -253,7 +267,7 @@ public class RegisterSessionService {
                 .existsByTenantIdAndUser_IdAndStore_IdAndActiveTrue(actor.getTenantId(), nextOperator.getId(), session.getStore().getId())) {
             throw new ForbiddenOperationException("REGISTER_OPERATOR_NOT_ASSIGNED_TO_STORE");
         }
-        if (registerSessionRepository.existsByAssignedCashier_IdAndStatus(nextOperator.getId(), RegisterSessionStatus.OPEN)) {
+        if (registerSessionRepository.existsByAssignedCashier_IdAndStatusIn(nextOperator.getId(), CURRENT_STATUSES)) {
             throw new ConflictException("REGISTER_OPERATOR_ALREADY_HAS_SESSION");
         }
         User previousOperator = session.getAssignedCashier();
@@ -344,7 +358,7 @@ public class RegisterSessionService {
                 .existsByTenantIdAndUser_IdAndStore_IdAndActiveTrue(actor.getTenantId(), cashier.getId(), session.getStore().getId())) {
             throw new ForbiddenOperationException("REGISTER_OPERATOR_NOT_ASSIGNED_TO_STORE");
         }
-        if (registerSessionRepository.existsByAssignedCashier_IdAndStatus(cashier.getId(), RegisterSessionStatus.OPEN)) {
+        if (registerSessionRepository.existsByAssignedCashier_IdAndStatusIn(cashier.getId(), CURRENT_STATUSES)) {
             throw new ConflictException("REGISTER_OPERATOR_ALREADY_HAS_SESSION");
         }
         String reason = cleanRequired(request.reason(), "reason");
@@ -368,16 +382,61 @@ public class RegisterSessionService {
     }
 
     @Transactional
+    public RegisterSessionResponse startClosing(UUID id, RegisterSessionTransitionRequest request, Authentication authentication) {
+        RegisterSession session = registerSessionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Register session not found"));
+        User actor = currentUser(authentication);
+        if (storeAccessService != null) {
+            storeAccessService.requireStoreAccess(authentication, session.getStore().getId());
+        }
+        validateCanClose(session, actor, authentication);
+        requireVersion(session, request.version());
+        if (session.getStatus() != RegisterSessionStatus.OPEN) {
+            throw new ConflictException("REGISTER_SESSION_NOT_OPEN");
+        }
+        session.startClosing();
+        RegisterSession saved = saveClosing(session);
+        RegisterSessionResponse response = RegisterSessionResponse.from(saved, cashLedgerService.breakdown(saved));
+        auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.REGISTER_SESSION_CLOSING_STARTED,
+                "REGISTER_SESSION", saved.getId(), saved.getStore().getId(), saved.getRegister().getId(), null,
+                response, null));
+        return response;
+    }
+
+    @Transactional
+    public RegisterSessionResponse cancelClosing(UUID id, RegisterSessionTransitionRequest request, Authentication authentication) {
+        RegisterSession session = registerSessionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Register session not found"));
+        User actor = currentUser(authentication);
+        if (storeAccessService != null) {
+            storeAccessService.requireStoreAccess(authentication, session.getStore().getId());
+        }
+        validateCanClose(session, actor, authentication);
+        requireVersion(session, request.version());
+        if (session.getStatus() != RegisterSessionStatus.CLOSING) {
+            throw new ConflictException("REGISTER_SESSION_NOT_CLOSING");
+        }
+        session.cancelClosing();
+        RegisterSession saved = saveClosing(session);
+        RegisterSessionResponse response = RegisterSessionResponse.from(saved, cashLedgerService.breakdown(saved));
+        auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.REGISTER_SESSION_CLOSING_CANCELLED,
+                "REGISTER_SESSION", saved.getId(), saved.getStore().getId(), saved.getRegister().getId(), null,
+                response, null));
+        return response;
+    }
+
+    @Transactional
     public RegisterSessionResponse close(UUID id, RegisterSessionCloseRequest request, Authentication authentication) {
-        RegisterSession session = findSession(id);
+        RegisterSession session = registerSessionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Register session not found"));
         User closingUser = currentUser(authentication);
         if (storeAccessService != null) {
             storeAccessService.requireStoreAccess(authentication, session.getStore().getId());
         }
         validateCanClose(session, closingUser, authentication);
         requireVersion(session, request.version());
-        if (session.getStatus() != RegisterSessionStatus.OPEN) {
-            throw new ConflictException("Register session is not open");
+        if (session.getStatus() != RegisterSessionStatus.CLOSING) {
+            throw new ConflictException("REGISTER_SESSION_NOT_CLOSING");
         }
         BigDecimal countedCash = normalizeCountedCash(request.countedCash());
         CashLedgerBreakdownResponse reconciliation = cashLedgerService.breakdown(session);
@@ -453,7 +512,7 @@ public class RegisterSessionService {
                     : storeAccessService.getActiveAssignedStoreIds(actor.getId());
             scoped = scoped.and(storeIn(stores));
         }
-        if (isCashier(authentication)) {
+        if (isStoreOperator(authentication)) {
             scoped = scoped.and(equalReference("assignedCashier", actor.getId()));
         }
         return search(request, scoped);
@@ -487,22 +546,17 @@ public class RegisterSessionService {
 
     private java.util.Optional<RegisterSession> currentSession(UUID deviceId, String deviceIdentifier, Authentication authentication) {
         if (deviceId != null) {
-            return registerSessionRepository.findFirstByDevice_IdAndStatusOrderByOpenedAtDesc(
-                    deviceId,
-                    RegisterSessionStatus.OPEN);
+            return registerSessionRepository.findFirstByDevice_IdAndStatusInOrderByOpenedAtDesc(deviceId, CURRENT_STATUSES);
         }
         if (deviceIdentifier != null && !deviceIdentifier.isBlank()) {
-            var deviceSession = registerSessionRepository.findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusOrderByOpenedAtDesc(
-                    deviceIdentifier.trim(),
-                    RegisterSessionStatus.OPEN);
+            var deviceSession = registerSessionRepository.findFirstByDevice_DeviceIdentifierIgnoreCaseAndStatusInOrderByOpenedAtDesc(
+                    deviceIdentifier.trim(), CURRENT_STATUSES);
             if (deviceSession.isPresent()) {
                 return deviceSession;
             }
         }
         User cashier = currentUser(authentication);
-        return registerSessionRepository.findFirstByAssignedCashier_IdAndStatusOrderByOpenedAtDesc(
-                cashier.getId(),
-                RegisterSessionStatus.OPEN);
+        return registerSessionRepository.findFirstByAssignedCashier_IdAndStatusInOrderByOpenedAtDesc(cashier.getId(), CURRENT_STATUSES);
     }
 
     private RegisterSession save(RegisterSession session) {
@@ -523,11 +577,11 @@ public class RegisterSessionService {
 
     private void enforceSingleOpenSession(UUID registerId, UUID deviceId) {
         if (properties.isSingleOpenPerRegister()
-                && registerSessionRepository.existsByRegister_IdAndStatus(registerId, RegisterSessionStatus.OPEN)) {
+                && registerSessionRepository.existsByRegister_IdAndStatusIn(registerId, CURRENT_STATUSES)) {
             throw new ConflictException("Register already has an open session");
         }
         if (deviceId != null && properties.isSingleOpenPerDevice()
-                && registerSessionRepository.existsByDevice_IdAndStatus(deviceId, RegisterSessionStatus.OPEN)) {
+                && registerSessionRepository.existsByDevice_IdAndStatusIn(deviceId, CURRENT_STATUSES)) {
             throw new ConflictException("Device already has an open register session");
         }
     }
@@ -654,7 +708,7 @@ public class RegisterSessionService {
         if (storeAccessService != null) {
             storeAccessService.requireStoreAccess(authentication, session.getStore().getId());
         }
-        if (isCashier(authentication) && !session.getAssignedCashier().getId().equals(actor.getId())) {
+        if (isStoreOperator(authentication) && !session.getAssignedCashier().getId().equals(actor.getId())) {
             log.warn("register_event event=REGISTER_SESSION_OPERATION_DENIED tenant_id={} store_id={} register_id={} session_id={} actor_user_id={} operator_user_id={}",
                     actor.getTenantId(), session.getStore().getId(), session.getRegister().getId(), session.getId(), actor.getId(), session.getAssignedCashier().getId());
             return false;
@@ -662,8 +716,8 @@ public class RegisterSessionService {
         return true;
     }
 
-    private static boolean isCashier(Authentication authentication) {
-        return hasAuthority(authentication, "ROLE_CASHIER") && !isOwner(authentication)
+    private static boolean isStoreOperator(Authentication authentication) {
+        return (hasAuthority(authentication, "ROLE_CASHIER") || hasAuthority(authentication, "ROLE_KITCHEN")) && !isOwner(authentication)
                 && !hasAuthority(authentication, "ROLE_MANAGER") && !hasAuthority(authentication, "ROLE_STORE_MANAGER");
     }
 

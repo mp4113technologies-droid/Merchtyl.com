@@ -12,6 +12,7 @@ public final class DatabaseConstraintErrorMapper {
     private static final Map<String, DomainError> CONSTRAINTS = Map.ofEntries(
             unique("uq_tenants_tenant_code", "TENANT_CODE_ALREADY_EXISTS", "A merchant with this tenant code already exists.", "tenantCode"),
             unique("uq_security_users_email", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
+            unique("uq_security_users_email_lower", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
             unique("uq_user_accounts_email", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
             unique("uq_platform_users_email", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
             unique("uq_stores_code", "STORE_CODE_ALREADY_EXISTS", "A store with this code already exists.", "code"),

@@ -130,6 +130,14 @@ function roles(): RoleAdmin[] {
       systemRole: true,
       permissions: ['SALE_CREATE'],
       version: 0
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000104',
+      name: 'KITCHEN',
+      description: 'Kitchen employee',
+      systemRole: true,
+      permissions: ['FOOD_ORDER_VIEW'],
+      version: 0
     }
   ];
 }
@@ -329,7 +337,7 @@ describe('User administration pages', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
-      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore()]);
+      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore({ capabilities: ['FOOD_SERVICE'] })]);
       if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()], 100));
       if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
       if (url.pathname.endsWith('/api/v1/users') && init?.method === 'POST') return apiError('Creation failed', 409, 'duplicate_email');
@@ -347,6 +355,104 @@ describe('User administration pages', () => {
     expect(await screen.findByText('Creation failed')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'New user' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Employees' })).not.toBeInTheDocument();
+  });
+
+  it('loads a kitchen user and sends profile, role, and existing assignment updates', async () => {
+    storeSession(['TENANT_OWNER']);
+    const existing = adminUser({ roles: ['KITCHEN'], displayName: 'Kitchen User' });
+    const updated = { ...existing, displayName: 'Kitchen Lead', version: 1 };
+    const finalUser = { ...updated, roles: ['STORE_MANAGER'] as UserRole[], version: 2 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
+      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore({ capabilities: ['FOOD_SERVICE'] })]);
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()], 100));
+      if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}/roles`) && init?.method === 'PUT') return jsonResponse(finalUser);
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT') return jsonResponse(updated);
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`)) return jsonResponse(existing);
+      if (url.pathname.endsWith('/api/v1/users')) return jsonResponse(page<UserAdmin>([finalUser]));
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={[`/users/${existing.id}`]} />);
+
+    expect(await screen.findByLabelText('Display name')).toHaveValue('Kitchen User');
+    expect(screen.getByLabelText('Email')).toHaveValue(existing.email);
+    expect(screen.getByLabelText('KITCHEN')).toBeChecked();
+    expect(screen.getByLabelText('Main Store (MAIN)')).toBeChecked();
+    expect(screen.getByLabelText('Front Register (FRONT), Main Store')).toBeChecked();
+    await userEvent.clear(screen.getByLabelText('Display name'));
+    await userEvent.type(screen.getByLabelText('Display name'), 'Kitchen Lead');
+    await userEvent.click(screen.getByLabelText('STORE_MANAGER'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('User updated successfully')).toBeInTheDocument();
+    const updateCall = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT');
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toEqual({
+      email: existing.email,
+      displayName: 'Kitchen Lead',
+      locked: false,
+      storeIds: existing.storeIds,
+      registerIds: existing.registerIds,
+      version: 0
+    });
+    const rolesCall = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith(`/api/v1/users/${existing.id}/roles`) && init?.method === 'PUT');
+    expect(JSON.parse(String(rolesCall?.[1]?.body))).toMatchObject({
+      roles: ['STORE_MANAGER'],
+      storeIds: existing.storeIds,
+      registerIds: existing.registerIds,
+      version: 1
+    });
+  });
+
+  it('shows validation errors instead of silently ignoring save', async () => {
+    storeSession(['TENANT_OWNER']);
+    const existing = adminUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
+      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore()]);
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()], 100));
+      if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`)) return jsonResponse(existing);
+      return apiError('Unexpected request');
+    });
+    render(<App initialEntries={[`/users/${existing.id}`]} />);
+    await screen.findByLabelText('Display name');
+    await userEvent.click(screen.getByLabelText('Main Store (MAIN)'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Please correct the highlighted user details before saving.')).toBeInTheDocument();
+    expect(screen.getByText('Select at least one assigned store')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT')).toBe(false);
+  });
+
+  it('shows saving state, prevents duplicate submission, and surfaces API failure', async () => {
+    storeSession(['TENANT_OWNER']);
+    const existing = adminUser();
+    let rejectUpdate: ((reason?: unknown) => void) | undefined;
+    const pendingUpdate = new Promise<Response>((_resolve, reject) => { rejectUpdate = reject; });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
+      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore()]);
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()], 100));
+      if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT') return pendingUpdate;
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`)) return jsonResponse(existing);
+      return apiError('Unexpected request');
+    });
+    render(<App initialEntries={[`/users/${existing.id}`]} />);
+    await userEvent.clear(await screen.findByLabelText('Display name'));
+    await userEvent.type(screen.getByLabelText('Display name'), 'Updated Name');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT')).toHaveLength(1);
+    rejectUpdate?.(new Error('Unable to update user.'));
+    expect(await screen.findByText('Unable to update user.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
   });
 
   it('shows role permissions on the roles page', async () => {

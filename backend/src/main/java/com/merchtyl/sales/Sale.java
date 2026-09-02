@@ -58,6 +58,9 @@ public class Sale extends BaseUuidEntity {
     @Column(length = 40)
     private String saleChannel;
 
+    @Column(name = "food_order_token", length = 16)
+    private String foodOrderToken;
+
     @Column(nullable = false, length = 3)
     private String currencyCode;
 
@@ -171,6 +174,12 @@ public class Sale extends BaseUuidEntity {
         this.completedAt = completedAt;
     }
 
+    void assignFoodOrderToken(String foodOrderToken) {
+        if (this.foodOrderToken == null) {
+            this.foodOrderToken = foodOrderToken;
+        }
+    }
+
     public void markRefundStatus(boolean fullyRefunded) {
         this.status = fullyRefunded ? SaleStatus.REFUNDED : SaleStatus.PARTIALLY_REFUNDED;
     }
@@ -211,6 +220,10 @@ public class Sale extends BaseUuidEntity {
 
     public String getSaleChannel() {
         return saleChannel;
+    }
+
+    public String getFoodOrderToken() {
+        return foodOrderToken;
     }
 
     public String getCurrencyCode() {
