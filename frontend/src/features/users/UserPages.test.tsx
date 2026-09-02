@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
+import { sameUserEditValues } from './UserPages';
 import type {
   AuthResponse,
   CurrentUserResponse,
@@ -352,7 +353,7 @@ describe('User administration pages', () => {
     await userEvent.click(screen.getByLabelText('Main Store (MAIN)'));
     await userEvent.click(screen.getByRole('button', { name: 'Create user' }));
 
-    expect(await screen.findByText('Creation failed')).toBeInTheDocument();
+    expect(await screen.findByText("We couldn't complete this action because the information conflicts with the current state. Refresh and try again.")).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'New user' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Employees' })).not.toBeInTheDocument();
   });
@@ -360,16 +361,21 @@ describe('User administration pages', () => {
   it('loads a kitchen user and sends profile, role, and existing assignment updates', async () => {
     storeSession(['TENANT_OWNER']);
     const existing = adminUser({ roles: ['KITCHEN'], displayName: 'Kitchen User' });
-    const updated = { ...existing, displayName: 'Kitchen Lead', version: 1 };
-    const finalUser = { ...updated, roles: ['STORE_MANAGER'] as UserRole[], version: 2 };
+    const kitchenRegister = register({ id: '00000000-0000-0000-0000-000000000905', code: 'KITCHEN', name: 'Kitchen Register' });
+    const finalUser = {
+      ...existing,
+      displayName: 'Kitchen Lead',
+      roles: ['STORE_MANAGER'] as UserRole[],
+      registerIds: [...existing.registerIds, kitchenRegister.id],
+      version: 1
+    };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
       if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore({ capabilities: ['FOOD_SERVICE'] })]);
-      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()], 100));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register(), kitchenRegister], 100));
       if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
-      if (url.pathname.endsWith(`/api/v1/users/${existing.id}/roles`) && init?.method === 'PUT') return jsonResponse(finalUser);
-      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT') return jsonResponse(updated);
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT') return jsonResponse(finalUser);
       if (url.pathname.endsWith(`/api/v1/users/${existing.id}`)) return jsonResponse(existing);
       if (url.pathname.endsWith('/api/v1/users')) return jsonResponse(page<UserAdmin>([finalUser]));
       return apiError('Unexpected request');
@@ -382,9 +388,11 @@ describe('User administration pages', () => {
     expect(screen.getByLabelText('KITCHEN')).toBeChecked();
     expect(screen.getByLabelText('Main Store (MAIN)')).toBeChecked();
     expect(screen.getByLabelText('Front Register (FRONT), Main Store')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     await userEvent.clear(screen.getByLabelText('Display name'));
     await userEvent.type(screen.getByLabelText('Display name'), 'Kitchen Lead');
     await userEvent.click(screen.getByLabelText('STORE_MANAGER'));
+    await userEvent.click(screen.getByLabelText('Kitchen Register (KITCHEN), Main Store'));
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     expect(await screen.findByText('User updated successfully')).toBeInTheDocument();
@@ -393,17 +401,107 @@ describe('User administration pages', () => {
       email: existing.email,
       displayName: 'Kitchen Lead',
       locked: false,
-      storeIds: existing.storeIds,
-      registerIds: existing.registerIds,
-      version: 0
-    });
-    const rolesCall = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith(`/api/v1/users/${existing.id}/roles`) && init?.method === 'PUT');
-    expect(JSON.parse(String(rolesCall?.[1]?.body))).toMatchObject({
       roles: ['STORE_MANAGER'],
       storeIds: existing.storeIds,
-      registerIds: existing.registerIds,
-      version: 1
+      registerIds: finalUser.registerIds,
+      version: 0
     });
+    expect(fetchMock.mock.calls.filter(([input, init]) =>
+      String(input).includes(`/api/v1/users/${existing.id}`) && init?.method === 'PUT'
+    )).toHaveLength(1);
+    expect(screen.getByLabelText('Kitchen Register (KITCHEN), Main Store')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
+  it('tracks changed and reverted scalar values for an Owner', async () => {
+    const actorRoles: UserRole[] = ['TENANT_OWNER'];
+    storeSession(actorRoles);
+    const existing = adminUser();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(actorRoles));
+      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore()]);
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()], 100));
+      if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`)) return jsonResponse(existing);
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={[`/users/${existing.id}`]} />);
+    const save = await screen.findByRole('button', { name: 'Save changes' });
+    const displayName = screen.getByLabelText('Display name');
+    const email = screen.getByLabelText('Email');
+    expect(save).toBeDisabled();
+
+    await userEvent.type(displayName, ' changed');
+    expect(save).toBeEnabled();
+    await userEvent.clear(displayName);
+    await userEvent.type(displayName, existing.displayName);
+    expect(save).toBeDisabled();
+
+    await userEvent.clear(email);
+    await userEvent.type(email, 'OTHER@example.local');
+    expect(save).toBeEnabled();
+    await userEvent.clear(email);
+    await userEvent.type(email, ` ${existing.email.toUpperCase()} `);
+    expect(save).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText('Locked'));
+    expect(save).toBeEnabled();
+    await userEvent.click(screen.getByLabelText('Locked'));
+    expect(save).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText('KITCHEN'));
+    expect(save).toBeEnabled();
+    await userEvent.click(screen.getByLabelText('CASHIER'));
+    expect(save).toBeDisabled();
+
+    await userEvent.clear(email);
+    await userEvent.type(email, 'invalid-email');
+    expect(save).toBeDisabled();
+  });
+
+  it('normalizes store and register assignment ordering', async () => {
+    storeSession(['TENANT_OWNER']);
+    const secondStore = store({ id: '00000000-0000-0000-0000-000000000903', code: 'SECOND', name: 'Second Store' });
+    const secondAssignable = assignableStore({ storeId: secondStore.id, storeCode: secondStore.code, storeName: secondStore.name });
+    const secondRegister = register({ id: '00000000-0000-0000-0000-000000000904', storeId: secondStore.id, code: 'BACK', name: 'Back Register' });
+    const existing = adminUser();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.pathname.endsWith('/api/v1/users/assignable-stores')) return jsonResponse([assignableStore(), secondAssignable]);
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register(), secondRegister], 100));
+      if (url.pathname.endsWith('/api/v1/roles')) return jsonResponse(roles());
+      if (url.pathname.endsWith(`/api/v1/users/${existing.id}`)) return jsonResponse(existing);
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={[`/users/${existing.id}`]} />);
+    const save = await screen.findByRole('button', { name: 'Save changes' });
+    const secondStoreControl = screen.getByLabelText('Second Store (SECOND)');
+
+    await userEvent.click(secondStoreControl);
+    expect(save).toBeEnabled();
+    await userEvent.click(secondStoreControl);
+    expect(save).toBeDisabled();
+
+    await userEvent.click(secondStoreControl);
+    const secondRegisterControl = screen.getByLabelText('Back Register (BACK), Second Store');
+    await userEvent.click(secondRegisterControl);
+    expect(save).toBeEnabled();
+    await userEvent.click(secondRegisterControl);
+    await userEvent.click(secondStoreControl);
+    expect(save).toBeDisabled();
+
+    const baseline = {
+      email: existing.email, displayName: existing.displayName, password: '', enabled: true, locked: false,
+      roles: ['CASHIER'] as Array<'CASHIER'>, storeIds: [store().id, secondStore.id], registerIds: [register().id, secondRegister.id]
+    };
+    expect(sameUserEditValues(
+      baseline,
+      { ...baseline, storeIds: [...baseline.storeIds].reverse(), registerIds: [...baseline.registerIds].reverse() }
+    )).toBe(true);
   });
 
   it('shows validation errors instead of silently ignoring save', async () => {
@@ -421,9 +519,7 @@ describe('User administration pages', () => {
     render(<App initialEntries={[`/users/${existing.id}`]} />);
     await screen.findByLabelText('Display name');
     await userEvent.click(screen.getByLabelText('Main Store (MAIN)'));
-    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-
-    expect(await screen.findByText('Please correct the highlighted user details before saving.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     expect(screen.getByText('Select at least one assigned store')).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith(`/api/v1/users/${existing.id}`) && init?.method === 'PUT')).toBe(false);
   });

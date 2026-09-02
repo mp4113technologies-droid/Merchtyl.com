@@ -531,7 +531,7 @@ describe('Tax geography pages', () => {
 
     render(<App initialEntries={['/tax/countries']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Unauthorized' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "You don't have access to this feature" })).toBeInTheDocument();
   });
 
   it('creates an administrative area with a selected country', async () => {

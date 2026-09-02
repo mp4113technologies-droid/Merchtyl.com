@@ -11,20 +11,25 @@ import java.util.Map;
 public final class DatabaseConstraintErrorMapper {
     private static final Map<String, DomainError> CONSTRAINTS = Map.ofEntries(
             unique("uq_tenants_tenant_code", "TENANT_CODE_ALREADY_EXISTS", "A merchant with this tenant code already exists.", "tenantCode"),
-            unique("uq_security_users_email", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
-            unique("uq_security_users_email_lower", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
-            unique("uq_user_accounts_email", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
-            unique("uq_platform_users_email", "USER_EMAIL_ALREADY_EXISTS", "An account with this email already exists.", "email"),
+            unique("uq_security_users_email", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),
+            unique("uq_security_users_email_lower", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),
+            unique("uq_user_accounts_email", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),
+            unique("uq_platform_users_email", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),
             unique("uq_stores_code", "STORE_CODE_ALREADY_EXISTS", "A store with this code already exists.", "code"),
+            unique("uq_stores_code_lower", "STORE_CODE_ALREADY_EXISTS", "A store with this code already exists. Please choose a different store code.", "code"),
             unique("uq_store_capabilities_store", "STORE_CAPABILITY_ALREADY_ASSIGNED", "This capability is already assigned to the store.", "capability"),
             unique("store_capabilities_pkey", "STORE_CAPABILITY_ALREADY_ASSIGNED", "This capability is already assigned to the store.", "capability"),
-            unique("uq_product_barcodes_tenant_barcode_lower", "BARCODE_ALREADY_EXISTS", "This barcode is already assigned to another product or variant.", "barcode"),
-            unique("uq_products_tenant_sku_lower", "SKU_ALREADY_EXISTS", "A product with this SKU already exists.", "sku"),
-            unique("uq_product_variants_tenant_sku_lower", "SKU_ALREADY_EXISTS", "A product variant with this SKU already exists.", "sku"),
+            unique("uq_product_barcodes_tenant_barcode_lower", "BARCODE_ALREADY_IN_USE", "This barcode is already assigned to another product. Please enter a different barcode.", "barcode"),
+            unique("uq_product_barcodes_barcode_lower", "BARCODE_ALREADY_IN_USE", "This barcode is already assigned to another product. Please enter a different barcode.", "barcode"),
+            unique("uq_products_tenant_sku_lower", "SKU_ALREADY_IN_USE", "This SKU is already being used by another product.", "sku"),
+            unique("uq_products_sku_lower", "SKU_ALREADY_IN_USE", "This SKU is already being used by another product.", "sku"),
+            unique("uq_product_variants_tenant_sku_lower", "SKU_ALREADY_IN_USE", "This SKU is already being used by another product.", "sku"),
             unique("uq_registers_store_code", "REGISTER_CODE_ALREADY_EXISTS", "A register with this code already exists in the store.", "code"),
+            unique("uq_registers_store_code_lower", "REGISTER_CODE_ALREADY_EXISTS", "A register with this code already exists in this store.", "code"),
             unique("uq_register_sessions_open_operator", "REGISTER_SESSION_ALREADY_ACTIVE", "This operator already has an active register session.", "registerId"),
             unique("uq_business_days_store_active", "BUSINESS_DAY_ALREADY_OPEN", "This store already has an open business day.", "businessDate"),
             unique("uq_business_days_store_date", "BUSINESS_DAY_ALREADY_EXISTS", "A business day already exists for this store and date.", "businessDate"),
+            unique("uq_food_menu_items_store_product", "FOOD_MENU_ITEM_ALREADY_EXISTS", "This menu item already exists in the store menu.", "productId"),
             unique("uq_platform_pricing_plans_code", "PRICING_PLAN_CODE_ALREADY_EXISTS", "A pricing plan with this code already exists.", "code"),
             unique("uq_platform_pricing_plan_versions", "PRICING_PLAN_VERSION_CONFLICT", "This pricing plan version already exists.", "effectiveFrom"),
             unique("uq_platform_pricing_plan_one_active_version", "PRICING_PLAN_VERSION_CONFLICT", "This pricing plan already has an active pricing version.", "effectiveFrom"),
@@ -60,15 +65,15 @@ public final class DatabaseConstraintErrorMapper {
 
     private static DomainError fallback(String sqlState) {
         if ("23505".equals(sqlState)) return new DomainError(HttpStatus.CONFLICT, "RESOURCE_ALREADY_EXISTS",
-                "A record with the same unique information already exists.", null, true);
+                "This information already exists. Please review your entries and try again.", null, true);
         if ("23503".equals(sqlState)) return new DomainError(HttpStatus.CONFLICT, "RELATED_RESOURCE_INVALID",
-                "A related record is invalid or currently in use.", null, false);
+                "One of the selected items is no longer available. Refresh the page and try again.", null, false);
         if ("23502".equals(sqlState)) return new DomainError(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_DATA_INTEGRITY_ERROR",
                 "The requested operation could not be completed.", null, false);
-        if ("23514".equals(sqlState)) return new DomainError(HttpStatus.CONFLICT, "DATA_INTEGRITY_CONFLICT",
-                "The requested data conflicts with a business rule.", null, false);
-        return new DomainError(HttpStatus.CONFLICT, "DATA_INTEGRITY_CONFLICT",
-                "A conflicting data change occurred.", null, false);
+        if ("23514".equals(sqlState)) return new DomainError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                "Please review the highlighted fields and correct the information.", null, false);
+        return new DomainError(HttpStatus.INTERNAL_SERVER_ERROR, "UNEXPECTED_ERROR",
+                "Something went wrong while completing this action. Please try again.", null, false);
     }
 
     private static String constraintName(Throwable failure, SQLException sqlException) {

@@ -105,8 +105,8 @@ class LoggingInfrastructureTest {
 
         mockMvc.perform(get("/logging/explode").header(CorrelationIdFilter.HEADER_NAME, "corr-exception"))
                 .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.code").value("internal_error"))
-                .andExpect(jsonPath("$.message").value("An unexpected error occurred"))
+                .andExpect(jsonPath("$.code").value("UNEXPECTED_ERROR"))
+                .andExpect(jsonPath("$.message").value("Something went wrong while completing this action. Please try again."))
                 .andExpect(jsonPath("$.correlationId").value("corr-exception"));
 
         assertThat(output).contains("Unhandled request failure");

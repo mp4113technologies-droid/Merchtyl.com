@@ -64,6 +64,34 @@ class UserAdministrationIntegrationTest {
     }
 
     @Test
+    void oneUserUpdateReconcilesRegisterAssignmentsAsAnUnorderedSet() throws Exception {
+        String token = registerAndGetToken("owner-registers@user-update.test", "Owner");
+        JsonNode store = createStore(token, "register-set");
+        JsonNode firstRegister = createRegister(token, store.get("id").asText(), "first");
+        JsonNode secondRegister = createRegister(token, store.get("id").asText(), "second");
+        JsonNode user = createUser(token, "test3@adviam.com", store.get("id").asText(), firstRegister.get("id").asText());
+
+        JsonNode keptAndAdded = update(token, user, List.of(store.get("id").asText()),
+                List.of(firstRegister.get("id").asText(), secondRegister.get("id").asText()));
+        assertThat(keptAndAdded.get("registerIds").size()).isEqualTo(2);
+
+        JsonNode reordered = update(token, keptAndAdded, List.of(store.get("id").asText()),
+                List.of(secondRegister.get("id").asText(), firstRegister.get("id").asText()));
+        assertThat(reordered.get("registerIds").size()).isEqualTo(2);
+
+        JsonNode removed = update(token, reordered, List.of(store.get("id").asText()),
+                List.of(firstRegister.get("id").asText()));
+        assertThat(removed.get("registerIds")).extracting(JsonNode::asText)
+                .containsExactly(firstRegister.get("id").asText());
+
+        JsonNode replaced = update(token, removed, List.of(store.get("id").asText()),
+                List.of(secondRegister.get("id").asText()));
+        assertThat(replaced.get("registerIds")).extracting(JsonNode::asText)
+                .containsExactly(secondRegister.get("id").asText());
+        assertThat(replaced.get("version").asLong()).isGreaterThan(user.get("version").asLong());
+    }
+
+    @Test
     void emailCanChangeToUnusedButNotAnotherUsersEmailIgnoringCase() throws Exception {
         String token = registerAndGetToken("owner2@user-update.test", "Owner");
         JsonNode store = createStore(token, "email-store");
@@ -163,6 +191,16 @@ class UserAdministrationIntegrationTest {
         return objectMapper.readTree(body);
     }
 
+    private JsonNode update(String token, JsonNode user, List<String> storeIds, List<String> registerIds) throws Exception {
+        String body = mockMvc.perform(put("/api/v1/users/{id}", user.get("id").asText())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson(user, user.get("email").asText(), storeIds, registerIds)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(body);
+    }
+
     private String updateJson(JsonNode user, String email, String storeOne, String storeTwo, String registerId) {
         return updateJson(user, email, List.of(storeOne, storeTwo), List.of(registerId));
     }
@@ -171,7 +209,7 @@ class UserAdministrationIntegrationTest {
         String stores = storeIds.stream().map(id -> "\"" + id + "\"").collect(java.util.stream.Collectors.joining(","));
         String registers = registerIds.stream().map(id -> "\"" + id + "\"").collect(java.util.stream.Collectors.joining(","));
         return """
-                {"email":"%s","displayName":"Updated User","locked":false,
+                {"email":"%s","displayName":"Updated User","locked":false,"roles":["CASHIER"],
                  "storeIds":[%s],"registerIds":[%s],"version":%d}
                 """.formatted(email, stores, registers, user.get("version").asLong());
     }

@@ -17,12 +17,14 @@ class DatabaseConstraintErrorMapperTest {
     @ParameterizedTest
     @CsvSource({
             "uq_tenants_tenant_code,TENANT_CODE_ALREADY_EXISTS,tenantCode",
-            "uq_security_users_email,USER_EMAIL_ALREADY_EXISTS,email",
-            "uq_security_users_email_lower,USER_EMAIL_ALREADY_EXISTS,email",
+            "uq_security_users_email,EMAIL_ALREADY_REGISTERED,email",
+            "uq_security_users_email_lower,EMAIL_ALREADY_REGISTERED,email",
             "uq_stores_code,STORE_CODE_ALREADY_EXISTS,code",
-            "uq_product_barcodes_tenant_barcode_lower,BARCODE_ALREADY_EXISTS,barcode",
-            "uq_products_tenant_sku_lower,SKU_ALREADY_EXISTS,sku",
+            "uq_stores_code_lower,STORE_CODE_ALREADY_EXISTS,code",
+            "uq_product_barcodes_tenant_barcode_lower,BARCODE_ALREADY_IN_USE,barcode",
+            "uq_products_tenant_sku_lower,SKU_ALREADY_IN_USE,sku",
             "uq_registers_store_code,REGISTER_CODE_ALREADY_EXISTS,code",
+            "uq_registers_store_code_lower,REGISTER_CODE_ALREADY_EXISTS,code",
             "uq_register_sessions_open_operator,REGISTER_SESSION_ALREADY_ACTIVE,registerId",
             "uq_platform_pricing_plans_code,PRICING_PLAN_CODE_ALREADY_EXISTS,code",
             "uq_pricing_version_capability,PRICING_PLAN_CAPABILITY_ALREADY_EXISTS,capability",
@@ -47,6 +49,7 @@ class DatabaseConstraintErrorMapperTest {
         assertThat(mapper.analyze(integrity("23505", "secret_unique")).domainError().code()).isEqualTo("RESOURCE_ALREADY_EXISTS");
         assertThat(mapper.analyze(integrity("23503", "secret_fk")).domainError().code()).isEqualTo("RELATED_RESOURCE_INVALID");
         assertThat(mapper.analyze(integrity("23502", null)).domainError().status()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(mapper.analyze(integrity("23514", "secret_check")).domainError().status()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(mapper.analyze(integrity("23514", "secret_check")).domainError().message()).doesNotContain("secret_check");
     }
 

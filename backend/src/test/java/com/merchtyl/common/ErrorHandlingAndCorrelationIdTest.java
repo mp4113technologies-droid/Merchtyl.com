@@ -45,7 +45,7 @@ class ErrorHandlingAndCorrelationIdTest {
                 .andExpect(header().string(
                         CorrelationIdFilter.HEADER_NAME,
                         matchesPattern("[0-9a-fA-F-]{36}")))
-                .andExpect(jsonPath("$.code").value("not_found"))
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.path").value("/test/not-found"))
                 .andExpect(jsonPath("$.method").value("GET"))
@@ -59,7 +59,7 @@ class ErrorHandlingAndCorrelationIdTest {
                 .andExpect(status().isConflict())
                 .andExpect(header().string(CorrelationIdFilter.HEADER_NAME, "checkout-123"))
                 .andExpect(jsonPath("$.correlationId").value("checkout-123"))
-                .andExpect(jsonPath("$.code").value("conflict"));
+                .andExpect(jsonPath("$.code").value("REQUEST_CONFLICT"));
     }
 
     @Test
@@ -68,7 +68,7 @@ class ErrorHandlingAndCorrelationIdTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("validation_failed"))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.violations[0].field").value("name"))
                 .andExpect(jsonPath("$.violations[0].message").isNotEmpty());
     }
@@ -77,8 +77,17 @@ class ErrorHandlingAndCorrelationIdTest {
     void forbiddenOperationUsesForbiddenStatus() throws Exception {
         mockMvc.perform(get("/test/forbidden"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("forbidden"))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.message").value("You don't have permission to perform this action."))
                 .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    void codeOnlyDomainConflictKeepsStableCodeAndFriendlyMessage() throws Exception {
+        mockMvc.perform(get("/test/previous-day-open"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PREVIOUS_BUSINESS_DAY_STILL_OPEN"))
+                .andExpect(jsonPath("$.message").value("The previous business day is still open. Close it before opening today's business day."));
     }
 
     @Test
@@ -96,7 +105,7 @@ class ErrorHandlingAndCorrelationIdTest {
         mockMvc.perform(get("/test/unknown-duplicate"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("RESOURCE_ALREADY_EXISTS"))
-                .andExpect(jsonPath("$.message").value("A record with the same unique information already exists."))
+                .andExpect(jsonPath("$.message").value("This information already exists. Please review your entries and try again."))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unknown_secret_constraint"))));
     }
 
@@ -116,6 +125,11 @@ class ErrorHandlingAndCorrelationIdTest {
         @GetMapping("/forbidden")
         void forbidden() {
             throw new ForbiddenOperationException("Operation is not allowed");
+        }
+
+        @GetMapping("/previous-day-open")
+        void previousDayOpen() {
+            throw new ConflictException("PREVIOUS_BUSINESS_DAY_STILL_OPEN");
         }
 
         @GetMapping("/duplicate-tenant")

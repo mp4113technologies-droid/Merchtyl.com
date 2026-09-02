@@ -328,6 +328,6 @@ describe('Tax simulator page', () => {
 
     render(<App initialEntries={['/settings/taxes/test']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Unauthorized' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "You don't have access to this feature" })).toBeInTheDocument();
   });
 });

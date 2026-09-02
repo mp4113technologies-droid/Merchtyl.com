@@ -170,7 +170,7 @@ describe('App authentication', () => {
     render(<App initialEntries={['/unauthorized']} />);
 
     expect(await screen.findByRole('heading', { name: 'Merchtyl' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Unauthorized' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: "You don't have access to this feature" })).not.toBeInTheDocument();
   });
 
   it('renders the unauthorized page for authenticated users', async () => {
@@ -185,7 +185,22 @@ describe('App authentication', () => {
 
     render(<App initialEntries={['/unauthorized']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Unauthorized' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "You don't have access to this feature" })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Return to Store Menu' })).toHaveAttribute('href', '/store-menu');
+  });
+
+  it('returns platform administrators to the platform dashboard', async () => {
+    const roles = ['PLATFORM_SUPER_ADMIN'] as AuthResponse['roles'];
+    window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse({ roles })));
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser({ roles }));
+      return apiError('Unexpected request', 500, 'unexpected');
+    });
+
+    render(<App initialEntries={['/unauthorized']} />);
+
+    expect(await screen.findByRole('link', { name: 'Return to Platform Dashboard' })).toHaveAttribute('href', '/platform');
   });
 
   it('supports keyboard shortcuts and moves focus to the main content region', async () => {
@@ -200,7 +215,7 @@ describe('App authentication', () => {
 
     render(<App initialEntries={['/unauthorized']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Unauthorized' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "You don't have access to this feature" })).toBeInTheDocument();
     const main = screen.getByRole('main', { name: 'Workspace content' });
     await waitFor(() => expect(main).toHaveFocus());
 

@@ -38,23 +38,20 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> badRequest(BadRequestException exception, HttpServletRequest request) {
         DomainMessage domain = domainMessage(exception.getMessage());
         if (domain != null) return error(HttpStatus.BAD_REQUEST, domain.code(), domain.message(), request, domainViolations(domain));
-        return error(HttpStatus.BAD_REQUEST, "bad_request", exception.getMessage(), request, List.of());
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Please review the information and try again.", request, List.of());
     }
 
     @ExceptionHandler(ConflictException.class)
     ResponseEntity<ApiError> conflict(ConflictException exception, HttpServletRequest request) {
         DomainMessage domain = domainMessage(exception.getMessage());
         if (domain != null) return error(HttpStatus.CONFLICT, domain.code(), domain.message(), request, domainViolations(domain));
-        return error(HttpStatus.CONFLICT, "conflict", exception.getMessage(), request, List.of());
+        return error(HttpStatus.CONFLICT, "REQUEST_CONFLICT", DomainErrorCatalog.message("REQUEST_CONFLICT", exception.getMessage()), request, List.of());
     }
 
     private static DomainMessage domainMessage(String value) {
         if (value == null) return null;
-        int separator = value.indexOf(':');
-        if (separator < 1) return null;
-        String code = value.substring(0, separator);
-        return code.matches("[A-Z][A-Z0-9_]+")
-                ? new DomainMessage(code, value.substring(separator + 1).trim()) : null;
+        DomainErrorCatalog.Entry entry = DomainErrorCatalog.resolve(value);
+        return entry == null ? null : new DomainMessage(entry.code(), entry.message());
     }
 
     private record DomainMessage(String code, String message) {}
@@ -76,7 +73,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(NotFoundException.class)
     ResponseEntity<ApiError> notFound(NotFoundException exception, HttpServletRequest request) {
-        return error(HttpStatus.NOT_FOUND, "not_found", exception.getMessage(), request, List.of());
+        DomainMessage domain = domainMessage(exception.getMessage());
+        return domain == null
+                ? error(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "We couldn't find the requested information.", request, List.of())
+                : error(HttpStatus.NOT_FOUND, domain.code(), domain.message(), request, domainViolations(domain));
     }
 
     @ExceptionHandler(TooManyRequestsException.class)
@@ -103,7 +103,7 @@ public class GlobalExceptionHandler {
                 exception.getClass().getName());
         DomainMessage domain = domainMessage(exception.getMessage());
         return domain == null
-                ? error(HttpStatus.FORBIDDEN, "forbidden", exception.getMessage(), request, List.of())
+                ? error(HttpStatus.FORBIDDEN, "ACCESS_DENIED", DomainErrorCatalog.message("ACCESS_DENIED", exception.getMessage()), request, List.of())
                 : error(HttpStatus.FORBIDDEN, domain.code(), domain.message(), request, domainViolations(domain));
     }
 
@@ -112,7 +112,7 @@ public class GlobalExceptionHandler {
         log.warn("authentication_event event=Failed Login endpoint={} method={} reason=bad_credentials",
                 request.getRequestURI(),
                 request.getMethod());
-        return error(HttpStatus.UNAUTHORIZED, "bad_credentials", "Invalid email or password", request, List.of());
+        return error(HttpStatus.UNAUTHORIZED, "LOGIN_FAILED", DomainErrorCatalog.message("LOGIN_FAILED", null), request, List.of());
     }
 
     @ExceptionHandler(AccountLockedException.class)
@@ -155,7 +155,7 @@ public class GlobalExceptionHandler {
         List<ApiError.FieldViolation> violations = exception.getBindingResult().getFieldErrors().stream()
                 .map(error -> new ApiError.FieldViolation(error.getField(), "VALIDATION_ERROR", error.getDefaultMessage()))
                 .toList();
-        return error(HttpStatus.BAD_REQUEST, "validation_failed", "Request validation failed", request, violations);
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", DomainErrorCatalog.message("VALIDATION_FAILED", null), request, violations);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -165,7 +165,7 @@ public class GlobalExceptionHandler {
                         violation.getPropertyPath().toString(), "VALIDATION_ERROR",
                         violation.getMessage()))
                 .toList();
-        return error(HttpStatus.BAD_REQUEST, "validation_failed", "Request validation failed", request, violations);
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", DomainErrorCatalog.message("VALIDATION_FAILED", null), request, violations);
     }
 
     @ExceptionHandler({DataIntegrityViolationException.class, ObjectOptimisticLockingFailureException.class})
@@ -173,7 +173,7 @@ public class GlobalExceptionHandler {
         if (exception instanceof ObjectOptimisticLockingFailureException) {
             log.warn("event=DATABASE_WRITE_FAILED category=optimistic_locking_failure exception_type={} method={} path={} correlation_id={}",
                     exception.getClass().getName(), request.getMethod(), request.getRequestURI(), MDC.get(CorrelationIdFilter.MDC_KEY));
-            return error(HttpStatus.CONFLICT, "CONCURRENT_MODIFICATION", "This record was changed by another request. Refresh and try again.", request, List.of());
+            return error(HttpStatus.CONFLICT, "RECORD_UPDATED_BY_ANOTHER_USER", DomainErrorCatalog.message("RECORD_UPDATED_BY_ANOTHER_USER", null), request, List.of());
         }
         DatabaseConstraintErrorMapper.Analysis analysis = databaseErrors.analyze(exception, request.getRequestURI());
         DatabaseConstraintErrorMapper.DomainError domain = analysis.domainError();
@@ -202,7 +202,7 @@ public class GlobalExceptionHandler {
                 MDC.get("storeId"),
                 user(),
                 LogSanitizer.sanitizedStackTrace(exception));
-        return error(HttpStatus.INTERNAL_SERVER_ERROR, "database_error", "A database error occurred", request, List.of());
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "UNEXPECTED_ERROR", DomainErrorCatalog.message("UNEXPECTED_ERROR", null), request, List.of());
     }
 
     @ExceptionHandler(Exception.class)
@@ -218,8 +218,8 @@ public class GlobalExceptionHandler {
                 LogSanitizer.sanitizedStackTrace(exception));
         return error(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "internal_error",
-                "An unexpected error occurred",
+                "UNEXPECTED_ERROR",
+                DomainErrorCatalog.message("UNEXPECTED_ERROR", null),
                 request,
                 List.of());
     }

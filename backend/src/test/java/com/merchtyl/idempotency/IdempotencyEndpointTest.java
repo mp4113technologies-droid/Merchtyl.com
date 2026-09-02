@@ -83,7 +83,7 @@ class IdempotencyEndpointTest {
 
         mockMvc.perform(idempotentPost("payload-key", "{\"amount\":101}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("conflict"));
+                .andExpect(jsonPath("$.code").value("REQUEST_CONFLICT"));
 
         assertThat(recorder.operationCount()).isEqualTo(1);
     }

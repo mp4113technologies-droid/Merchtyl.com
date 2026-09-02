@@ -970,7 +970,7 @@ export type UserAdminCreatePayload = UserAdminPayload & {
   password: string;
 };
 
-export type UserAdminUpdatePayload = Omit<UserAdminPayload, 'password' | 'roles' | 'enabled'> & {
+export type UserAdminUpdatePayload = Omit<UserAdminPayload, 'password' | 'enabled'> & {
   version: number;
 };
 
@@ -1416,6 +1416,73 @@ export type ProductSupplierSearchParams = {
   size?: number;
 };
 
+const ERROR_MESSAGES: Record<string, string> = {
+  EMAIL_ALREADY_REGISTERED: 'This email address is already associated with another user. Please use a different email address.',
+  USER_EMAIL_ALREADY_EXISTS: 'This email address is already associated with another user. Please use a different email address.',
+  EMAIL_ALREADY_IN_USE: 'This email address is already associated with another user. Please use a different email address.',
+  OWNER_EMAIL_ALREADY_EXISTS: 'This email address is already associated with another user. Please use a different email address.',
+  USER_NOT_FOUND: "We couldn't find this user.",
+  ACCOUNT_LOCKED: 'This user account is locked. Unlock the account before continuing.',
+  USER_LOCKED: 'This user account is locked. Unlock the account before continuing.',
+  ACCESS_DENIED: "You don't have permission to perform this action.",
+  forbidden: "You don't have permission to perform this action.",
+  STORE_ACCESS_DENIED: "You don't have access to this store.",
+  PRODUCT_STORE_ACCESS_DENIED: "You don't have access to this store.",
+  REGISTER_ACCESS_DENIED: "You don't have access to this register.",
+  REGISTER_NOT_ASSIGNED: "This register isn't assigned to your account.",
+  LOGIN_FAILED: 'Email or password is incorrect.',
+  bad_credentials: 'Email or password is incorrect.',
+  SESSION_EXPIRED: 'Your session has expired. Please sign in again.',
+  session_expired: 'Your session has expired. Please sign in again.',
+  BARCODE_ALREADY_IN_USE: 'This barcode is already assigned to another product. Please enter a different barcode.',
+  BARCODE_ALREADY_EXISTS: 'This barcode is already assigned to another product. Please enter a different barcode.',
+  SKU_ALREADY_IN_USE: 'This SKU is already being used by another product.',
+  SKU_ALREADY_EXISTS: 'This SKU is already being used by another product.',
+  STORE_CODE_ALREADY_EXISTS: 'A store with this code already exists. Please choose a different store code.',
+  REGISTER_CODE_ALREADY_EXISTS: 'A register with this code already exists in this store.',
+  REGISTER_SESSION_ALREADY_ACTIVE: 'This register already has an active session. Resume or close the existing session before opening another one.',
+  REGISTER_ALREADY_OPEN: 'This register already has an active session. Resume or close the existing session before opening another one.',
+  BUSINESS_DAY_ALREADY_EXISTS: 'A business day has already been opened for this date. Refresh the page to see the current status.',
+  BUSINESS_DAY_ALREADY_OPEN: 'A business day has already been opened for this date. Refresh the page to see the current status.',
+  PREVIOUS_BUSINESS_DAY_STILL_OPEN: "The previous business day is still open. Close it before opening today's business day.",
+  PREVIOUS_BUSINESS_DAY_OPEN: "The previous business day is still open. Close it before opening today's business day.",
+  BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS: "This business day can't be closed while registers are still open. Close the open register sessions first.",
+  OPEN_REGISTER_SESSION: "This business day can't be closed while registers are still open. Close the open register sessions first.",
+  BUSINESS_DAY_NOT_OPEN: 'Open the business day before starting register activity.',
+  SUBSCRIPTION_CAPABILITY_REQUIRED: "This feature isn't included in the current subscription.",
+  SUBSCRIPTION_CAPABILITY_NOT_AVAILABLE: "This feature isn't included in the current subscription.",
+  STORE_CAPABILITY_REQUIRED: "This feature isn't enabled for this store.",
+  FOOD_SERVICE_NOT_ENABLED: "Restaurant / Kitchen POS isn't enabled for this store.",
+  PRICING_PLAN_CODE_ALREADY_EXISTS: 'A pricing plan with this code already exists.',
+  PRICING_PLAN_NOT_FOUND: "We couldn't find this pricing plan.",
+  PRICING_PLAN_NOT_ACTIVE: "This pricing plan isn't active.",
+  TENANT_CODE_ALREADY_EXISTS: 'A merchant with this code already exists.',
+  BUSINESS_NUMBER_ALREADY_EXISTS: 'This business number is already associated with another merchant.',
+  PAYMENT_AMOUNT_INVALID: 'Enter a valid payment amount.',
+  CONCURRENT_MODIFICATION: 'This information was updated by someone else. Refresh the page and try again.',
+  RECORD_UPDATED_BY_ANOTHER_USER: 'This information was updated by someone else. Refresh the page and try again.',
+  VALIDATION_FAILED: 'Please review the highlighted fields and correct the information.',
+  validation_failed: 'Please review the highlighted fields and correct the information.',
+  RESOURCE_ALREADY_EXISTS: 'This information already exists. Please review your entries and try again.',
+  RELATED_RESOURCE_INVALID: 'One of the selected items is no longer available. Refresh the page and try again.',
+  REQUEST_CONFLICT: "We couldn't complete this action because the information conflicts with the current state. Refresh and try again.",
+  conflict: "We couldn't complete this action because the information conflicts with the current state. Refresh and try again.",
+  DATA_INTEGRITY_CONFLICT: "We couldn't complete this action because the information conflicts with the current state. Refresh and try again.",
+  database_conflict: "We couldn't complete this action because the information conflicts with the current state. Refresh and try again.",
+  UNEXPECTED_ERROR: 'Something went wrong while completing this action. Please try again.',
+  internal_error: 'Something went wrong while completing this action. Please try again.',
+  database_error: 'Something went wrong while completing this action. Please try again.'
+};
+
+function safeApiMessage(message: string, status: number, code?: string): string {
+  if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
+  if (status === 401) return ERROR_MESSAGES.SESSION_EXPIRED;
+  if (status === 403) return ERROR_MESSAGES.ACCESS_DENIED;
+  if (status === 409) return ERROR_MESSAGES.REQUEST_CONFLICT;
+  if (status >= 500) return ERROR_MESSAGES.UNEXPECTED_ERROR;
+  return message || 'The request could not be completed. Please try again.';
+}
+
 export class ApiClientError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -1423,7 +1490,7 @@ export class ApiClientError extends Error {
   readonly violations: ApiError['violations'];
 
   constructor(message: string, status: number, code?: string, correlationId?: string | null, violations: ApiError['violations'] = []) {
-    super(message);
+    super(safeApiMessage(message, status, code));
     this.name = 'ApiClientError';
     this.status = status;
     this.code = code;
@@ -1434,7 +1501,10 @@ export class ApiClientError extends Error {
 
 export function getApiFieldErrors(error: unknown): Record<string, string> {
   if (!(error instanceof ApiClientError)) return {};
-  return Object.fromEntries(error.violations.map((violation) => [violation.field, violation.message]));
+  return Object.fromEntries(error.violations.map((violation) => [
+    violation.field,
+    ERROR_MESSAGES[violation.code] ?? violation.message
+  ]));
 }
 
 export function getApiErrorMessage(error: unknown, fallback = 'The request could not be completed.'): string {
@@ -1442,8 +1512,10 @@ export function getApiErrorMessage(error: unknown, fallback = 'The request could
   if (error.status >= 500) {
     return error.correlationId ? `${fallback} Reference: ${error.correlationId}` : fallback;
   }
-  return error.message || fallback;
+  return safeApiMessage(error.message, error.status, error.code) || fallback;
 }
+
+export const resolveApiError = getApiErrorMessage;
 
 const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')}/api/v1`;
 
@@ -1492,7 +1564,7 @@ async function requestText(path: string, init: RequestInit = {}, token?: string)
   }
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
-    throw new ApiClientError(`Request failed with status ${response.status}`, response.status);
+    throw await apiClientError(response);
   }
   return response.text();
 }
@@ -1504,9 +1576,18 @@ async function requestBlob(path: string, init: RequestInit = {}, token?: string)
   }
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
-    throw new ApiClientError(`Request failed with status ${response.status}`, response.status);
+    throw await apiClientError(response);
   }
   return response.blob();
+}
+
+async function apiClientError(response: Response): Promise<ApiClientError> {
+  try {
+    const body = await response.json() as ApiError;
+    return new ApiClientError(body.message, response.status, body.code, body.correlationId, body.violations ?? []);
+  } catch {
+    return new ApiClientError('', response.status);
+  }
 }
 
 export function getHealth() {

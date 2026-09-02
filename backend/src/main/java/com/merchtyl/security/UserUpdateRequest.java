@@ -12,6 +12,7 @@ public record UserUpdateRequest(
         @NotBlank @Email @Size(max = 320) String email,
         @NotBlank @Size(max = 160) String displayName,
         boolean locked,
+        List<RoleName> roles,
         List<UUID> storeIds,
         List<UUID> registerIds,
         @NotNull Long version

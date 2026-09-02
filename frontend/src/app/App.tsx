@@ -187,15 +187,25 @@ function ProtectedRoute() {
 }
 
 function UnauthorizedPage() {
+  const { currentUser, session } = useSession();
+  const roles = currentUser?.roles ?? session?.roles ?? [];
+  const platformUser = roles.some((role) => role === 'PLATFORM_SUPER_ADMIN' || role === 'PLATFORM_SUPPORT_ADMIN');
   return (
     <Stack spacing={2} sx={{ maxWidth: 680 }}>
       <ShieldOutlinedIcon color="secondary" sx={{ fontSize: 42 }} />
-      <Typography variant="h5" component="h1">Unauthorized</Typography>
+      <Typography variant="h5" component="h1">You don't have access to this feature</Typography>
       <Typography color="text.secondary">
-        This account does not have access to the requested area.
+        {platformUser
+          ? "Your account doesn't currently have permission to use this platform section."
+          : "Your account doesn't currently have permission to use this section for the selected store."}
       </Typography>
-      <Button component={Link} to="/" variant="contained" sx={{ alignSelf: 'flex-start' }}>
-        Return to workspace
+      <Typography color="text.secondary">
+        {platformUser
+          ? 'If you believe you should have access, contact a Platform Super Admin.'
+          : 'If you believe you should have access, contact your Store Manager or Owner.'}
+      </Typography>
+      <Button component={Link} to={platformUser ? '/platform' : '/store-menu'} variant="contained" sx={{ alignSelf: 'flex-start' }}>
+        {platformUser ? 'Return to Platform Dashboard' : 'Return to Store Menu'}
       </Button>
     </Stack>
   );

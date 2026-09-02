@@ -192,13 +192,14 @@ public class UserAdministrationService {
     public UserResponse update(UUID id, UserUpdateRequest request, Authentication authentication) {
         User actor = actor(authentication);
         User user = permittedTarget(actor, id, true, authentication);
-        requireCanModify(actor, user, primaryEmployeeRole(user), authentication);
         requireCurrentVersion(user, request.version());
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmailIgnoreCaseAndIdNot(email, id)) {
             throw duplicateEmail();
         }
-        RoleName roleName = primaryEmployeeRole(user);
+        RoleName currentRole = primaryEmployeeRole(user);
+        RoleName roleName = request.roles() == null ? currentRole : employeeRole(request.roles());
+        requireCanModify(actor, user, roleName, authentication);
         Set<UUID> storeIds = ids(request.storeIds());
         if (user.isEnabled() && storeIds.isEmpty()) {
             throw new BadRequestException("At least one store assignment is required for an active user");
@@ -209,6 +210,9 @@ public class UserAdministrationService {
 
         UserResponse before = response(user);
         user.updateProfile(email, cleanRequired(request.displayName(), "displayName"), request.locked());
+        if (roleName != currentRole) {
+            replaceRoles(user, List.of(roleName));
+        }
         user.markUpdatedBy(actor.getId());
         replaceRegisterAssignments(actor, user, ids(request.registerIds()), storeIds);
         replaceStoreAssignments(actor, user, stores, roleName, null);

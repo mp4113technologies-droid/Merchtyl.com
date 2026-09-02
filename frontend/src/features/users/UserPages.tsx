@@ -51,7 +51,6 @@ import {
   reactivateUser,
   resetUserPassword,
   updateUser,
-  updateUserRoles,
   type UserAdminCreatePayload,
   type UserAdminSearchParams,
   type UserAdminUpdatePayload
@@ -130,6 +129,22 @@ function userFormValues(user: UserAdmin): UserFormValues {
     storeIds: user.storeIds,
     registerIds: user.registerIds
   };
+}
+
+function normalizedUserEditValues(values: UserFormValues) {
+  const unordered = (items: string[]) => [...new Set(items)].sort();
+  return {
+    email: values.email.trim().toLowerCase(),
+    displayName: values.displayName.trim(),
+    locked: values.locked,
+    roles: unordered(values.roles),
+    storeIds: unordered(values.storeIds),
+    registerIds: unordered(values.registerIds)
+  };
+}
+
+export function sameUserEditValues(left: UserFormValues, right: UserFormValues) {
+  return JSON.stringify(normalizedUserEditValues(left)) === JSON.stringify(normalizedUserEditValues(right));
 }
 
 function optionalText(value?: string) {
@@ -360,12 +375,16 @@ function UserForm({
     resolver: zodResolver(mode === 'create'
       ? userSchema.extend({ password: passwordValueSchema })
       : userSchema),
-    defaultValues
+    defaultValues,
+    mode: 'onChange'
   });
+  const [baseline, setBaseline] = React.useState(defaultValues);
   React.useEffect(() => {
     form.reset(defaultValues);
+    setBaseline(defaultValues);
   }, [defaultValues, form]);
   const values = form.watch();
+  const hasChanges = mode === 'create' || !sameUserEditValues(values, baseline);
   const validationFailed = form.formState.submitCount > 0 && Object.keys(form.formState.errors).length > 0;
 
   return (
@@ -453,7 +472,13 @@ function UserForm({
       {form.formState.errors.storeIds ? <Alert severity="error">{form.formState.errors.storeIds.message}</Alert> : null}
 
       {!disabled ? (
-        <Button type="submit" variant="contained" startIcon={<SaveIcon />} disabled={loading} sx={{ alignSelf: 'flex-start' }}>
+        <Button
+          type="submit"
+          variant="contained"
+          startIcon={<SaveIcon />}
+          disabled={loading || (mode === 'edit' && (!hasChanges || !form.formState.isValid))}
+          sx={{ alignSelf: 'flex-start' }}
+        >
           {loading ? 'Saving…' : mode === 'create' ? 'Create user' : 'Save changes'}
         </Button>
       ) : null}
@@ -710,7 +735,6 @@ export function UserDetailPage() {
   const { id } = useParams();
   const { getValidAccessToken } = useSession();
   const { canView, canManage } = useUserPermissions();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const options = useAssignmentOptions(canView);
   const [savedMessage, setSavedMessage] = React.useState('');
@@ -733,22 +757,17 @@ export function UserDetailPage() {
         email: values.email.trim().toLowerCase(),
         displayName: values.displayName.trim(),
         locked: values.locked,
+        roles: values.roles,
         storeIds: values.storeIds,
         registerIds: values.registerIds,
         version: user.data.version
       };
-      const updated = await updateUser(token, id, payload);
-      return updateUserRoles(token, id, {
-        roles: values.roles,
-        storeIds: values.storeIds,
-        registerIds: values.registerIds,
-        version: updated.version
-      });
+      return updateUser(token, id, payload);
     },
-    onSuccess: async (updated) => {
-      await queryClient.setQueryData(merchantUserKeys.detail(id), updated);
-      await queryClient.invalidateQueries({ queryKey: merchantUserKeys.all });
-      navigate('/users', { state: { successMessage: 'User updated successfully' } });
+    onSuccess: (updated) => {
+      queryClient.setQueryData(merchantUserKeys.detail(id), updated);
+      void queryClient.invalidateQueries({ queryKey: merchantUserKeys.lists() });
+      setSavedMessage('User updated successfully');
     }
   });
 

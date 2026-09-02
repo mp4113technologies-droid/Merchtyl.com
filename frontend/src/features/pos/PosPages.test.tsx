@@ -861,7 +861,7 @@ describe('POS pages', () => {
     render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete sale' }));
-    expect(await screen.findByText('Inventory changed before completion')).toBeInTheDocument();
+    expect(await screen.findByText("We couldn't complete this action because the information conflicts with the current state. Refresh and try again.")).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Complete sale' })).toBeEnabled();
     expect(print).not.toHaveBeenCalled();
 
