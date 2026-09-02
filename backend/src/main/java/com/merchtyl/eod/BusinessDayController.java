@@ -69,6 +69,13 @@ public class BusinessDayController {
         return response == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(response);
     }
 
+    @GetMapping("/operational-state")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
+    @Operation(summary = "Get today's business-day operational state", description = "Resolves the current business date in the Store timezone and distinguishes a new day from a same-day reopen.")
+    BusinessDayOperationalStateResponse operationalState(@RequestParam UUID storeId, Authentication authentication) {
+        return businessDayService.operationalState(storeId, authentication);
+    }
+
     @GetMapping("/latest")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
     @Operation(summary = "Get latest business day for a store", description = "Returns the latest open or closed Store business day without using merchant-wide state.")

@@ -174,18 +174,24 @@ public class GlobalExceptionHandler {
         }
         DatabaseConstraintErrorMapper.Analysis analysis = databaseErrors.analyze(exception, request.getRequestURI());
         DatabaseConstraintErrorMapper.DomainError domain = analysis.domainError();
-        String logMessage = "event=DATABASE_WRITE_FAILED operation={} domain={} exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user={}";
+        String logMessage = "event=DATABASE_WRITE_FAILED operation={} domain={} exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user={} stack_trace={}";
         Object[] values = {request.getMethod() + " " + request.getRequestURI(), domain.code(), exception.getClass().getName(), analysis.databaseExceptionClass(), analysis.sqlState(), analysis.constraintName(),
                 LogSanitizer.clean(analysis.technicalDetail()), request.getMethod(), request.getRequestURI(),
-                MDC.get(CorrelationIdFilter.MDC_KEY), MDC.get("tenantId"), MDC.get("storeId"), user()};
+                MDC.get(CorrelationIdFilter.MDC_KEY), MDC.get("tenantId"), MDC.get("storeId"), user(),
+                LogSanitizer.sanitizedStackTrace(exception)};
         if (domain.expected()) log.warn(logMessage, values); else log.error(logMessage, values);
         return error(domain.status(), domain.code(), domain.message(), request, domain.violations());
     }
 
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ApiError> databaseFailure(DataAccessException exception, HttpServletRequest request) {
-        log.error("database_failure category=database_failure exception_type={} method={} path={} correlation_id={} tenant={} store={} user={} stack_trace={}",
+        DatabaseConstraintErrorMapper.Analysis analysis = databaseErrors.analyze(exception, request.getRequestURI());
+        log.error("database_failure category=database_failure exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user={} stack_trace={}",
                 exception.getClass().getName(),
+                analysis.databaseExceptionClass(),
+                analysis.sqlState(),
+                analysis.constraintName(),
+                LogSanitizer.clean(analysis.technicalDetail()),
                 request.getMethod(),
                 request.getRequestURI(),
                 MDC.get(CorrelationIdFilter.MDC_KEY),

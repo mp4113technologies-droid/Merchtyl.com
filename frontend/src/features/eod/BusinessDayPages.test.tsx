@@ -235,8 +235,14 @@ describe('Business day pages', () => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
-      if (url.pathname.endsWith('/api/v1/business-days/current')) return jsonResponse(businessDay());
-      if (url.pathname.endsWith('/api/v1/business-days/latest')) return jsonResponse(businessDay());
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId,
+        currentBusinessDate: '2026-07-29',
+        currentBusinessDay: businessDay(),
+        previousBusinessDay: null,
+        state: 'OPEN',
+        availableAction: 'NONE'
+      });
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse(validation());
       return jsonResponse({}, 404);
     });
@@ -269,13 +275,16 @@ describe('Business day pages', () => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store(), airportStore]) satisfies StoreListResponse);
-      if (url.pathname.endsWith('/api/v1/business-days/current')) {
-        return url.searchParams.get('storeId') === airportStoreId
-          ? Promise.resolve(new Response(null, { status: 204 }))
-          : jsonResponse(businessDay());
-      }
-      if (url.pathname.endsWith('/api/v1/business-days/latest')) {
-        return jsonResponse(url.searchParams.get('storeId') === airportStoreId ? closedAirportDay : businessDay());
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) {
+        const airport = url.searchParams.get('storeId') === airportStoreId;
+        return jsonResponse({
+          storeId: airport ? airportStoreId : storeId,
+          currentBusinessDate: '2026-07-29',
+          currentBusinessDay: airport ? closedAirportDay : businessDay(),
+          previousBusinessDay: null,
+          state: airport ? 'CLOSED_TODAY' : 'OPEN',
+          availableAction: airport ? 'REOPEN' : 'NONE'
+        });
       }
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse(validation());
       if (url.pathname.endsWith(`/api/v1/business-days/${airportDayId}/reopen`) && init?.method === 'POST') {
@@ -302,6 +311,31 @@ describe('Business day pages', () => {
       const body = JSON.parse(String(init.body));
       return body.version === 3 && body.reason === 'Store reopened for additional evening sales';
     })).toBe(true));
+  });
+
+  it('offers a new open when only the previous calendar day is closed', async () => {
+    storeSession(['MANAGER']);
+    const previous = businessDay({ businessDate: '2026-08-31', status: 'CLOSED' });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId,
+        currentBusinessDate: '2026-09-01',
+        currentBusinessDay: null,
+        previousBusinessDay: previous,
+        state: 'NOT_OPENED',
+        availableAction: 'OPEN'
+      });
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByRole('button', { name: 'Open business day' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reopen business day' })).not.toBeInTheDocument();
+    expect(screen.getByText('Previous business day: 2026-08-31 — CLOSED')).toBeInTheDocument();
   });
 
   it('renders a report and exports CSV from the immutable report endpoint', async () => {

@@ -6,6 +6,7 @@ import type {
   AuthResponse,
   BusinessDay,
   BusinessDayListResponse,
+  BusinessDayOperationalState,
   BusinessDayStatus,
   CatalogueReference,
   CatalogueReferenceListResponse,
@@ -1930,6 +1931,10 @@ export function openBusinessDay(token: string, payload: BusinessDayOpenPayload) 
 
 export function getCurrentBusinessDay(token: string, storeId: string) {
   return request<BusinessDay | undefined>(`/business-days/current${queryString({ storeId })}`, undefined, token);
+}
+
+export function getBusinessDayOperationalState(token: string, storeId: string) {
+  return request<BusinessDayOperationalState>(`/business-days/operational-state${queryString({ storeId })}`, undefined, token);
 }
 
 export function getLatestBusinessDay(token: string, storeId: string) {

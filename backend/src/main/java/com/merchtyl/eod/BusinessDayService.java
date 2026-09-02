@@ -266,6 +266,46 @@ public class BusinessDayService {
     }
 
     @Transactional(readOnly = true)
+    public BusinessDayOperationalStateResponse operationalState(UUID storeId, Authentication authentication) {
+        requireStoreAccess(authentication, storeId);
+        Store store = store(storeId);
+        LocalDate currentBusinessDate = currentBusinessDate(store);
+        BusinessDay currentDay = businessDayRepository.findByStore_IdAndBusinessDate(storeId, currentBusinessDate).orElse(null);
+        BusinessDay latestDay = businessDayRepository.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId).orElse(null);
+
+        if (currentDay != null) {
+            boolean closed = currentDay.getStatus() == BusinessDayStatus.CLOSED;
+            return new BusinessDayOperationalStateResponse(
+                    storeId,
+                    currentBusinessDate,
+                    BusinessDayResponse.from(currentDay),
+                    latestDay != null && !latestDay.getId().equals(currentDay.getId()) ? BusinessDayResponse.from(latestDay) : null,
+                    closed ? BusinessDayOperationalState.CLOSED_TODAY : BusinessDayOperationalState.OPEN,
+                    closed ? BusinessDayAvailableAction.REOPEN : BusinessDayAvailableAction.NONE);
+        }
+
+        BusinessDay previousOpenDay = businessDayRepository
+                .findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(storeId, ACTIVE_DAY_STATUSES)
+                .orElse(null);
+        if (previousOpenDay != null) {
+            return new BusinessDayOperationalStateResponse(
+                    storeId,
+                    currentBusinessDate,
+                    null,
+                    BusinessDayResponse.from(previousOpenDay),
+                    BusinessDayOperationalState.PREVIOUS_DAY_STILL_OPEN,
+                    BusinessDayAvailableAction.NONE);
+        }
+        return new BusinessDayOperationalStateResponse(
+                storeId,
+                currentBusinessDate,
+                null,
+                latestDay == null ? null : BusinessDayResponse.from(latestDay),
+                BusinessDayOperationalState.NOT_OPENED,
+                BusinessDayAvailableAction.OPEN);
+    }
+
+    @Transactional(readOnly = true)
     public BusinessDayResponse latest(UUID storeId) {
         if (storeId == null) {
             throw new BadRequestException("storeId is required");
@@ -279,6 +319,10 @@ public class BusinessDayService {
     public BusinessDayResponse latest(UUID storeId, Authentication authentication) {
         requireStoreAccess(authentication, storeId);
         return latest(storeId);
+    }
+
+    private LocalDate currentBusinessDate(Store store) {
+        return Instant.now(clock).atZone(ZoneId.of(store.getTimezone())).toLocalDate();
     }
 
     public void assertStoreAccess(UUID storeId, Authentication authentication) {
@@ -454,10 +498,15 @@ public class BusinessDayService {
         if (storeId == null) {
             throw new BadRequestException("storeId is required");
         }
-        return businessDayRepository.findActiveByStoreIdForUpdate(storeId, ACTIVE_DAY_STATUSES).stream()
+        Store store = store(storeId);
+        BusinessDay activeDay = businessDayRepository.findActiveByStoreIdForUpdate(storeId, ACTIVE_DAY_STATUSES).stream()
                 .filter(day -> day.getStatus() == BusinessDayStatus.OPEN || day.getStatus() == BusinessDayStatus.REOPENED)
                 .findFirst()
                 .orElseThrow(() -> new ConflictException("BUSINESS_DAY_NOT_OPEN"));
+        if (!activeDay.getBusinessDate().equals(currentBusinessDate(store))) {
+            throw new ConflictException("PREVIOUS_BUSINESS_DAY_STILL_OPEN");
+        }
+        return activeDay;
     }
 
     @Transactional(readOnly = true)

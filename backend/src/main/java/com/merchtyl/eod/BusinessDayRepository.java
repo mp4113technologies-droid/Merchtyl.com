@@ -39,6 +39,9 @@ public interface BusinessDayRepository extends JpaRepository<BusinessDay, UUID>,
     @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
     Optional<BusinessDay> findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(UUID storeId);
 
+    @EntityGraph(attributePaths = {"store", "openedBy", "closingStartedBy", "closedBy", "reopenedBy"})
+    Optional<BusinessDay> findByStore_IdAndBusinessDate(UUID storeId, LocalDate businessDate);
+
     boolean existsByStore_IdAndStatusIn(UUID storeId, Collection<BusinessDayStatus> statuses);
 
     boolean existsByStore_IdAndBusinessDate(UUID storeId, LocalDate businessDate);

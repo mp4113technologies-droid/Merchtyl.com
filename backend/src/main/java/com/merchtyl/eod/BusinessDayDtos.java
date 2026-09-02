@@ -119,6 +119,30 @@ record BusinessDayResponse(
     }
 }
 
+enum BusinessDayOperationalState {
+    NOT_OPENED,
+    OPEN,
+    CLOSED_TODAY,
+    PREVIOUS_DAY_STILL_OPEN
+}
+
+enum BusinessDayAvailableAction {
+    OPEN,
+    REOPEN,
+    NONE
+}
+
+@Schema(description = "Store-local business-day state used to choose today's operational action.")
+record BusinessDayOperationalStateResponse(
+        UUID storeId,
+        LocalDate currentBusinessDate,
+        BusinessDayResponse currentBusinessDay,
+        BusinessDayResponse previousBusinessDay,
+        BusinessDayOperationalState state,
+        BusinessDayAvailableAction availableAction
+) {
+}
+
 @Schema(description = "Closing readiness response. Includes every blocker found.")
 record ClosingValidationResponse(
         UUID businessDayId,

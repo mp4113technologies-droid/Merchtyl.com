@@ -508,6 +508,15 @@ export type BusinessDay = {
   version: number;
 };
 
+export type BusinessDayOperationalState = {
+  storeId: string;
+  currentBusinessDate: string;
+  currentBusinessDay: BusinessDay | null;
+  previousBusinessDay: BusinessDay | null;
+  state: 'NOT_OPENED' | 'OPEN' | 'CLOSED_TODAY' | 'PREVIOUS_DAY_STILL_OPEN';
+  availableAction: 'OPEN' | 'REOPEN' | 'NONE';
+};
+
 export type BusinessDayListResponse = PageResponse<BusinessDay>;
 
 export type ClosingBlocker = {

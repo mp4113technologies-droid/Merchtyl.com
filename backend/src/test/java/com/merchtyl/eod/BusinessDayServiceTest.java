@@ -40,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -90,16 +91,16 @@ class BusinessDayServiceTest {
         dayId = UUID.randomUUID();
         businessDate = LocalDate.of(2026, 8, 31);
 
-        when(authentication.getName()).thenReturn("owner@example.local");
-        when(users.findByEmailIgnoreCase("owner@example.local")).thenReturn(Optional.of(actor));
-        when(businessDays.findByIdForUpdate(dayId)).thenReturn(Optional.of(day));
+        lenient().when(authentication.getName()).thenReturn("owner@example.local");
+        lenient().when(users.findByEmailIgnoreCase("owner@example.local")).thenReturn(Optional.of(actor));
+        lenient().when(businessDays.findByIdForUpdate(dayId)).thenReturn(Optional.of(day));
         when(day.getId()).thenReturn(dayId);
         when(day.getStore()).thenReturn(store);
         when(day.getBusinessDate()).thenReturn(businessDate);
         when(day.getStatus()).thenReturn(BusinessDayStatus.CLOSED);
         when(day.getVersion()).thenReturn(3L);
         when(store.getId()).thenReturn(storeId);
-        when(reports.existsByBusinessDay_Id(dayId)).thenReturn(true);
+        lenient().when(reports.existsByBusinessDay_Id(dayId)).thenReturn(true);
     }
 
     @Test
@@ -143,5 +144,60 @@ class BusinessDayServiceTest {
         assertThat(response.status()).isEqualTo(BusinessDayStatus.REOPENED);
         verify(day).reopen(actor, Instant.parse("2026-08-31T22:10:00Z"), "Late sales");
         verify(businessDays).saveAndFlush(day);
+    }
+
+    @Test
+    void closedPreviousDayProducesOpenActionForNewStoreLocalDate() {
+        useClock(Clock.fixed(Instant.parse("2026-09-01T03:10:00Z"), ZoneOffset.UTC));
+        when(stores.findById(storeId)).thenReturn(Optional.of(store));
+        when(store.getTimezone()).thenReturn("America/Moncton");
+        when(businessDays.findByStore_IdAndBusinessDate(storeId, LocalDate.of(2026, 9, 1))).thenReturn(Optional.empty());
+        when(businessDays.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId)).thenReturn(Optional.of(day));
+        when(businessDays.findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(storeId, List.of(
+                BusinessDayStatus.OPEN, BusinessDayStatus.CLOSING, BusinessDayStatus.REOPENED))).thenReturn(Optional.empty());
+        stubResponseFields();
+
+        BusinessDayOperationalStateResponse response = service.operationalState(storeId, authentication);
+
+        assertThat(response.currentBusinessDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(response.currentBusinessDay()).isNull();
+        assertThat(response.previousBusinessDay().id()).isEqualTo(dayId);
+        assertThat(response.state()).isEqualTo(BusinessDayOperationalState.NOT_OPENED);
+        assertThat(response.availableAction()).isEqualTo(BusinessDayAvailableAction.OPEN);
+    }
+
+    @Test
+    void closedCurrentDayProducesReopenAction() {
+        useClock(Clock.fixed(Instant.parse("2026-09-01T03:10:00Z"), ZoneOffset.UTC));
+        when(stores.findById(storeId)).thenReturn(Optional.of(store));
+        when(store.getTimezone()).thenReturn("America/Moncton");
+        when(day.getBusinessDate()).thenReturn(LocalDate.of(2026, 9, 1));
+        when(businessDays.findByStore_IdAndBusinessDate(storeId, LocalDate.of(2026, 9, 1))).thenReturn(Optional.of(day));
+        when(businessDays.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId)).thenReturn(Optional.of(day));
+        stubResponseFields();
+
+        BusinessDayOperationalStateResponse response = service.operationalState(storeId, authentication);
+
+        assertThat(response.currentBusinessDay().id()).isEqualTo(dayId);
+        assertThat(response.state()).isEqualTo(BusinessDayOperationalState.CLOSED_TODAY);
+        assertThat(response.availableAction()).isEqualTo(BusinessDayAvailableAction.REOPEN);
+    }
+
+    private void stubResponseFields() {
+        when(day.getTimezone()).thenReturn("America/Moncton");
+        when(day.getOpenedAt()).thenReturn(Instant.parse("2026-08-31T12:00:00Z"));
+        when(day.getOpenedBy()).thenReturn(actor);
+        when(store.getCode()).thenReturn("DOWNTOWN");
+        when(store.getName()).thenReturn("Downtown");
+        when(actor.getId()).thenReturn(UUID.randomUUID());
+        when(actor.getDisplayName()).thenReturn("Owner One");
+    }
+
+    private void useClock(Clock clock) {
+        service = new BusinessDayService(
+                businessDays, reports, configurations, stores, users, registerSessions, sales, refunds,
+                cashMovements, inventoryTransactions, inventoryBalances, lotterySales, lotteryPayouts,
+                lotterySaleCancellations, lotteryPayoutReversals, lotterySettlements, cashLedger, features,
+                audit, new ObjectMapper(), clock);
     }
 }

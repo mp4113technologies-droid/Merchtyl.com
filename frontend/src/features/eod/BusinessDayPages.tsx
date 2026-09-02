@@ -46,10 +46,10 @@ import {
   exportEndOfDayReportCsv,
   exportEndOfDayReportPdf,
   forceCloseBusinessDay,
+  getBusinessDayOperationalState,
   getBusinessDayClosingPreview,
   getBusinessDayClosingValidation,
   getCurrentBusinessDay,
-  getLatestBusinessDay,
   getEndOfDayReport,
   getEndOfDayReportPrintHtml,
   listBusinessDays,
@@ -182,22 +182,16 @@ export function BusinessDayPage() {
     }
   }, [storeId, stores.data]);
 
-  const current = useQuery({
-    queryKey: ['business-day', 'current', storeId],
-    queryFn: async () => (await getCurrentBusinessDay(await getValidAccessToken(), storeId)) ?? null,
-    enabled: allowed && Boolean(storeId)
-  });
-
-  const latest = useQuery({
-    queryKey: ['business-day', 'latest', storeId],
-    queryFn: async () => (await getLatestBusinessDay(await getValidAccessToken(), storeId)) ?? null,
+  const operationalState = useQuery({
+    queryKey: ['business-day', 'operational-state', storeId],
+    queryFn: async () => getBusinessDayOperationalState(await getValidAccessToken(), storeId),
     enabled: allowed && Boolean(storeId)
   });
 
   const validation = useQuery({
-    queryKey: ['business-day', 'validation', current.data?.id],
-    queryFn: async () => getBusinessDayClosingValidation(await getValidAccessToken(), current.data!.id),
-    enabled: allowed && Boolean(current.data?.id) && current.data?.status !== 'CLOSED'
+    queryKey: ['business-day', 'validation', operationalState.data?.currentBusinessDay?.id],
+    queryFn: async () => getBusinessDayClosingValidation(await getValidAccessToken(), operationalState.data!.currentBusinessDay!.id),
+    enabled: allowed && Boolean(operationalState.data?.currentBusinessDay?.id) && operationalState.data?.currentBusinessDay?.status !== 'CLOSED'
   });
 
   const open = useMutation({
@@ -223,8 +217,7 @@ export function BusinessDayPage() {
       setReopenOpen(false);
       setReopenReason('');
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['business-day', 'current', day.storeId] }),
-        queryClient.invalidateQueries({ queryKey: ['business-day', 'latest', day.storeId] }),
+        queryClient.invalidateQueries({ queryKey: ['business-day', 'operational-state', day.storeId] }),
         queryClient.invalidateQueries({ queryKey: ['register-session'] })
       ]);
     }
@@ -234,7 +227,8 @@ export function BusinessDayPage() {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  const day = current.data ?? latest.data;
+  const day = operationalState.data?.currentBusinessDay ?? null;
+  const previousDay = operationalState.data?.previousBusinessDay ?? null;
   const storeRows = stores.data?.content ?? [];
 
   return (
@@ -246,28 +240,35 @@ export function BusinessDayPage() {
         </Stack>
         <StoreSelect stores={storeRows} value={storeId} onChange={setStoreId} />
         <Tooltip title="Refresh business day">
-          <IconButton aria-label="Refresh business day" onClick={() => void current.refetch()}>
+          <IconButton aria-label="Refresh business day" onClick={() => void operationalState.refetch()}>
             <RefreshIcon />
           </IconButton>
         </Tooltip>
       </Stack>
 
-      {current.isLoading || latest.isLoading || stores.isLoading ? <LoadingPanel label="Loading business-day status" /> : null}
-      {current.isError ? <Alert severity="error">{errorMessage(current.error)}</Alert> : null}
+      {operationalState.isLoading || stores.isLoading ? <LoadingPanel label="Loading business-day status" /> : null}
+      {operationalState.isError ? <Alert severity="error">{errorMessage(operationalState.error)}</Alert> : null}
       {open.isError ? <Alert severity="error">{errorMessage(open.error)}</Alert> : null}
       {startClosing.isError ? <Alert severity="error">{errorMessage(startClosing.error)}</Alert> : null}
       {reopen.isError ? <Alert severity="error">{errorMessage(reopen.error)}</Alert> : null}
 
-      {!current.isLoading && !latest.isLoading && !day ? (
+      {!operationalState.isLoading && operationalState.data?.state === 'NOT_OPENED' ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
           <Stack spacing={2}>
-            <Typography variant="h6">No active business day</Typography>
-            <Typography color="text.secondary">Open a business day before register sales and closing reconciliation.</Typography>
+            <Typography variant="h6">Business date {operationalState.data.currentBusinessDate}</Typography>
+            <Typography color="text.secondary">Not opened. Open a new business day before register sales and closing reconciliation.</Typography>
             <Button variant="contained" startIcon={<LockOpenOutlinedIcon />} disabled={!storeId || open.isPending} onClick={() => open.mutate()}>
               Open business day
             </Button>
+            {previousDay ? <Typography variant="body2" color="text.secondary">Previous business day: {previousDay.businessDate} — {previousDay.status}</Typography> : null}
           </Stack>
         </Paper>
+      ) : null}
+
+      {!operationalState.isLoading && operationalState.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? (
+        <Alert severity="warning">
+          Previous business day {previousDay?.businessDate} is still open. Close it before opening {operationalState.data.currentBusinessDate}.
+        </Alert>
       ) : null}
 
       {day ? (
