@@ -52,7 +52,7 @@ merchtyl:
     refresh-expiration-days: ${MERCHTYL_JWT_REFRESH_EXPIRATION_DAYS:14}
   security:
     cors:
-      allowed-origins: ${ALLOWED_ORIGINS:${MERCHTYL_CORS_ALLOWED_ORIGINS:}}
+      allowed-origins: ${MERCHTYL_CORS_ALLOWED_ORIGINS:}
       allowed-origin-patterns: ${MERCHTYL_CORS_ALLOWED_ORIGIN_PATTERNS:}
     rate-limit:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
