@@ -50,7 +50,8 @@ import java.util.List;
         SecurityProperties.class,
         PlatformAdministrationProperties.class,
         TestUserProvisioningProperties.class
-        , MerchantPortalProperties.class
+        , MerchantPortalProperties.class,
+        CorsProperties.class
 })
 public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -61,9 +62,10 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtAuthenticationFilter,
             ObjectProvider<MerchantContextFilter> merchantContextFilterProvider,
             ObjectMapper objectMapper,
-            SecurityProperties securityProperties) throws Exception {
+            SecurityProperties securityProperties,
+            CorsConfigurationSource corsConfigurationSource) throws Exception {
         http
-                .cors(Customizer.withDefaults())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers
@@ -133,10 +135,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource(SecurityProperties securityProperties) {
+    CorsConfigurationSource corsConfigurationSource(CorsProperties corsProperties) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(securityProperties.cors().allowedOrigins());
-        configuration.setAllowedOriginPatterns(securityProperties.cors().allowedOriginPatterns());
+        configuration.setAllowedOrigins(corsProperties.exactOrigins());
+        configuration.setAllowedOriginPatterns(corsProperties.originPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of(
                 "Accept",
@@ -148,6 +150,8 @@ public class SecurityConfig {
         configuration.setExposedHeaders(List.of(CorrelationIdFilter.HEADER_NAME));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
+        log.info("cors_configuration_loaded exact_origins={} origin_patterns={}",
+                corsProperties.exactOrigins(), corsProperties.originPatterns());
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

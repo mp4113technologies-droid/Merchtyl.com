@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Arrays;
 
 @Validated
 @ConfigurationProperties(prefix = "merchtyl.security")
@@ -44,6 +45,7 @@ public record SecurityProperties(
 
         private static List<String> clean(List<String> values) {
             return values == null ? List.of() : values.stream()
+                    .flatMap(value -> Arrays.stream(value.split(",")))
                     .map(String::trim)
                     .filter(origin -> !origin.isBlank())
                     .distinct()

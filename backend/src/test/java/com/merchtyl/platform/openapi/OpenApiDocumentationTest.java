@@ -40,6 +40,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -58,7 +59,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @TestPropertySource(properties = {
         "merchtyl.jwt.secret=test-secret-change-this-development-secret",
-        "merchtyl.security.cors.allowed-origins=http://localhost:5173",
+        "merchtyl.security.cors.allowed-origins=https://merchtyl.com,https://www.merchtyl.com,https://platform.merchtyl.com",
+        "merchtyl.security.cors.allowed-origin-patterns=https://*.merchtyl.com",
         "merchtyl.security.rate-limit.enabled=false",
         "springdoc.api-docs.enabled=true",
         "springdoc.api-docs.path=/v3/api-docs",
@@ -198,6 +200,39 @@ class OpenApiDocumentationTest {
     void existingEndpointAuthorizationRemainsEnforced() throws Exception {
         mockMvc.perform(get("/api/v1/sales"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void platformLoginPreflightPassesThroughTheSecurityFilterChain() throws Exception {
+        mockMvc.perform(options("/api/v1/platform/auth/login")
+                        .header("Origin", "https://platform.merchtyl.com")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://platform.merchtyl.com"))
+                .andExpect(header().string("Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("POST")))
+                .andExpect(header().string("Access-Control-Allow-Headers", org.hamcrest.Matchers.containsStringIgnoringCase("content-type")));
+    }
+
+    @Test
+    void authenticatedMerchantHeadersPassPreflightWithoutAuthentication() throws Exception {
+        mockMvc.perform(options("/api/v1/stores")
+                        .header("Origin", "https://merchant123.merchtyl.com")
+                        .header("Access-Control-Request-Method", "GET")
+                        .header("Access-Control-Request-Headers", "authorization,content-type,x-merchant-slug"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://merchant123.merchtyl.com"))
+                .andExpect(header().string("Access-Control-Allow-Headers", org.hamcrest.Matchers.containsStringIgnoringCase("x-merchant-slug")));
+    }
+
+    @Test
+    void untrustedOriginIsRejectedByCorsBeforeAuthorization() throws Exception {
+        mockMvc.perform(options("/api/v1/platform/auth/login")
+                        .header("Origin", "https://evil-example.com")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "content-type"))
+                .andExpect(status().isForbidden())
+                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
     }
 
     private JsonNode openApiJson() throws Exception {

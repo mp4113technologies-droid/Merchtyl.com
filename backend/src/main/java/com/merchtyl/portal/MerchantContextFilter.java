@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.cors.CorsUtils;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -28,6 +29,11 @@ public class MerchantContextFilter extends OncePerRequestFilter {
         this.portals = portals;
         this.users = users;
         this.objectMapper = objectMapper;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return CorsUtils.isPreFlightRequest(request);
     }
 
     @Override

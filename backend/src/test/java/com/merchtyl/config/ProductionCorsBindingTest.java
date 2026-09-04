@@ -22,4 +22,24 @@ class ProductionCorsBindingTest {
                 "https://merchtyl.com", "https://www.merchtyl.com", "https://platform.merchtyl.com");
         assertThat(patterns).containsExactly("https://*.merchtyl.com");
     }
+
+    @Test
+    void defensiveNormalizationSplitsACommaSeparatedSingleElement() {
+        SecurityProperties.Cors cors = new SecurityProperties.Cors(
+                java.util.List.of(" https://merchtyl.com, https://www.merchtyl.com,https://platform.merchtyl.com "),
+                java.util.List.of(" https://*.merchtyl.com "));
+        assertThat(cors.allowedOrigins()).containsExactly(
+                "https://merchtyl.com", "https://www.merchtyl.com", "https://platform.merchtyl.com");
+        assertThat(cors.allowedOriginPatterns()).containsExactly("https://*.merchtyl.com");
+    }
+
+    @Test
+    void dedicatedCorsPropertiesParseTheExactRailwayFormat() {
+        CorsProperties cors = new CorsProperties(
+                "https://merchtyl.com,https://www.merchtyl.com,https://platform.merchtyl.com",
+                "https://*.merchtyl.com");
+        assertThat(cors.exactOrigins()).containsExactly(
+                "https://merchtyl.com", "https://www.merchtyl.com", "https://platform.merchtyl.com");
+        assertThat(cors.originPatterns()).containsExactly("https://*.merchtyl.com");
+    }
 }

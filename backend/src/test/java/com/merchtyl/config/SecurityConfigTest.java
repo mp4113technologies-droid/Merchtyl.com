@@ -16,10 +16,8 @@ class SecurityConfigTest {
     @Test
     void corsPolicyUsesExplicitAllowedOriginsAndSafeHeaders() {
         SecurityConfig config = new SecurityConfig();
-        CorsConfiguration cors = config.corsConfigurationSource(new SecurityProperties(
-                        new SecurityProperties.Cors(List.of(" http://localhost:5173 ", "https://example.com"), List.of("https://*.merchtyl.com")),
-                        new SecurityProperties.RateLimit(true, 20, Duration.ofMinutes(1)),
-                        null))
+        CorsConfiguration cors = config.corsConfigurationSource(new CorsProperties(
+                        " http://localhost:5173 ,https://example.com", "https://*.merchtyl.com"))
                 .getCorsConfiguration(new MockHttpServletRequest("OPTIONS", "/api/v1/auth/login"));
 
         assertThat(cors).isNotNull();
@@ -34,11 +32,9 @@ class SecurityConfigTest {
 
     @Test
     void railwayOriginsAndMerchantPatternAreAcceptedByCorsProcessor() throws Exception {
-        CorsConfiguration cors = new SecurityConfig().corsConfigurationSource(new SecurityProperties(
-                        new SecurityProperties.Cors(
-                                List.of("https://merchtyl.com", "https://www.merchtyl.com", "https://platform.merchtyl.com"),
-                                List.of("https://*.merchtyl.com")),
-                        new SecurityProperties.RateLimit(true, 20, Duration.ofMinutes(1)), null))
+        CorsConfiguration cors = new SecurityConfig().corsConfigurationSource(new CorsProperties(
+                        "https://merchtyl.com,https://www.merchtyl.com,https://platform.merchtyl.com",
+                        "https://*.merchtyl.com"))
                 .getCorsConfiguration(new MockHttpServletRequest("OPTIONS", "/api/v1/platform/auth/login"));
 
         assertThat(cors).isNotNull();
