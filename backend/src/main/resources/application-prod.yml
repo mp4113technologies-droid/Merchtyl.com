@@ -53,6 +53,7 @@ merchtyl:
   security:
     cors:
       allowed-origins: ${ALLOWED_ORIGINS:${MERCHTYL_CORS_ALLOWED_ORIGINS:}}
+      allowed-origin-patterns: ${MERCHTYL_CORS_ALLOWED_ORIGIN_PATTERNS:}
     rate-limit:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
       auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
@@ -100,6 +101,9 @@ merchtyl:
     resend:
       enabled: ${RESEND_ENABLED:false}
       api-key: ${RESEND_API_KEY:}
+  portal:
+    public-base-domain: ${MERCHTYL_PUBLIC_BASE_DOMAIN}
+    platform-base-url: ${MERCHTYL_PLATFORM_BASE_URL}
   idempotency:
     retention: ${MERCHTYL_IDEMPOTENCY_RETENTION:24h}
     max-key-length: ${MERCHTYL_IDEMPOTENCY_MAX_KEY_LENGTH:255}

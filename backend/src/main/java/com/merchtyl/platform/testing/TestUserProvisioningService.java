@@ -305,11 +305,11 @@ public class TestUserProvisioningService {
         UUID tenantId = UUID.randomUUID();
         jdbcTemplate.update("""
                 insert into tenants (
-                    id, tenant_code, legal_name, display_name, status, country_code,
+                    id, tenant_code, merchant_slug, legal_name, display_name, status, country_code,
                     default_currency_code, primary_timezone, activated_at
                 )
-                values (?, ?, ?, ?, 'ACTIVE', 'CA', 'CAD', 'America/Moncton', now())
-                """, tenantId, tenantCode, tenantCode + " Legal Test Merchant", tenantCode + " Test Merchant");
+                values (?, ?, ?, ?, ?, 'ACTIVE', 'CA', 'CAD', 'America/Moncton', now())
+                """, tenantId, tenantCode, tenantCode.toLowerCase(Locale.ROOT).replace('_', '-'), tenantCode + " Legal Test Merchant", tenantCode + " Test Merchant");
         jdbcTemplate.update("""
                 insert into merchant_profiles (
                     id, tenant_id, legal_business_name, operating_name, contact_name,

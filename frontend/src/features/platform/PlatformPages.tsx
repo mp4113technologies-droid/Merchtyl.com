@@ -839,6 +839,14 @@ export function PlatformMerchantDetailPage() {
           </Alert>
         )}
         <Grid container spacing={2}>
+          {data.portalUrl && <Grid item xs={12}>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2} alignItems={{ sm: 'center' }}>
+                <Box><Typography variant="caption" color="text.secondary">Merchant Portal</Typography><Typography>{data.portalUrl}</Typography></Box>
+                <Stack direction="row" gap={1}><Button variant="outlined" onClick={() => navigator.clipboard.writeText(data.portalUrl!)}>Copy URL</Button><Button variant="contained" href={data.portalUrl} target="_blank" rel="noopener noreferrer">Open Portal</Button></Stack>
+              </Stack>
+            </Paper>
+          </Grid>}
           <Grid item xs={12} md={6}><TenantOverview tenant={data} /></Grid>
           <Grid item xs={12} md={6}>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>

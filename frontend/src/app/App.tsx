@@ -136,6 +136,8 @@ import { TaxSimulatorPage } from '../features/tax/TaxSimulatorPage';
 import { OwnerDashboardPage } from '../features/dashboard/OwnerDashboardPage';
 import { PwaPrompt } from '../features/pwa/PwaPrompt';
 import { getBusinessDayOperationalState, getCurrentRegisterSession, listRegisters, listStores, openBusinessDay } from '../api/client';
+import { resolveMerchantPortal } from '../api/client';
+import { currentPortalContext } from './portalContext';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import {
   NewPlatformMerchantPage,
@@ -169,6 +171,44 @@ function LoadingState() {
       <Typography color="text.secondary">Loading workspace</Typography>
     </Stack>
   );
+}
+
+function PublicWebsite() {
+  return <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} px={3} textAlign="center">
+    <Typography variant="h2" component="h1">Merchtyl</Typography>
+    <Typography color="text.secondary">Modern commerce operations for growing merchants.</Typography>
+    <Button href="mailto:hello@merchtyl.com" variant="contained">Request a demo</Button>
+  </Stack>;
+}
+
+function UnknownPortal({ unavailable = false }: { unavailable?: boolean }) {
+  return <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} px={3} textAlign="center">
+    <Typography variant="h4" component="h1">{unavailable ? 'This Merchtyl portal is currently unavailable.' : "We couldn't find this Merchtyl portal."}</Typography>
+    <Button href="https://www.merchtyl.com" variant="contained">Go to Merchtyl</Button>
+  </Stack>;
+}
+
+function PortalBoundary({ children }: { children: React.ReactNode }) {
+  const context = currentPortalContext();
+  const location = useLocation();
+  const merchant = useQuery({
+    queryKey: ['merchant-portal', context.type === 'MERCHANT' ? context.merchantSlug : ''],
+    queryFn: () => resolveMerchantPortal(context.type === 'MERCHANT' ? context.merchantSlug : ''),
+    enabled: context.type === 'MERCHANT',
+    retry: false
+  });
+  if (context.type === 'PUBLIC') return <PublicWebsite />;
+  if (context.type === 'UNKNOWN') return <UnknownPortal />;
+  if (context.type === 'PLATFORM' && !location.pathname.startsWith('/platform') && location.pathname !== '/activate-platform-admin') {
+    return <Navigate to="/platform" replace />;
+  }
+  if (context.type === 'MERCHANT') {
+    if (merchant.isLoading) return <LoadingState />;
+    if (merchant.isError) return <UnknownPortal />;
+    if (!merchant.data?.active) return <UnknownPortal unavailable />;
+    if (location.pathname.startsWith('/platform')) return <UnknownPortal />;
+  }
+  return <>{children}</>;
 }
 
 function ProtectedRoute() {
@@ -852,7 +892,7 @@ export function App({ initialEntries }: AppProps = {}) {
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <Router {...routerProps}>
-            <AppRoutes />
+            <PortalBoundary><AppRoutes /></PortalBoundary>
           </Router>
         </SessionProvider>
       </QueryClientProvider>

@@ -147,6 +147,7 @@ import type {
   UserStoreAssignment,
   UserRole
 } from './types';
+import { merchantSlugForRequest } from '../app/portalContext';
 
 type AuthRegisterPayload = {
   email: string;
@@ -1527,6 +1528,8 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+  const merchantSlug = merchantSlugForRequest();
+  if (merchantSlug && !path.startsWith('/public/') && !path.startsWith('/platform/')) headers.set('X-Merchant-Slug', merchantSlug);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -1555,6 +1558,10 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   }
 
   return response.json() as Promise<T>;
+}
+
+export function resolveMerchantPortal(slug: string) {
+  return request<{ slug: string; displayName: string; active: boolean }>(`/public/merchant-portals/${encodeURIComponent(slug)}`);
 }
 
 async function requestText(path: string, init: RequestInit = {}, token?: string): Promise<string> {

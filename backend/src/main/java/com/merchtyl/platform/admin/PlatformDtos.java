@@ -132,7 +132,9 @@ public final class PlatformDtos {
             TenantSummaryResponse tenant,
             MerchantProfileResponse merchantProfile,
             SubscriptionResponse subscription,
-            OnboardingResponse onboarding
+            OnboardingResponse onboarding,
+            String merchantSlug,
+            String portalUrl
     ) {
     }
 
