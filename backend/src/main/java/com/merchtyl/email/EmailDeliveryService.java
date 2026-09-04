@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.merchtyl.portal.MerchantPortalService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,6 +52,8 @@ public class EmailDeliveryService {
     private final TemporaryPasswordGenerator temporaryPasswordGenerator;
     private final PasswordEncoder passwordEncoder;
     private final SecurityProperties securityProperties;
+    @Autowired
+    private MerchantPortalService merchantPortalService;
 
     public EmailDeliveryService(
             JdbcTemplate jdbcTemplate,
@@ -320,7 +324,7 @@ public class EmailDeliveryService {
     private void sendOwnerInvitationDelivery(UUID deliveryId, OwnerInvitationEmailEvent event, String rawToken) {
         TRANSIENT_INVITATION_TOKENS.entrySet().removeIf(entry -> !Instant.now().isBefore(entry.getValue().expiresAt()));
         TRANSIENT_INVITATION_TOKENS.put(event.invitationId(), new TransientInvitationToken(rawToken, event.expiresAt()));
-        String activationUrl = emailProperties.activationUrl(rawToken);
+        String activationUrl = merchantPortalUrl(event.tenantId()) + "/activate-owner?token=" + rawToken;
         RenderedEmailTemplate rendered = templateRenderer.render(event.templateCode(), Map.of(
                 "merchantOperatingName", event.merchantOperatingName(),
                 "ownerName", event.ownerName(),
@@ -335,7 +339,7 @@ public class EmailDeliveryService {
     }
 
     private void sendOwnerTemporaryCredentialsDelivery(UUID deliveryId, OwnerTemporaryCredentialsEmailEvent event) {
-        String loginUrl = emailProperties.frontendBaseUrl().replaceAll("/+$", "") + "/login";
+        String loginUrl = merchantPortalUrl(event.tenantId()) + "/login";
         RenderedEmailTemplate rendered = templateRenderer.render(event.templateCode(), Map.of(
                 "merchantOperatingName", event.merchantOperatingName(),
                 "ownerName", event.ownerName(),
@@ -382,6 +386,11 @@ public class EmailDeliveryService {
                 event.templateCode(),
                 Map.of("tenantCode", event.tenantCode()));
         send(deliveryId, message, event.platformActorId());
+    }
+
+    private String merchantPortalUrl(UUID tenantId) {
+        String slug = jdbcTemplate.queryForObject("select merchant_slug from tenants where id = ?", String.class, tenantId);
+        return merchantPortalService.portalUrl(slug);
     }
 
     private void send(UUID deliveryId, EmailMessage message, UUID actorId) {

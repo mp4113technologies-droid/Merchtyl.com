@@ -130,6 +130,8 @@ export type TenantDetail = {
   merchantProfile: MerchantProfile;
   subscription: TenantSubscription;
   onboarding: TenantOnboarding;
+  merchantSlug?: string;
+  portalUrl?: string;
 };
 
 export type MerchantStoreCapability = {

@@ -5,6 +5,8 @@ import com.merchtyl.auth.JwtAuthenticationFilter;
 import com.merchtyl.common.ApiError;
 import com.merchtyl.platform.web.CorrelationIdFilter;
 import com.merchtyl.platform.testing.TestUserProvisioningProperties;
+import com.merchtyl.portal.MerchantContextFilter;
+import com.merchtyl.portal.MerchantPortalProperties;
 import com.merchtyl.security.AuthRateLimitingFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -47,6 +50,8 @@ import java.util.List;
         SecurityProperties.class,
         PlatformAdministrationProperties.class,
         TestUserProvisioningProperties.class
+        , MerchantPortalProperties.class,
+        CorsProperties.class
 })
 public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -55,10 +60,12 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            ObjectProvider<MerchantContextFilter> merchantContextFilterProvider,
             ObjectMapper objectMapper,
-            SecurityProperties securityProperties) throws Exception {
-        return http
-                .cors(Customizer.withDefaults())
+            SecurityProperties securityProperties,
+            CorsConfigurationSource corsConfigurationSource) throws Exception {
+        http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers
@@ -91,8 +98,10 @@ public class SecurityConfig {
                                 "forbidden",
                                 "Access is denied")))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/password-policy").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/public/merchant-portals/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/auth/register",
@@ -119,24 +128,30 @@ public class SecurityConfig {
                 .addFilterBefore(
                         new AuthRateLimitingFilter(securityProperties, objectMapper),
                         UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .build();
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        MerchantContextFilter merchantContextFilter = merchantContextFilterProvider.getIfAvailable();
+        if (merchantContextFilter != null) http.addFilterAfter(merchantContextFilter, JwtAuthenticationFilter.class);
+        return http.build();
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource(SecurityProperties securityProperties) {
+    CorsConfigurationSource corsConfigurationSource(CorsProperties corsProperties) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(securityProperties.cors().allowedOrigins());
+        configuration.setAllowedOrigins(corsProperties.exactOrigins());
+        configuration.setAllowedOriginPatterns(corsProperties.originPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of(
                 "Accept",
                 "Authorization",
                 "Content-Type",
+                "X-Merchant-Slug",
                 "Idempotency-Key",
                 CorrelationIdFilter.HEADER_NAME));
         configuration.setExposedHeaders(List.of(CorrelationIdFilter.HEADER_NAME));
-        configuration.setAllowCredentials(false);
+        configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
+        log.info("cors_configuration_loaded exact_origins={} origin_patterns={}",
+                corsProperties.exactOrigins(), corsProperties.originPatterns());
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

@@ -147,6 +147,8 @@ import type {
   UserStoreAssignment,
   UserRole
 } from './types';
+import { merchantSlugForRequest } from '../app/portalContext';
+import { API_BASE_URL } from './runtimeConfig';
 
 type AuthRegisterPayload = {
   email: string;
@@ -1517,8 +1519,6 @@ export function getApiErrorMessage(error: unknown, fallback = 'The request could
 
 export const resolveApiError = getApiErrorMessage;
 
-const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')}/api/v1`;
-
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) {
@@ -1527,6 +1527,8 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+  const merchantSlug = merchantSlugForRequest();
+  if (merchantSlug && !path.startsWith('/public/') && !path.startsWith('/platform/')) headers.set('X-Merchant-Slug', merchantSlug);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -1555,6 +1557,10 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   }
 
   return response.json() as Promise<T>;
+}
+
+export function resolveMerchantPortal(slug: string) {
+  return request<{ slug: string; displayName: string; active: boolean }>(`/public/merchant-portals/${encodeURIComponent(slug)}`);
 }
 
 async function requestText(path: string, init: RequestInit = {}, token?: string): Promise<string> {

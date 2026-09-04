@@ -8,6 +8,7 @@ import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.ForbiddenOperationException;
 import com.merchtyl.config.JwtProperties;
 import com.merchtyl.config.SecurityProperties;
+import com.merchtyl.portal.MerchantPortalService;
 import com.merchtyl.platform.admin.PlatformAdministrationService;
 import com.merchtyl.platform.admin.TenantStatus;
 import com.merchtyl.platform.web.CorrelationIdFilter;
@@ -63,6 +64,8 @@ public class AuthService {
     private final JdbcTemplate jdbcTemplate;
     private final SecurityProperties securityProperties;
     private final LoginAttemptService loginAttemptService;
+    @Autowired
+    private MerchantPortalService merchantPortalService;
 
     @Autowired
     public AuthService(
@@ -128,6 +131,11 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        return login(request, null);
+    }
+
+    @Transactional
+    public AuthResponse login(LoginRequest request, String merchantSlug) {
         String email = request.email().trim().toLowerCase();
         User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
         if (user == null) {
@@ -171,6 +179,10 @@ public class AuthService {
 
         if (loginAttemptService != null) {
             loginAttemptService.recordSuccess(user.getId());
+        }
+        if (merchantSlug != null && !merchantSlug.isBlank()
+                && (user.getTenantId() == null || !user.getTenantId().equals(merchantPortalService.tenantId(merchantSlug)))) {
+            throw new com.merchtyl.common.ForbiddenOperationException("MERCHANT_CONTEXT_MISMATCH");
         }
 
         if (user.isPasswordChangeRequired()) {

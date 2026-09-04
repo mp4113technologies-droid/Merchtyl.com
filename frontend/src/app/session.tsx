@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ApiClientError, getCurrentUser, login, logout as logoutRequest, platformLogin, refreshSession } from '../api/client';
 import type { AuthResponse, CurrentUserResponse } from '../api/types';
+import { portalStorageScope } from './portalContext';
+import { useQueryClient } from '@tanstack/react-query';
 
 type LoginCredentials = {
   email: string;
@@ -21,29 +23,29 @@ type SessionContextValue = {
   getValidAccessToken: () => Promise<string>;
 };
 
-const storageKey = 'merchtyl.session';
+const storageKey = () => portalStorageScope() === 'development' ? 'merchtyl.session' : `merchtyl.session.${portalStorageScope()}`;
 const refreshLeewayMs = 60_000;
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 function readStoredSession(): AuthResponse | null {
-  const raw = window.localStorage.getItem(storageKey);
+  const raw = window.localStorage.getItem(storageKey());
   if (!raw) {
     return null;
   }
   try {
     return JSON.parse(raw) as AuthResponse;
   } catch {
-    window.localStorage.removeItem(storageKey);
+    window.localStorage.removeItem(storageKey());
     return null;
   }
 }
 
 function storeSession(session: AuthResponse | null) {
   if (session) {
-    window.localStorage.setItem(storageKey, JSON.stringify(session));
+    window.localStorage.setItem(storageKey(), JSON.stringify(session));
     return;
   }
-  window.localStorage.removeItem(storageKey);
+  window.localStorage.removeItem(storageKey());
 }
 
 type AuthenticatedSession = AuthResponse & {
@@ -75,6 +77,7 @@ function isPlatformSession(session: AuthResponse) {
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<AuthResponse | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [status, setStatus] = useState<SessionStatus>('loading');
@@ -86,7 +89,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(null);
     setStatus('anonymous');
     setSessionExpired(expiredSession);
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const persistAuthenticatedSession = useCallback((nextSession: AuthResponse, user?: CurrentUserResponse) => {
     requireAuthenticatedSession(nextSession);

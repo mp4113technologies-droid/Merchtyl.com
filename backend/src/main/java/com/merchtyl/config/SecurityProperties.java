@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Arrays;
 
 @Validated
 @ConfigurationProperties(prefix = "merchtyl.security")
@@ -25,18 +26,26 @@ public record SecurityProperties(
 
     @ConstructorBinding
     public SecurityProperties {
-        cors = cors == null ? new Cors(List.of()) : cors;
+        cors = cors == null ? new Cors(List.of(), List.of()) : cors;
         rateLimit = rateLimit == null ? new RateLimit(true, 20, Duration.ofMinutes(1)) : rateLimit;
         temporaryPassword = temporaryPassword == null ? new TemporaryPassword(20, 24, 10) : temporaryPassword;
         login = login == null ? new Login(3, true) : login;
         passwordReset = passwordReset == null ? new PasswordReset(30, 5, 5) : passwordReset;
     }
 
-    public record Cors(List<String> allowedOrigins) {
+    public record Cors(List<String> allowedOrigins, List<String> allowedOriginPatterns) {
         public Cors {
-            allowedOrigins = allowedOrigins == null
-                    ? List.of()
-                    : allowedOrigins.stream()
+            allowedOrigins = clean(allowedOrigins);
+            allowedOriginPatterns = clean(allowedOriginPatterns);
+        }
+
+        public Cors(List<String> allowedOrigins) {
+            this(allowedOrigins, List.of());
+        }
+
+        private static List<String> clean(List<String> values) {
+            return values == null ? List.of() : values.stream()
+                    .flatMap(value -> Arrays.stream(value.split(",")))
                     .map(String::trim)
                     .filter(origin -> !origin.isBlank())
                     .distinct()

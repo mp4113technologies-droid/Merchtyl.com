@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
+import com.merchtyl.portal.MerchantPortalService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -39,8 +41,9 @@ public class AuthController {
     @Operation(summary = "Login and issue JWT tokens", description = "Public endpoint. Use the returned accessToken with Swagger Authorize.")
     @ApiResponse(responseCode = "200", description = "Credentials accepted and tokens issued.")
     @ApiResponse(responseCode = "401", description = "Invalid email or password.")
-    AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request);
+    AuthResponse login(@Valid @RequestBody LoginRequest request,
+                       @RequestHeader(value = MerchantPortalService.HEADER_NAME, required = false) String merchantSlug) {
+        return authService.login(request, merchantSlug);
     }
 
     @PostMapping("/forgot-password")

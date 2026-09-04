@@ -11,6 +11,7 @@ import java.util.Map;
 public final class DatabaseConstraintErrorMapper {
     private static final Map<String, DomainError> CONSTRAINTS = Map.ofEntries(
             unique("uq_tenants_tenant_code", "TENANT_CODE_ALREADY_EXISTS", "A merchant with this tenant code already exists.", "tenantCode"),
+            unique("uq_tenants_merchant_slug", "MERCHANT_SLUG_ALREADY_EXISTS", "This merchant portal address is already in use.", "merchantSlug"),
             unique("uq_security_users_email", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),
             unique("uq_security_users_email_lower", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),
             unique("uq_user_accounts_email", "EMAIL_ALREADY_REGISTERED", "This email address is already associated with another user. Please use a different email address.", "email"),

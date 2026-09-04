@@ -59,6 +59,7 @@ public class GlobalExceptionHandler {
     private static List<ApiError.FieldViolation> domainViolations(DomainMessage domain) {
         String field = switch (domain.code()) {
             case "TENANT_CODE_ALREADY_EXISTS" -> "tenantCode";
+            case "MERCHANT_SLUG_ALREADY_EXISTS", "MERCHANT_SLUG_RESERVED", "MERCHANT_SLUG_INVALID" -> "merchantSlug";
             case "OWNER_EMAIL_ALREADY_EXISTS" -> "ownerEmail";
             case "BUSINESS_NUMBER_ALREADY_EXISTS" -> "businessNumber";
             case "PRICING_PLAN_NOT_FOUND", "PRICING_PLAN_NOT_ACTIVE", "PRICING_PLAN_NO_EFFECTIVE_VERSION" -> "pricingPlanId";

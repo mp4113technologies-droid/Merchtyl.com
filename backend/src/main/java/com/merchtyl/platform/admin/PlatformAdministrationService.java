@@ -97,6 +97,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.merchtyl.auth.PasswordPolicyService;
+import com.merchtyl.portal.MerchantPortalService;
 
 @Service
 public class PlatformAdministrationService {
@@ -124,6 +125,8 @@ public class PlatformAdministrationService {
     private final SecurityProperties securityProperties;
     @Autowired
     private PasswordPolicyService passwordPolicyService;
+    @Autowired
+    private MerchantPortalService merchantPortalService;
 
     public PlatformAdministrationService(
             JdbcTemplate jdbcTemplate,
@@ -202,6 +205,7 @@ public class PlatformAdministrationService {
         UUID subscriptionId = UUID.randomUUID();
         UUID onboardingId = UUID.randomUUID();
         String tenantCode = requestedTenantCode(request);
+        String merchantSlug = merchantPortalService.nextAvailableSlug(request.operatingName());
         Instant now = Instant.now();
         String ownerEmail = normalizeEmail(ownerEmail(request));
         String ownerDisplayName = cleanRequired(ownerFirstName(request), "ownerFirstName") + " "
@@ -238,15 +242,16 @@ public class PlatformAdministrationService {
 
         try {
             jdbcTemplate.update("""
-                    insert into tenants (id, tenant_code, legal_name, display_name, status, country_code,
+                    insert into tenants (id, tenant_code, merchant_slug, legal_name, display_name, status, country_code,
                                          administrative_division_code, default_currency_code, primary_timezone,
                                          default_tax_region_code, country_id, administrative_division_id,
                                          default_currency_id, primary_timezone_id, default_tax_region_id,
                                          created_by_platform_user_id)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     tenantId,
                     tenantCode,
+                    merchantSlug,
                     cleanRequired(request.legalBusinessName(), "legalBusinessName"),
                     cleanRequired(request.operatingName(), "operatingName"),
                     TenantStatus.PENDING_OWNER_ACTIVATION.name(),
@@ -491,11 +496,15 @@ public class PlatformAdministrationService {
         TenantSummaryResponse summary = jdbcTemplate.queryForObject("""
                 select * from platform_tenant_summary where id = ?
                 """, tenantSummaryMapper(), tenantId);
+        Map<String, Object> portal = tenant(tenantId);
+        String merchantSlug = (String) portal.get("merchant_slug");
         return new TenantDetailResponse(
                 summary,
                 merchantProfile(tenantId),
                 subscription(tenantId),
-                onboarding(tenantId));
+                onboarding(tenantId),
+                merchantSlug,
+                merchantPortalService.portalUrl(merchantSlug));
     }
 
     @Transactional
