@@ -148,6 +148,7 @@ import type {
   UserRole
 } from './types';
 import { merchantSlugForRequest } from '../app/portalContext';
+import { API_BASE_URL } from './runtimeConfig';
 
 type AuthRegisterPayload = {
   email: string;
@@ -1517,8 +1518,6 @@ export function getApiErrorMessage(error: unknown, fallback = 'The request could
 }
 
 export const resolveApiError = getApiErrorMessage;
-
-const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')}/api/v1`;
 
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);

@@ -96,6 +96,7 @@ public class SecurityConfig {
                                 "forbidden",
                                 "Access is denied")))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/password-policy").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/public/merchant-portals/**").permitAll()
