@@ -253,7 +253,7 @@ describe('Business day pages', () => {
     expect(await screen.findByRole('heading', { name: 'Business day' })).toBeInTheDocument();
     expect(await screen.findByText('2026-07-29')).toBeInTheDocument();
     expect(await screen.findByText('Register session remains open: FRONT')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Close' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Close Business Day' })).toBeInTheDocument();
   });
 
   it('switches Store business-day state and reopens the selected closed day', async () => {
@@ -334,16 +334,72 @@ describe('Business day pages', () => {
 
     render(<App initialEntries={['/business-day']} />);
 
-    expect(await screen.findByRole('button', { name: 'Open Business Day' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Start Business Day' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reopen Business Day' })).not.toBeInTheDocument();
     expect(screen.getByText('Previous business day: 2026-08-31 — CLOSED')).toBeInTheDocument();
   });
 
+  it('lets a cashier start today and then exposes close without reopen', async () => {
+    storeSession(['CASHIER']);
+    let opened = false;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser(['CASHIER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN', 'BUSINESS_DAY_CLOSE', 'REGISTER_SESSION_OPEN']));
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
+      if (url.pathname.endsWith('/api/v1/business-days/open') && init?.method === 'POST') {
+        opened = true;
+        return jsonResponse(businessDay());
+      }
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse(opened ? {
+        storeId, currentBusinessDate: '2026-07-29', currentBusinessDay: businessDay(),
+        previousBusinessDay: null, state: 'OPEN', availableAction: 'NONE'
+      } : {
+        storeId, currentBusinessDate: '2026-07-29', currentBusinessDay: null,
+        previousBusinessDay: null, state: 'NO_BUSINESS_DAY_TODAY', availableAction: 'OPEN'
+      });
+      if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse(validation());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Start Business Day' }));
+    expect(await screen.findByText('OPEN')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start closing' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Close Business Day' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reopen Business Day' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/business-days/open') && init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it('tells a cashier to ask management when today is closed', async () => {
+    storeSession(['CASHIER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser(['CASHIER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN']));
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId, currentBusinessDate: '2026-07-29', currentBusinessDay: businessDay({ status: 'CLOSED' }),
+        previousBusinessDay: null, state: 'CLOSED_TODAY', availableAction: 'REOPEN'
+      });
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByText("Today's business day has been closed. Ask a Manager or Owner to reopen it.")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reopen Business Day' })).not.toBeInTheDocument();
+  });
+
   it.each([
     { label: 'Tenant Owner', roles: ['TENANT_OWNER'] as UserRole[] },
-    { label: 'Manager', roles: ['MANAGER'] as UserRole[] }
+    { label: 'Manager', roles: ['MANAGER'] as UserRole[] },
+    { label: 'Cashier', roles: ['CASHIER'] as UserRole[] }
   ])(
-    '$label closes the exact previous business day and then sees Open Business Day',
+    '$label closes the exact previous business day and then sees Start Business Day',
     async ({ roles }) => {
       storeSession(roles);
       const previous = businessDay({ businessDate: '2026-09-01', status: 'OPEN', version: 4 });
@@ -379,7 +435,7 @@ describe('Business day pages', () => {
       render(<App initialEntries={['/business-day']} />);
 
       expect(await screen.findByText('Previous Business Day Still Open')).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Open Business Day' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Start Business Day' })).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'Close Previous Business Day' }));
       const dialog = await screen.findByRole('dialog');
       await userEvent.click(within(dialog).getByRole('button', { name: 'Close Previous Business Day' }));
@@ -389,7 +445,7 @@ describe('Business day pages', () => {
         const body = JSON.parse(String(init.body));
         return body.version === 4 && body.confirmationAccepted === true;
       })).toBe(true));
-      expect(await screen.findByRole('button', { name: 'Open Business Day' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Start Business Day' })).toBeInTheDocument();
     }
   );
 
@@ -410,7 +466,7 @@ describe('Business day pages', () => {
     render(<App initialEntries={['/business-day']} />);
 
     expect(await screen.findByText('Previous Business Day Still Open')).toBeInTheDocument();
-    expect(screen.getByText('Ask an Owner or Manager to close it.')).toBeInTheDocument();
+    expect(screen.getByText("The previous business day is still open. Ask a Manager or Owner to close it before starting today's business day.")).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Close Previous Business Day' })).not.toBeInTheDocument();
   });
 
@@ -433,16 +489,29 @@ describe('Business day pages', () => {
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
   });
 
-  it('renders the calculated closing preview before sign-off', async () => {
-    storeSession(['MANAGER']);
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+  it('lets a cashier review and complete the current business-day close', async () => {
+    storeSession(['CASHIER']);
+    let closed = false;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
-      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['CASHIER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN', 'BUSINESS_DAY_CLOSE']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]) satisfies StoreListResponse);
       if (url.pathname.endsWith('/api/v1/business-days/current')) return jsonResponse(businessDay());
       if (url.pathname.endsWith('/api/v1/business-days/latest')) return jsonResponse(businessDay());
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse({ ...validation(), closable: true, blockers: [] });
       if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/preview`)) return jsonResponse(closingPreview());
+      if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/close`) && init?.method === 'POST') {
+        closed = true;
+        return jsonResponse(report());
+      }
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId,
+        currentBusinessDate: '2026-07-29',
+        currentBusinessDay: businessDay({ status: closed ? 'CLOSED' : 'OPEN' }),
+        previousBusinessDay: null,
+        state: closed ? 'CLOSED_TODAY' : 'OPEN',
+        availableAction: closed ? 'REOPEN' : 'NONE'
+      });
       return jsonResponse({}, 404);
     });
 
@@ -452,5 +521,12 @@ describe('Business day pages', () => {
     expect((await screen.findAllByText('$100.00')).length).toBeGreaterThan(0);
     expect(await screen.findByText('Payment preview')).toBeInTheDocument();
     expect(await screen.findByText('Register reconciliation preview')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Variance explanation' }), 'Verified one dollar drawer variance');
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Close and generate report' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).includes(`/business-days/${dayId}/close`) && init?.method === 'POST')).toBe(true));
+    expect(await screen.findByText('CLOSED')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reopen Business Day' })).not.toBeInTheDocument();
   });
 });

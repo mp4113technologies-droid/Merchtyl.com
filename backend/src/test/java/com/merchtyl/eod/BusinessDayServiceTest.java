@@ -14,10 +14,14 @@ import com.merchtyl.lottery.LotterySaleCancellationRepository;
 import com.merchtyl.lottery.LotterySaleRepository;
 import com.merchtyl.lottery.LotterySettlementRepository;
 import com.merchtyl.refunds.RefundRepository;
+import com.merchtyl.register.Register;
 import com.merchtyl.registersession.RegisterSessionRepository;
+import com.merchtyl.registersession.RegisterSession;
+import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -39,9 +44,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +73,7 @@ class BusinessDayServiceTest {
     @Mock private CashLedgerService cashLedger;
     @Mock private FeatureService features;
     @Mock private AuditService audit;
+    @Mock private StoreAccessService storeAccess;
 
     private BusinessDayService service;
     private Authentication authentication;
@@ -83,6 +91,7 @@ class BusinessDayServiceTest {
                 cashMovements, inventoryTransactions, inventoryBalances, lotterySales, lotteryPayouts,
                 lotterySaleCancellations, lotteryPayoutReversals, lotterySettlements, cashLedger, features,
                 audit, new ObjectMapper(), Clock.fixed(Instant.parse("2026-08-31T22:10:00Z"), ZoneOffset.UTC));
+        ReflectionTestUtils.setField(service, "storeAccessService", storeAccess);
         authentication = mock(Authentication.class);
         day = mock(BusinessDay.class);
         store = mock(Store.class);
@@ -94,14 +103,88 @@ class BusinessDayServiceTest {
         lenient().when(authentication.getName()).thenReturn("owner@example.local");
         lenient().when(users.findByEmailIgnoreCase("owner@example.local")).thenReturn(Optional.of(actor));
         lenient().when(businessDays.findByIdForUpdate(dayId)).thenReturn(Optional.of(day));
-        when(day.getId()).thenReturn(dayId);
-        when(day.getStore()).thenReturn(store);
-        when(day.getBusinessDate()).thenReturn(businessDate);
-        when(day.getStatus()).thenReturn(BusinessDayStatus.CLOSED);
-        when(day.getVersion()).thenReturn(3L);
-        when(store.getId()).thenReturn(storeId);
+        lenient().when(day.getId()).thenReturn(dayId);
+        lenient().when(day.getStore()).thenReturn(store);
+        lenient().when(day.getBusinessDate()).thenReturn(businessDate);
+        lenient().when(day.getStatus()).thenReturn(BusinessDayStatus.CLOSED);
+        lenient().when(day.getVersion()).thenReturn(3L);
+        lenient().when(store.getId()).thenReturn(storeId);
         lenient().when(store.getTimezone()).thenReturn("UTC");
         lenient().when(reports.existsByBusinessDay_Id(dayId)).thenReturn(true);
+    }
+
+    @Test
+    void assignedStoreOperatorCanOpenTodaysBusinessDayWithoutManagementScope() {
+        when(stores.findById(storeId)).thenReturn(Optional.of(store));
+        when(configurations.findByStore_Id(storeId)).thenReturn(Optional.empty());
+        when(businessDays.findByStore_IdAndStatusIn(storeId, List.of(
+                BusinessDayStatus.OPEN, BusinessDayStatus.CLOSING, BusinessDayStatus.REOPENED))).thenReturn(List.of());
+        when(businessDays.existsByStore_IdAndBusinessDate(storeId, businessDate)).thenReturn(false);
+        when(businessDays.saveAndFlush(any(BusinessDay.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(store.getCode()).thenReturn("MAIN");
+        when(store.getName()).thenReturn("Main Store");
+        when(actor.getId()).thenReturn(UUID.randomUUID());
+        when(actor.getDisplayName()).thenReturn("Cashier One");
+
+        BusinessDayResponse response = service.open(
+                new BusinessDayOpenRequest(storeId, businessDate, false, null), authentication);
+
+        assertThat(response.storeId()).isEqualTo(storeId);
+        assertThat(response.businessDate()).isEqualTo(businessDate);
+        assertThat(response.status()).isEqualTo(BusinessDayStatus.OPEN);
+        verify(storeAccess).requireStoreAccess(authentication, storeId);
+        verify(storeAccess, never()).requireStoreManagement(authentication, storeId);
+    }
+
+    @Test
+    void previousDayOverrideStillRequiresStoreManagement() {
+        when(stores.findById(storeId)).thenReturn(Optional.of(store));
+        when(configurations.findByStore_Id(storeId)).thenReturn(Optional.empty());
+        when(businessDays.findByStore_IdAndStatusIn(storeId, List.of(
+                BusinessDayStatus.OPEN, BusinessDayStatus.CLOSING, BusinessDayStatus.REOPENED))).thenReturn(List.of(day));
+
+        assertThatThrownBy(() -> service.open(
+                new BusinessDayOpenRequest(storeId, businessDate, true, "Approved exception"), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Previous business day");
+
+        verify(storeAccess).requireStoreAccess(authentication, storeId);
+        verify(storeAccess).requireStoreManagement(authentication, storeId);
+    }
+
+    @Test
+    void assignedStoreOperatorCanStartClosingWithoutManagementScope() {
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        stubResponseFields();
+
+        service.startClosing(dayId, authentication);
+
+        verify(storeAccess).requireStoreAccess(authentication, storeId);
+        verify(storeAccess, never()).requireStoreManagement(authentication, storeId);
+        verify(day).startClosing(eq(actor), any(Instant.class));
+    }
+
+    @Test
+    void assignedStoreOperatorCloseIsBlockedByOpenRegisterSession() {
+        RegisterSession session = mock(RegisterSession.class);
+        Register register = mock(Register.class);
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(day.getTimezone()).thenReturn("America/Moncton");
+        when(session.getStatus()).thenReturn(RegisterSessionStatus.OPEN);
+        when(session.getRegister()).thenReturn(register);
+        when(register.getCode()).thenReturn("FRONT");
+        when(registerSessions.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(session));
+
+        assertThatThrownBy(() -> service.close(
+                dayId,
+                new BusinessDayCloseRequest(3L, null, null, true),
+                authentication))
+                .isInstanceOf(ClosingValidationException.class)
+                .hasMessage("All registers must be closed before closing the business day.");
+
+        verify(storeAccess).requireStoreAccess(authentication, storeId);
+        verify(storeAccess, never()).requireStoreManagement(authentication, storeId);
     }
 
     @Test

@@ -226,12 +226,15 @@ public class BusinessDayService {
         }
         Store store = store(request.storeId());
         User actor = currentUser(authentication);
-        requireStoreManagement(authentication, store.getId());
+        requireStoreAccess(authentication, store.getId());
         BusinessDayConfiguration configuration = configuration(store);
         LocalDate businessDate = request.businessDate() == null
                 ? Instant.now(clock).atZone(ZoneId.of(store.getTimezone())).toLocalDate()
                 : request.businessDate();
         List<BusinessDay> activeDays = businessDayRepository.findByStore_IdAndStatusIn(store.getId(), ACTIVE_DAY_STATUSES);
+        if (request.overrideOpenPrevious()) {
+            requireStoreManagement(authentication, store.getId());
+        }
         if (!activeDays.isEmpty() && !(request.overrideOpenPrevious() && !configuration.isBlockNextBusinessDayUntilPreviousClose())) {
             throw new ConflictException("Previous business day remains open for this store");
         }
@@ -397,7 +400,7 @@ public class BusinessDayService {
     public BusinessDayResponse startClosing(UUID id, Authentication authentication) {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
-        requireStoreManagement(authentication, day.getStore().getId());
+        requireStoreAccess(authentication, day.getStore().getId());
         if (day.getStatus() == BusinessDayStatus.CLOSED) {
             throw new ConflictException("Business day is already closed");
         }
@@ -431,7 +434,7 @@ public class BusinessDayService {
     public EndOfDayReportResponse close(UUID id, BusinessDayCloseRequest request, Authentication authentication) {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
-        requireStoreManagement(authentication, day.getStore().getId());
+        requireStoreAccess(authentication, day.getStore().getId());
         requireVersion(day, request == null ? null : request.version());
         if (day.getStatus() == BusinessDayStatus.CLOSED) {
             return reportRepository.findFirstByBusinessDay_IdOrderByRevisionDesc(day.getId())

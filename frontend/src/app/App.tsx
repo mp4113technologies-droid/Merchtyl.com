@@ -59,7 +59,7 @@ import {
   Typography,
   useMediaQuery
 } from '@mui/material';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import {
   BrowserRouter,
@@ -114,6 +114,7 @@ import { RegisterReportsPage } from '../features/reports/RegisterReportsPage';
 import { SalesReportsPage } from '../features/reports/SalesReportsPage';
 import { LotteryReportsPage } from '../features/reports/LotteryReportsPage';
 import { BusinessDayClosePage, BusinessDayHistoryPage, BusinessDayPage, EndOfDayReportDetailPage, EndOfDayReportsPage } from '../features/eod/BusinessDayPages';
+import { resolveBusinessDayAccess } from '../features/eod/businessDayAccess';
 import { PrinterSettingsPage } from '../features/settings/PrinterSettingsPage';
 import { FeatureSettingsPage } from '../features/settings/FeatureSettingsPage';
 import { ScannerTestPage } from '../features/settings/ScannerTestPage';
@@ -134,7 +135,7 @@ import {
 import { TaxSimulatorPage } from '../features/tax/TaxSimulatorPage';
 import { OwnerDashboardPage } from '../features/dashboard/OwnerDashboardPage';
 import { PwaPrompt } from '../features/pwa/PwaPrompt';
-import { getCurrentRegisterSession, listRegisters, listStores } from '../api/client';
+import { getBusinessDayOperationalState, getCurrentRegisterSession, listRegisters, listStores, openBusinessDay } from '../api/client';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import {
   NewPlatformMerchantPage,
@@ -257,8 +258,10 @@ function PosLayout() {
 
 function StoreMenuPage() {
   const { currentUser, session, getValidAccessToken, logout } = useSession();
+  const queryClient = useQueryClient();
   const roles = currentUser?.roles ?? session?.roles ?? [];
   const permissions = currentUser?.permissions ?? [];
+  const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const current = useQuery({
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
@@ -274,6 +277,26 @@ function StoreMenuPage() {
     queryFn: async () => listRegisters(await getValidAccessToken(), { page: 0, size: 100 })
   });
   const activeSession = current.data?.status === 'OPEN' ? current.data : null;
+  const selectedStoreId = activeSession?.storeId
+    ?? window.localStorage.getItem('merchtyl.activeStoreId')
+    ?? stores.data?.content[0]?.id
+    ?? '';
+  const canViewBusinessDay = businessDayAccess.canView;
+  const canOpenBusinessDay = businessDayAccess.canOpen;
+  const businessDay = useQuery({
+    queryKey: ['business-day', 'operational-state', selectedStoreId],
+    queryFn: async () => getBusinessDayOperationalState(await getValidAccessToken(), selectedStoreId),
+    enabled: canViewBusinessDay && Boolean(selectedStoreId)
+  });
+  const startBusinessDay = useMutation({
+    mutationFn: async () => openBusinessDay(await getValidAccessToken(), { storeId: selectedStoreId }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['business-day'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session'] })
+      ]);
+    }
+  });
   const store = stores.data?.content.find((item) => item.id === activeSession?.storeId);
   const register = registers.data?.content.find((item) => item.id === activeSession?.registerId);
   const foodServiceEnabled = activeSession
@@ -319,6 +342,37 @@ function StoreMenuPage() {
           </Stack>
         )}
       </Paper>
+      {canViewBusinessDay && selectedStoreId ? (
+        <Paper variant="outlined" sx={{ p: { xs: 2, lg: 3 } }}>
+          <Stack spacing={1.5}>
+            <Typography variant="h6">Business Day</Typography>
+            {businessDay.isLoading ? <CircularProgress size={24} aria-label="Loading business day" /> : null}
+            {businessDay.data?.state === 'OPEN' ? (
+              <Alert severity="success" action={businessDayAccess.canClose ? (
+                <Button component={Link} to={`/business-day/close?storeId=${selectedStoreId}`} color="inherit">Close Business Day</Button>
+              ) : undefined}>Business Day Open</Alert>
+            ) : null}
+            {(businessDay.data?.state === 'NO_BUSINESS_DAY_TODAY' || businessDay.data?.state === 'HISTORICAL_CLOSED') ? (
+              <>
+                <Typography>Business Day not started</Typography>
+                {canOpenBusinessDay ? (
+                  <Button variant="contained" startIcon={<LockOpenOutlinedIcon />} sx={{ alignSelf: 'flex-start' }}
+                    disabled={startBusinessDay.isPending} onClick={() => startBusinessDay.mutate()}>
+                    {startBusinessDay.isPending ? 'Starting…' : 'Start Business Day'}
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+            {businessDay.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? (
+              <Alert severity="warning">The previous business day is still open. Ask a Manager or Owner to close it before starting today's business day.</Alert>
+            ) : null}
+            {businessDay.data?.state === 'CLOSED_TODAY' ? (
+              <Alert severity="warning">Today's business day has been closed. Ask a Manager or Owner to reopen it.</Alert>
+            ) : null}
+            {startBusinessDay.isError ? <Alert severity="error">{startBusinessDay.error instanceof Error ? startBusinessDay.error.message : 'Unable to start the business day.'}</Alert> : null}
+          </Stack>
+        </Paper>
+      ) : null}
       <Box>
         <Typography variant="h6" sx={{ mb: 2 }}>Store Operations</Typography>
         <Grid container spacing={2}>
@@ -364,6 +418,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   });
   const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
   const permissions = currentUser?.permissions ?? [];
+  const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
   const navItems = [
     ...(canViewPlatform ? [{ label: 'Platform', to: '/platform', icon: <ShieldOutlinedIcon /> }] : []),
     ...(canViewPlatform ? [{ label: 'Merchants', to: '/platform/merchants', icon: <StorefrontIcon /> }] : []),
@@ -390,7 +445,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     ...(canViewReports ? [{ label: 'Sales reports', to: '/reports/sales', icon: <AssessmentOutlinedIcon /> }] : []),
     ...(canViewReports ? [{ label: 'Register reports', to: '/reports/registers', icon: <AssessmentOutlinedIcon /> }] : []),
     ...(canViewReports ? [{ label: 'Lottery reports', to: '/reports/lottery', icon: <AssessmentOutlinedIcon /> }] : []),
-    ...(canViewReports ? [{ label: 'Business day', to: '/business-day', icon: <EventAvailableOutlinedIcon /> }] : []),
+    ...(businessDayAccess.canView ? [{ label: 'Business day', to: '/business-day', icon: <EventAvailableOutlinedIcon /> }] : []),
     ...(canViewReports ? [{ label: 'EOD reports', to: '/end-of-day-reports', icon: <AssessmentOutlinedIcon /> }] : []),
     ...(canViewCatalogue ? [{ label: 'Categories', to: '/categories', icon: <CategoryOutlinedIcon /> }] : []),
     ...(canViewCatalogue ? [{ label: 'Brands', to: '/brands', icon: <BrandingWatermarkOutlinedIcon /> }] : []),

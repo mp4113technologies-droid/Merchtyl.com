@@ -6,7 +6,9 @@ public class ClosingValidationException extends RuntimeException {
     private final transient ClosingValidationResponse validation;
 
     public ClosingValidationException(ClosingValidationResponse validation) {
-        super("Business day cannot be closed until all blocking issues are resolved");
+        super(validation.blockers().stream().anyMatch(blocker -> "OPEN_REGISTER_SESSION".equals(blocker.code()))
+                ? "All registers must be closed before closing the business day."
+                : "Business day cannot be closed until all blocking issues are resolved");
         this.validation = validation;
     }
 

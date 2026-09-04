@@ -40,7 +40,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   closeBusinessDay,
   exportEndOfDayReportCsv,
@@ -61,6 +61,7 @@ import {
 } from '../../api/client';
 import type { BusinessDay, BusinessDayStatus, ClosingBlocker, EndOfDayClosingPreview, EndOfDayReport, Store, UserRole } from '../../api/types';
 import { useSession } from '../../app/session';
+import { resolveBusinessDayAccess } from './businessDayAccess';
 
 function canManageBusinessDay(roles: UserRole[]) {
   return roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
@@ -82,11 +83,10 @@ function useRoles() {
 function useBusinessDayAccess() {
   const { currentUser, session } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
-  const permissions = currentUser?.permissions ?? [];
+  const access = resolveBusinessDayAccess(roles, currentUser?.permissions);
   return {
     roles,
-    canView: permissions.length > 0 ? permissions.includes('BUSINESS_DAY_VIEW') : canManageBusinessDay(roles),
-    canClose: permissions.length > 0 ? permissions.includes('BUSINESS_DAY_CLOSE') : canManageBusinessDay(roles)
+    ...access
   };
 }
 
@@ -170,9 +170,8 @@ function downloadBlob(filename: string, blob: Blob) {
 }
 
 export function BusinessDayPage() {
-  const { roles, canView: allowed, canClose } = useBusinessDayAccess();
+  const { roles, canView: allowed, canOpen, canClose, canReopen } = useBusinessDayAccess();
   const canForce = canForceOrReopen(roles);
-  const canReopen = canReopenBusinessDay(roles);
   const { getValidAccessToken } = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -202,7 +201,7 @@ export function BusinessDayPage() {
   const validation = useQuery({
     queryKey: ['business-day', 'validation', operationalState.data?.currentBusinessDay?.id],
     queryFn: async () => getBusinessDayClosingValidation(await getValidAccessToken(), operationalState.data!.currentBusinessDay!.id),
-    enabled: allowed && Boolean(operationalState.data?.currentBusinessDay?.id) && operationalState.data?.currentBusinessDay?.status !== 'CLOSED'
+    enabled: allowed && canClose && Boolean(operationalState.data?.currentBusinessDay?.id) && operationalState.data?.currentBusinessDay?.status !== 'CLOSED'
   });
 
   const open = useMutation({
@@ -285,10 +284,12 @@ export function BusinessDayPage() {
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
           <Stack spacing={2}>
             <Typography variant="h6">Business date {operationalState.data.currentBusinessDate}</Typography>
-            <Typography color="text.secondary">Not opened. Open a new business day before register sales and closing reconciliation.</Typography>
-            <Button variant="contained" startIcon={<LockOpenOutlinedIcon />} disabled={!storeId || open.isPending} onClick={() => open.mutate()}>
-              Open Business Day
-            </Button>
+            <Typography color="text.secondary">Business Day not started. Start it before opening an assigned register.</Typography>
+            {canOpen ? (
+              <Button variant="contained" startIcon={<LockOpenOutlinedIcon />} disabled={!storeId || open.isPending} onClick={() => open.mutate()}>
+                {open.isPending ? 'Starting…' : 'Start Business Day'}
+              </Button>
+            ) : null}
             {previousDay ? <Typography variant="body2" color="text.secondary">Previous business day: {previousDay.businessDate} — {previousDay.status}</Typography> : null}
           </Stack>
         </Paper>
@@ -306,7 +307,7 @@ export function BusinessDayPage() {
                 disabled={closePrevious.isPending} onClick={() => setClosePreviousOpen(true)}>
                 Close Previous Business Day
               </Button>
-            ) : <Typography variant="body2">Ask an Owner or Manager to close it.</Typography>}
+            ) : <Typography variant="body2">The previous business day is still open. Ask a Manager or Owner to close it before starting today's business day.</Typography>}
           </Stack>
         </Alert>
       ) : null}
@@ -324,11 +325,13 @@ export function BusinessDayPage() {
             <Stack spacing={2}>
               <Typography variant="h6">Closing readiness</Typography>
               {day.status === 'CLOSED'
-                ? <Typography color="text.secondary">This Store business day is closed. Reopening preserves the existing report and register history.</Typography>
-                : validation.isLoading ? <LoadingPanel label="Checking closing blockers" /> : <BlockerList blockers={validation.data?.blockers ?? []} />}
+                ? <Typography color="text.secondary">{canReopen ? 'This Store business day is closed. Reopening preserves the existing report and register history.' : "Today's business day has been closed. Ask a Manager or Owner to reopen it."}</Typography>
+                : !canClose
+                  ? <Typography color="text.secondary">Business Day is open. Continue to your assigned register.</Typography>
+                  : validation.isLoading ? <LoadingPanel label="Checking closing blockers" /> : <BlockerList blockers={validation.data?.blockers ?? []} />}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                {day.status !== 'CLOSED' ? <Button variant="contained" onClick={() => startClosing.mutate(day)} disabled={startClosing.isPending}>Start closing</Button> : null}
-                {day.status !== 'CLOSED' ? <Button component={Link} to="/business-day/close" variant="outlined">Close</Button> : null}
+                {day.status !== 'CLOSED' && canClose ? <Button variant="contained" onClick={() => startClosing.mutate(day)} disabled={startClosing.isPending}>Start closing</Button> : null}
+                {day.status !== 'CLOSED' && canClose ? <Button component={Link} to={`/business-day/close?storeId=${day.storeId}`} variant="outlined">Close Business Day</Button> : null}
                 {canForce ? (
                   <Button component={Link} to="/business-day/close?force=true" color="warning" disabled={day.status === 'CLOSED'}>
                     Force close
@@ -376,13 +379,13 @@ export function BusinessDayPage() {
 }
 
 export function BusinessDayClosePage() {
-  const roles = useRoles();
-  const allowed = canManageBusinessDay(roles);
+  const { roles, canClose: allowed } = useBusinessDayAccess();
   const canForce = canForceOrReopen(roles);
-  const { getValidAccessToken } = useSession();
+  const [searchParams] = useSearchParams();
+  const { getValidAccessToken, currentUser } = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [storeId, setStoreId] = React.useState('');
+  const [storeId, setStoreId] = React.useState(searchParams.get('storeId') ?? '');
   const [managerNotes, setManagerNotes] = React.useState('');
   const [varianceExplanation, setVarianceExplanation] = React.useState('');
   const [confirmationAccepted, setConfirmationAccepted] = React.useState(false);
@@ -430,7 +433,9 @@ export function BusinessDayClosePage() {
     onSuccess: async (report) => {
       await queryClient.invalidateQueries({ queryKey: ['business-day'] });
       await queryClient.invalidateQueries({ queryKey: ['end-of-day-reports'] });
-      navigate(`/end-of-day-reports/${report.id}`);
+      const canViewReport = currentUser?.permissions?.includes('END_OF_DAY_REPORT_VIEW')
+        ?? canManageBusinessDay(roles);
+      navigate(canViewReport ? `/end-of-day-reports/${report.id}` : '/business-day');
     }
   });
 

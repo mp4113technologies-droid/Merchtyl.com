@@ -389,6 +389,43 @@ describe('Register session pages', () => {
     expect(screen.queryByText('Unauthorized')).not.toBeInTheDocument();
   });
 
+  it('starts a missing business day from register open and enables register operation immediately', async () => {
+    storeSession(['CASHIER']);
+    let businessDayOpen = false;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser(['CASHIER'], ['REGISTER_SESSION_OPEN', 'BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN']));
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
+        return jsonResponse(page<RegisterSession>([]));
+      }
+      if (url.pathname.endsWith('/api/v1/business-days/open') && init?.method === 'POST') {
+        businessDayOpen = true;
+        return jsonResponse({ id: 'day-id', storeId: store().id, businessDate: '2026-09-03', status: 'OPEN' });
+      }
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId: store().id,
+        currentBusinessDate: '2026-09-03',
+        currentBusinessDay: businessDayOpen ? { id: 'day-id', storeId: store().id, businessDate: '2026-09-03', status: 'OPEN' } : null,
+        previousBusinessDay: null,
+        state: businessDayOpen ? 'OPEN' : 'NO_BUSINESS_DAY_TODAY',
+        availableAction: businessDayOpen ? 'NONE' : 'OPEN'
+      });
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/open']} />);
+
+    const openRegister = await screen.findByRole('button', { name: 'Open register' });
+    expect(openRegister).toBeDisabled();
+    await userEvent.click(await screen.findByRole('button', { name: 'Start Business Day' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open register' })).toBeEnabled());
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/business-days/open') && init?.method === 'POST')).toHaveLength(1);
+  });
+
   it('requires explicit owner confirmation before overriding an active cashier session', async () => {
     storeSession(['TENANT_OWNER']);
     const activeSession = registerSession();

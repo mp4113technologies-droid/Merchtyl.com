@@ -39,6 +39,7 @@ import {
   closeRegisterSession,
   createCashMovement,
   forceCloseRegisterSession,
+  getBusinessDayOperationalState,
   getCurrentRegisterSession,
   listCashMovements,
   listDevices,
@@ -46,6 +47,7 @@ import {
   listRegisterSessions,
   listStores,
   openRegisterSession,
+  openBusinessDay,
   overrideRegisterSession,
   startRegisterSessionClosing
 } from '../../api/client';
@@ -54,6 +56,7 @@ import { ApiClientError } from '../../api/client';
 import type { CashLedgerBreakdown, CashLedgerDirection, CashLedgerSourceType, CashMovement, CashMovementType, Device, Register, RegisterSession, Store, UserRole } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
+import { resolveBusinessDayAccess } from '../eod/businessDayAccess';
 
 export function registerDeviceEnforcementEnabled() {
   return import.meta.env.VITE_REGISTER_DEVICE_ENFORCEMENT_ENABLED === 'true';
@@ -993,6 +996,21 @@ export function RegisterOpenPage() {
   });
   const selectedStoreId = form.watch('storeId');
   const selectedRegisterId = form.watch('registerId');
+  const businessDayAccess = resolveBusinessDayAccess(currentUser?.roles ?? [], currentUser?.permissions);
+  const businessDay = useQuery({
+    queryKey: ['business-day', 'operational-state', selectedStoreId],
+    queryFn: async () => getBusinessDayOperationalState(await getValidAccessToken(), selectedStoreId),
+    enabled: canUse && businessDayAccess.canView && Boolean(selectedStoreId)
+  });
+  const startBusinessDay = useMutation({
+    mutationFn: async () => openBusinessDay(await getValidAccessToken(), { storeId: selectedStoreId }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['business-day', 'operational-state', selectedStoreId] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session'] })
+      ]);
+    }
+  });
 
   const registers = useQuery({
     queryKey: ['registers', 'register-session-open', selectedStoreId],
@@ -1130,6 +1148,23 @@ export function RegisterOpenPage() {
       {stores.isLoading ? <LoadingPanel label="Loading register setup" /> : null}
       {stores.isError ? <Alert severity="error">{errorMessage(stores.error)}</Alert> : null}
       {mutation.isError ? <Alert severity="error">{errorMessage(mutation.error)}</Alert> : null}
+      {startBusinessDay.isError ? <Alert severity="error">{errorMessage(startBusinessDay.error)}</Alert> : null}
+
+      {businessDay.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? (
+        <Alert severity="warning">The previous business day is still open. Ask a Manager or Owner to close it before starting today's business day.</Alert>
+      ) : null}
+      {businessDay.data?.state === 'CLOSED_TODAY' ? (
+        <Alert severity="warning">Today's business day has been closed. Ask a Manager or Owner to reopen it.</Alert>
+      ) : null}
+      {(businessDay.data?.state === 'NO_BUSINESS_DAY_TODAY' || businessDay.data?.state === 'HISTORICAL_CLOSED') && businessDayAccess.canOpen ? (
+        <Alert severity="info" action={(
+          <Button color="inherit" disabled={startBusinessDay.isPending} onClick={() => startBusinessDay.mutate()}>
+            {startBusinessDay.isPending ? 'Starting…' : 'Start Business Day'}
+          </Button>
+        )}>
+          Business Day Not Started
+        </Alert>
+      ) : null}
 
       {!stores.isLoading && !stores.isError ? (
         <Paper
@@ -1244,7 +1279,7 @@ export function RegisterOpenPage() {
               type="submit"
               variant="contained"
               startIcon={<LockOpenOutlinedIcon />}
-              disabled={mutation.isPending || !selectedStoreId || !selectedRegisterId || (deviceEnforcementEnabled && !form.watch('deviceId'))}
+              disabled={mutation.isPending || (businessDayAccess.canView && (businessDay.isLoading || businessDay.data?.state !== 'OPEN')) || !selectedStoreId || !selectedRegisterId || (deviceEnforcementEnabled && !form.watch('deviceId'))}
               sx={{ alignSelf: 'flex-start' }}
             >
               Open register

@@ -57,7 +57,20 @@ class BusinessDayControllerAuthorizationTest {
     IdempotencyService idempotencyService;
 
     @Test
-    void cashierCannotOpenBusinessDay() throws Exception {
+    void cashierWithBusinessDayOpenPermissionCanOpenBusinessDay() throws Exception {
+        when(businessDayService.open(any(), any())).thenReturn(response());
+
+        mockMvc.perform(post("/api/v1/business-days/open")
+                        .contentType("application/json")
+                        .content("{\"storeId\":\"" + STORE_ID + "\"}")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_OPEN"))))
+                .andExpect(status().isOk());
+
+        verify(businessDayService).open(any(), any());
+    }
+
+    @Test
+    void cashierWithoutBusinessDayOpenPermissionCannotOpenBusinessDay() throws Exception {
         mockMvc.perform(post("/api/v1/business-days/open")
                         .contentType("application/json")
                         .content("{\"storeId\":\"" + STORE_ID + "\"}")
@@ -96,16 +109,28 @@ class BusinessDayControllerAuthorizationTest {
     }
 
     @Test
-    void managerCanPreviewBusinessDayClose() throws Exception {
+    void cashierWithClosePermissionCanPreviewBusinessDayClose() throws Exception {
         when(businessDayService.get(DAY_ID)).thenReturn(response());
         when(businessDayService.previewClosing(DAY_ID)).thenReturn(preview());
 
         mockMvc.perform(get("/api/v1/business-days/{id}/preview", DAY_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.businessDayId").value(DAY_ID.toString()))
                 .andExpect(jsonPath("$.grossSales").value(100.00))
                 .andExpect(jsonPath("$.cashVariance").value(-1.00));
+    }
+
+    @Test
+    void cashierWithClosePermissionCannotReopenWithoutReopenPermission() throws Exception {
+        mockMvc.perform(post("/api/v1/business-days/{id}/reopen", DAY_ID)
+                        .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "reopen-1")
+                        .contentType("application/json")
+                        .content("{\"version\":1,\"reason\":\"Correction\"}")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
+                .andExpect(status().isForbidden());
+
+        verify(idempotencyService, never()).execute(any(), any(), any(), any(), any());
     }
 
     private static BusinessDayResponse response() {

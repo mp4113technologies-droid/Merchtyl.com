@@ -66,6 +66,51 @@ describe('App authentication', () => {
     expect(homeDestination(['OWNER'])).toBeNull();
   });
 
+  it('lets an assigned cashier start the business day from Store Menu', async () => {
+    const storeId = '00000000-0000-0000-0000-000000000301';
+    let opened = false;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/login')) return jsonResponse(authResponse({
+        email: 'test3@adviam.com', displayName: 'Test 3', roles: ['CASHIER']
+      }));
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser({
+        email: 'test3@adviam.com', displayName: 'Test 3',
+        roles: ['CASHIER'],
+        permissions: ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN', 'BUSINESS_DAY_CLOSE', 'REGISTER_SESSION_OPEN']
+      }));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return noContentResponse();
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0, first: true, last: true });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse({
+        content: [{ id: storeId, code: 'MAIN', name: 'Main Store', capabilities: ['RETAIL'] }],
+        page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true
+      });
+      if (url.pathname.endsWith('/api/v1/business-days/open') && init?.method === 'POST') {
+        opened = true;
+        return jsonResponse({ id: 'day-id', storeId, businessDate: '2026-09-03', status: 'OPEN' });
+      }
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId,
+        currentBusinessDate: '2026-09-03',
+        currentBusinessDay: opened ? { id: 'day-id', storeId, businessDate: '2026-09-03', status: 'OPEN' } : null,
+        previousBusinessDay: null,
+        state: opened ? 'OPEN' : 'NO_BUSINESS_DAY_TODAY',
+        availableAction: opened ? 'NONE' : 'OPEN'
+      });
+      return apiError('Unexpected request', 500, 'unexpected');
+    });
+
+    render(<App initialEntries={['/login']} />);
+
+    await userEvent.type(screen.getByLabelText('Email'), 'test3@adviam.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'Password1!');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Start Business Day' }));
+    expect(await screen.findByText('Business Day Open')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Close Business Day' })).toHaveAttribute('href', `/business-day/close?storeId=${storeId}`);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/business-days/open') && init?.method === 'POST')).toHaveLength(1);
+  });
+
   it('renders the login page when no session exists', async () => {
     vi.spyOn(globalThis, 'fetch');
 
@@ -81,6 +126,9 @@ describe('App authentication', () => {
       if (url.endsWith('/api/v1/auth/login')) {
         return jsonResponse(authResponse());
       }
+      if (url.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser({ permissions: ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN'] }));
+      }
       return apiError('Unexpected request', 500, 'unexpected');
     });
 
@@ -93,6 +141,7 @@ describe('App authentication', () => {
     expect(await screen.findByRole('heading', { name: 'Owner dashboard' })).toBeInTheDocument();
     expect(screen.getAllByText('owner@example.local')).not.toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/login', expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/me', expect.anything());
     expect(window.localStorage.getItem('merchtyl.session')).toContain('refresh-token');
   });
 

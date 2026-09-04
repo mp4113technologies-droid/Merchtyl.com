@@ -107,7 +107,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       throw new ApiClientError('Session expired', 401, 'session_expired');
     }
     const refreshed = await refreshSession({ refreshToken: source.refreshToken });
-    persistAuthenticatedSession(refreshed);
+    const user = isPlatformSession(refreshed)
+      ? undefined
+      : await getCurrentUser(refreshed.accessToken!);
+    persistAuthenticatedSession(refreshed, user);
     return refreshed;
   }, [persistAuthenticatedSession]);
 
@@ -140,7 +143,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (nextSession.authenticationStatus === 'PASSWORD_CHANGE_REQUIRED') {
       return nextSession;
     }
-    persistAuthenticatedSession(nextSession);
+    requireAuthenticatedSession(nextSession);
+    const user = await getCurrentUser(nextSession.accessToken);
+    persistAuthenticatedSession(nextSession, user);
     return nextSession;
   }, [persistAuthenticatedSession]);
 
@@ -178,19 +183,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
       try {
         requireAuthenticatedSession(stored);
-        const activeSession = !isPlatformSession(stored) && expiresSoon(stored.accessTokenExpiresAt)
-          ? await refreshStoredSession(stored)
-          : stored;
-        const user = isPlatformSession(activeSession)
-          ? {
-              userId: activeSession.userId,
-              email: activeSession.email,
-              displayName: activeSession.displayName,
-              roles: activeSession.roles
-            }
-          : await getCurrentUser(activeSession.accessToken!);
-        if (!cancelled) {
-          persistAuthenticatedSession(activeSession, user);
+        if (!isPlatformSession(stored) && expiresSoon(stored.accessTokenExpiresAt)) {
+          await refreshStoredSession(stored);
+        } else if (!cancelled) {
+          const user = isPlatformSession(stored)
+            ? {
+                userId: stored.userId,
+                email: stored.email,
+                displayName: stored.displayName,
+                roles: stored.roles
+              }
+            : await getCurrentUser(stored.accessToken!);
+          persistAuthenticatedSession(stored, user);
         }
       } catch {
         if (!cancelled) {
