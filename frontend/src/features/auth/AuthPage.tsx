@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ApiClientError } from '../../api/client';
 import { useSession } from '../../app/session';
+import { useMerchantPortal } from '../../app/MerchantPortalContext';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -36,6 +37,8 @@ type LoginLocationState = {
 export function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { portalContext, merchant } = useMerchantPortal();
+  const merchantPortal = portalContext.type === 'MERCHANT' || (portalContext.type === 'DEVELOPMENT' && Boolean(portalContext.merchantSlug));
   const { loginWithCredentials, loginWithPlatformCredentials, sessionExpired, clearSessionExpired } = useSession();
   const from = (location.state as LoginLocationState | null)?.from?.pathname ?? '/';
   const form = useForm<LoginForm>({
@@ -59,7 +62,7 @@ export function AuthPage() {
           return;
         }
       } catch (error) {
-        if (error instanceof ApiClientError && error.status === 401) {
+        if (!merchantPortal && error instanceof ApiClientError && error.status === 401) {
           await loginWithPlatformCredentials(values);
           return;
         }
@@ -80,9 +83,12 @@ export function AuthPage() {
         <Stack spacing={3}>
           <Stack spacing={1} alignItems="center">
             <LockOutlinedIcon color="primary" sx={{ fontSize: 40 }} />
-            <Typography variant="h4" component="h1">Merchtyl</Typography>
+            <Typography variant="h5" component="h1">Merchtyl</Typography>
+            <Typography variant="h4" component="h2">
+              {merchant ? `Welcome to ${merchant.displayName}` : 'Welcome to Merchtyl'}
+            </Typography>
             <Typography color="text.secondary" textAlign="center">
-              Sign in to open the retail workspace.
+              {merchant ? `Sign in to continue to ${merchant.displayName}.` : 'Sign in to open the retail workspace.'}
             </Typography>
           </Stack>
 
@@ -135,12 +141,12 @@ export function AuthPage() {
                 {mutation.isPending ? 'Signing in' : 'Sign in'}
               </Button>
               <MuiLink component={RouterLink} to="/forgot-password" textAlign="center" underline="hover">Reset Password</MuiLink>
-              <Typography variant="body2" textAlign="center" color="text.secondary">
+              {!merchantPortal ? <Typography variant="body2" textAlign="center" color="text.secondary">
                 Platform administrator?{' '}
                 <MuiLink component={RouterLink} to="/platform/login" underline="hover">
                   Sign in to platform admin
                 </MuiLink>
-              </Typography>
+              </Typography> : null}
             </Stack>
           </Paper>
         </Stack>

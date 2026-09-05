@@ -1560,7 +1560,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
 }
 
 export function resolveMerchantPortal(slug: string) {
-  return request<{ slug: string; displayName: string; active: boolean }>(`/public/merchant-portals/${encodeURIComponent(slug)}`);
+  return request<{ merchantSlug: string; displayName: string; active: boolean }>(`/public/merchant-portals/${encodeURIComponent(slug)}`);
 }
 
 async function requestText(path: string, init: RequestInit = {}, token?: string): Promise<string> {

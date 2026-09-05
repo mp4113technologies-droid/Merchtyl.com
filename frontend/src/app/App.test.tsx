@@ -120,6 +120,42 @@ describe('App authentication', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
+  it('brands a merchant login from public portal metadata without displaying the slug', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (String(input).endsWith('/api/v1/public/merchant-portals/adviam')) {
+        return jsonResponse({ merchantSlug: 'adviam', displayName: 'Adviam Creatives', active: true });
+      }
+      return apiError('Unexpected request', 500, 'unexpected');
+    });
+
+    render(<App initialEntries={['/login']} hostname="adviam.merchtyl.com" />);
+
+    expect(await screen.findByRole('heading', { name: 'Welcome to Adviam Creatives' })).toBeInTheDocument();
+    expect(screen.getByText('Sign in to continue to Adviam Creatives.')).toBeInTheDocument();
+    expect(screen.queryByText('adviam')).not.toBeInTheDocument();
+    expect(document.title).toBe('Adviam Creatives | Merchtyl');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show login for an unknown merchant portal', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => apiError('Not found', 404, 'MERCHANT_PORTAL_NOT_FOUND'));
+
+    render(<App initialEntries={['/login']} hostname="not-real.merchtyl.com" />);
+
+    expect(await screen.findByRole('heading', { name: "We couldn't find this Merchtyl portal." })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('keeps platform routing isolated and skips merchant metadata resolution', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    render(<App initialEntries={['/platform/login']} hostname="platform.merchtyl.com" />);
+
+    expect(await screen.findByRole('heading', { name: /platform/i })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.title).toBe('Merchtyl Platform');
+  });
+
   it('logs in and shows the protected application shell', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input);

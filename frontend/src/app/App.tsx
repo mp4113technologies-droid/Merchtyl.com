@@ -136,8 +136,7 @@ import { TaxSimulatorPage } from '../features/tax/TaxSimulatorPage';
 import { OwnerDashboardPage } from '../features/dashboard/OwnerDashboardPage';
 import { PwaPrompt } from '../features/pwa/PwaPrompt';
 import { getBusinessDayOperationalState, getCurrentRegisterSession, listRegisters, listStores, openBusinessDay } from '../api/client';
-import { resolveMerchantPortal } from '../api/client';
-import { currentPortalContext } from './portalContext';
+import { MerchantPortalProvider, useMerchantPortal } from './MerchantPortalContext';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import {
   NewPlatformMerchantPage,
@@ -162,6 +161,7 @@ const queryClientOptions = {
 
 type AppProps = {
   initialEntries?: string[];
+  hostname?: string;
 };
 
 function LoadingState() {
@@ -189,23 +189,18 @@ function UnknownPortal({ unavailable = false }: { unavailable?: boolean }) {
 }
 
 function PortalBoundary({ children }: { children: React.ReactNode }) {
-  const context = currentPortalContext();
+  const { portalContext: context, merchant, loading, error } = useMerchantPortal();
   const location = useLocation();
-  const merchant = useQuery({
-    queryKey: ['merchant-portal', context.type === 'MERCHANT' ? context.merchantSlug : ''],
-    queryFn: () => resolveMerchantPortal(context.type === 'MERCHANT' ? context.merchantSlug : ''),
-    enabled: context.type === 'MERCHANT',
-    retry: false
-  });
+  const merchantPortal = context.type === 'MERCHANT' || (context.type === 'DEVELOPMENT' && Boolean(context.merchantSlug));
   if (context.type === 'PUBLIC') return <PublicWebsite />;
   if (context.type === 'UNKNOWN') return <UnknownPortal />;
   if (context.type === 'PLATFORM' && !location.pathname.startsWith('/platform') && location.pathname !== '/activate-platform-admin') {
     return <Navigate to="/platform" replace />;
   }
-  if (context.type === 'MERCHANT') {
-    if (merchant.isLoading) return <LoadingState />;
-    if (merchant.isError) return <UnknownPortal />;
-    if (!merchant.data?.active) return <UnknownPortal unavailable />;
+  if (merchantPortal) {
+    if (loading) return <LoadingState />;
+    if (error) return <UnknownPortal />;
+    if (!merchant?.active) return <UnknownPortal unavailable />;
     if (location.pathname.startsWith('/platform')) return <UnknownPortal />;
   }
   return <>{children}</>;
@@ -877,7 +872,7 @@ function AppRoutes() {
   );
 }
 
-export function App({ initialEntries }: AppProps = {}) {
+export function App({ initialEntries, hostname }: AppProps = {}) {
   const Router = initialEntries ? MemoryRouter : BrowserRouter;
   const routerProps = initialEntries ? { initialEntries } : {};
   const [queryClient] = useState(() => new QueryClient(queryClientOptions));
@@ -892,7 +887,9 @@ export function App({ initialEntries }: AppProps = {}) {
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <Router {...routerProps}>
-            <PortalBoundary><AppRoutes /></PortalBoundary>
+            <MerchantPortalProvider hostname={hostname}>
+              <PortalBoundary><AppRoutes /></PortalBoundary>
+            </MerchantPortalProvider>
           </Router>
         </SessionProvider>
       </QueryClientProvider>

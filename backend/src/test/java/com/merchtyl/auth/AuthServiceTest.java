@@ -15,6 +15,7 @@ import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.UserRole;
 import com.merchtyl.security.UserRoleRepository;
+import com.merchtyl.portal.MerchantPortalService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -23,11 +24,13 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -159,6 +162,23 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("cashier@example.local", "CashierDev!2026")))
                 .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void loginRejectsUserFromDifferentHostnameMerchant() {
+        User user = enabledUser("owner@example.local", "OwnerDev!2026");
+        user.assignTenant(UUID.randomUUID());
+        when(userRepository.findByEmailIgnoreCase("owner@example.local")).thenReturn(Optional.of(user));
+        MerchantPortalService merchantPortalService = mock(MerchantPortalService.class);
+        when(merchantPortalService.tenantId("merchant-b")).thenReturn(UUID.randomUUID());
+        ReflectionTestUtils.setField(authService, "merchantPortalService", merchantPortalService);
+
+        assertThatThrownBy(() -> authService.login(
+                new LoginRequest("owner@example.local", "OwnerDev!2026"), "merchant-b"))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("MERCHANT_CONTEXT_MISMATCH");
+
+        verify(refreshTokenService, never()).createRefreshToken(any(), any(), any());
     }
 
     @Test

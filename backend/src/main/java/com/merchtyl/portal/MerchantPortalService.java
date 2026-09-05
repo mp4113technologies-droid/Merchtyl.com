@@ -55,10 +55,10 @@ public class MerchantPortalService {
         return scheme + "://" + slug + "." + properties.publicBaseDomain();
     }
 
-    public PortalResolution resolve(String slug) {
+    public PublicMerchantPortalResponse resolve(String slug) {
         validate(slug);
         return jdbcTemplate.query("select merchant_slug, display_name, status from tenants where merchant_slug = ?",
-                (rs, row) -> new PortalResolution(rs.getString(1), rs.getString(2), available(rs.getString(3))), slug)
+                (rs, row) -> new PublicMerchantPortalResponse(rs.getString(1), rs.getString(2), available(rs.getString(3))), slug)
                 .stream().findFirst().orElseThrow(() -> new NotFoundException("MERCHANT_PORTAL_NOT_FOUND"));
     }
 
@@ -83,6 +83,4 @@ public class MerchantPortalService {
     private static boolean available(String status) {
         return "ACTIVE".equals(status) || "PENDING_OWNER_ACTIVATION".equals(status) || "PENDING_ONBOARDING".equals(status);
     }
-
-    public record PortalResolution(String slug, String displayName, boolean active) {}
 }

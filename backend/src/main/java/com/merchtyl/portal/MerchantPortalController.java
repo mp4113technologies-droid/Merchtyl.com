@@ -12,5 +12,5 @@ public class MerchantPortalController {
     public MerchantPortalController(MerchantPortalService service) { this.service = service; }
 
     @GetMapping("/{slug}")
-    MerchantPortalService.PortalResolution resolve(@PathVariable String slug) { return service.resolve(slug); }
+    PublicMerchantPortalResponse resolve(@PathVariable String slug) { return service.resolve(slug); }
 }
