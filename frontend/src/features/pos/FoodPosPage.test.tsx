@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
+import { testReceiptDocument } from './receiptPrinter';
 
 const storeId = '00000000-0000-0000-0000-000000000901';
 const sessionId = '00000000-0000-0000-0000-000000000902';
@@ -60,5 +61,80 @@ describe('Food POS', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => String(input).endsWith('/auth/me') ? response({ userId: 'user', email: 'x', displayName: 'Retail', roles: ['CASHIER'], permissions: ['POS_ACCESS'] }) : response({}, 500));
     render(<App initialEntries={['/pos/food']} />);
     expect(await screen.findByText('FOOD_POS_ACCESS is required.')).toBeInTheDocument();
+  });
+
+  it('auto-prints persisted kitchen and customer documents once and permits a kitchen reprint', async () => {
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT', autoPrintReceipt: true, widthMm: 80, copies: 1
+    }));
+    const print = vi.fn();
+    vi.spyOn(window, 'open').mockReturnValue({
+      document: { open: vi.fn(), write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print
+    } as unknown as Window);
+    const persistedReceipt = { id: 'receipt-food-1', saleId, receiptNumber: 'RCT-FOOD-1', document: { ...testReceiptDocument(), saleId, receiptNumber: 'RCT-FOOD-1', tokenNumber: 'A104' } };
+    const persistedTicket = {
+      documentType: 'KITCHEN_TICKET', saleId, tokenNumber: 'A104', storeName: 'Main', registerName: 'Restaurant Register',
+      cashierName: 'Kitchen', orderTime: '2026-08-28T12:00:00Z', orderType: 'TAKEOUT', tableNumber: null,
+      orderNotes: 'Extra napkins', reprint: false,
+      items: [{ saleItemId: itemId, name: 'Pepperoni Pizza', quantity: 1, modifiers: [], preparationInstructions: null }]
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
+      if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
+      if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', available: true }]);
+      if (url.pathname.endsWith('/sales/drafts')) return response(sale(), 201);
+      if (url.pathname.endsWith(`/food-menu/items/menu-item/sales/${saleId}`)) return response(sale(1));
+      if (url.pathname.endsWith(`/sales/${saleId}/payments`)) return response(sale(1, true));
+      if (url.pathname.endsWith(`/sales/${saleId}/complete`)) return response(sale(1, true, true));
+      if (url.pathname.endsWith(`/sales/${saleId}/receipt/reprint`) && init?.method === 'POST') return response({ ...persistedReceipt, reprint: true });
+      if (url.pathname.endsWith(`/sales/${saleId}/kitchen-ticket/reprint`) && init?.method === 'POST') return response({ ...persistedTicket, reprint: true });
+      if (url.pathname.endsWith(`/sales/${saleId}/receipt`)) return response(persistedReceipt);
+      if (url.pathname.endsWith(`/sales/${saleId}/kitchen-ticket`)) return response(persistedTicket);
+      return response({ message: `Unexpected ${url.pathname}` }, 500);
+    });
+
+    render(<App initialEntries={['/pos/food']} />);
+    await userEvent.click(await screen.findByText('Pepperoni Pizza'));
+    await userEvent.click(screen.getByRole('button', { name: 'Pay' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
+    expect(print).not.toHaveBeenCalled();
+    await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
+    fireEvent.focus(window);
+    await Promise.resolve();
+    expect(print).toHaveBeenCalledTimes(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Reprint Kitchen Ticket' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(3));
+  });
+
+  it('does not print when restaurant order completion fails', async () => {
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({ receiptPrintMode: 'KIOSK_AUTO_PRINT', autoPrintReceipt: true }));
+    const print = vi.fn();
+    vi.spyOn(window, 'open').mockReturnValue({ document: { open: vi.fn(), write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print } as unknown as Window);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD' }]));
+      if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
+      if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', available: true }]);
+      if (url.pathname.endsWith('/sales/drafts')) return response(sale(), 201);
+      if (url.pathname.endsWith(`/food-menu/items/menu-item/sales/${saleId}`)) return response(sale(1));
+      if (url.pathname.endsWith(`/sales/${saleId}/payments`)) return response(sale(1, true));
+      if (url.pathname.endsWith(`/sales/${saleId}/complete`)) return response({ message: 'Completion failed' }, 500);
+      return response({}, 404);
+    });
+    render(<App initialEntries={['/pos/food']} />);
+    await userEvent.click(await screen.findByText('Pepperoni Pizza'));
+    await userEvent.click(screen.getByRole('button', { name: 'Pay' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
+    await waitFor(() => expect(print).not.toHaveBeenCalled());
+    expect(screen.queryByText('Order completed')).not.toBeInTheDocument();
   });
 });

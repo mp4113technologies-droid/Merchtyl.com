@@ -489,6 +489,31 @@ describe('Business day pages', () => {
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
   });
 
+  it('keeps report printing user-triggered and on the normal browser print path', async () => {
+    storeSession(['OWNER']);
+    const reportPrint = vi.fn();
+    const write = vi.fn();
+    vi.spyOn(window, 'open').mockReturnValue({ document: { write, close: vi.fn() }, focus: vi.fn(), print: reportPrint } as unknown as Window);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith(`/api/v1/end-of-day-reports/${reportId}/print`)) return textResponse('<html><style>@media print { @page { size: auto; } }</style><body>EOD report</body></html>');
+      if (url.pathname.endsWith(`/api/v1/end-of-day-reports/${reportId}`)) return jsonResponse(report());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/end-of-day-reports/${reportId}`]} />);
+    expect(await screen.findByRole('heading', { name: 'Merchtyl End-of-Day Report' })).toBeInTheDocument();
+    expect(reportPrint).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+    await waitFor(() => expect(reportPrint).toHaveBeenCalledOnce());
+    expect(window.open).toHaveBeenCalledWith('', '_blank');
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('EOD report'));
+    expect(write).not.toHaveBeenCalledWith(expect.stringContaining('80mm'));
+  });
+
   it('lets a cashier review and complete the current business-day close', async () => {
     storeSession(['CASHIER']);
     let closed = false;
