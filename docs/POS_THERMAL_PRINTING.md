@@ -8,15 +8,23 @@ Merchtyl's POS receipt and kitchen-ticket code invokes the browser print operati
 2. Print a Windows test page successfully.
 3. Configure the intended POS thermal printer as the Windows/default printer.
 4. Use Microsoft Edge for the POS terminal.
-5. Launch the merchant portal in kiosk-printing mode, substituting the real merchant portal URL:
+5. Create a dedicated **Merchtyl POS** desktop shortcut. Use the Edge path installed on the workstation and substitute the real merchant portal URL. A common 64-bit Edge shortcut target is:
 
    ```text
-   msedge.exe --kiosk-printing https://{merchantSlug}.merchtyl.com
+   "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk-printing --start-fullscreen https://{merchantSlug}.merchtyl.com
+   ```
+
+   Some installations use:
+
+   ```text
+   "C:\Program Files\Microsoft\Edge\Application\msedge.exe" --kiosk-printing --start-fullscreen https://{merchantSlug}.merchtyl.com
    ```
 
 6. In Merchtyl's receipt-printer settings, select kiosk auto-print and enable automatic receipt printing for that POS browser profile.
 
-Retail POS automatically prints the persisted customer receipt. Restaurant / Kitchen POS prints the persisted kitchen ticket first and the persisted customer receipt second. Manual reprint actions remain available and do not create another sale.
+Opening Edge normally cannot print silently: the browser/Windows print dialog will appear. Browser JavaScript cannot reliably detect whether `--kiosk-printing` was supplied, so the receipt-printer setting is not proof that the Edge process was launched correctly.
+
+Retail POS automatically prints the persisted customer receipt. Restaurant / Kitchen POS presents application-level Kitchen Ticket, Customer Receipt, and Print Both choices after persistence. Print Both queues the kitchen ticket first and the customer receipt second. Manual reprint actions remain available and do not create another sale.
 
 Reports are intentionally separate. EOD and any other administrative report continues to use its existing browser print action in a normal browser session, including the browser/Windows printer-selection dialog.
 

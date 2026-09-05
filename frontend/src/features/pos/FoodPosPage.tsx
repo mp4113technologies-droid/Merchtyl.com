@@ -31,8 +31,6 @@ export function FoodPosPage() {
     KITCHEN_TICKET: { status: 'READY' },
     CUSTOMER_RECEIPT: { status: 'READY' }
   });
-  const automaticPrintSaleIdRef = React.useRef<string | null>(null);
-  const autoPrintedDocumentsRef = React.useRef(new Set<string>());
   const deviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const permitted = currentUser?.permissions?.includes('FOOD_POS_ACCESS') ?? false;
   const current = useQuery({ queryKey: ['register-session', 'food-pos', deviceIdentifier], queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier }), enabled: permitted });
@@ -56,13 +54,7 @@ export function FoodPosPage() {
   const quantity = useMutation({ mutationFn: async ({ itemId, value }: { itemId: string; value: number }) => updateSaleItemQuantity(await getValidAccessToken(), sale?.id ?? '', itemId, { quantity: value }), onSuccess: setSale });
   const remove = useMutation({ mutationFn: async (itemId: string) => removeSaleItem(await getValidAccessToken(), sale?.id ?? '', itemId), onSuccess: setSale });
   const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: (updated) => { setSale(updated); setPaymentOpen(!updated.paymentComplete); } });
-  const complete = useMutation({
-    mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()),
-    onSuccess: (completedSale) => {
-      automaticPrintSaleIdRef.current = completedSale.id;
-      setSale(completedSale);
-    }
-  });
+  const complete = useMutation({ mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()), onSuccess: setSale });
   const receipt = useQuery({ queryKey: ['food-pos-receipt', sale?.id], queryFn: async () => getSaleReceipt(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const kitchenTicket = useQuery({ queryKey: ['food-pos-kitchen-ticket', sale?.id], queryFn: async () => getKitchenTicket(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const busy = add.isPending || quantity.isPending || remove.isPending || payment.isPending || complete.isPending;
@@ -94,23 +86,6 @@ export function FoodPosPage() {
     await printFoodDocuments(ticket, customerReceipt, preferences, (candidate) => candidate === document,
       (candidate, status, error) => setPrintStates((states) => ({ ...states, [candidate]: { status, error } })));
   }
-
-  React.useEffect(() => {
-    const persistedSaleId = automaticPrintSaleIdRef.current;
-    if (!persistedSaleId || persistedSaleId !== sale?.id || !receipt.data || !kitchenTicket.data) return;
-    const preferences = loadReceiptPrinterPreferences();
-    if (preferences.receiptPrintMode !== 'KIOSK_AUTO_PRINT' || !preferences.autoPrintReceipt) return;
-
-    automaticPrintSaleIdRef.current = null;
-    const shouldPrint = (document: FoodPrintDocument) => {
-      const key = `${persistedSaleId}:${document}`;
-      if (autoPrintedDocumentsRef.current.has(key)) return false;
-      autoPrintedDocumentsRef.current.add(key);
-      return true;
-    };
-    void printFoodDocuments(kitchenTicket.data, receipt.data.document, preferences, shouldPrint,
-      (document, status) => setPrintStates((states) => ({ ...states, [document]: { status } })));
-  }, [kitchenTicket.data, receipt.data, sale?.id]);
 
   if (sale?.status === 'COMPLETED') return <Stack spacing={3} sx={{ maxWidth: 700 }}>
     <Typography variant="h4">Order completed</Typography>

@@ -64,4 +64,11 @@ describe('food order printing', () => {
     expect(print).toHaveBeenCalledOnce();
     expect(statuses).toEqual(['KITCHEN_TICKET:PRINTING', 'KITCHEN_TICKET:FAILED']);
   });
+
+  it('prints only the customer receipt when that selector option is requested', async () => {
+    const print = vi.spyOn(receiptPrinter, 'printHtmlWithFallback').mockResolvedValue({ printer: 'QZ_TRAY' });
+    await printFoodDocuments(ticket(), receipt(), preferences, (document) => document === 'CUSTOMER_RECEIPT', () => undefined);
+    expect(print).toHaveBeenCalledOnce();
+    expect(print.mock.calls[0][1]).toContain('Customer receipt A104');
+  });
 });

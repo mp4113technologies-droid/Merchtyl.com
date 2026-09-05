@@ -1,5 +1,6 @@
 import type { KitchenTicket, ReceiptDocument } from '../../api/types';
 import { printHtmlWithFallback, receiptHtml, type ReceiptPrinterPreferences } from './receiptPrinter';
+import { posPrintQueue } from './posPrintQueue';
 
 export type FoodPrintStatus = 'READY' | 'PRINTING' | 'PRINTED' | 'FAILED';
 export type FoodPrintDocument = 'KITCHEN_TICKET' | 'CUSTOMER_RECEIPT';
@@ -43,24 +44,21 @@ export async function printFoodDocuments(
   shouldPrint: (document: FoodPrintDocument) => boolean,
   onStatus: (document: FoodPrintDocument, status: FoodPrintStatus, error?: string) => void
 ) {
-  if (shouldPrint('KITCHEN_TICKET')) {
-    onStatus('KITCHEN_TICKET', 'PRINTING');
-    try {
-      await printKitchenTicket(ticket, preferences);
-      onStatus('KITCHEN_TICKET', 'PRINTED');
-    } catch (error) {
-      onStatus('KITCHEN_TICKET', 'FAILED', message(error));
+  const selected = (['KITCHEN_TICKET', 'CUSTOMER_RECEIPT'] as const).filter(shouldPrint);
+  await posPrintQueue.printMany(selected.map((document) => ({
+    transactionId: ticket.saleId,
+    type: document,
+    print: async () => {
+      onStatus(document, 'PRINTING');
+      try {
+        if (document === 'KITCHEN_TICKET') await printKitchenTicket(ticket, preferences);
+        else await printCustomerReceipt(receipt, preferences);
+        onStatus(document, 'PRINTED');
+      } catch (error) {
+        onStatus(document, 'FAILED', message(error));
+      }
     }
-  }
-  if (shouldPrint('CUSTOMER_RECEIPT')) {
-    onStatus('CUSTOMER_RECEIPT', 'PRINTING');
-    try {
-      await printCustomerReceipt(receipt, preferences);
-      onStatus('CUSTOMER_RECEIPT', 'PRINTED');
-    } catch (error) {
-      onStatus('CUSTOMER_RECEIPT', 'FAILED', message(error));
-    }
-  }
+  })));
 }
 
 function quantity(value: number) {

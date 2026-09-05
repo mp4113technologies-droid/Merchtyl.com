@@ -116,29 +116,31 @@ describe('BrowserReceiptPrinter', () => {
     expect(printCss).toContain("[role='dialog']");
   });
 
-  it('prints through a browser window', async () => {
-    const print = vi.fn();
-    const write = vi.fn();
-    const open = vi.fn();
-    const close = vi.fn();
-    vi.spyOn(window, 'open').mockReturnValue({
-      document: { open, write, close },
-      focus: vi.fn(),
-      print
-    } as unknown as Window);
-
-    const printer = new BrowserReceiptPrinter({ widthMm: 80 });
+  it('renders, prints, waits, and cleans up through a hidden POS frame without opening a popup', async () => {
+    const calls: string[] = [];
+    const popup = vi.spyOn(window, 'open');
+    const printer = new BrowserReceiptPrinter({ widthMm: 80, createPrintFrame: () => ({
+      render: async (html) => { expect(html).toContain('width: 80mm'); calls.push('render'); },
+      printAndWait: async () => { calls.push('print'); },
+      cleanup: () => { calls.push('cleanup'); }
+    }) });
     await expect(printer.isAvailable()).resolves.toBe(true);
     await printer.print(receipt());
 
-    expect(write).toHaveBeenCalledWith(expect.stringContaining('width: 80mm'));
-    expect(print).toHaveBeenCalledOnce();
+    expect(calls).toEqual(['render', 'print', 'cleanup']);
+    expect(popup).not.toHaveBeenCalled();
   });
 
-  it('reports blocked print windows', async () => {
-    vi.spyOn(window, 'open').mockReturnValue(null);
+  it('cleans up a failed POS print frame', async () => {
+    const cleanup = vi.fn();
+    const printer = new BrowserReceiptPrinter({ createPrintFrame: () => ({
+      render: async () => undefined,
+      printAndWait: async () => { throw new Error('print unavailable'); },
+      cleanup
+    }) });
 
-    await expect(new BrowserReceiptPrinter().print(receipt())).rejects.toThrow('Browser blocked the receipt print window');
+    await expect(printer.print(receipt())).rejects.toThrow('print unavailable');
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 });
 
@@ -210,11 +212,9 @@ describe('QzTrayReceiptPrinter', () => {
   it('falls back to browser printing when QZ printing fails', async () => {
     qzMock({ print: vi.fn().mockRejectedValue(new Error('offline')) });
     const print = vi.fn();
-    vi.spyOn(window, 'open').mockReturnValue({
-      document: { open: vi.fn(), write: vi.fn(), close: vi.fn() },
-      focus: vi.fn(),
-      print
-    } as unknown as Window);
+    const browserPrinter = new BrowserReceiptPrinter({ createPrintFrame: () => ({
+      render: async () => undefined, printAndWait: async () => { print(); }, cleanup: vi.fn()
+    }) });
     const preferences: ReceiptPrinterPreferences = {
       mode: 'QZ_TRAY',
       receiptPrintMode: 'BROWSER_DIALOG',
@@ -227,7 +227,7 @@ describe('QzTrayReceiptPrinter', () => {
       cashDrawerPulse: { enabled: false, command: '\\x1Bp\\x00\\x19\\xFA' }
     };
 
-    await expect(printReceiptWithFallback(receipt(), preferences)).resolves.toEqual({
+    await expect(printReceiptWithFallback(receipt(), preferences, browserPrinter)).resolves.toEqual({
       printer: 'BROWSER',
       fallbackReason: 'QZ Tray printing failed: offline'
     });

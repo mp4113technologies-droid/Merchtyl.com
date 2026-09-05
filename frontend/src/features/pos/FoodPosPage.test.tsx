@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
 import { testReceiptDocument } from './receiptPrinter';
+import * as receiptPrinter from './receiptPrinter';
 
 const storeId = '00000000-0000-0000-0000-000000000901';
 const sessionId = '00000000-0000-0000-0000-000000000902';
@@ -63,14 +64,8 @@ describe('Food POS', () => {
     expect(await screen.findByText('FOOD_POS_ACCESS is required.')).toBeInTheDocument();
   });
 
-  it('auto-prints persisted kitchen and customer documents once and permits a kitchen reprint', async () => {
-    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
-      receiptPrintMode: 'KIOSK_AUTO_PRINT', autoPrintReceipt: true, widthMm: 80, copies: 1
-    }));
-    const print = vi.fn();
-    vi.spyOn(window, 'open').mockReturnValue({
-      document: { open: vi.fn(), write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print
-    } as unknown as Window);
+  it('offers persisted print choices and Print Both queues exactly two jobs before permitting a kitchen reprint', async () => {
+    const print = vi.spyOn(receiptPrinter, 'printHtmlWithFallback').mockResolvedValue({ printer: 'BROWSER' });
     const persistedReceipt = { id: 'receipt-food-1', saleId, receiptNumber: 'RCT-FOOD-1', document: { ...testReceiptDocument(), saleId, receiptNumber: 'RCT-FOOD-1', tokenNumber: 'A104' } };
     const persistedTicket = {
       documentType: 'KITCHEN_TICKET', saleId, tokenNumber: 'A104', storeName: 'Main', registerName: 'Restaurant Register',
@@ -103,7 +98,14 @@ describe('Food POS', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
     expect(print).not.toHaveBeenCalled();
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
+    expect(await screen.findByRole('button', { name: 'Print Both' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Kitchen Ticket' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Customer Receipt' })).toBeEnabled();
+    expect(print).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Print Both' }));
     await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
+    expect(print.mock.calls[0][1]).toContain('Kitchen ticket A104');
+    expect(print.mock.calls[1][1]).toContain('Customer receipt A104');
     fireEvent.focus(window);
     await Promise.resolve();
     expect(print).toHaveBeenCalledTimes(2);
@@ -113,8 +115,7 @@ describe('Food POS', () => {
 
   it('does not print when restaurant order completion fails', async () => {
     window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({ receiptPrintMode: 'KIOSK_AUTO_PRINT', autoPrintReceipt: true }));
-    const print = vi.fn();
-    vi.spyOn(window, 'open').mockReturnValue({ document: { open: vi.fn(), write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print } as unknown as Window);
+    const print = vi.spyOn(receiptPrinter, 'printHtmlWithFallback').mockResolvedValue({ printer: 'BROWSER' });
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });

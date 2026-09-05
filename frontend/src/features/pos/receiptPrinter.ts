@@ -1,4 +1,5 @@
 import type { ReceiptDocument } from '../../api/types';
+import { posPrintQueue } from './posPrintQueue';
 
 export interface ReceiptPrinter {
   isAvailable(): Promise<boolean>;
@@ -10,6 +11,13 @@ export type ReceiptPrintMode = 'BROWSER_DIALOG' | 'KIOSK_AUTO_PRINT';
 
 export type BrowserReceiptPrinterOptions = {
   widthMm?: number;
+  createPrintFrame?: () => PosPrintFrame;
+};
+
+export type PosPrintFrame = {
+  render(html: string): Promise<void>;
+  printAndWait(): Promise<void>;
+  cleanup(): void;
 };
 
 export type QzTrayCashDrawerPulse = {
@@ -106,13 +114,15 @@ export const defaultReceiptPrinterPreferences: ReceiptPrinterPreferences = {
 
 export class BrowserReceiptPrinter implements ReceiptPrinter {
   private readonly widthMm: number;
+  private readonly createPrintFrame: () => PosPrintFrame;
 
   constructor(options: BrowserReceiptPrinterOptions = {}) {
     this.widthMm = options.widthMm ?? 80;
+    this.createPrintFrame = options.createPrintFrame ?? createBrowserPrintFrame;
   }
 
   async isAvailable() {
-    return typeof window !== 'undefined' && typeof window.open === 'function';
+    return typeof window !== 'undefined' && typeof document !== 'undefined' && Boolean(document.body);
   }
 
   async print(receipt: ReceiptDocument) {
@@ -124,16 +134,13 @@ export class BrowserReceiptPrinter implements ReceiptPrinter {
       throw new Error('Browser receipt printing is unavailable');
     }
 
-    const printWindow = window.open('', '_blank', 'width=420,height=720');
-    if (!printWindow) {
-      throw new Error('Browser blocked the receipt print window');
+    const frame = this.createPrintFrame();
+    try {
+      await frame.render(html);
+      await frame.printAndWait();
+    } finally {
+      frame.cleanup();
     }
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
   }
 }
 
@@ -283,19 +290,21 @@ export async function printRenderedReceipt(context: ReceiptPrintContext) {
   if (typeof window === 'undefined' || typeof window.print !== 'function') {
     throw new Error('Browser receipt printing is unavailable');
   }
-  await afterNextPaint();
-  if (import.meta.env.DEV) {
-    console.info('RECEIPT_PRINT_REQUESTED', {
-      saleId: context.saleId,
-      registerId: context.registerId
-    });
-  }
-  window.print();
+  await posPrintQueue.printMany([{
+    transactionId: context.saleId,
+    type: 'RETAIL_RECEIPT',
+    print: async () => {
+      await afterNextPaint();
+      if (import.meta.env.DEV) console.info('RECEIPT_PRINT_REQUESTED', { saleId: context.saleId, registerId: context.registerId });
+      window.print();
+    }
+  }]);
 }
 
 export async function printReceiptWithFallback(
   receipt: ReceiptDocument,
-  preferences: ReceiptPrinterPreferences
+  preferences: ReceiptPrinterPreferences,
+  browserPrinter?: BrowserReceiptPrinter
 ): Promise<ReceiptPrintResult> {
   const normalized = normalizeReceiptPrinterPreferences(preferences);
   if (normalized.mode === 'QZ_TRAY') {
@@ -311,12 +320,12 @@ export async function printReceiptWithFallback(
       if (!normalized.fallbackToBrowser) {
         throw error;
       }
-      await printWithBrowser(receipt, normalized);
+      await printWithBrowser(receipt, normalized, browserPrinter);
       return { printer: 'BROWSER', fallbackReason: errorMessage(error) };
     }
   }
 
-  await printWithBrowser(receipt, normalized);
+  await printWithBrowser(receipt, normalized, browserPrinter);
   return { printer: 'BROWSER' };
 }
 
@@ -566,8 +575,8 @@ async function loadQzTray(): Promise<QzTrayApi> {
   }
 }
 
-async function printWithBrowser(receipt: ReceiptDocument, preferences: ReceiptPrinterPreferences) {
-  const printer = new BrowserReceiptPrinter({ widthMm: preferences.widthMm });
+async function printWithBrowser(receipt: ReceiptDocument, preferences: ReceiptPrinterPreferences, configuredPrinter?: BrowserReceiptPrinter) {
+  const printer = configuredPrinter ?? new BrowserReceiptPrinter({ widthMm: preferences.widthMm });
   if (!(await printer.isAvailable())) {
     throw new Error('Browser receipt printing is unavailable');
   }
@@ -605,5 +614,56 @@ function decodeEscapedCommand(value: string) {
 function afterNextPaint() {
   return new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+  });
+}
+
+function createBrowserPrintFrame(): PosPrintFrame {
+  const frame = document.createElement('iframe');
+  frame.title = 'Merchtyl POS print document';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  frame.style.visibility = 'hidden';
+  document.body.appendChild(frame);
+
+  const printWindow = frame.contentWindow;
+  if (!printWindow) {
+    frame.remove();
+    throw new Error('POS print document could not be created');
+  }
+  return {
+    async render(html) {
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      if (printWindow.document.fonts?.ready) await printWindow.document.fonts.ready;
+      await nextPaint(printWindow);
+    },
+    async printAndWait() {
+      printWindow.focus();
+      await invokePrintAndWait(printWindow);
+    },
+    cleanup() { frame.remove(); }
+  };
+}
+
+function nextPaint(target: Window) {
+  return new Promise<void>((resolve) => target.requestAnimationFrame(() => target.requestAnimationFrame(() => resolve())));
+}
+
+function invokePrintAndWait(target: Window) {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = () => { if (!settled) { settled = true; clearTimeout(fallback); resolve(); } };
+    const fallback = window.setTimeout(finish, 1500);
+    target.addEventListener('afterprint', finish, { once: true });
+    try {
+      target.print();
+    } catch (error) {
+      clearTimeout(fallback);
+      reject(error);
+    }
   });
 }
