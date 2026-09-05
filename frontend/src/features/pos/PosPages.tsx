@@ -46,10 +46,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  addSaleItem,
   cancelSale,
+  checkoutSaleCart,
   completeSale,
-  createSaleDraft,
   getCurrentRegisterSession,
   getSale,
   holdSale,
@@ -59,15 +58,12 @@ import {
   listRegisters,
   listSales,
   listStores,
-  recalculateSale,
   recordSalePayment,
   getSaleReceipt,
   reprintSaleReceipt,
-  removeSaleItem,
   resumeSale,
-  updateSaleItemQuantity
 } from '../../api/client';
-import type { Device, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, Store } from '../../api/types';
+import type { Device, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import {
@@ -234,17 +230,19 @@ function ProductSearchResults({
 }
 
 function CartLines({
-  sale,
+  items,
+  currencyCode,
   onQuantity,
   onRemove,
   busy
 }: {
-  sale: Sale | null;
+  items: import('../../api/types').SaleItem[];
+  currencyCode: string;
   onQuantity: (itemId: string, quantity: number) => void;
   onRemove: (itemId: string) => void;
   busy: boolean;
 }) {
-  if (!sale || sale.items.length === 0) {
+  if (items.length === 0) {
     return (
       <Box sx={{ p: 3 }}>
         <Stack spacing={1} alignItems="center" textAlign="center">
@@ -269,7 +267,7 @@ function CartLines({
         </TableRow>
       </TableHead>
       <TableBody>
-        {sale.items.map((item) => (
+        {items.map((item) => (
           <TableRow key={item.id} hover>
             <TableCell>
               <Typography fontWeight={700}>{item.productName}</Typography>
@@ -317,9 +315,9 @@ function CartLines({
                 </Tooltip>
               </Stack>
             </TableCell>
-            <TableCell align="right">{money(item.unitPrice, sale.currencyCode)}</TableCell>
-            <TableCell align="right">{money(item.estimatedTaxAmount, sale.currencyCode)}</TableCell>
-            <TableCell align="right">{money(item.lineTotal, sale.currencyCode)}</TableCell>
+            <TableCell align="right">{money(item.unitPrice, currencyCode)}</TableCell>
+            <TableCell align="right">{item.estimatedTaxAmount ? money(item.estimatedTaxAmount, currencyCode) : 'At checkout'}</TableCell>
+            <TableCell align="right">{money(item.lineTotal, currencyCode)}</TableCell>
             <TableCell align="right">
               <Tooltip title={`Remove ${item.productName}`}>
                 <span>
@@ -336,8 +334,8 @@ function CartLines({
   );
 }
 
-function TotalsPanel({ sale, currencyCode }: { sale: Sale | null; currencyCode: string }) {
-  const subtotal = sale?.subtotalAmount ?? 0;
+function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0 }: { sale: Sale | null; currencyCode: string; provisionalSubtotal?: number }) {
+  const subtotal = sale?.subtotalAmount ?? provisionalSubtotal;
   const discount = sale?.discountAmount ?? 0;
   const tax = sale?.estimatedTaxAmount ?? 0;
   const total = sale?.totalAmount ?? 0;
@@ -355,11 +353,11 @@ function TotalsPanel({ sale, currencyCode }: { sale: Sale | null; currencyCode: 
         </Stack>
         <Stack direction="row" justifyContent="space-between">
           <Typography color="text.secondary">Estimated tax</Typography>
-          <Typography>{money(tax, currencyCode)}</Typography>
+          <Typography>{sale ? money(tax, currencyCode) : 'At checkout'}</Typography>
         </Stack>
         <Stack direction="row" justifyContent="space-between" sx={{ pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
           <Typography variant="h6">Total</Typography>
-          <Typography variant="h6">{money(total, currencyCode)}</Typography>
+          <Typography variant="h6">{sale ? money(total, currencyCode) : '—'}</Typography>
         </Stack>
       </Stack>
     </Paper>
@@ -812,6 +810,8 @@ export function PosCartPage() {
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const saleId = searchParams.get('saleId');
   const [activeSale, setActiveSale] = React.useState<Sale | null>(null);
+  const [cartItems, setCartItems] = React.useState<SaleItem[]>([]);
+  const cartRevisionRef = React.useRef(0);
   const [barcode, setBarcode] = React.useState('');
   const [productSearch, setProductSearch] = React.useState('');
   const [submittedSearch, setSubmittedSearch] = React.useState('');
@@ -824,6 +824,8 @@ export function PosCartPage() {
     productId: string;
     variantId?: string;
     label: string;
+    sku: string;
+    price: number;
     minimumAge: number | null;
   } | null>(null);
   const barcodeInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -880,6 +882,7 @@ export function PosCartPage() {
 
   React.useEffect(() => {
     if (saleQuery.data) {
+      setCartItems(saleQuery.data.items);
       rememberSale(saleQuery.data);
     }
   }, [saleQuery.data]);
@@ -894,6 +897,41 @@ export function PosCartPage() {
   const register = registers.data?.content.find((item) => item.id === current.data?.registerId);
   const device = devices.data?.content.find((item) => item.id === current.data?.deviceId);
   const currencyCode = activeSale?.currencyCode ?? store?.currencyCode ?? 'USD';
+  const provisionalSubtotal = cartItems.reduce((sum, item) => sum + item.unitPrice * item.quantity - item.discountAmount, 0);
+
+  function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
+    cartRevisionRef.current += 1;
+    setCartItems(update);
+    if (activeSale?.status === 'DRAFT' && activeSale.payments.length === 0) {
+      void getValidAccessToken().then(token => cancelSale(token, activeSale.id)).catch(() => undefined);
+      setSearchParams({});
+    }
+    setActiveSale(null);
+    setPaymentDialogOpen(false);
+  }
+
+  function localItem(item: { productId: string; variantId?: string; name: string; sku: string; price: number; ageVerified?: boolean }): SaleItem {
+    return {
+      id: `local:${item.productId}:${item.variantId ?? ''}`,
+      productId: item.productId, variantId: item.variantId, lineNumber: cartItems.length + 1,
+      productSku: item.sku, productName: item.name, variantSku: null, variantName: null,
+      quantity: 1, unitPrice: item.price, discountAmount: 0, completedProductCost: null,
+      completedProductPrice: null, completedProductCapabilities: null, priceOverride: false,
+      ageVerified: Boolean(item.ageVerified), serialNumber: null, externalReference: null,
+      customerId: null, paymentMethodCode: null, lineSubtotal: item.price,
+      estimatedTaxAmount: 0, lineTotal: item.price, version: 0
+    };
+  }
+
+  function addLocalItem(item: SaleItem) {
+    changeCart(items => {
+      const existing = items.find(candidate => candidate.productId === item.productId && (candidate.variantId ?? undefined) === (item.variantId ?? undefined));
+      return existing ? items.map(candidate => candidate.id === existing.id
+        ? { ...candidate, quantity: candidate.quantity + 1, lineSubtotal: candidate.lineSubtotal + candidate.unitPrice, lineTotal: candidate.lineTotal + candidate.unitPrice }
+        : candidate) : [...items, item];
+    });
+    window.setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  }
 
   function rememberSale(sale: Sale | null) {
     setActiveSale(sale);
@@ -918,6 +956,7 @@ export function PosCartPage() {
       }
       const recoveredSale = saleFromDraftCartRecord(record);
       setDraftRecovered(true);
+      setCartItems(recoveredSale.items);
       setActiveSale(recoveredSale);
       setSearchParams({ saleId: recoveredSale.id });
     }).catch((error) => {
@@ -949,53 +988,29 @@ export function PosCartPage() {
     }
   }, [receiptPreferences]);
 
-  async function ensureDraft(token: string) {
-    if (activeSale?.status === 'DRAFT') {
-      return activeSale;
-    }
-    if (!current.data) {
-      throw new Error('Open a register before starting a sale');
-    }
-    const draft = await createSaleDraft(token, {
-      registerSessionId: current.data.id,
-      saleChannel: 'POS'
-    });
-    rememberSale(draft);
-    return draft;
-  }
-
-  const addProductMutation = useMutation({
-    mutationFn: async (item: { productId: string; variantId?: string; ageVerified?: boolean }) => {
+  function addResolvedProduct(item: { productId: string; variantId?: string; ageVerified?: boolean; name?: string; sku?: string; price?: number }) {
       posScanDebug('CART_ADD_CALLED', {
         productId: item.productId,
         variantId: item.variantId ?? null,
         ageVerified: Boolean(item.ageVerified),
         cartItemsBefore: activeSale?.items.length ?? 0
       });
-      const token = await getValidAccessToken();
-      const sale = await ensureDraft(token);
-      return addSaleItem(token, sale.id, { ...item, quantity: 1 });
-    },
-    onSuccess: (sale) => {
+      const resolved = localItem({ productId: item.productId, variantId: item.variantId, name: item.name ?? 'Product', sku: item.sku ?? '', price: item.price ?? 0, ageVerified: item.ageVerified });
       posScanDebug('CART_STATE_AFTER_ADD', {
-        saleId: sale.id,
-        cartItemsAfter: sale.items.length,
-        items: sale.items.map((item) => ({ productId: item.productId, variantId: item.variantId ?? null, quantity: item.quantity }))
+        cartItemsAfter: cartItems.length + 1
       });
       setPendingAgeVerification(null);
-      rememberSale(sale);
-      window.setTimeout(() => barcodeInputRef.current?.focus(), 0);
-    }
-  });
+      addLocalItem(resolved);
+  }
 
   function isVerifiedInCurrentSale(productId: string, variantId?: string) {
-    return Boolean(activeSale?.items.some((item) => item.productId === productId
+    return Boolean(cartItems.some((item) => item.productId === productId
       && (item.variantId ?? undefined) === variantId && item.ageVerified));
   }
 
-  function queueRestrictedItem(item: { productId: string; variantId?: string; label: string; minimumAge: number | null }) {
+  function queueRestrictedItem(item: { productId: string; variantId?: string; label: string; sku: string; price: number; minimumAge: number | null }) {
     if (isVerifiedInCurrentSale(item.productId, item.variantId)) {
-      addProductMutation.mutate({ productId: item.productId, variantId: item.variantId, ageVerified: true });
+      addResolvedProduct({ productId: item.productId, variantId: item.variantId, ageVerified: true, name: item.label, sku: item.sku, price: item.price });
       return;
     }
     setPendingAgeVerification(item);
@@ -1003,10 +1018,10 @@ export function PosCartPage() {
 
   function addProduct(product: Product) {
     if (product.capabilities.includes('REQUIRE_AGE_VERIFICATION')) {
-      queueRestrictedItem({ productId: product.id, label: product.name, minimumAge: product.minimumAge ?? null });
+      queueRestrictedItem({ productId: product.id, label: product.name, sku: product.sku, price: product.price, minimumAge: product.minimumAge ?? null });
       return;
     }
-    addProductMutation.mutate({ productId: product.id });
+    addResolvedProduct({ productId: product.id, name: product.name, sku: product.sku, price: product.price });
   }
 
   const barcodeMutation = useMutation({
@@ -1036,6 +1051,8 @@ export function PosCartPage() {
         productId: product.productId,
         variantId: product.variantId ?? undefined,
         label: product.variantName ? `${product.productName} — ${product.variantName}` : product.productName,
+        sku: product.sku,
+        price: product.price,
         minimumAge: product.minimumAge ?? null
       };
       if (product.ageRestricted) {
@@ -1046,7 +1063,7 @@ export function PosCartPage() {
         });
         queueRestrictedItem(item);
       } else {
-        addProductMutation.mutate({ productId: item.productId, variantId: item.variantId });
+        addResolvedProduct({ productId: item.productId, variantId: item.variantId, name: item.label, sku: product.sku, price: product.price });
       }
     },
     onError: (error, value) => {
@@ -1056,34 +1073,22 @@ export function PosCartPage() {
     }
   });
 
-  const quantityMutation = useMutation({
-    mutationFn: async ({ itemId, quantity }: { itemId: string; quantity: number }) => {
-      if (!activeSale) {
-        throw new Error('No active sale');
-      }
-      return updateSaleItemQuantity(await getValidAccessToken(), activeSale.id, itemId, { quantity });
-    },
-    onSuccess: (sale) => rememberSale(sale)
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      if (!activeSale) {
-        throw new Error('No active sale');
-      }
-      return removeSaleItem(await getValidAccessToken(), activeSale.id, itemId);
-    },
-    onSuccess: (sale) => rememberSale(sale)
-  });
-
   const recalculateMutation = useMutation({
     mutationFn: async () => {
-      if (!activeSale) {
-        throw new Error('No active sale');
-      }
-      return recalculateSale(await getValidAccessToken(), activeSale.id);
+      if (!current.data || cartItems.length === 0) throw new Error('Cart is empty');
+      const revision = cartRevisionRef.current;
+      const sale = await checkoutSaleCart(await getValidAccessToken(), {
+        registerSessionId: current.data.id, saleChannel: 'POS',
+        items: cartItems.map(item => ({ productId: item.productId, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified }))
+      });
+      return { sale, revision };
     },
-    onSuccess: (sale) => rememberSale(sale)
+    onSuccess: ({ sale, revision }) => {
+      if (revision !== cartRevisionRef.current) return;
+      setCartItems(sale.items);
+      rememberSale(sale);
+      setPaymentDialogOpen(true);
+    }
   });
 
   const holdMutation = useMutation({
@@ -1171,10 +1176,7 @@ export function PosCartPage() {
     void printReceiptDocument(receipt.document, true);
   }, [printReceiptDocument, receiptPreferences.autoPrintReceipt, receiptPreferences.receiptPrintMode, receiptQuery.data]);
 
-  const busy = addProductMutation.isPending
-    || barcodeMutation.isPending
-    || quantityMutation.isPending
-    || removeMutation.isPending
+  const busy = barcodeMutation.isPending
     || recalculateMutation.isPending
     || holdMutation.isPending
     || cancelMutation.isPending
@@ -1184,8 +1186,8 @@ export function PosCartPage() {
   const barcodeError = barcodeMutation.error && !errorMessage(barcodeMutation.error).includes('BARCODE_NOT_FOUND')
     ? barcodeMutation.error
     : null;
-  const pageError = current.error ?? saleQuery.error ?? addProductMutation.error ?? barcodeError
-    ?? quantityMutation.error ?? removeMutation.error ?? recalculateMutation.error ?? holdMutation.error ?? cancelMutation.error
+  const pageError = current.error ?? saleQuery.error ?? barcodeError
+    ?? recalculateMutation.error ?? holdMutation.error ?? cancelMutation.error
     ?? paymentMutation.error ?? completeMutation.error;
 
   React.useEffect(() => {
@@ -1274,7 +1276,7 @@ export function PosCartPage() {
               }
             }}
             onReprint={() => reprintReceiptMutation.mutate()}
-            onNewSale={() => rememberSale(null)}
+            onNewSale={() => { setCartItems([]); rememberSale(null); }}
           />
         ) : (
         <Grid container spacing={{ xs: 2, md: 3 }}>
@@ -1363,10 +1365,11 @@ export function PosCartPage() {
 
               <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
                 <CartLines
-                  sale={activeSale}
+                  items={cartItems}
+                  currencyCode={currencyCode}
                   busy={cartLocked}
-                  onQuantity={(itemId, quantity) => quantityMutation.mutate({ itemId, quantity })}
-                  onRemove={(itemId) => removeMutation.mutate(itemId)}
+                  onQuantity={(itemId, quantity) => changeCart(items => items.map(item => item.id === itemId ? { ...item, quantity, lineSubtotal: item.unitPrice * quantity, lineTotal: item.unitPrice * quantity, estimatedTaxAmount: 0 } : item))}
+                  onRemove={(itemId) => changeCart(items => items.filter(item => item.id !== itemId))}
                 />
               </Paper>
             </Stack>
@@ -1374,7 +1377,7 @@ export function PosCartPage() {
 
           <Grid item xs={12} md={4} sx={{ minWidth: 0 }}>
             <Stack spacing={2} sx={{ position: { md: 'sticky' }, top: { md: 72 }, maxHeight: { md: 'calc(100dvh - 88px)' }, overflowY: { md: 'auto' } }}>
-              <TotalsPanel sale={activeSale} currencyCode={currencyCode} />
+              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} />
               <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack spacing={1.5}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -1416,10 +1419,10 @@ export function PosCartPage() {
                   <Button
                     variant="contained"
                     startIcon={<PaymentOutlinedIcon />}
-                    disabled={!activeSale || activeSale.items.length === 0 || busy || activeSale.paymentComplete}
-                    onClick={() => setPaymentDialogOpen(true)}
+                    disabled={cartItems.length === 0 || busy || Boolean(activeSale?.paymentComplete)}
+                    onClick={() => activeSale ? setPaymentDialogOpen(true) : recalculateMutation.mutate()}
                   >
-                    Take payment
+                    {recalculateMutation.isPending ? 'Calculating total…' : activeSale ? 'Take payment' : 'Checkout'}
                   </Button>
                   <Button
                     variant="contained"
@@ -1473,10 +1476,13 @@ export function PosCartPage() {
           }}>Cancel</Button>
           <Button variant="contained" onClick={() => {
             if (!pendingAgeVerification) return;
-            addProductMutation.mutate({
+            addResolvedProduct({
               productId: pendingAgeVerification.productId,
               variantId: pendingAgeVerification.variantId,
-              ageVerified: true
+              ageVerified: true,
+              name: pendingAgeVerification.label,
+              sku: pendingAgeVerification.sku,
+              price: pendingAgeVerification.price
             });
           }}>Age Verified</Button>
         </DialogActions>

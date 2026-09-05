@@ -20,6 +20,8 @@ import com.merchtyl.idempotency.IdempotencyService;
 import com.merchtyl.inventory.InventoryService;
 import com.merchtyl.inventory.InventoryStockChangeRequest;
 import com.merchtyl.inventory.InventoryTransactionType;
+import com.merchtyl.foodmenu.FoodMenuItem;
+import com.merchtyl.foodmenu.FoodMenuItemRepository;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
 import com.merchtyl.product.ProductVariant;
@@ -87,6 +89,8 @@ public class SaleService {
     private ProductVariantRepository productVariantRepository;
     @Autowired
     private FoodOrderTokenService foodOrderTokenService;
+    @Autowired
+    private FoodMenuItemRepository foodMenuItemRepository;
 
     @Autowired
     public SaleService(
@@ -155,6 +159,45 @@ public class SaleService {
         Sale saved = save(sale);
         SaleResponse response = SaleResponse.from(saved);
         audit(actor, AuditAction.SALE_DRAFT_CREATED, response, null);
+        return response;
+    }
+
+    @Transactional
+    public SaleResponse checkout(SaleCheckoutRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        RegisterSession session = findOpenSession(request.registerSessionId());
+        validateUserCanUseSession(actor, session, authentication);
+        Sale sale = new Sale(
+                session.getStore(), session.getRegister(), session, actor, null,
+                session.getBusinessDay() == null
+                        ? Instant.now(clock).atZone(ZoneId.of(session.getStore().getTimezone())).toLocalDate()
+                        : session.getBusinessDay().getBusinessDate(),
+                cleanOptional(request.saleChannel()), session.getStore().getCurrencyCode(),
+                session.getStore().isPricesIncludeTax());
+
+        for (SaleCheckoutItemRequest line : request.items()) {
+            ResolvedStoreProduct resolved = storeProduct(sale, line.productId());
+            Product product = resolved.product();
+            ProductVariant variant = line.variantId() == null ? null : productVariantRepository.findById(line.variantId())
+                    .filter(candidate -> candidate.getProduct().getId().equals(product.getId()) && candidate.isActive())
+                    .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_AVAILABLE"));
+            BigDecimal unitPrice = variant == null ? resolved.sellingPrice() : variant.getPrice();
+            if (line.foodMenuItemId() != null) {
+                FoodMenuItem menuItem = foodMenuItemRepository.findByIdAndStoreId(line.foodMenuItemId(), session.getStore().getId())
+                        .filter(FoodMenuItem::isAvailable)
+                        .filter(item -> item.getProduct().getId().equals(product.getId()))
+                        .orElseThrow(() -> new ConflictException("Food menu item is no longer available"));
+                unitPrice = menuItem.getPrice();
+            }
+            SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
+                    normalizeMoney(unitPrice, "unitPrice"), moneyZero(), false,
+                    Boolean.TRUE.equals(line.ageVerified()), null, null, null, null);
+            saleItemHandlerRegistry.validate(item.validationRequest());
+            sale.addItem(item);
+        }
+        recalculate(sale, authentication);
+        SaleResponse response = SaleResponse.from(save(sale));
+        audit(actor, AuditAction.SALE_DRAFT_CREATED, response, "checkout cart items=" + request.items().size());
         return response;
     }
 
@@ -404,7 +447,6 @@ public class SaleService {
             throw new ConflictException("Sale must have at least one item before completion");
         }
 
-        recalculate(sale, authentication);
         sale.getItems().forEach(item -> saleItemHandlerRegistry.validate(item.validationRequest()));
         requireSufficientPayments(sale);
 

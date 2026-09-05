@@ -882,6 +882,18 @@ export type SaleAddItemPayload = {
   paymentMethodCode?: string;
 };
 
+export type SaleCheckoutPayload = {
+  registerSessionId: string;
+  saleChannel?: string;
+  items: Array<{
+    productId: string;
+    variantId?: string;
+    foodMenuItemId?: string;
+    quantity: number;
+    ageVerified?: boolean;
+  }>;
+};
+
 export type SaleUpdateQuantityPayload = {
   quantity: number;
 };
@@ -2594,6 +2606,13 @@ export function getSale(token: string, id: string) {
 
 export function createSaleDraft(token: string, payload: SaleCreateDraftPayload) {
   return request<Sale>('/sales/drafts', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }, token);
+}
+
+export function checkoutSaleCart(token: string, payload: SaleCheckoutPayload) {
+  return request<Sale>('/sales/checkout', {
     method: 'POST',
     body: JSON.stringify(payload)
   }, token);

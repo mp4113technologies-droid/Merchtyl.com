@@ -67,6 +67,16 @@ class SaleControllerAuthorizationTest {
               "quantity": 2.0000
             }
             """;
+    private static final String CHECKOUT_JSON = """
+            {
+              "registerSessionId": "00000000-0000-0000-0000-000000000903",
+              "saleChannel": "POS",
+              "items": [{
+                "productId": "00000000-0000-0000-0000-000000000906",
+                "quantity": 2.0000
+              }]
+            }
+            """;
 
     @Autowired
     MockMvc mockMvc;
@@ -86,8 +96,19 @@ class SaleControllerAuthorizationTest {
     }
 
     @Test
+    void checkoutRequiresSaleCreatePermission() throws Exception {
+        mockMvc.perform(post("/api/v1/sales/checkout")
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CHECKOUT_JSON))
+                .andExpect(status().isForbidden());
+        verify(saleService, never()).checkout(any(), any());
+    }
+
+    @Test
     void creatorCanCreateDraftAndMutateCart() throws Exception {
         when(saleService.createDraft(any(), any())).thenReturn(response(SaleStatus.DRAFT));
+        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.addItem(any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.updateQuantity(any(), any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.removeItem(any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
@@ -109,6 +130,13 @@ class SaleControllerAuthorizationTest {
                         .content(DRAFT_JSON))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"));
+
+        mockMvc.perform(post("/api/v1/sales/checkout")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CHECKOUT_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estimatedTaxAmount").value(1.50));
 
         mockMvc.perform(post("/api/v1/sales/{id}/items", SALE_ID)
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))

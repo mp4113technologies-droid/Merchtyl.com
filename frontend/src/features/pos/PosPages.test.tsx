@@ -420,7 +420,7 @@ describe('POS pages', () => {
     vi.restoreAllMocks();
   });
 
-  it('adds a barcode item, shows estimated tax and totals, and holds the sale', async () => {
+  it('adds a barcode item locally and calculates tax only at checkout', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) {
@@ -430,10 +430,7 @@ describe('POS pages', () => {
       if (url.pathname.endsWith('/api/v1/products/barcodes/0012345')) {
         return jsonResponse({ productId, variantId: '00000000-0000-0000-0000-000000000199', productName: 'Coffee', variantName: 'Large', barcode: '0012345', sku: 'COFFEE-LARGE', unitOfMeasureId: null, price: 11.5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 0, active: true });
       }
-      if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') {
-        return jsonResponse(emptySale(), 201);
-      }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
         return jsonResponse(sale('DRAFT'));
       }
       if (url.pathname.endsWith(`/api/v1/sales/${saleId}/hold`) && init?.method === 'POST') {
@@ -454,26 +451,21 @@ describe('POS pages', () => {
 
     await userEvent.type(screen.getByRole('textbox', { name: 'Barcode' }), '0012345{enter}');
 
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
+    expect(fetchMock.mock.calls.some(([input, init]) => {
         const url = new URL(String(input), window.location.origin);
-        if (!url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) || init?.method !== 'POST') return false;
-        const body = JSON.parse(String(init.body));
-        return body.productId === productId && body.variantId === '00000000-0000-0000-0000-000000000199';
-      })).toBe(true));
+        return url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST';
+      })).toBe(false);
 
     expect(await screen.findByText('System stock is currently 0. You can continue the sale.')).toBeInTheDocument();
 
-    expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('$0.75').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('$5.75').length).toBeGreaterThan(0);
-
-    await userEvent.click(screen.getByRole('button', { name: 'Hold sale' }));
-    expect(await screen.findByRole('heading', { name: 'Held sales' })).toBeInTheDocument();
-
-    expect(fetchMock.mock.calls.some(([input, init]) => {
+    expect(await screen.findByText('Coffee — Large')).toBeInTheDocument();
+    expect(screen.getAllByText('At checkout').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+    await screen.findByRole('heading', { name: 'Take payment' });
+    expect(fetchMock.mock.calls.filter(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
-      return url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST';
-    })).toBe(true);
+      return url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST';
+    })).toHaveLength(1);
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
       return url.pathname.includes('/api/v1/register-sessions/') && init?.method === 'POST';
@@ -485,20 +477,12 @@ describe('POS pages', () => {
       ...defaultBarcodeScannerPreferences,
       suffix: 'Tab'
     }));
-    let itemAdds = 0;
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) return common;
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/products/barcodes/8901234567890')) {
         return jsonResponse({ productId, variantId: null, productName: 'Coca-Cola 500ml', variantName: null, barcode: '8901234567890', sku: 'COKE-500', unitOfMeasureId: null, price: 2.99, taxCategoryId: null, taxCategoryName: null, availableQuantity: -1, active: true });
-      }
-      if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') return jsonResponse(emptySale(), 201);
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
-        itemAdds += 1;
-        const updatedSale = sale('DRAFT', itemAdds);
-        const total = 2.99 * itemAdds;
-        return jsonResponse({ ...updatedSale, items: [{ ...updatedSale.items[0], productName: 'Coca-Cola 500ml', productSku: 'COKE-500', quantity: itemAdds, unitPrice: 2.99, lineSubtotal: total, lineTotal: total, estimatedTaxAmount: 0 }], subtotalAmount: total, estimatedTaxAmount: 0, totalAmount: total });
       }
       return jsonResponse({}, 404);
     });
@@ -509,14 +493,13 @@ describe('POS pages', () => {
 
     expect(await screen.findByText('Coca-Cola 500ml')).toBeInTheDocument();
     expect(screen.getAllByText('$2.99').length).toBeGreaterThan(0);
-    expect(itemAdds).toBe(1);
     expect(fetchMock.mock.calls.filter(([input]) => new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/products/barcodes/8901234567890'))).toHaveLength(1);
     expect(barcodeInput).toHaveValue('');
 
     await userEvent.type(barcodeInput, '8901234567890{tab}');
-    await waitFor(() => expect(itemAdds).toBe(2));
+    await waitFor(() => expect(screen.getByDisplayValue('2')).toBeInTheDocument());
     await userEvent.type(barcodeInput, '8901234567890{tab}');
-    await waitFor(() => expect(itemAdds).toBe(3));
+    await waitFor(() => expect(screen.getByDisplayValue('3')).toBeInTheDocument());
 
     expect(screen.getByDisplayValue('3')).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([input]) => new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/products/barcodes/8901234567890'))).toHaveLength(3);
@@ -545,8 +528,6 @@ describe('POS pages', () => {
           minimumAge: 19
         });
       }
-      if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') return jsonResponse(emptySale(), 201);
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') return jsonResponse(sale('DRAFT'));
       if (url.pathname.endsWith('/api/v1/sales')) return jsonResponse(page([]));
       return jsonResponse({}, 404);
     });
@@ -566,10 +547,9 @@ describe('POS pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Age Verified' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
-      if (!url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) || init?.method !== 'POST') return false;
-      const body = JSON.parse(String(init.body));
-      return body.variantId === '00000000-0000-0000-0000-000000000199' && body.ageVerified === true;
-    })).toBe(true));
+      return url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST';
+    })).toBe(false));
+    expect(await screen.findByText('Restricted Product — Special Variant')).toBeInTheDocument();
   });
 
   it('leaves full-screen POS for Store Menu and resumes the same open session', async () => {
@@ -615,12 +595,6 @@ describe('POS pages', () => {
       if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
         return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 11.5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
       }
-      if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') {
-        return jsonResponse(emptySale(), 201);
-      }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
-        return jsonResponse(sale('DRAFT'));
-      }
       return jsonResponse({}, 404);
     });
 
@@ -649,8 +623,8 @@ describe('POS pages', () => {
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
-      return url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST';
-    })).toBe(true);
+      return url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST';
+    })).toBe(false);
   });
 
   it('records split payment, shows cash change, protects completion from duplicates, and shows success', async () => {
@@ -671,10 +645,7 @@ describe('POS pages', () => {
       if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
         return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 11.5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
       }
-      if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') {
-        return jsonResponse(emptySale(), 201);
-      }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
         return jsonResponse(sale('DRAFT'));
       }
       if (url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST') {
@@ -699,7 +670,7 @@ describe('POS pages', () => {
     await userEvent.type(await screen.findByRole('textbox', { name: 'Barcode' }), '12345{enter}');
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Take payment' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
     await userEvent.click(await screen.findByRole('combobox', { name: 'Payment method' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Debit' }));
     await userEvent.clear(screen.getByRole('spinbutton', { name: 'Payment amount' }));
@@ -765,10 +736,7 @@ describe('POS pages', () => {
       if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
         return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 11.5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
       }
-      if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') {
-        return jsonResponse(emptySale(), 201);
-      }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
         return jsonResponse(sale('DRAFT'));
       }
       if (url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST') {
@@ -781,7 +749,7 @@ describe('POS pages', () => {
     render(<App initialEntries={['/pos']} />);
 
     await userEvent.type(await screen.findByRole('textbox', { name: 'Barcode' }), '12345{enter}');
-    await userEvent.click(await screen.findByRole('button', { name: 'Take payment' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Checkout' }));
     await userEvent.clear(screen.getByRole('spinbutton', { name: 'Cash tendered' }));
     await userEvent.type(screen.getByRole('spinbutton', { name: 'Cash tendered' }), '1');
 
@@ -1034,15 +1002,6 @@ describe('POS pages', () => {
       if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') {
         return jsonResponse(emptySale(), 201);
       }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items`) && init?.method === 'POST') {
-        return jsonResponse(sale('DRAFT'));
-      }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items/${itemId}/quantity`) && init?.method === 'PATCH') {
-        return jsonResponse(sale('DRAFT', 2));
-      }
-      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/items/${itemId}`) && init?.method === 'DELETE') {
-        return jsonResponse(emptySale());
-      }
       return jsonResponse({}, 404);
     });
 
@@ -1054,15 +1013,15 @@ describe('POS pages', () => {
 
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: 'Increase Coffee' }));
-    await waitFor(() => expect(screen.getAllByText('$11.50').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0));
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove Coffee' }));
     expect(await screen.findByText('Cart is empty')).toBeInTheDocument();
 
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
-      return url.pathname.endsWith(`/api/v1/sales/${saleId}/items/${itemId}`) && init?.method === 'DELETE';
-    })).toBe(true);
+      return url.pathname.includes('/api/v1/sales/') && init?.method !== undefined;
+    })).toBe(false);
   });
 
   it('resumes a held sale back into the POS cart', async () => {

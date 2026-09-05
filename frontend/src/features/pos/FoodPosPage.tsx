@@ -6,7 +6,7 @@ import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularPr
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { addFoodMenuItemToSale, completeSale, createSaleDraft, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, listFoodMenuCategories, listFoodMenuItems, listStores, recordSalePayment, removeSaleItem, reprintKitchenTicket, reprintSaleReceipt, updateSaleItemQuantity } from '../../api/client';
+import { checkoutSaleCart, completeSale, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, listFoodMenuCategories, listFoodMenuItems, listStores, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt } from '../../api/client';
 import type { FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
@@ -26,6 +26,7 @@ export function FoodPosPage() {
   const { currentUser, getValidAccessToken } = useSession();
   const [categoryId, setCategoryId] = React.useState<string | null>(null);
   const [sale, setSale] = React.useState<Sale | null>(null);
+  const [cart, setCart] = React.useState<Array<{ item: FoodMenuItem; quantity: number }>>([]);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [printStates, setPrintStates] = React.useState<Record<FoodPrintDocument, { status: FoodPrintStatus; error?: string }>>({
     KITCHEN_TICKET: { status: 'READY' },
@@ -44,20 +45,35 @@ export function FoodPosPage() {
     if (!categoryId && categories.data?.find(category => category.active)) setCategoryId(categories.data.find(category => category.active)?.id ?? null);
   }, [categories.data, categoryId]);
 
-  async function draft(token: string) {
-    if (sale?.status === 'DRAFT') return sale;
-    if (!current.data) throw new Error('Open a register before starting an order');
-    return createSaleDraft(token, { registerSessionId: current.data.id, saleChannel: 'POS' });
+  function changeCart(update: (lines: typeof cart) => typeof cart) {
+    setCart(update);
+    setSale(null);
+    setPaymentOpen(false);
   }
-
-  const add = useMutation({ mutationFn: async (product: FoodMenuItem) => { const token = await getValidAccessToken(); const active = await draft(token); return addFoodMenuItemToSale(token, current.data?.storeId ?? '', product.id, active.id, 1); }, onSuccess: setSale });
-  const quantity = useMutation({ mutationFn: async ({ itemId, value }: { itemId: string; value: number }) => updateSaleItemQuantity(await getValidAccessToken(), sale?.id ?? '', itemId, { quantity: value }), onSuccess: setSale });
-  const remove = useMutation({ mutationFn: async (itemId: string) => removeSaleItem(await getValidAccessToken(), sale?.id ?? '', itemId), onSuccess: setSale });
+  function add(product: FoodMenuItem) {
+    changeCart(lines => {
+      const existing = lines.find(line => line.item.id === product.id);
+      return existing
+        ? lines.map(line => line.item.id === product.id ? { ...line, quantity: line.quantity + 1 } : line)
+        : [...lines, { item: product, quantity: 1 }];
+    });
+  }
+  const checkout = useMutation({
+    mutationFn: async () => {
+      if (!current.data) throw new Error('Open a register before starting an order');
+      return checkoutSaleCart(await getValidAccessToken(), {
+        registerSessionId: current.data.id,
+        saleChannel: 'POS',
+        items: cart.map(line => ({ productId: line.item.productId!, foodMenuItemId: line.item.id, quantity: line.quantity }))
+      });
+    },
+    onSuccess: updated => { setSale(updated); setPaymentOpen(true); }
+  });
   const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: (updated) => { setSale(updated); setPaymentOpen(!updated.paymentComplete); } });
   const complete = useMutation({ mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()), onSuccess: setSale });
   const receipt = useQuery({ queryKey: ['food-pos-receipt', sale?.id], queryFn: async () => getSaleReceipt(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const kitchenTicket = useQuery({ queryKey: ['food-pos-kitchen-ticket', sale?.id], queryFn: async () => getKitchenTicket(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
-  const busy = add.isPending || quantity.isPending || remove.isPending || payment.isPending || complete.isPending;
+  const busy = checkout.isPending || payment.isPending || complete.isPending;
   const canManageMenu = currentUser?.permissions?.some(permission => permission === 'PRODUCT_MANAGE' || permission === 'FOOD_ORDER_UPDATE');
 
   if (currentUser && !permitted) return <Alert severity="error">FOOD_POS_ACCESS is required.</Alert>;
@@ -118,16 +134,16 @@ export function FoodPosPage() {
               {(categories.data ?? []).filter(category => category.active).map(category => <Button key={category.id} variant={categoryId === category.id ? 'contained' : 'outlined'} onClick={() => setCategoryId(category.id)} sx={{ minHeight: 64, minWidth: 120 }}>{category.name}</Button>)}
             </Stack>
             <Grid container spacing={2} aria-label="Food products">
-              {(products.data ?? []).filter(product => product.categoryId === categoryId).map((product) => <Grid item xs={12} sm={6} md={4} xl={3} key={product.id}><Card variant="outlined" sx={{ height: '100%', opacity: product.available ? 1 : .55 }}><CardActionArea disabled={!product.available || busy} onClick={() => add.mutate(product)} sx={{ minHeight: 150, height: '100%' }}>{product.imageUrl ? <Box component="img" src={product.imageUrl} alt="" sx={{ width: '100%', height: 88, objectFit: 'cover' }} /> : null}<CardContent><Typography variant="h6">{product.displayName}</Typography><Typography color="primary" fontWeight={800}>{money(product.price, store?.currencyCode)}</Typography>{!product.available ? <Chip label="Sold Out" size="small" /> : null}</CardContent></CardActionArea></Card></Grid>)}
+              {(products.data ?? []).filter(product => product.categoryId === categoryId).map((product) => <Grid item xs={12} sm={6} md={4} xl={3} key={product.id}><Card variant="outlined" sx={{ height: '100%', opacity: product.available ? 1 : .55 }}><CardActionArea disabled={!product.available || busy} onClick={() => add(product)} sx={{ minHeight: 150, height: '100%' }}>{product.imageUrl ? <Box component="img" src={product.imageUrl} alt="" sx={{ width: '100%', height: 88, objectFit: 'cover' }} /> : null}<CardContent><Typography variant="h6">{product.displayName}</Typography><Typography color="primary" fontWeight={800}>{money(product.price, store?.currencyCode)}</Typography>{!product.available ? <Chip label="Sold Out" size="small" /> : null}</CardContent></CardActionArea></Card></Grid>)}
             </Grid>
           </Stack>
         </Grid>
         <Grid item xs={12} md={4} sx={{ minWidth: 0 }}>
           <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, position: { md: 'sticky' }, top: { md: 72 }, maxHeight: { md: 'calc(100dvh - 88px)' }, overflowY: { md: 'auto' } }}><Stack spacing={2}><Typography variant="h5">Order</Typography><Divider />
-            {sale?.items.map((item) => <Stack key={item.id} direction={{ xs: 'column', sm: 'row', md: 'column', lg: 'row' }} alignItems={{ xs: 'stretch', sm: 'center', md: 'stretch', lg: 'center' }} spacing={1}><Box flex={1} minWidth={0}><Typography fontWeight={700}>{item.productName}</Typography><Typography variant="body2">{item.quantity} × {money(item.unitPrice, sale.currencyCode)} = {money(item.lineTotal, sale.currencyCode)}</Typography></Box><Stack direction="row" alignSelf={{ xs: 'flex-end', sm: 'auto', md: 'flex-end', lg: 'auto' }}><IconButton aria-label={`Decrease ${item.productName}`} disabled={busy || item.quantity <= 1} onClick={() => quantity.mutate({ itemId: item.id, value: item.quantity - 1 })}><RemoveIcon /></IconButton><IconButton aria-label={`Increase ${item.productName}`} disabled={busy} onClick={() => quantity.mutate({ itemId: item.id, value: item.quantity + 1 })}><AddIcon /></IconButton><IconButton aria-label={`Remove ${item.productName}`} disabled={busy} onClick={() => remove.mutate(item.id)}><DeleteOutlineIcon /></IconButton></Stack></Stack>)}
-            {!sale?.items.length ? <Typography color="text.secondary">Tap a product tile to begin.</Typography> : null}<Divider />
-            <Stack direction="row" justifyContent="space-between"><Typography>Subtotal</Typography><Typography>{money(sale?.subtotalAmount ?? 0, sale?.currencyCode ?? store?.currencyCode)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography>Tax</Typography><Typography>{money(sale?.estimatedTaxAmount ?? 0, sale?.currencyCode ?? store?.currencyCode)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="h6">Total</Typography><Typography variant="h6">{money(sale?.totalAmount ?? 0, sale?.currencyCode ?? store?.currencyCode)}</Typography></Stack>
-            <Button variant="contained" size="large" disabled={!sale?.items.length || busy || sale.paymentComplete} onClick={() => setPaymentOpen(true)} sx={{ minHeight: 64 }}>Pay</Button><Button variant="contained" color="success" size="large" disabled={!sale?.paymentComplete || busy} onClick={() => complete.mutate()} sx={{ minHeight: 64 }}>Complete order</Button>
+            {cart.map(({ item, quantity }) => <Stack key={item.id} direction={{ xs: 'column', sm: 'row', md: 'column', lg: 'row' }} alignItems={{ xs: 'stretch', sm: 'center', md: 'stretch', lg: 'center' }} spacing={1}><Box flex={1} minWidth={0}><Typography fontWeight={700}>{item.displayName}</Typography><Typography variant="body2">{quantity} × {money(item.price, store?.currencyCode)} = {money(quantity * item.price, store?.currencyCode)}</Typography></Box><Stack direction="row" alignSelf={{ xs: 'flex-end', sm: 'auto', md: 'flex-end', lg: 'auto' }}><IconButton aria-label={`Decrease ${item.displayName}`} disabled={busy || quantity <= 1} onClick={() => changeCart(lines => lines.map(line => line.item.id === item.id ? { ...line, quantity: line.quantity - 1 } : line))}><RemoveIcon /></IconButton><IconButton aria-label={`Increase ${item.displayName}`} disabled={busy} onClick={() => changeCart(lines => lines.map(line => line.item.id === item.id ? { ...line, quantity: line.quantity + 1 } : line))}><AddIcon /></IconButton><IconButton aria-label={`Remove ${item.displayName}`} disabled={busy} onClick={() => changeCart(lines => lines.filter(line => line.item.id !== item.id))}><DeleteOutlineIcon /></IconButton></Stack></Stack>)}
+            {!cart.length ? <Typography color="text.secondary">Tap a product tile to begin.</Typography> : null}<Divider />
+            <Stack direction="row" justifyContent="space-between"><Typography>Subtotal</Typography><Typography>{money(cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0), store?.currencyCode)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography>Tax</Typography><Typography>{sale ? money(sale.estimatedTaxAmount, sale.currencyCode) : 'At checkout'}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="h6">Total</Typography><Typography variant="h6">{sale ? money(sale.totalAmount, sale.currencyCode) : '—'}</Typography></Stack>
+            <Button variant="contained" size="large" disabled={!cart.length || busy || Boolean(sale?.paymentComplete)} onClick={() => checkout.mutate()} sx={{ minHeight: 64 }}>{checkout.isPending ? 'Calculating total…' : 'Checkout'}</Button><Button variant="contained" color="success" size="large" disabled={!sale?.paymentComplete || busy} onClick={() => complete.mutate()} sx={{ minHeight: 64 }}>Complete order</Button>
           </Stack></Paper>
         </Grid>
       </Grid>

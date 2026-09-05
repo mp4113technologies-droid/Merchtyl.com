@@ -44,6 +44,14 @@ public class SaleController {
         return saleService.createDraft(request, authentication);
     }
 
+    @PostMapping("/checkout")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
+    @Operation(summary = "Prepare an authoritative POS checkout", description = "Creates the draft from the complete local cart and calculates authoritative pricing and tax once.")
+    SaleResponse checkout(@Valid @RequestBody SaleCheckoutRequest request, Authentication authentication) {
+        return saleService.checkout(request, authentication);
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_VIEW)")
     SaleResponse get(@PathVariable UUID id) {

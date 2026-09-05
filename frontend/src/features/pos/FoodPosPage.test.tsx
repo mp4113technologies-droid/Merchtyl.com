@@ -35,9 +35,7 @@ describe('Food POS', () => {
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true, imageUrl: null, version: 0 }]);
       if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }]);
-      if (url.pathname.endsWith('/sales/drafts')) return response(sale(), 201);
-      if (url.pathname.endsWith(`/food-menu/items/menu-item/sales/${saleId}`)) return response(sale(1));
-      if (url.pathname.endsWith(`/sales/${saleId}/items/${itemId}/quantity`)) return response(sale(2));
+      if (url.pathname.endsWith('/sales/checkout')) return response(sale(2), 201);
       if (url.pathname.endsWith(`/sales/${saleId}/payments`)) return response(sale(2, true));
       if (url.pathname.endsWith(`/sales/${saleId}/complete`)) return response(sale(2, true, true));
       if (url.pathname.endsWith(`/sales/${saleId}/receipt`)) return response({ receiptNumber: 'RCT-FOOD-1' });
@@ -48,10 +46,13 @@ describe('Food POS', () => {
     expect(await screen.findByText("Joe's Kitchen")).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Pizza' })).toBeInTheDocument();
     await userEvent.click(await screen.findByText('Pepperoni Pizza'));
-    expect((await screen.findAllByText(/13\.80/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/12\.00/)).length).toBeGreaterThan(0);
+    expect(screen.getByText('At checkout')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Increase Pepperoni Pizza' }));
+    expect((await screen.findAllByText(/24\.00/)).length).toBeGreaterThan(0);
+    expect(calls.filter(call => call.includes('/sales/checkout'))).toHaveLength(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
     expect((await screen.findAllByText(/27\.60/)).length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole('button', { name: 'Pay' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
     expect(await screen.findByText(/RCT-FOOD-1/)).toBeInTheDocument();
@@ -81,8 +82,7 @@ describe('Food POS', () => {
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true }]);
       if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', available: true }]);
-      if (url.pathname.endsWith('/sales/drafts')) return response(sale(), 201);
-      if (url.pathname.endsWith(`/food-menu/items/menu-item/sales/${saleId}`)) return response(sale(1));
+      if (url.pathname.endsWith('/sales/checkout')) return response(sale(1), 201);
       if (url.pathname.endsWith(`/sales/${saleId}/payments`)) return response(sale(1, true));
       if (url.pathname.endsWith(`/sales/${saleId}/complete`)) return response(sale(1, true, true));
       if (url.pathname.endsWith(`/sales/${saleId}/receipt/reprint`) && init?.method === 'POST') return response({ ...persistedReceipt, reprint: true });
@@ -94,7 +94,7 @@ describe('Food POS', () => {
 
     render(<App initialEntries={['/pos/food']} />);
     await userEvent.click(await screen.findByText('Pepperoni Pizza'));
-    await userEvent.click(screen.getByRole('button', { name: 'Pay' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
     expect(print).not.toHaveBeenCalled();
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
@@ -124,15 +124,14 @@ describe('Food POS', () => {
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
       if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', available: true }]);
-      if (url.pathname.endsWith('/sales/drafts')) return response(sale(), 201);
-      if (url.pathname.endsWith(`/food-menu/items/menu-item/sales/${saleId}`)) return response(sale(1));
+      if (url.pathname.endsWith('/sales/checkout')) return response(sale(1), 201);
       if (url.pathname.endsWith(`/sales/${saleId}/payments`)) return response(sale(1, true));
       if (url.pathname.endsWith(`/sales/${saleId}/complete`)) return response({ message: 'Completion failed' }, 500);
       return response({}, 404);
     });
     render(<App initialEntries={['/pos/food']} />);
     await userEvent.click(await screen.findByText('Pepperoni Pizza'));
-    await userEvent.click(screen.getByRole('button', { name: 'Pay' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
     await waitFor(() => expect(print).not.toHaveBeenCalled());

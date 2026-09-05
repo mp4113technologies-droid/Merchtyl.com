@@ -419,7 +419,7 @@ class SaleServiceTest {
     }
 
     @Test
-    void completeRejectsInsufficientPaymentAfterAuthoritativeTaxRecalculation() {
+    void completeUsesAuthoritativeCheckoutTotalsWithoutRecalculatingTax() {
         Sale sale = payableSale();
         when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
         when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
@@ -429,15 +429,10 @@ class SaleServiceTest {
                 new BigDecimal("11.50"),
                 null,
                 null), cashierAuth());
-        when(taxEngine.calculate(any(TaxCalculationRequest.class), any()))
-                .thenReturn(taxResponse(new BigDecimal("10.00"), new BigDecimal("2.00"), new BigDecimal("12.00")));
+        SaleResponse completed = service.complete(sale.getId(), cashier, cashierAuth());
 
-        assertThatThrownBy(() -> service.complete(sale.getId(), cashier, cashierAuth()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("Sale has insufficient payments");
-
-        verify(inventoryService, never()).recordStockChange(any(), any());
-        verify(cashLedgerService, never()).append(any());
+        assertThat(completed.status()).isEqualTo(SaleStatus.COMPLETED);
+        verify(taxEngine, never()).calculate(any(TaxCalculationRequest.class), any());
     }
 
     @Test
