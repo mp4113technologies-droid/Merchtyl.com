@@ -43,7 +43,7 @@ import {
   Typography
 } from '@mui/material';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { compactFilterBarSx } from '../../app/responsive';
 import {
@@ -83,9 +83,10 @@ import {
   suspendPlatformTenant,
   previewPlatformStoreCapabilities,
   updatePlatformStoreCapabilities,
+  updatePlatformTenant,
   updatePlatformTenantSubscription
 } from '../../api/client';
-import type { MerchantOnboardingPayload, OwnerInvitationResendPayload, TenantLifecyclePayload, TenantSubscriptionPayload } from '../../api/client';
+import type { MerchantOnboardingPayload, OwnerInvitationResendPayload, PlatformMerchantUpdatePayload, TenantLifecyclePayload, TenantSubscriptionPayload } from '../../api/client';
 import type { EmailDelivery, MerchantStoreCapability, OwnerActivationStatus, StoreCapability, StoreCapabilityChangePreview, TenantDeletionEligibility, TenantDetail, TenantSummary } from '../../api/types';
 import { useSession } from '../../app/session';
 
@@ -731,6 +732,8 @@ export function PlatformMerchantDetailPage() {
   const [credentialsConfirmed, setCredentialsConfirmed] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetReason, setResetReason] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [updateSucceeded, setUpdateSucceeded] = useState(false);
 
   const subscription = useMutation({
     mutationFn: async () => {
@@ -807,6 +810,18 @@ export function PlatformMerchantDetailPage() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['platform-owner-activation', tenantId] })
   });
+  const updateMerchant = useMutation({
+    mutationFn: async (payload: PlatformMerchantUpdatePayload) => updatePlatformTenant(await getValidAccessToken(), tenantId, payload),
+    onSuccess: async () => {
+      setUpdateSucceeded(true);
+      setEditOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['platform-tenant', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['platform-tenants'] }),
+        queryClient.invalidateQueries({ queryKey: ['merchant-portal'] })
+      ]);
+    }
+  });
 
   if (tenant.isLoading) return <CircularProgress aria-label="Loading merchant" />;
   if (tenant.error) return <Alert severity="error">{tenant.error.message}</Alert>;
@@ -822,8 +837,12 @@ export function PlatformMerchantDetailPage() {
             <Typography variant="h4" component="h1">{data.tenant.displayName}</Typography>
             <Stack direction="row" gap={1} alignItems="center"><StatusChip status={data.tenant.status} /><Typography color="text.secondary">{data.tenant.tenantCode}</Typography></Stack>
           </Box>
-          <Button component={Link} to={`/platform/merchants${location.state?.merchantListSearch ? `?${location.state.merchantListSearch}` : ''}`}>All merchants</Button>
+          <Stack direction="row" gap={1}>
+            {isSuperAdmin && <Button variant="contained" onClick={() => { setUpdateSucceeded(false); updateMerchant.reset(); setEditOpen(true); }}>Edit Merchant</Button>}
+            <Button component={Link} to={`/platform/merchants${location.state?.merchantListSearch ? `?${location.state.merchantListSearch}` : ''}`}>All merchants</Button>
+          </Stack>
         </Stack>
+        {updateSucceeded && <Alert severity="success">Merchant details updated successfully.</Alert>}
         {(subscription.error || resend.error || retryDelivery.error || reissueCredentials.error || sendReset.error || unlockOwner.error || ownerActivation.error) && <Alert severity="error">{(subscription.error || resend.error || retryDelivery.error || reissueCredentials.error || sendReset.error || unlockOwner.error || ownerActivation.error)?.message}</Alert>}
         {sendReset.data && <Alert severity={sendReset.data.status === 'SENT' ? 'success' : 'warning'}>Password reset delivery status: {sendReset.data.status}. No password or reset token is visible to administrators.</Alert>}
         {resend.data && (
@@ -842,7 +861,7 @@ export function PlatformMerchantDetailPage() {
           {data.portalUrl && <Grid item xs={12}>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2} alignItems={{ sm: 'center' }}>
-                <Box><Typography variant="caption" color="text.secondary">Merchant Portal</Typography><Typography>{data.portalUrl}</Typography></Box>
+                <Box><Typography variant="caption" color="text.secondary">Portal URL</Typography><Typography>{data.portalUrl}</Typography></Box>
                 <Stack direction="row" gap={1}><Button variant="outlined" onClick={() => navigator.clipboard.writeText(data.portalUrl!)}>Copy URL</Button><Button variant="contained" href={data.portalUrl} target="_blank" rel="noopener noreferrer">Open Portal</Button></Stack>
               </Stack>
             </Paper>
@@ -947,6 +966,14 @@ export function PlatformMerchantDetailPage() {
           </Grid>
         </Grid>
       </Stack>
+      <MerchantEditDialog
+        open={editOpen}
+        tenant={data}
+        saving={updateMerchant.isPending}
+        error={updateMerchant.error?.message}
+        onClose={() => !updateMerchant.isPending && setEditOpen(false)}
+        onSave={(payload) => updateMerchant.mutate(payload)}
+      />
       <Dialog open={resendDialogOpen} onClose={() => setResendDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Resend Activation Email</DialogTitle>
         <DialogContent>
@@ -1253,15 +1280,125 @@ function InfoValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+type MerchantEditForm = Omit<PlatformMerchantUpdatePayload, 'estimatedStoreCount'> & { estimatedStoreCount: string };
+
+function merchantEditValues(detail: TenantDetail): MerchantEditForm {
+  const profile = detail.merchantProfile;
+  return {
+    legalName: detail.tenant.legalName,
+    displayName: detail.tenant.displayName,
+    businessNumber: profile.businessNumber ?? '',
+    contactName: profile.contactName,
+    contactEmail: profile.contactEmail,
+    contactPhone: profile.contactPhone ?? '',
+    billingAddress: profile.billingAddress ?? '',
+    postalCode: profile.postalCode ?? '',
+    industryType: profile.industryType ?? '',
+    estimatedStoreCount: profile.estimatedStoreCount?.toString() ?? '',
+    notes: profile.notes ?? '',
+    countryCode: detail.tenant.countryCode,
+    administrativeDivisionCode: detail.tenant.administrativeDivisionCode ?? '',
+    defaultCurrencyCode: detail.tenant.defaultCurrencyCode,
+    primaryTimezone: detail.tenant.primaryTimezone,
+    defaultTaxRegionCode: detail.tenant.defaultTaxRegionCode ?? '',
+    reason: '',
+    version: detail.tenant.version
+  };
+}
+
+function MerchantEditDialog({ open, tenant, saving, error, onClose, onSave }: {
+  open: boolean;
+  tenant: TenantDetail;
+  saving: boolean;
+  error?: string;
+  onClose: () => void;
+  onSave: (payload: PlatformMerchantUpdatePayload) => void;
+}) {
+  const initial = useMemo(() => merchantEditValues(tenant), [tenant]);
+  const [form, setForm] = useState<MerchantEditForm>(initial);
+  useEffect(() => { if (open) setForm(initial); }, [open, initial]);
+  const set = (field: keyof MerchantEditForm) => (event: ChangeEvent<HTMLInputElement>) =>
+    setForm(current => ({ ...current, [field]: event.target.value }));
+  const comparable = (value: MerchantEditForm) => {
+    const { reason: _reason, ...profile } = value;
+    return Object.fromEntries(Object.entries({ ...profile, version: initial.version })
+      .map(([key, fieldValue]) => [key, typeof fieldValue === 'string' ? fieldValue.trim() : fieldValue]));
+  };
+  const dirty = JSON.stringify(comparable(form)) !== JSON.stringify(comparable(initial));
+  const valid = form.displayName.trim() !== '' && form.legalName.trim() !== '' && form.contactName.trim() !== ''
+    && /^\S+@\S+\.\S+$/.test(form.contactEmail.trim()) && form.countryCode.trim().length === 2
+    && form.administrativeDivisionCode.trim() !== '' && form.defaultCurrencyCode.trim().length === 3
+    && form.primaryTimezone.trim() !== '' && form.defaultTaxRegionCode.trim() !== ''
+    && (form.estimatedStoreCount === '' || Number(form.estimatedStoreCount) >= 0);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!dirty || !valid || saving) return;
+    const optional = (value?: string | null) => value?.trim() || null;
+    onSave({
+      ...form,
+      legalName: form.legalName.trim(), displayName: form.displayName.trim(), contactName: form.contactName.trim(),
+      contactEmail: form.contactEmail.trim(), countryCode: form.countryCode.trim().toUpperCase(),
+      administrativeDivisionCode: form.administrativeDivisionCode.trim().toUpperCase(),
+      defaultCurrencyCode: form.defaultCurrencyCode.trim().toUpperCase(), primaryTimezone: form.primaryTimezone.trim(),
+      defaultTaxRegionCode: form.defaultTaxRegionCode.trim().toUpperCase(), businessNumber: optional(form.businessNumber),
+      contactPhone: optional(form.contactPhone), billingAddress: optional(form.billingAddress), postalCode: optional(form.postalCode),
+      industryType: optional(form.industryType), notes: optional(form.notes), reason: optional(form.reason),
+      estimatedStoreCount: form.estimatedStoreCount === '' ? null : Number(form.estimatedStoreCount), version: tenant.tenant.version
+    });
+  };
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" component="form" onSubmit={submit}>
+      <DialogTitle>Edit Merchant</DialogTitle>
+      <DialogContent><Stack spacing={3} sx={{ mt: 1 }}>
+        {error && <Alert severity="error">Merchant details could not be updated. {error}</Alert>}
+        <Box><Typography variant="subtitle1" fontWeight={700}>Business Details</Typography><Grid container spacing={2} sx={{ mt: 0 }}>
+          <Grid item xs={12} sm={6}><TextField fullWidth required label="Display name" value={form.displayName} onChange={set('displayName')} inputProps={{ maxLength: 180 }} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth required label="Legal / business name" value={form.legalName} onChange={set('legalName')} inputProps={{ maxLength: 255 }} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth label="Business number" value={form.businessNumber} onChange={set('businessNumber')} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth label="Industry type" value={form.industryType} onChange={set('industryType')} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth type="number" label="Estimated store count" value={form.estimatedStoreCount} onChange={set('estimatedStoreCount')} inputProps={{ min: 0 }} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth label="Merchant slug" value={tenant.merchantSlug ?? ''} InputProps={{ readOnly: true }} helperText="Stable portal address; it is not changed with the display name." /></Grid>
+        </Grid></Box>
+        <Box><Typography variant="subtitle1" fontWeight={700}>Contact Details</Typography><Grid container spacing={2} sx={{ mt: 0 }}>
+          <Grid item xs={12} sm={6}><TextField fullWidth required label="Contact name" value={form.contactName} onChange={set('contactName')} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth required type="email" label="Contact email" value={form.contactEmail} onChange={set('contactEmail')} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth label="Contact phone" value={form.contactPhone} onChange={set('contactPhone')} /></Grid>
+        </Grid></Box>
+        <Box><Typography variant="subtitle1" fontWeight={700}>Address</Typography><Grid container spacing={2} sx={{ mt: 0 }}>
+          <Grid item xs={12}><TextField fullWidth multiline minRows={2} label="Billing address" value={form.billingAddress} onChange={set('billingAddress')} /></Grid>
+          <Grid item xs={12} sm={4}><TextField fullWidth required label="Country code" value={form.countryCode} onChange={set('countryCode')} /></Grid>
+          <Grid item xs={12} sm={4}><TextField fullWidth required label="Province / State code" value={form.administrativeDivisionCode} onChange={set('administrativeDivisionCode')} /></Grid>
+          <Grid item xs={12} sm={4}><TextField fullWidth label="Postal / ZIP code" value={form.postalCode} onChange={set('postalCode')} /></Grid>
+        </Grid></Box>
+        <Box><Typography variant="subtitle1" fontWeight={700}>Operational Settings</Typography><Grid container spacing={2} sx={{ mt: 0 }}>
+          <Grid item xs={12} sm={4}><TextField fullWidth required label="Currency code" value={form.defaultCurrencyCode} onChange={set('defaultCurrencyCode')} /></Grid>
+          <Grid item xs={12} sm={4}><TextField fullWidth required label="Timezone" value={form.primaryTimezone} onChange={set('primaryTimezone')} /></Grid>
+          <Grid item xs={12} sm={4}><TextField fullWidth required label="Tax region code" value={form.defaultTaxRegionCode} onChange={set('defaultTaxRegionCode')} /></Grid>
+          <Grid item xs={12}><TextField fullWidth multiline minRows={2} label="Notes" value={form.notes} onChange={set('notes')} /></Grid>
+          <Grid item xs={12}><TextField fullWidth multiline minRows={2} label="Reason for change" value={form.reason} onChange={set('reason')} /></Grid>
+        </Grid></Box>
+      </Stack></DialogContent>
+      <DialogActions><Button onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" variant="contained" disabled={!dirty || !valid || saving}>{saving ? 'Saving…' : 'Save Changes'}</Button></DialogActions>
+    </Dialog>
+  );
+}
+
 function formatDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : 'Not available';
 }
 
 function TenantOverview({ tenant }: { tenant: TenantDetail }) {
+  const profile = tenant.merchantProfile;
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
-      <Typography variant="h6">Merchant metadata</Typography>
+      <Typography variant="h6">Merchant details</Typography>
       <Stack spacing={1} sx={{ mt: 2 }}>
+        <Typography>Legal name: {profile.legalBusinessName}</Typography>
+        <Typography>Contact: {profile.contactName}</Typography>
+        <Typography>Contact email: {profile.contactEmail}</Typography>
+        <Typography>Contact phone: {profile.contactPhone ?? 'Not set'}</Typography>
+        <Typography>Address: {profile.billingAddress ?? 'Not set'}</Typography>
+        <Typography>Postal / ZIP code: {profile.postalCode ?? 'Not set'}</Typography>
         <Typography>Owner: {tenant.tenant.primaryOwnerEmail ?? 'Pending'}</Typography>
         <Typography>Country: {tenant.tenant.countryCode}</Typography>
         <Typography>Province / State: {tenant.tenant.administrativeDivisionCode ?? 'Not set'}</Typography>

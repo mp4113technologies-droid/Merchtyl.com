@@ -547,12 +547,26 @@ public class PlatformAdministrationService {
                 request.version());
         jdbcTemplate.update("""
                 update merchant_profiles
-                set country_code = ?, administrative_division_code = ?, default_currency_code = ?,
+                set legal_business_name = ?, operating_name = ?, business_number = ?, contact_name = ?,
+                    contact_email = ?, contact_phone = ?, billing_address = ?, postal_code = ?,
+                    industry_type = ?, estimated_store_count = ?, notes = ?,
+                    country_code = ?, administrative_division_code = ?, default_currency_code = ?,
                     primary_timezone = ?, default_tax_region_code = ?, country_id = ?, administrative_division_id = ?,
                     default_currency_id = ?, primary_timezone_id = ?, default_tax_region_id = ?,
                     updated_at = now(), version = version + 1
                 where tenant_id = ?
                 """,
+                cleanRequired(request.legalName(), "legalName"),
+                cleanRequired(request.displayName(), "displayName"),
+                cleanOptional(request.businessNumber()),
+                cleanRequired(request.contactName(), "contactName"),
+                cleanRequired(request.contactEmail(), "contactEmail").toLowerCase(Locale.ROOT),
+                cleanOptional(request.contactPhone()),
+                cleanOptional(request.billingAddress()),
+                cleanOptional(request.postalCode()),
+                cleanOptional(request.industryType()),
+                request.estimatedStoreCount(),
+                cleanOptional(request.notes()),
                 geography.country().getCode(),
                 geography.administrativeDivision().getCode(),
                 geography.currency().getCode(),

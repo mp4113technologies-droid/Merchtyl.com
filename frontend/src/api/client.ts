@@ -1725,6 +1725,34 @@ export function getPlatformTenant(token: string, tenantId: string) {
   return request<TenantDetail>(`/platform/tenants/${tenantId}`, undefined, token);
 }
 
+export type PlatformMerchantUpdatePayload = {
+  legalName: string;
+  displayName: string;
+  businessNumber?: string | null;
+  contactName: string;
+  contactEmail: string;
+  contactPhone?: string | null;
+  billingAddress?: string | null;
+  postalCode?: string | null;
+  industryType?: string | null;
+  estimatedStoreCount?: number | null;
+  notes?: string | null;
+  countryCode: string;
+  administrativeDivisionCode: string;
+  defaultCurrencyCode: string;
+  primaryTimezone: string;
+  defaultTaxRegionCode: string;
+  reason?: string | null;
+  version: number;
+};
+
+export function updatePlatformTenant(token: string, tenantId: string, payload: PlatformMerchantUpdatePayload) {
+  return request<TenantDetail>(`/platform/tenants/${tenantId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }, token);
+}
+
 export function listPlatformTenantStores(token: string, tenantId: string) {
   return request<import('./types').MerchantStoreCapability[]>(`/platform/tenants/${tenantId}/stores`, undefined, token);
 }

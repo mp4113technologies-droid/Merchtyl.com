@@ -113,7 +113,9 @@ function tenantDetail(): TenantDetail {
         { stage: 'OWNER_ACCOUNT', completedAt: '2026-08-03T18:00:00Z' },
         { stage: 'OWNER_INVITATION', completedAt: null }
       ]
-    }
+    },
+    merchantSlug: 'acme-market',
+    portalUrl: 'https://acme-market.merchtyl.com'
   };
 }
 
@@ -296,6 +298,51 @@ describe('Platform merchant owner activation', () => {
     await userEvent.type(within(capabilityDialog).getByLabelText('Kitchen Display Name'), 'Sweetshop');
     await userEvent.click(within(capabilityDialog).getByRole('button', { name: 'Review & Save' }));
     expect(await screen.findByText('Kitchen display: Sweetshop')).toBeInTheDocument();
+  });
+
+  it('edits merchant details without changing the portal slug and refreshes the page', async () => {
+    let detail = tenantDetail();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}`) && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        detail = {
+          ...detail,
+          tenant: { ...detail.tenant, displayName: body.displayName, legalName: body.legalName, version: 1 },
+          merchantProfile: { ...detail.merchantProfile, operatingName: body.displayName, contactPhone: body.contactPhone, version: 1 }
+        };
+        return jsonResponse(detail);
+      }
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}`)) return jsonResponse(detail);
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/stores`)) return jsonResponse([]);
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/owner-invitation`)) return jsonResponse(ownerActivation());
+      if (url.endsWith(`/api/v1/platform/tenants/${tenantId}/status-history`) || url.endsWith(`/api/v1/platform/tenants/${tenantId}/email-deliveries`)) return jsonResponse([]);
+      if (url.includes('/api/v1/platform/billing/')) return jsonResponse({ message: 'Unavailable' }, 404);
+      if (url.includes('/api/v1/platform/tenants?')) return jsonResponse({ content: [], page: 0, size: 10, totalElements: 0, totalPages: 0, first: true, last: true });
+      return jsonResponse({ message: `Unexpected request: ${url}` }, 500);
+    });
+
+    render(<App initialEntries={[`/platform/merchants/${tenantId}`]} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Merchant' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Merchant' });
+    expect(within(dialog).getByLabelText(/^Display name/)).toHaveValue('Acme Market');
+    expect(within(dialog).getByLabelText(/^Contact email/)).toHaveValue('owner@example.local');
+    expect(within(dialog).getByLabelText('Merchant slug')).toHaveValue('acme-market');
+    expect(within(dialog).getByLabelText('Merchant slug')).toHaveAttribute('readonly');
+    expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeDisabled();
+
+    await userEvent.clear(within(dialog).getByLabelText(/^Display name/));
+    await userEvent.type(within(dialog).getByLabelText(/^Display name/), 'Acme Retail Group');
+    expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeEnabled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByRole('heading', { name: 'Acme Retail Group' })).toBeInTheDocument();
+    expect(screen.getByText('https://acme-market.merchtyl.com')).toBeInTheDocument();
+    expect(await screen.findByText('Merchant details updated successfully.')).toBeInTheDocument();
+    const updateCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith(`/api/v1/platform/tenants/${tenantId}`) && init?.method === 'PUT');
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({ displayName: 'Acme Retail Group' });
+    expect(JSON.parse(String(updateCall?.[1]?.body))).not.toHaveProperty('merchantSlug');
   });
 });
 
