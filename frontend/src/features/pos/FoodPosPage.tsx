@@ -64,7 +64,7 @@ export function FoodPosPage() {
       return checkoutSaleCart(await getValidAccessToken(), {
         registerSessionId: current.data.id,
         saleChannel: 'POS',
-        items: cart.map(line => ({ productId: line.item.productId!, foodMenuItemId: line.item.id, quantity: line.quantity }))
+        items: cart.map(line => ({ foodMenuItemId: line.item.id, quantity: line.quantity }))
       });
     },
     onSuccess: updated => { setSale(updated); setPaymentOpen(true); }
@@ -143,6 +143,7 @@ export function FoodPosPage() {
             {cart.map(({ item, quantity }) => <Stack key={item.id} direction={{ xs: 'column', sm: 'row', md: 'column', lg: 'row' }} alignItems={{ xs: 'stretch', sm: 'center', md: 'stretch', lg: 'center' }} spacing={1}><Box flex={1} minWidth={0}><Typography fontWeight={700}>{item.displayName}</Typography><Typography variant="body2">{quantity} × {money(item.price, store?.currencyCode)} = {money(quantity * item.price, store?.currencyCode)}</Typography></Box><Stack direction="row" alignSelf={{ xs: 'flex-end', sm: 'auto', md: 'flex-end', lg: 'auto' }}><IconButton aria-label={`Decrease ${item.displayName}`} disabled={busy || quantity <= 1} onClick={() => changeCart(lines => lines.map(line => line.item.id === item.id ? { ...line, quantity: line.quantity - 1 } : line))}><RemoveIcon /></IconButton><IconButton aria-label={`Increase ${item.displayName}`} disabled={busy} onClick={() => changeCart(lines => lines.map(line => line.item.id === item.id ? { ...line, quantity: line.quantity + 1 } : line))}><AddIcon /></IconButton><IconButton aria-label={`Remove ${item.displayName}`} disabled={busy} onClick={() => changeCart(lines => lines.filter(line => line.item.id !== item.id))}><DeleteOutlineIcon /></IconButton></Stack></Stack>)}
             {!cart.length ? <Typography color="text.secondary">Tap a product tile to begin.</Typography> : null}<Divider />
             <Stack direction="row" justifyContent="space-between"><Typography>Subtotal</Typography><Typography>{money(cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0), store?.currencyCode)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography>Tax</Typography><Typography>{sale ? money(sale.estimatedTaxAmount, sale.currencyCode) : 'At checkout'}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="h6">Total</Typography><Typography variant="h6">{sale ? money(sale.totalAmount, sale.currencyCode) : '—'}</Typography></Stack>
+            {checkout.isError ? <Alert severity="error">Restaurant checkout could not be calculated. Your order is still in the cart.</Alert> : null}
             <Button variant="contained" size="large" disabled={!cart.length || busy || Boolean(sale?.paymentComplete)} onClick={() => checkout.mutate()} sx={{ minHeight: 64 }}>{checkout.isPending ? 'Calculating total…' : 'Checkout'}</Button><Button variant="contained" color="success" size="large" disabled={!sale?.paymentComplete || busy} onClick={() => complete.mutate()} sx={{ minHeight: 64 }}>Complete order</Button>
           </Stack></Paper>
         </Grid>

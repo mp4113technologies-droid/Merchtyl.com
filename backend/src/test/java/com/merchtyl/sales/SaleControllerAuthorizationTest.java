@@ -77,6 +77,16 @@ class SaleControllerAuthorizationTest {
               }]
             }
             """;
+    private static final String FOOD_CHECKOUT_JSON = """
+            {
+              "registerSessionId": "00000000-0000-0000-0000-000000000903",
+              "saleChannel": "POS",
+              "items": [{
+                "foodMenuItemId": "00000000-0000-0000-0000-000000000905",
+                "quantity": 2.0000
+              }]
+            }
+            """;
 
     @Autowired
     MockMvc mockMvc;
@@ -103,6 +113,22 @@ class SaleControllerAuthorizationTest {
                         .content(CHECKOUT_JSON))
                 .andExpect(status().isForbidden());
         verify(saleService, never()).checkout(any(), any());
+    }
+
+    @Test
+    void foodCheckoutAcceptsMenuItemWithoutRetailProductId() throws Exception {
+        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.DRAFT));
+
+        mockMvc.perform(post("/api/v1/sales/checkout")
+                        .with(user("kitchen").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(FOOD_CHECKOUT_JSON))
+                .andExpect(status().isCreated());
+
+        var request = org.mockito.ArgumentCaptor.forClass(SaleCheckoutRequest.class);
+        verify(saleService).checkout(request.capture(), any());
+        org.assertj.core.api.Assertions.assertThat(request.getValue().items().getFirst().productId()).isNull();
+        org.assertj.core.api.Assertions.assertThat(request.getValue().items().getFirst().foodMenuItemId()).isEqualTo(ITEM_ID);
     }
 
     @Test

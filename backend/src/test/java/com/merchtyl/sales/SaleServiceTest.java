@@ -19,12 +19,16 @@ import com.merchtyl.inventory.InventoryService;
 import com.merchtyl.inventory.InventoryStockChangeRequest;
 import com.merchtyl.inventory.InventoryTransactionResponse;
 import com.merchtyl.inventory.InventoryTransactionType;
+import com.merchtyl.foodmenu.FoodMenuItem;
+import com.merchtyl.foodmenu.FoodMenuItemRepository;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductCapability;
 import com.merchtyl.product.ProductRepository;
 import com.merchtyl.product.ProductValues;
 import com.merchtyl.product.SellableType;
 import com.merchtyl.register.Register;
+import com.merchtyl.register.RegisterCapabilityService;
+import com.merchtyl.register.RegisterType;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
@@ -44,6 +48,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -69,6 +74,7 @@ class SaleServiceTest {
     private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000903");
     private static final UUID PRODUCT_ID = UUID.fromString("00000000-0000-0000-0000-000000000904");
     private static final UUID OTHER_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000905");
+    private static final UUID MENU_ITEM_ID = UUID.fromString("00000000-0000-0000-0000-000000000906");
     private static final Instant NOW = Instant.parse("2026-07-27T12:00:00Z");
 
     private final SaleRepository saleRepository = mock(SaleRepository.class);
@@ -81,6 +87,8 @@ class SaleServiceTest {
     private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
     private final InventoryService inventoryService = mock(InventoryService.class);
     private final CashLedgerService cashLedgerService = mock(CashLedgerService.class);
+    private final FoodMenuItemRepository foodMenuItemRepository = mock(FoodMenuItemRepository.class);
+    private final RegisterCapabilityService registerCapabilityService = mock(RegisterCapabilityService.class);
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final TransactionOperations transactions = new TransactionOperations() {
         @Override
@@ -128,6 +136,8 @@ class SaleServiceTest {
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(service, "foodMenuItemRepository", foodMenuItemRepository);
+        ReflectionTestUtils.setField(service, "registerCapabilityService", registerCapabilityService);
         when(store.getId()).thenReturn(STORE_ID);
         when(store.getTimezone()).thenReturn("America/Los_Angeles");
         when(store.getCurrencyCode()).thenReturn("USD");
@@ -147,6 +157,71 @@ class SaleServiceTest {
         when(userRepository.findByEmailIgnoreCase("other@example.test")).thenReturn(Optional.of(otherCashier));
         when(saleRepository.saveAndFlush(any(Sale.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenReturn(taxResponse(new BigDecimal("10.00"), new BigDecimal("1.50"), new BigDecimal("11.50")));
+    }
+
+    @Test
+    void checkoutResolvesFoodMenuItemWithoutRetailProductIdAndUsesAuthoritativeMenuPrice() {
+        Product backingProduct = mock(Product.class);
+        FoodMenuItem menuItem = mock(FoodMenuItem.class);
+        UUID backingProductId = UUID.randomUUID();
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(backingProduct.getId()).thenReturn(backingProductId);
+        when(menuItem.getProduct()).thenReturn(backingProduct);
+        when(menuItem.getPrice()).thenReturn(new BigDecimal("12.0000"));
+        when(menuItem.isAvailable()).thenReturn(true);
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.of(menuItem));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(
+                SESSION_ID, "POS", List.of(new SaleCheckoutItemRequest(
+                null, null, MENU_ITEM_ID, new BigDecimal("2.0000"), false))), cashierAuth());
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().getFirst().productId()).isEqualTo(backingProductId);
+        assertThat(response.items().getFirst().unitPrice()).isEqualByComparingTo("12.0000");
+        verify(registerCapabilityService).requireEnabled(store, RegisterType.FOOD_SERVICE);
+        verify(taxEngine).calculate(any(TaxCalculationRequest.class), any());
+    }
+
+    @Test
+    void checkoutRejectsUnknownFoodMenuItemWithStableDomainError() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(
+                SESSION_ID, "POS", List.of(new SaleCheckoutItemRequest(
+                null, null, MENU_ITEM_ID, BigDecimal.ONE, false))), cashierAuth()))
+                .isInstanceOf(com.merchtyl.common.NotFoundException.class)
+                .hasMessage("INVALID_MENU_ITEM");
+
+        verify(taxEngine, never()).calculate(any(), any());
+    }
+
+    @Test
+    void checkoutAcceptsMultipleFoodMenuItemsInOneRequest() {
+        UUID secondMenuItemId = UUID.randomUUID();
+        Product firstProduct = mock(Product.class);
+        Product secondProduct = mock(Product.class);
+        FoodMenuItem firstMenuItem = mock(FoodMenuItem.class);
+        FoodMenuItem secondMenuItem = mock(FoodMenuItem.class);
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(firstProduct.getId()).thenReturn(UUID.randomUUID());
+        when(secondProduct.getId()).thenReturn(UUID.randomUUID());
+        when(firstMenuItem.getProduct()).thenReturn(firstProduct);
+        when(secondMenuItem.getProduct()).thenReturn(secondProduct);
+        when(firstMenuItem.getPrice()).thenReturn(new BigDecimal("12.0000"));
+        when(secondMenuItem.getPrice()).thenReturn(new BigDecimal("5.0000"));
+        when(firstMenuItem.isAvailable()).thenReturn(true);
+        when(secondMenuItem.isAvailable()).thenReturn(true);
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.of(firstMenuItem));
+        when(foodMenuItemRepository.findByIdAndStoreId(secondMenuItemId, STORE_ID)).thenReturn(Optional.of(secondMenuItem));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(null, null, MENU_ITEM_ID, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(null, null, secondMenuItemId, new BigDecimal("2.0000"), false)
+        )), cashierAuth());
+
+        assertThat(response.items()).hasSize(2);
+        verify(taxEngine, org.mockito.Mockito.times(2)).calculate(any(TaxCalculationRequest.class), any());
     }
 
     @Test

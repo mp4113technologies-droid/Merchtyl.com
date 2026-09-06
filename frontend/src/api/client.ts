@@ -886,7 +886,7 @@ export type SaleCheckoutPayload = {
   registerSessionId: string;
   saleChannel?: string;
   items: Array<{
-    productId: string;
+    productId?: string;
     variantId?: string;
     foodMenuItemId?: string;
     quantity: number;

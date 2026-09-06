@@ -32,6 +32,7 @@ import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.register.RegisterType;
+import com.merchtyl.register.RegisterCapabilityService;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.tax.TaxCalculationRequest;
@@ -91,6 +92,8 @@ public class SaleService {
     private FoodOrderTokenService foodOrderTokenService;
     @Autowired
     private FoodMenuItemRepository foodMenuItemRepository;
+    @Autowired
+    private RegisterCapabilityService registerCapabilityService;
 
     @Autowired
     public SaleService(
@@ -176,19 +179,10 @@ public class SaleService {
                 session.getStore().isPricesIncludeTax());
 
         for (SaleCheckoutItemRequest line : request.items()) {
-            ResolvedStoreProduct resolved = storeProduct(sale, line.productId());
+            ResolvedCheckoutItem resolved = resolveCheckoutItem(session, sale, line);
             Product product = resolved.product();
-            ProductVariant variant = line.variantId() == null ? null : productVariantRepository.findById(line.variantId())
-                    .filter(candidate -> candidate.getProduct().getId().equals(product.getId()) && candidate.isActive())
-                    .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_AVAILABLE"));
-            BigDecimal unitPrice = variant == null ? resolved.sellingPrice() : variant.getPrice();
-            if (line.foodMenuItemId() != null) {
-                FoodMenuItem menuItem = foodMenuItemRepository.findByIdAndStoreId(line.foodMenuItemId(), session.getStore().getId())
-                        .filter(FoodMenuItem::isAvailable)
-                        .filter(item -> item.getProduct().getId().equals(product.getId()))
-                        .orElseThrow(() -> new ConflictException("Food menu item is no longer available"));
-                unitPrice = menuItem.getPrice();
-            }
+            ProductVariant variant = resolved.variant();
+            BigDecimal unitPrice = resolved.unitPrice();
             SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
                     normalizeMoney(unitPrice, "unitPrice"), moneyZero(), false,
                     Boolean.TRUE.equals(line.ageVerified()), null, null, null, null);
@@ -200,6 +194,41 @@ public class SaleService {
         audit(actor, AuditAction.SALE_DRAFT_CREATED, response, "checkout cart items=" + request.items().size());
         return response;
     }
+
+    private ResolvedCheckoutItem resolveCheckoutItem(RegisterSession session, Sale sale, SaleCheckoutItemRequest line) {
+        if (line.foodMenuItemId() != null) {
+            if (session.getRegister().getType() != RegisterType.FOOD_SERVICE) {
+                throw new BadRequestException("FOOD_SERVICE_REGISTER_REQUIRED");
+            }
+            registerCapabilityService.requireEnabled(session.getStore(), RegisterType.FOOD_SERVICE);
+            if (line.variantId() != null) {
+                throw new BadRequestException("INVALID_CHECKOUT_ITEM: variants are not valid for food menu items");
+            }
+            FoodMenuItem menuItem = foodMenuItemRepository
+                    .findByIdAndStoreId(line.foodMenuItemId(), session.getStore().getId())
+                    .orElseThrow(() -> new NotFoundException("INVALID_MENU_ITEM"));
+            if (!menuItem.isAvailable()) {
+                throw new ConflictException("MENU_ITEM_NOT_AVAILABLE");
+            }
+            Product product = menuItem.getProduct();
+            if (line.productId() != null && !line.productId().equals(product.getId())) {
+                throw new BadRequestException("INVALID_CHECKOUT_ITEM: product does not match food menu item");
+            }
+            return new ResolvedCheckoutItem(product, null, menuItem.getPrice());
+        }
+
+        if (line.productId() == null) {
+            throw new BadRequestException("INVALID_CHECKOUT_ITEM");
+        }
+        ResolvedStoreProduct storeProduct = storeProduct(sale, line.productId());
+        ProductVariant variant = line.variantId() == null ? null : productVariantRepository.findById(line.variantId())
+                .filter(candidate -> candidate.getProduct().getId().equals(storeProduct.product().getId()) && candidate.isActive())
+                .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_AVAILABLE"));
+        return new ResolvedCheckoutItem(storeProduct.product(), variant,
+                variant == null ? storeProduct.sellingPrice() : variant.getPrice());
+    }
+
+    private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice) {}
 
     @Transactional(readOnly = true)
     public SaleResponse get(UUID id) {

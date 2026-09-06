@@ -27,6 +27,7 @@ describe('Food POS', () => {
 
   it('loads tiles and completes a taxed sale through shared checkout', async () => {
     const calls: string[] = [];
+    let checkoutBody: unknown;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin); calls.push(`${init?.method ?? 'GET'} ${url.pathname}`);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
@@ -34,8 +35,8 @@ describe('Food POS', () => {
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true, imageUrl: null, version: 0 }]);
-      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }]);
-      if (url.pathname.endsWith('/sales/checkout')) return response(sale(2), 201);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }]);
+      if (url.pathname.endsWith('/sales/checkout')) { checkoutBody = JSON.parse(String(init?.body)); return response(sale(2), 201); }
       if (url.pathname.endsWith(`/sales/${saleId}/payments`)) return response(sale(2, true));
       if (url.pathname.endsWith(`/sales/${saleId}/complete`)) return response(sale(2, true, true));
       if (url.pathname.endsWith(`/sales/${saleId}/receipt`)) return response({ receiptNumber: 'RCT-FOOD-1' });
@@ -52,11 +53,35 @@ describe('Food POS', () => {
     expect((await screen.findAllByText(/24\.00/)).length).toBeGreaterThan(0);
     expect(calls.filter(call => call.includes('/sales/checkout'))).toHaveLength(0);
     await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+    expect(checkoutBody).toEqual({ registerSessionId: sessionId, saleChannel: 'POS', items: [{ foodMenuItemId: 'menu-item', quantity: 2 }] });
     expect((await screen.findAllByText(/27\.60/)).length).toBeGreaterThan(0);
     await userEvent.click(await screen.findByRole('button', { name: 'Record payment' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
     expect(await screen.findByText(/RCT-FOOD-1/)).toBeInTheDocument();
     await waitFor(() => expect(calls).toEqual(expect.arrayContaining([`POST /api/v1/sales/${saleId}/payments`, `POST /api/v1/sales/${saleId}/complete`, `GET /api/v1/sales/${saleId}/receipt`])));
+  });
+
+  it('keeps the restaurant cart intact and shows a friendly error when checkout fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
+      if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
+      if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', available: true }]);
+      if (url.pathname.endsWith('/sales/checkout')) return response({ message: 'INVALID_MENU_ITEM', correlationId: 'corr-123' }, 404);
+      return response({}, 404);
+    });
+
+    render(<App initialEntries={['/pos/food']} />);
+    await userEvent.click(await screen.findByText('Pepperoni Pizza'));
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+
+    expect(await screen.findByText('Restaurant checkout could not be calculated. Your order is still in the cart.')).toBeInTheDocument();
+    expect(screen.getAllByText('Pepperoni Pizza').length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 × .*12\.00 = .*12\.00/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('blocks users without food POS permission', async () => {
