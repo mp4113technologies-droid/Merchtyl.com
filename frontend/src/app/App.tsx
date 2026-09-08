@@ -37,6 +37,7 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   CircularProgress,
   CssBaseline,
   Divider,
@@ -72,7 +73,7 @@ import {
   useLocation
 } from 'react-router-dom';
 import { SessionProvider, useSession } from './session';
-import { theme } from './theme';
+import { merchtylTokens, posTheme, posTokens, theme } from './theme';
 import { getApplicationDeviceIdentifier } from './deviceIdentity';
 import { AuthPage } from '../features/auth/AuthPage';
 import { FirstLoginPasswordChangePage } from '../features/auth/FirstLoginPasswordChangePage';
@@ -266,29 +267,56 @@ export function homeDestination(roles: string[]) {
 
 function PosLayout() {
   const { currentUser, session, getValidAccessToken } = useSession();
+  const location = useLocation();
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const current = useQuery({
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     refetchInterval: 15_000
   });
+  const stores = useQuery({
+    queryKey: ['stores', 'pos'],
+    queryFn: async () => listStores(await getValidAccessToken(), { size: 100 })
+  });
+  const registers = useQuery({
+    queryKey: ['registers', 'pos'],
+    queryFn: async () => listRegisters(await getValidAccessToken(), { size: 100 })
+  });
+  const activeStore = stores.data?.content.find((store) => store.id === current.data?.storeId);
+  const activeRegister = registers.data?.content.find((register) => register.id === current.data?.registerId);
+  const posLabel = location.pathname.startsWith('/pos/food') ? 'Restaurant POS' : 'Retail POS';
 
   return (
-    <Box sx={{ width: '100%', minWidth: 0, minHeight: '100dvh', bgcolor: 'background.default' }}>
-      <Box component="header" sx={{ px: { xs: 1, sm: 2 }, py: 1, bgcolor: 'primary.dark', color: 'primary.contrastText', display: 'flex', flexWrap: 'wrap', gap: { xs: 1, sm: 2 }, alignItems: 'center' }}>
-        <Button component={Link} to="/store-menu" color="inherit" startIcon={<ArrowBackIcon />}>
-          Back to Store Menu
-        </Button>
-        <Typography variant="h6" sx={{ flexGrow: 1 }}>Merchtyl POS</Typography>
-        <Box sx={{ textAlign: 'right', display: { xs: 'none', sm: 'block' } }}>
-          <Typography variant="body2" fontWeight={700}>{current.data?.status === 'OPEN' ? 'Register OPEN' : 'No active register'}</Typography>
-          <Typography variant="caption">{currentUser?.displayName ?? session?.displayName}</Typography>
+    <ThemeProvider theme={posTheme}>
+      <Box sx={{ width: '100%', minWidth: 0, minHeight: '100dvh', bgcolor: 'background.default' }}>
+        <Box component="header" sx={{ height: 56, px: { xs: 1, sm: 2 }, background: `linear-gradient(100deg, ${posTokens.colors.navyDark}, ${posTokens.colors.navy})`, color: '#fff', display: 'flex', gap: { xs: 0.75, sm: 1.5 }, alignItems: 'center', overflow: 'hidden' }}>
+          <Button component={Link} to="/store-menu" color="inherit" size="small" startIcon={<ArrowBackIcon />} sx={{ flexShrink: 0, '&:hover': { bgcolor: 'rgba(255,255,255,.1)' } }}>
+            Back to Store Menu
+          </Button>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Box sx={{ width: 34, height: 34, borderRadius: 1, bgcolor: '#fff', p: 0.35, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <Box component="img" src="/branding/merchtyl-logo-mark.svg" alt="Merchtyl" sx={{ width: 30, height: 30, objectFit: 'contain' }} />
+            </Box>
+            <Typography variant="h6" noWrap sx={{ fontSize: 19 }}>{posLabel}</Typography>
+          </Stack>
+          <Stack direction="row" alignItems="center" spacing={{ xs: 0.75, md: 1.25 }} sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0, maxWidth: 180, display: { xs: 'none', sm: 'block' } }}>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.7)' }}>Store</Typography>
+              <Typography variant="body2" fontWeight={700} noWrap title={activeStore ? `${activeStore.name} (${activeStore.code})` : undefined}>{activeStore ? `${activeStore.name} (${activeStore.code})` : 'Not selected'}</Typography>
+            </Box>
+            <Box sx={{ minWidth: 0, maxWidth: 180, display: { xs: 'none', md: 'block' } }}>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.7)' }}>Register</Typography>
+              <Typography variant="body2" fontWeight={700} noWrap title={activeRegister ? `${activeRegister.name} (${activeRegister.code})` : undefined}>{activeRegister ? `${activeRegister.name} (${activeRegister.code})` : 'Not selected'}</Typography>
+            </Box>
+            <Chip size="small" label={current.data?.status === 'OPEN' ? '● OPEN' : 'NO REGISTER'} sx={{ flexShrink: 0, bgcolor: current.data?.status === 'OPEN' ? 'rgba(22,163,74,.2)' : 'rgba(255,255,255,.12)', color: '#fff', fontWeight: 800, border: '1px solid', borderColor: current.data?.status === 'OPEN' ? 'rgba(134,239,172,.45)' : 'rgba(255,255,255,.24)' }} />
+            <Typography variant="caption" noWrap sx={{ display: { xs: 'none', lg: 'block' }, color: 'rgba(255,255,255,.75)' }}>{currentUser?.displayName ?? session?.displayName}</Typography>
+          </Stack>
+        </Box>
+        <Box component="main" sx={{ p: { xs: 1, md: 2 }, minWidth: 0, minHeight: 'calc(100dvh - 56px)' }}>
+          <Outlet />
         </Box>
       </Box>
-      <Box component="main" sx={{ p: { xs: 1, md: 2 }, minWidth: 0, minHeight: 'calc(100dvh - 56px)' }}>
-        <Outlet />
-      </Box>
-    </Box>
+    </ThemeProvider>
   );
 }
 
@@ -456,81 +484,105 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
   const permissions = currentUser?.permissions ?? [];
   const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
-  const navItems = [
-    ...(canViewPlatform ? [{ label: 'Platform', to: '/platform', icon: <ShieldOutlinedIcon /> }] : []),
-    ...(canViewPlatform ? [{ label: 'Merchants', to: '/platform/merchants', icon: <StorefrontIcon /> }] : []),
-    ...(canViewPlatform ? [{ label: 'Billing', to: '/platform/billing', icon: <PaymentsOutlinedIcon /> }] : []),
-    ...(canViewPlatform ? [{ label: 'Platform audit', to: '/platform/audit', icon: <HistoryOutlinedIcon /> }] : []),
-    ...(roles.includes('PLATFORM_SUPER_ADMIN') || roles.includes('PLATFORM_SUPPORT_ADMIN') ? [{ label: 'Platform Administrators', to: '/platform/admins', icon: <ManageAccountsOutlinedIcon /> }] : []),
-    ...(canViewPlatform ? [{ label: 'Platform settings', to: '/platform/settings', icon: <SettingsInputComponentOutlinedIcon /> }] : []),
-    ...(!canViewPlatform ? [{ label: 'Dashboard', to: '/', icon: <DashboardOutlinedIcon /> }] : []),
-    ...(canViewMerchantBilling ? [{ label: 'Subscription & Billing', to: '/billing', icon: <PaymentsOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'POS', to: '/pos', icon: <PointOfSaleOutlinedIcon /> }] : []),
-    ...(foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') ? [{ label: 'Restaurant Menu', to: '/food-menu', icon: <RestaurantIcon /> }] : []),
-    ...(permissions.includes('DISCOUNT_VIEW') ? [{ label: 'Discounts', to: '/discounts', icon: <ConfirmationNumberOutlinedIcon /> }] : []),
-    ...(foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') ? [{ label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Held sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon /> }] : []),
-    ...(canViewStores ? [{ label: 'Stores', to: '/stores', icon: <StoreMallDirectoryOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Registers', to: '/registers', icon: <PointOfSaleOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Current register', to: '/register/current', icon: <LockOpenOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Cash movements', to: '/register/cash-movements', icon: <PaymentsOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Register history', to: '/register/history', icon: <ReceiptLongOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Returns', to: '/returns', icon: <ReceiptLongOutlinedIcon /> }] : []),
-    ...(canViewCatalogue ? [{ label: 'Products', to: '/products', icon: <Inventory2OutlinedIcon /> }] : []),
-    ...(canViewInventory ? [{ label: 'Inventory', to: '/inventory', icon: <AssignmentTurnedInOutlinedIcon /> }] : []),
-    ...(canViewInventory ? [{ label: 'Stock counts', to: '/inventory/counts', icon: <AssignmentTurnedInOutlinedIcon /> }] : []),
-    ...(canViewInventory ? [{ label: 'Adjustments', to: '/inventory/adjustments', icon: <AssignmentTurnedInOutlinedIcon /> }] : []),
-    ...(canViewReports ? [{ label: 'Sales reports', to: '/reports/sales', icon: <AssessmentOutlinedIcon /> }] : []),
-    ...(canViewReports ? [{ label: 'Register reports', to: '/reports/registers', icon: <AssessmentOutlinedIcon /> }] : []),
-    ...(canViewReports ? [{ label: 'Lottery reports', to: '/reports/lottery', icon: <AssessmentOutlinedIcon /> }] : []),
-    ...(businessDayAccess.canView ? [{ label: 'Business day', to: '/business-day', icon: <EventAvailableOutlinedIcon /> }] : []),
-    ...(canViewReports ? [{ label: 'EOD reports', to: '/end-of-day-reports', icon: <AssessmentOutlinedIcon /> }] : []),
-    ...(canViewCatalogue ? [{ label: 'Categories', to: '/categories', icon: <CategoryOutlinedIcon /> }] : []),
-    ...(canViewCatalogue ? [{ label: 'Brands', to: '/brands', icon: <BrandingWatermarkOutlinedIcon /> }] : []),
-    ...(canViewCatalogue ? [{ label: 'Suppliers', to: '/suppliers', icon: <LocalShippingOutlinedIcon /> }] : []),
-    ...(canRecordLottery ? [{ label: 'Lottery sale', to: '/lottery/sale', icon: <ConfirmationNumberOutlinedIcon /> }] : []),
-    ...(canRecordLottery ? [{ label: 'Lottery payout', to: '/lottery/payout', icon: <PaymentsOutlinedIcon /> }] : []),
-    ...(canRecordLottery ? [{ label: 'Lottery history', to: '/lottery/history', icon: <HistoryOutlinedIcon /> }] : []),
-    ...(canRecordLottery ? [{ label: 'Lottery management', to: '/lottery/management', icon: <HistoryOutlinedIcon /> }] : []),
-    ...(canViewLottery ? [{ label: 'Lottery operators', to: '/lottery/operators', icon: <ConfirmationNumberOutlinedIcon /> }] : []),
-    ...(canViewLottery ? [{ label: 'Payout policies', to: '/lottery/payout-policies', icon: <PaymentsOutlinedIcon /> }] : []),
-    ...(canViewLottery ? [{ label: 'Commission rules', to: '/lottery/commission-rules', icon: <CalculateOutlinedIcon /> }] : []),
-    ...(canViewLottery ? [{ label: 'Settlements', to: '/lottery/settlements', icon: <CalculateOutlinedIcon /> }] : []),
-    ...(canViewCatalogue ? [{ label: 'Units', to: '/settings/units', icon: <StraightenOutlinedIcon /> }] : []),
-    ...(canViewTax ? [{ label: 'Tax', to: '/tax/rules', icon: <PublicOutlinedIcon /> }] : []),
-    ...(canViewTax ? [{ label: 'Tax test', to: '/settings/taxes/test', icon: <CalculateOutlinedIcon /> }] : []),
-    ...(canViewFeatures ? [{ label: 'Features', to: '/settings/features', icon: <ToggleOnOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Printers', to: '/settings/hardware/printers', icon: <SettingsInputComponentOutlinedIcon /> }] : []),
-    ...(canViewRegisters ? [{ label: 'Scanner test', to: '/settings/hardware/scanner-test', icon: <QrCodeScannerOutlinedIcon /> }] : []),
-    ...(canViewUsers ? [{ label: 'Users', to: '/users', icon: <ManageAccountsOutlinedIcon /> }] : []),
-    ...(canViewUsers ? [{ label: 'Roles', to: '/roles', icon: <BadgeOutlinedIcon /> }] : []),
-    { label: 'Unauthorized', to: '/unauthorized', icon: <ShieldOutlinedIcon /> }
+  const navigationSections = canViewPlatform ? [
+    { id: 'platform', label: 'Platform', items: [
+      { label: 'Overview', to: '/platform', icon: <ShieldOutlinedIcon /> },
+      { label: 'Merchants', to: '/platform/merchants', icon: <StorefrontIcon /> },
+      { label: 'Billing', to: '/platform/billing', icon: <PaymentsOutlinedIcon /> },
+      { label: 'Audit', to: '/platform/audit', icon: <HistoryOutlinedIcon /> },
+      { label: 'Platform Administrators', to: '/platform/admins', icon: <ManageAccountsOutlinedIcon /> },
+      { label: 'Settings', to: '/platform/settings', icon: <SettingsInputComponentOutlinedIcon /> }
+    ] }
+  ] : [
+    { id: 'overview', label: 'Overview', items: [
+      { label: 'Dashboard', to: '/', icon: <DashboardOutlinedIcon />, visible: true },
+      { label: 'Subscription & Billing', to: '/billing', icon: <PaymentsOutlinedIcon />, visible: canViewMerchantBilling }
+    ] },
+    { id: 'operations', label: 'Store Operations', items: [
+      { label: 'Stores', to: '/stores', icon: <StoreMallDirectoryOutlinedIcon />, visible: canViewStores },
+      { label: 'Registers', to: '/registers', icon: <PointOfSaleOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Current Register', to: '/register/current', icon: <LockOpenOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Cash Movements', to: '/register/cash-movements', icon: <PaymentsOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Register History', to: '/register/history', icon: <ReceiptLongOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Business Day', to: '/business-day', icon: <EventAvailableOutlinedIcon />, visible: businessDayAccess.canView }
+    ] },
+    { id: 'sales', label: 'Sales', items: [
+      { label: 'Retail POS', to: '/pos', icon: <PointOfSaleOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon />, visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
+      { label: 'Held Sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon />, visible: canViewRegisters },
+      { label: 'Returns', to: '/returns', icon: <ReceiptLongOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Discounts', to: '/discounts', icon: <ConfirmationNumberOutlinedIcon />, visible: permissions.includes('DISCOUNT_VIEW') }
+    ] },
+    { id: 'catalog', label: 'Catalog', items: [
+      { label: 'Products', to: '/products', icon: <Inventory2OutlinedIcon />, visible: canViewCatalogue },
+      { label: 'Restaurant Menu', to: '/food-menu', icon: <RestaurantIcon />, visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
+      { label: 'Categories', to: '/categories', icon: <CategoryOutlinedIcon />, visible: canViewCatalogue },
+      { label: 'Brands', to: '/brands', icon: <BrandingWatermarkOutlinedIcon />, visible: canViewCatalogue },
+      { label: 'Units', to: '/settings/units', icon: <StraightenOutlinedIcon />, visible: canViewCatalogue },
+      { label: 'Suppliers', to: '/suppliers', icon: <LocalShippingOutlinedIcon />, visible: canViewCatalogue }
+    ] },
+    { id: 'inventory', label: 'Inventory', items: [
+      { label: 'Inventory', to: '/inventory', icon: <AssignmentTurnedInOutlinedIcon />, visible: canViewInventory },
+      { label: 'Stock Counts', to: '/inventory/counts', icon: <AssignmentTurnedInOutlinedIcon />, visible: canViewInventory },
+      { label: 'Adjustments', to: '/inventory/adjustments', icon: <AssignmentTurnedInOutlinedIcon />, visible: canViewInventory }
+    ] },
+    { id: 'reports', label: 'Reports', items: [
+      { label: 'Sales Reports', to: '/reports/sales', icon: <AssessmentOutlinedIcon />, visible: canViewReports },
+      { label: 'Register Reports', to: '/reports/registers', icon: <AssessmentOutlinedIcon />, visible: canViewReports },
+      { label: 'EOD Reports', to: '/end-of-day-reports', icon: <AssessmentOutlinedIcon />, visible: canViewReports },
+      { label: 'Lottery Reports', to: '/reports/lottery', icon: <AssessmentOutlinedIcon />, visible: canViewReports }
+    ] },
+    { id: 'lottery', label: 'Lottery', items: [
+      { label: 'Lottery Sale', to: '/lottery/sale', icon: <ConfirmationNumberOutlinedIcon />, visible: canRecordLottery },
+      { label: 'Lottery Payout', to: '/lottery/payout', icon: <PaymentsOutlinedIcon />, visible: canRecordLottery },
+      { label: 'Lottery History', to: '/lottery/history', icon: <HistoryOutlinedIcon />, visible: canRecordLottery },
+      { label: 'Lottery Management', to: '/lottery/management', icon: <HistoryOutlinedIcon />, visible: canRecordLottery },
+      { label: 'Lottery Operators', to: '/lottery/operators', icon: <ConfirmationNumberOutlinedIcon />, visible: canViewLottery },
+      { label: 'Payout Policies', to: '/lottery/payout-policies', icon: <PaymentsOutlinedIcon />, visible: canViewLottery },
+      { label: 'Commission Rules', to: '/lottery/commission-rules', icon: <CalculateOutlinedIcon />, visible: canViewLottery },
+      { label: 'Settlements', to: '/lottery/settlements', icon: <CalculateOutlinedIcon />, visible: canViewLottery }
+    ] },
+    { id: 'configuration', label: 'Configuration', items: [
+      { label: 'Tax', to: '/tax/rules', icon: <PublicOutlinedIcon />, visible: canViewTax },
+      { label: 'Tax Test', to: '/settings/taxes/test', icon: <CalculateOutlinedIcon />, visible: canViewTax && import.meta.env.DEV },
+      { label: 'Features', to: '/settings/features', icon: <ToggleOnOutlinedIcon />, visible: canViewFeatures },
+      { label: 'Printers', to: '/settings/hardware/printers', icon: <SettingsInputComponentOutlinedIcon />, visible: canViewRegisters },
+      { label: 'Scanner Test', to: '/settings/hardware/scanner-test', icon: <QrCodeScannerOutlinedIcon />, visible: canViewRegisters }
+    ] },
+    { id: 'access', label: 'Access & Security', items: [
+      { label: 'Users', to: '/users', icon: <ManageAccountsOutlinedIcon />, visible: canViewUsers },
+      { label: 'Roles', to: '/roles', icon: <BadgeOutlinedIcon />, visible: canViewUsers }
+    ] }
   ];
 
   return (
-    <Stack sx={{ height: '100%', minHeight: 0, overflowY: 'auto' }}>
-      <Toolbar sx={{ gap: 1.5 }}>
-        <StorefrontIcon color="primary" />
-        <Typography variant="h6" component="div">Merchtyl</Typography>
+    <Stack sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <Toolbar sx={{ minHeight: 64, px: 2, bgcolor: '#fff', flexShrink: 0 }}>
+        <Box component="img" src="/branding/merchtyl-logo-horizontal.png" alt="Merchtyl" sx={{ width: 150, height: 38, objectFit: 'contain', objectPosition: 'left center' }} />
       </Toolbar>
       <Divider />
-      <List component="nav" sx={{ px: 1, py: 2, minWidth: 0 }}>
-        {navItems.map((item) => (
-          <ListItemButton
-            key={item.to}
-            component={Link}
-            to={item.to}
-            selected={item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)}
-            onClick={onNavigate}
-            sx={{ borderRadius: 1 }}
-          >
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.label} />
-          </ListItemButton>
-        ))}
+      <List component="div" sx={{ px: 1, py: 1.5, minWidth: 0, flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {navigationSections.map((section) => {
+          const visibleItems = section.items.filter((item) => !('visible' in item) || item.visible !== false);
+          if (visibleItems.length === 0) return null;
+          return <Box component="li" key={section.id} sx={{ listStyle: 'none', mb: 1.75, '&:last-child': { mb: 0 } }}>
+            <Typography component="div" variant="overline" sx={{ display: 'block', px: 1.25, mb: 0.25, color: 'text.secondary', fontSize: 11, fontWeight: 700, letterSpacing: '.07em', lineHeight: '22px' }}>{section.label}</Typography>
+            <List disablePadding>
+              {visibleItems.map((item) => {
+                const selected = item.to === '/' || item.to === '/pos'
+                  ? location.pathname === item.to
+                  : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                return <ListItemButton key={item.to} component={Link} to={item.to} selected={selected} onClick={onNavigate} sx={{ minHeight: 40, py: 0.5, px: 1.25, mb: 0.25, borderRadius: 1, position: 'relative', '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: 2, bgcolor: 'primary.main' }, '& .MuiListItemIcon-root': { minWidth: 34, color: selected ? 'primary.main' : 'text.secondary' }, '& .MuiSvgIcon-root': { fontSize: 20 }, '& .MuiListItemText-primary': { fontSize: 14, fontWeight: selected ? 700 : 500 } }}>
+                  <ListItemIcon>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.label} />
+                </ListItemButton>;
+              })}
+            </List>
+          </Box>;
+        })}
       </List>
       {activeRegister.data?.status === 'OPEN' ? (
-        <Box sx={{ mt: 'auto', p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ p: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', flexShrink: 0 }}>
           <Typography variant="overline" color="text.secondary">Active register</Typography>
           <Typography variant="body2" fontWeight={700} noWrap>
             Register {activeRegister.data.registerId.slice(0, 8)} • OPEN
@@ -633,11 +685,11 @@ function AppShell() {
       </Box>
       <AppBar
         position="fixed"
-        color="inherit"
+        color="primary"
         elevation={0}
         sx={{
-          borderBottom: '1px solid',
-          borderColor: 'divider',
+          background: `linear-gradient(100deg, ${merchtylTokens.colors.navyDark}, ${merchtylTokens.colors.navy})`,
+          color: '#fff',
           width: { lg: `calc(100% - ${drawerWidth}px)` },
           ml: { lg: `${drawerWidth}px` }
         }}
@@ -654,13 +706,13 @@ function AppShell() {
           </IconButton>
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
             <Typography variant="subtitle1" component="div" noWrap>{displayName}</Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>{email}</Typography>
+            <Typography variant="body2" noWrap sx={{ color: 'rgba(255,255,255,.72)' }}>{email}</Typography>
           </Box>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: 'none', sm: 'flex' } }}>
             <Avatar sx={{ width: 34, height: 34 }}>
               <PersonOutlineIcon fontSize="small" />
             </Avatar>
-            <Typography variant="body2" color="text.secondary">{roles[0] ?? 'User'}</Typography>
+            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,.78)' }}>{roles[0] ?? 'User'}</Typography>
           </Stack>
           <Button
             color="inherit"
@@ -699,7 +751,7 @@ function AppShell() {
           open
           sx={{
             display: { xs: 'none', lg: 'block' },
-            '& .MuiDrawer-paper': { width: drawerWidth, boxSizing: 'border-box' }
+            '& .MuiDrawer-paper': { width: drawerWidth, boxSizing: 'border-box', borderColor: merchtylTokens.colors.border, bgcolor: '#fff' }
           }}
         >
           <Box ref={desktopNavRef}>
@@ -722,7 +774,7 @@ function AppShell() {
         }}
       >
         <Toolbar />
-        <Box sx={{ width: '100%', maxWidth: 1920, mx: 'auto', minWidth: 0, p: { xs: 2, lg: 3, xl: 4 } }}>
+        <Box sx={{ width: '100%', maxWidth: 1920, mx: 'auto', minWidth: 0, p: { xs: 2, lg: 2.5, xl: 3 } }}>
           <Outlet />
         </Box>
       </Box>

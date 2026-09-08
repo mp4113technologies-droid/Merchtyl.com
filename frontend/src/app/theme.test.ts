@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { theme } from './theme';
+import { merchtylTokens, theme } from './theme';
 
 describe('responsive application theme', () => {
+  it('uses the official Merchtyl blue system as the application theme', () => {
+    expect(theme.palette.primary.main).toBe(merchtylTokens.colors.blue);
+    expect(theme.palette.background.default).toBe(merchtylTokens.colors.page);
+    expect(theme.palette.text.primary).toBe(merchtylTokens.colors.text);
+    expect(theme.palette.success.main).toBe(merchtylTokens.colors.success);
+  });
+
   it('contains document-level overflow prevention primitives', () => {
     const overrides = theme.components?.MuiCssBaseline?.styleOverrides as Record<string, Record<string, unknown>>;
 

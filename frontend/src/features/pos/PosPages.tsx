@@ -67,6 +67,7 @@ import {
 import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
+import { posTokens } from '../../app/theme';
 import {
   KeyboardWedgeScanner,
   loadBarcodeScannerPreferences,
@@ -182,6 +183,37 @@ function IdentityStrip({
   );
 }
 
+function CompactIdentitySummary({
+  session,
+  store,
+  register,
+  device
+}: {
+  session: RegisterSession;
+  store?: Store;
+  register?: Register;
+  device?: Device;
+}) {
+  const entries = [
+    ['Store', storeLabel(store)],
+    ['Register', registerLabel(register)],
+    ['Device', deviceLabel(device)],
+    ['Cashier', session.assignedCashierDisplayName]
+  ];
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25, borderColor: posTokens.colors.border, borderRadius: `${posTokens.radius.card}px`, bgcolor: posTokens.colors.card }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 1.5, rowGap: 0.75 }}>
+        {entries.map(([label, value]) => (
+          <Box key={label} sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="primary.main" fontWeight={700}>{label}</Typography>
+            <Typography variant="body2" fontWeight={700} noWrap title={value}>{value}</Typography>
+          </Box>
+        ))}
+      </Box>
+    </Paper>
+  );
+}
+
 function ProductSearchResults({
   products,
   currencyCode,
@@ -222,7 +254,7 @@ function ProductSearchResults({
   }
 
   return (
-    <Table size="small" aria-label="Product search results">
+    <Table size="small" aria-label="Product search results" sx={{ '& .MuiTableCell-root': { borderColor: posTokens.colors.border, py: 0.75 }, '& .MuiTableRow-root:hover': { bgcolor: posTokens.colors.blueLight } }}>
       <TableHead>
         <TableRow>
           <TableCell>Product</TableCell>
@@ -291,29 +323,31 @@ function CartLines({
   }
 
   return (
-    <Table aria-label="Cart lines">
+    <Table aria-label="Cart lines" size="small" stickyHeader sx={{ tableLayout: 'fixed', '& .MuiTableCell-root': { py: 0.75, px: 1, borderColor: posTokens.colors.border }, '& .MuiTableHead-root .MuiTableCell-root': { color: posTokens.colors.navy, bgcolor: posTokens.colors.blueSoft, fontWeight: 800 }, '& .MuiTableRow-root': { height: 54 }, '& .MuiTableBody-root .MuiTableRow-root:hover': { bgcolor: posTokens.colors.blueSoft } }}>
       <TableHead>
         <TableRow>
-          <TableCell>Item</TableCell>
-          <TableCell align="center">Quantity</TableCell>
+          <TableCell sx={{ width: '31%' }}>Item</TableCell>
+          <TableCell align="center" sx={{ width: 150 }}>Qty</TableCell>
           <TableCell align="right">Unit</TableCell>
           <TableCell align="right">Tax</TableCell>
           <TableCell align="right">Total</TableCell>
-          <TableCell align="right">Remove</TableCell>
+          <TableCell align="right" sx={{ width: 48 }} aria-label="Actions" />
         </TableRow>
       </TableHead>
       <TableBody>
         {items.map((item) => (
           <TableRow key={item.id} hover>
-            <TableCell>
-              <Typography fontWeight={700}>{item.productName}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{item.productSku}</Typography>
+            <TableCell sx={{ minWidth: 0 }}>
+              <Typography fontWeight={700} color="text.primary" noWrap title={item.productName}>{item.productName}</Typography>
+              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>{item.variantSku ?? item.productSku}</Typography>
             </TableCell>
             <TableCell align="center">
-              <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+              <Stack direction="row" spacing={0.25} justifyContent="center" alignItems="center">
                 <Tooltip title={`Decrease ${item.productName}`}>
                   <span>
                     <IconButton
+                      size="small"
+                      color="primary"
                       aria-label={`Decrease ${item.productName}`}
                       disabled={busy || item.quantity <= 1}
                       onClick={() => onQuantity(item.id, Number((item.quantity - 1).toFixed(4)))}
@@ -329,7 +363,7 @@ function CartLines({
                   size="small"
                   defaultValue={item.quantity}
                   inputProps={{ min: 0.0001, step: 1, style: { textAlign: 'center' } }}
-                  sx={{ width: 96 }}
+                  sx={{ width: 56, '& .MuiInputBase-input': { px: 0.5, py: 0.75 } }}
                   disabled={busy}
                   onBlur={(event) => {
                     const next = Number(event.currentTarget.value);
@@ -341,6 +375,8 @@ function CartLines({
                 <Tooltip title={`Increase ${item.productName}`}>
                   <span>
                     <IconButton
+                      size="small"
+                      color="primary"
                       aria-label={`Increase ${item.productName}`}
                       disabled={busy}
                       onClick={() => onQuantity(item.id, Number((item.quantity + 1).toFixed(4)))}
@@ -353,11 +389,11 @@ function CartLines({
             </TableCell>
             <TableCell align="right">{money(item.unitPrice, currencyCode)}</TableCell>
             <TableCell align="right">{item.estimatedTaxAmount ? money(item.estimatedTaxAmount, currencyCode) : 'At checkout'}</TableCell>
-            <TableCell align="right">{money(item.lineTotal, currencyCode)}</TableCell>
+            <TableCell align="right" sx={{ fontWeight: 700 }}>{money(item.lineTotal, currencyCode)}</TableCell>
             <TableCell align="right">
               <Tooltip title={`Remove ${item.productName}`}>
                 <span>
-                  <IconButton aria-label={`Remove ${item.productName}`} disabled={busy} onClick={() => onRemove(item.id)}>
+                  <IconButton size="small" aria-label={`Remove ${item.productName}`} disabled={busy} onClick={() => onRemove(item.id)}>
                     <DeleteOutlineIcon />
                   </IconButton>
                 </span>
@@ -377,8 +413,8 @@ function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount }: 
   const total = sale?.totalAmount ?? 0;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
-      <Stack spacing={1.5}>
+    <Paper variant="outlined" sx={{ p: 1.25, borderColor: posTokens.colors.border, borderRadius: `${posTokens.radius.card}px`, bgcolor: posTokens.colors.card }}>
+      <Stack spacing={0.75}>
         <Stack direction="row" justifyContent="space-between">
           <Typography color="text.secondary">Subtotal</Typography>
           <Typography>{money(subtotal, currencyCode)}</Typography>
@@ -391,9 +427,9 @@ function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount }: 
           <Typography color="text.secondary">Estimated tax</Typography>
           <Typography>{sale ? money(tax, currencyCode) : 'At checkout'}</Typography>
         </Stack>
-        <Stack direction="row" justifyContent="space-between" sx={{ pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="h6">Total</Typography>
-          <Typography variant="h6">{sale ? money(total, currencyCode) : '—'}</Typography>
+        <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.75, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="h6" color="primary.dark" fontWeight={800}>Total</Typography>
+          <Typography variant="h6" color="primary.dark" fontWeight={800}>{sale ? money(total, currencyCode) : '—'}</Typography>
         </Stack>
       </Stack>
     </Paper>
@@ -415,8 +451,8 @@ function CashPaymentPanel({ currencyCode, cashReceivedCents, manualCashInput, bu
   onAdd: (cents: number) => void; onExact: () => void;
 }) {
   const denominations = cashDenominations(currencyCode);
-  return <Paper variant="outlined" sx={{ p: 1.5, height: '100%' }}><Stack spacing={1}>
-    <Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="subtitle2">Cash received</Typography><Typography variant="h4" color="success.main" fontWeight={800}>{money(cashReceivedCents / 100, currencyCode)}</Typography></Box><Button variant="outlined" onClick={onExact} disabled={busy} sx={{ minHeight: 44 }}>Exact</Button></Stack>
+  return <Paper variant="outlined" sx={{ p: 1.5, height: '100%', borderColor: posTokens.colors.border, bgcolor: posTokens.colors.blueSoft }}><Stack spacing={1}>
+    <Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="subtitle2">Cash received</Typography><Typography variant="h4" color="primary.dark" fontWeight={800}>{money(cashReceivedCents / 100, currencyCode)}</Typography></Box><Button variant="outlined" onClick={onExact} disabled={busy} sx={{ minHeight: 44, bgcolor: '#fff' }}>Exact</Button></Stack>
     {denominations ? <>
       <Typography variant="caption" color="text.secondary">Bills</Typography>
       <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>{denominations.bills.map(item => <Button key={item.label} variant="outlined" disabled={busy} onClick={() => onAdd(item.cents)} sx={{ minHeight: 44, minWidth: 62 }}>{item.label}</Button>)}</Stack>
@@ -434,14 +470,14 @@ function PaymentSummary({ sale, method, currencyCode, cashReceived, appliedAmoun
   appliedAmount: number; changeDue: number; balanceDue: number;
 }) {
   const remaining = roundedMoney(Math.max(0, balanceDue - appliedAmount));
-  return <Paper variant="outlined" sx={{ p: 1.5, height: '100%', bgcolor: 'action.hover' }}><Stack spacing={1}>
+  return <Paper variant="outlined" sx={{ p: 1.5, height: '100%', bgcolor: posTokens.colors.blueLight, borderColor: posTokens.colors.border }}><Stack spacing={1}>
     <Typography variant="subtitle1" fontWeight={800}>Payment summary</Typography>
     <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Total</Typography><Typography fontWeight={700}>{money(sale?.totalAmount ?? 0, currencyCode)}</Typography></Stack>
     <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Paid</Typography><Typography>{money(sale?.paidAmount ?? 0, currencyCode)}</Typography></Stack>
     <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">{method === 'CASH' ? 'Cash received' : 'This payment'}</Typography><Typography>{money(method === 'CASH' ? cashReceived : appliedAmount, currencyCode)}</Typography></Stack>
     {method === 'CASH' ? <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Cash applied</Typography><Typography>{money(appliedAmount, currencyCode)}</Typography></Stack> : null}
     <Divider />
-    <Stack direction="row" justifyContent="space-between"><Typography fontWeight={800}>{changeDue > 0 ? 'Change due' : 'Remaining'}</Typography><Typography variant="h6" color={changeDue > 0 ? 'success.main' : 'text.primary'}>{money(changeDue > 0 ? changeDue : remaining, currencyCode)}</Typography></Stack>
+    <Stack direction="row" justifyContent="space-between"><Typography fontWeight={800}>{changeDue > 0 ? 'Change due' : 'Remaining'}</Typography><Typography variant="h6" color={changeDue > 0 ? 'success.main' : 'primary.dark'}>{money(changeDue > 0 ? changeDue : remaining, currencyCode)}</Typography></Stack>
   </Stack></Paper>;
 }
 
@@ -805,6 +841,7 @@ export function PosCartPage() {
   const [cartItems, setCartItems] = React.useState<SaleItem[]>([]);
   const cartRevisionRef = React.useRef(0);
   const [barcode, setBarcode] = React.useState('');
+  const [searchMode, setSearchMode] = React.useState<'BARCODE' | 'PRODUCT'>('BARCODE');
   const [productSearch, setProductSearch] = React.useState('');
   const [discount,setDiscount]=React.useState<OrderDiscount|null>(null);
   const [discountOpen,setDiscountOpen]=React.useState(false);
@@ -832,6 +869,18 @@ export function PosCartPage() {
   const autoPrintedReceiptRef = React.useRef<string | null>(null);
   const recoveryCheckedRef = React.useRef(false);
   const previousSearchStoreIdRef = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (activeSale?.status === 'COMPLETED') return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousRootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousRootOverflow;
+    };
+  }, [activeSale?.status]);
 
   React.useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -890,10 +939,11 @@ export function PosCartPage() {
   const savedDiscounts=useQuery({queryKey:['active-pos-discounts',current.data?.storeId],queryFn:async()=>listActiveStoreDiscounts(await getValidAccessToken(),current.data?.storeId??''),enabled:Boolean(current.data?.storeId)&&Boolean(currentUser?.permissions?.includes('POS_SALE_DISCOUNT')),staleTime:5*60_000});
 
   React.useEffect(() => {
+    if (searchMode !== 'PRODUCT') return;
     const normalized = productSearch.trim();
     const timer = window.setTimeout(() => setSubmittedSearch(normalized), 250);
     return () => window.clearTimeout(timer);
-  }, [productSearch]);
+  }, [productSearch, searchMode]);
 
   React.useEffect(() => {
     const storeId = current.data?.storeId;
@@ -954,6 +1004,30 @@ export function PosCartPage() {
     }
     void clearDraftCartRecovery();
     setSearchParams({});
+  }
+
+  function startNewSale() {
+    cartRevisionRef.current += 1;
+    setCartItems([]);
+    setDiscount(null);
+    setDiscountOpen(false);
+    setActiveSale(null);
+    setPaymentDialogOpen(false);
+    setSearchMode('BARCODE');
+    setBarcode('');
+    setProductSearch('');
+    setSubmittedSearch('');
+    setUnknownBarcode(null);
+    setInventoryWarning(null);
+    setPendingAgeVerification(null);
+    setReceiptPrintError(null);
+    setDraftRecovered(false);
+    completionKeyRef.current = null;
+    automaticPrintSaleIdRef.current = null;
+    autoPrintedReceiptRef.current = null;
+    void clearDraftCartRecovery();
+    setSearchParams({});
+    window.setTimeout(() => barcodeInputRef.current?.focus(), 0);
   }
 
   React.useEffect(() => {
@@ -1204,8 +1278,11 @@ export function PosCartPage() {
   const barcodeError = barcodeMutation.error && !errorMessage(barcodeMutation.error).includes('BARCODE_NOT_FOUND')
     ? barcodeMutation.error
     : null;
+  const discountPricingError = discount && recalculateMutation.error
+    ? posErrorMessage(recalculateMutation.error)
+    : null;
   const pageError = current.error ?? saleQuery.error ?? barcodeError
-    ?? recalculateMutation.error ?? holdMutation.error ?? cancelMutation.error
+    ?? (discount ? null : recalculateMutation.error) ?? holdMutation.error ?? cancelMutation.error
     ?? paymentMutation.error ?? completeMutation.error;
 
   React.useEffect(() => {
@@ -1235,21 +1312,25 @@ export function PosCartPage() {
   }, [barcodeMutation, cartLocked, current.data, paymentDialogOpen, pendingAgeVerification]);
 
   return (
-    <Stack spacing={2} sx={{ minHeight: 'calc(100dvh - 88px)', minWidth: 0 }}>
+    <Stack data-testid="retail-checkout-shell" spacing={1} sx={{ height: activeSale?.status === 'COMPLETED' ? 'auto' : 'calc(100dvh - 88px)', minHeight: 0, minWidth: 0, overflow: activeSale?.status === 'COMPLETED' ? 'visible' : 'hidden', color: posTokens.colors.text }}>
       <GlobalStyles styles={receiptPrintStyles} />
-      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2}>
-        <Box>
-          <Typography variant="h5" component="h1">Checkout</Typography>
-          <Typography color="text.secondary">Scan, verify pricing and tax, then record payment.</Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ minHeight: 48, flexShrink: 0 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="h5" component="h1" sx={{ lineHeight: 1.1, color: posTokens.colors.navy, fontSize: { xs: 24, md: 28 } }}>Checkout</Typography>
+          <Typography variant="body2" color="text.secondary" noWrap>Scan, verify pricing and tax, then record payment.</Typography>
         </Box>
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          <Button component={Link} to="/pos/held-sales" variant="outlined" startIcon={<PauseCircleOutlineIcon />}>
+        <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
+          <Button size="small" component={Link} to="/pos/held-sales" variant="outlined" startIcon={<PlayCircleOutlineIcon />} sx={{ bgcolor: posTokens.colors.card }}>
             Held sales
           </Button>
+          <Button size="small" variant="outlined" startIcon={<PauseCircleOutlineIcon />} disabled={!activeSale || cartLocked} onClick={() => holdMutation.mutate()} sx={{ bgcolor: posTokens.colors.card }}>
+            Hold sale
+          </Button>
           <Button
-            variant="outlined"
+            size="small"
+            variant="contained"
             startIcon={<RefreshIcon />}
-            disabled={!activeSale || busy}
+            disabled={cartItems.length === 0 || busy}
             onClick={() => recalculateMutation.mutate(false)}
           >
             {recalculateMutation.isPending ? 'Calculating…' : 'Calculate Tax'}
@@ -1263,19 +1344,14 @@ export function PosCartPage() {
           No register session is open for this device.
         </Alert>
       ) : null}
-      {pageError ? <Alert severity="error">{posErrorMessage(pageError)}</Alert> : null}
-      {inventoryWarning ? <Alert severity="warning" onClose={() => setInventoryWarning(null)}>{inventoryWarning}</Alert> : null}
-      {draftRecovered && activeSale?.status === 'DRAFT' ? (
-        <Alert severity="success" onClose={() => setDraftRecovered(false)}>
-          Draft cart recovered after refresh.
-        </Alert>
+      {(pageError || inventoryWarning || (draftRecovered && activeSale?.status === 'DRAFT') || unknownBarcode) ? (
+        <Box sx={{ flexShrink: 0, maxHeight: 54, overflowY: 'auto' }}>
+          {pageError ? <Alert severity="error" sx={{ py: 0 }}>{posErrorMessage(pageError)}</Alert> : null}
+          {!pageError && inventoryWarning ? <Alert severity="warning" onClose={() => setInventoryWarning(null)} sx={{ py: 0 }}>{inventoryWarning}</Alert> : null}
+          {!pageError && !inventoryWarning && draftRecovered && activeSale?.status === 'DRAFT' ? <Alert severity="success" onClose={() => setDraftRecovered(false)} sx={{ py: 0 }}>Draft cart recovered after refresh.</Alert> : null}
+          {!pageError && !inventoryWarning && !(draftRecovered && activeSale?.status === 'DRAFT') && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
+        </Box>
       ) : null}
-      {unknownBarcode ? (
-        <Alert severity="warning">
-          {`No product was found for barcode ${unknownBarcode}.`}
-        </Alert>
-      ) : null}
-      {current.data ? <IdentityStrip session={current.data} store={store} register={register} device={device} /> : null}
 
       {current.data ? (
         activeSale?.status === 'COMPLETED' ? (
@@ -1294,14 +1370,18 @@ export function PosCartPage() {
               }
             }}
             onReprint={() => reprintReceiptMutation.mutate()}
-            onNewSale={() => { setCartItems([]); rememberSale(null); }}
+            onNewSale={startNewSale}
           />
         ) : (
-        <Grid container spacing={{ xs: 2, md: 3 }}>
-          <Grid item xs={12} md={8} sx={{ minWidth: 0 }}>
-            <Stack spacing={2}>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={2}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(320px, 0.95fr)', gap: { xs: 1, md: 1.5 }, flex: 1, minHeight: 0, minWidth: 0 }}>
+          <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0 }}>
+            <Paper variant="outlined" sx={{ p: 1, position: 'relative', zIndex: 2, flexShrink: 0, borderRadius: posTokens.radius.card }}>
+              <Stack spacing={0.75}>
+                <Stack direction="row" spacing={0.5} role="group" aria-label="Search mode">
+                  <Button size="small" variant={searchMode === 'BARCODE' ? 'contained' : 'outlined'} aria-pressed={searchMode === 'BARCODE'} onClick={() => { setSearchMode('BARCODE'); setSubmittedSearch(''); window.setTimeout(() => barcodeInputRef.current?.focus(), 0); }} sx={searchMode === 'BARCODE' ? undefined : { bgcolor: posTokens.colors.blueLight }}>Barcode</Button>
+                  <Button size="small" variant={searchMode === 'PRODUCT' ? 'contained' : 'outlined'} aria-pressed={searchMode === 'PRODUCT'} onClick={() => setSearchMode('PRODUCT')} sx={searchMode === 'PRODUCT' ? undefined : { bgcolor: posTokens.colors.blueLight }}>Product Search</Button>
+                </Stack>
+                {searchMode === 'BARCODE' ? (
                   <Box component="form" onSubmit={(event) => {
                     event.preventDefault();
                     const completedBarcode = barcodeInputRef.current?.value ?? barcode;
@@ -1312,12 +1392,14 @@ export function PosCartPage() {
                   }}>
                     <TextField
                       label="Barcode"
+                      placeholder="Scan barcode or enter code"
                       value={barcode}
                       onChange={(event) => {
                         posScanDebug('BARCODE_RAW_INPUT', { length: event.target.value.length });
                         setBarcode(event.target.value);
                       }}
                       fullWidth
+                      size="small"
                       autoFocus
                       inputRef={barcodeInputRef}
                       disabled={cartLocked}
@@ -1343,17 +1425,19 @@ export function PosCartPage() {
                       }}
                     />
                   </Box>
-
+                ) : (
                   <Box component="form" onSubmit={(event) => {
                     event.preventDefault();
                     setSubmittedSearch(productSearch.trim());
                   }}>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                    <Stack direction="row" spacing={0.75}>
                       <TextField
                         label="Product search"
+                        placeholder="Search by product name, SKU or barcode"
                         value={productSearch}
                         onChange={(event) => setProductSearch(event.target.value)}
                         fullWidth
+                        size="small"
                         disabled={cartLocked}
                         InputProps={{
                           startAdornment: (
@@ -1363,25 +1447,23 @@ export function PosCartPage() {
                           )
                         }}
                       />
-                      <Button type="submit" variant="contained" startIcon={<SearchIcon />} disabled={cartLocked || !productSearch.trim()}>
+                      <Button size="small" type="submit" variant="contained" startIcon={<SearchIcon />} disabled={cartLocked || !productSearch.trim()}>
                         Search
                       </Button>
                     </Stack>
                   </Box>
+                )}
+                {searchMode === 'PRODUCT' && (productResults.isFetching || (submittedSearch && productResults.data)) ? (
+                  <Paper elevation={2} sx={{ position: 'absolute', top: 'calc(100% - 2px)', left: 8, right: 8, maxHeight: 260, overflowY: 'auto', zIndex: 5, border: '1px solid', borderColor: 'divider' }}>
+                    {productResults.isFetching ? <Box sx={{ p: 1.5 }}><CircularProgress size={22} aria-label="Searching products" /></Box> : null}
+                    {!productResults.isFetching && productResults.data ? <ProductSearchResults products={productResults.data.content} currencyCode={currencyCode} disabled={cartLocked} onAdd={(product) => { addProduct(product); setProductSearch(''); setSubmittedSearch(''); setSearchMode('BARCODE'); }} /> : null}
+                  </Paper>
+                ) : null}
+              </Stack>
+            </Paper>
 
-                  {productResults.isFetching ? <LoadingPanel label="Searching products" /> : null}
-                  {submittedSearch && !productResults.isFetching && productResults.data ? (
-                    <ProductSearchResults
-                      products={productResults.data.content}
-                      currencyCode={currencyCode}
-                      disabled={cartLocked}
-                      onAdd={addProduct}
-                    />
-                  ) : null}
-                </Stack>
-              </Paper>
-
-              <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+            <Paper variant="outlined" sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', borderRadius: posTokens.radius.card }}>
+              <Box data-testid="cart-scroll-region" sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <CartLines
                   items={cartItems}
                   currencyCode={currencyCode}
@@ -1389,45 +1471,33 @@ export function PosCartPage() {
                   onQuantity={(itemId, quantity) => changeCart(items => items.map(item => item.id === itemId ? { ...item, quantity, lineSubtotal: item.unitPrice * quantity, lineTotal: item.unitPrice * quantity, estimatedTaxAmount: 0 } : item))}
                   onRemove={(itemId) => changeCart(items => items.filter(item => item.id !== itemId))}
                 />
-              </Paper>
-            </Stack>
-          </Grid>
+              </Box>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1, py: 0.75, borderTop: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
+                <Button size="small" color="error" variant="outlined" disabled={!cartItems.length || cartLocked} onClick={() => { changeCart(() => []); setDiscount(null); }}>Clear cart</Button>
+                <Typography variant="body2" color="text.secondary">{cartItems.length} item(s)</Typography>
+              </Stack>
+            </Paper>
+          </Stack>
 
-          <Grid item xs={12} md={4} sx={{ minWidth: 0 }}>
-            <Stack spacing={2} sx={{ position: { md: 'sticky' }, top: { md: 72 }, maxHeight: { md: 'calc(100dvh - 88px)' }, overflowY: { md: 'auto' } }}>
-              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discount} />
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography color="text.secondary">Status</Typography>
-                    <Chip label={activeSale?.status ?? 'NO SALE'} size="small" />
-                  </Stack>
+          <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <CompactIdentitySummary session={current.data} store={store} register={register} device={device} />
+              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discountPricingError ? null : discount} />
+              <Paper variant="outlined" sx={{ p: 1.25, borderRadius: posTokens.radius.card }}>
+                <Stack spacing={0.75}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Discount</Typography><Chip label={discountPricingError ? 'NOT APPLICABLE' : discount ? (activeSale ? 'APPLIED' : 'SELECTED') : 'NONE'} size="small" color={discountPricingError ? 'error' : discount ? 'primary' : 'default'} variant="outlined" /></Stack>
                   {currentUser?.permissions?.includes('POS_SALE_DISCOUNT') ? <>
-                    <TextField select size="small" label="Discount" value={discount?.definitionId??(discount?'__custom__':'')} disabled={!cartItems.length||busy} onChange={event=>{if(event.target.value==='__custom__'){setDiscountOpen(true);return;}const selected=savedDiscounts.data?.find((value:DiscountDefinition)=>value.id===event.target.value);if(selected){setDiscount({definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:''});cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);}}}>
+                    <TextField select size="small" label="Discount" value={discount?.definitionId??(discount?'__custom__':'')} disabled={!cartItems.length||busy} onChange={event=>{if(event.target.value==='__custom__'){setDiscountOpen(true);return;}const selected=savedDiscounts.data?.find((value:DiscountDefinition)=>value.id===event.target.value);if(selected){setDiscount({definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:''});cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}}>
                       <MenuItem value=""><em>Select discount</em></MenuItem>{(savedDiscounts.data??[]).map((value:DiscountDefinition)=><MenuItem key={value.id} value={value.id}>{value.name} — {value.type==='DISCOUNT_PERCENTAGE'?`${value.value}%`:money(value.value,currencyCode)}</MenuItem>)}<Divider/><MenuItem value="__custom__">Custom Discount</MenuItem>
                     </TextField>
-                    {discount?<Button size="small" color="error" onClick={()=>{setDiscount(null);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);}}>Remove Discount</Button>:null}
+                    {discountPricingError ? <Alert severity="warning" sx={{ py: 0, '& .MuiAlert-message': { py: 0.25 }, fontSize: 13 }}>{discountPricingError}</Alert> : null}
+                    {discount?<Button size="small" color="error" sx={{ alignSelf: 'flex-start' }} onClick={()=>{setDiscount(null);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}>Remove Discount</Button>:null}
                   </>:null}
-                  <Button
-                    variant="contained"
-                    startIcon={<PauseCircleOutlineIcon />}
-                    disabled={!activeSale || cartLocked}
-                    onClick={() => holdMutation.mutate()}
-                  >
-                    Hold sale
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    disabled={!activeSale || cartLocked}
-                    onClick={() => cancelMutation.mutate()}
-                  >
-                    Cancel draft
-                  </Button>
                 </Stack>
               </Paper>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
+              <Paper variant="outlined" sx={{ p: 1.25, borderRadius: posTokens.radius.card }}>
+                <Stack spacing={0.75}>
+                  <Stack direction="row" justifyContent="space-between"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Payment</Typography><Typography variant="body2" fontWeight={700} color="primary.dark">Remaining {money(activeSale?.balanceDue ?? activeSale?.totalAmount ?? 0, currencyCode)}</Typography></Stack>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography color="text.secondary">Paid</Typography>
                     <Typography>{money(activeSale?.paidAmount ?? 0, currencyCode)}</Typography>
@@ -1441,6 +1511,7 @@ export function PosCartPage() {
                     <Typography>{money(activeSale?.changeDue ?? 0, currencyCode)}</Typography>
                   </Stack>
                   <Button
+                    size="small"
                     variant="contained"
                     startIcon={<PaymentOutlinedIcon />}
                     disabled={cartItems.length === 0 || busy || Boolean(activeSale?.paymentComplete)}
@@ -1448,23 +1519,15 @@ export function PosCartPage() {
                   >
                     {recalculateMutation.isPending ? 'Calculating total…' : activeSale ? 'Take payment' : 'Checkout'}
                   </Button>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    disabled={!activeSale?.paymentComplete || completeMutation.isPending || busy}
-                    onClick={() => {
-                      if (!completeMutation.isPending) {
-                        completeMutation.mutate();
-                      }
-                    }}
-                  >
-                    {completeMutation.isPending ? 'Completing sale...' : 'Complete sale'}
-                  </Button>
                 </Stack>
               </Paper>
+            </Box>
+            <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
+              <Button fullWidth size="small" variant="outlined" disabled={!activeSale || cartLocked} onClick={() => cancelMutation.mutate()} sx={{ bgcolor: posTokens.colors.card }}>Cancel draft</Button>
+              <Button fullWidth size="small" variant="contained" disabled={!activeSale?.paymentComplete || completeMutation.isPending || busy} onClick={() => { if (!completeMutation.isPending) completeMutation.mutate(); }}>{completeMutation.isPending ? 'Completing sale...' : 'Complete sale'}</Button>
             </Stack>
-          </Grid>
-        </Grid>
+          </Stack>
+        </Box>
         )
       ) : null}
       <PaymentDialog
@@ -1474,7 +1537,7 @@ export function PosCartPage() {
         onClose={() => setPaymentDialogOpen(false)}
         onSubmit={(payment) => paymentMutation.mutate(payment)}
       />
-      <DiscountDialog open={discountOpen} initial={discount} currencyCode={currencyCode} onClose={()=>setDiscountOpen(false)} onApply={value=>{setDiscount(value);setDiscountOpen(false);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);}}/>
+      <DiscountDialog open={discountOpen} initial={discount} currencyCode={currencyCode} onClose={()=>setDiscountOpen(false)} onApply={value=>{setDiscount(value);setDiscountOpen(false);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}/>
       <Dialog
         open={Boolean(pendingAgeVerification)}
         onClose={() => {

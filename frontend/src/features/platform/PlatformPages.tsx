@@ -1616,11 +1616,11 @@ export function PlatformLoginPage() {
 
   return (
     <Stack minHeight="100dvh" alignItems="center" justifyContent="center" sx={{ bgcolor: 'background.default', p: 2 }}>
-      <Paper component="form" onSubmit={submit} variant="outlined" sx={{ width: '100%', maxWidth: 420, p: 3, borderRadius: 1 }}>
+      <Paper component="form" onSubmit={submit} variant="outlined" sx={{ width: '100%', maxWidth: 440, p: 3, borderRadius: 2 }}>
         <Stack spacing={2}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <StorefrontIcon color="primary" />
-            <Typography variant="h5" component="h1">Merchtyl Platform</Typography>
+          <Stack spacing={0.5} alignItems="center">
+            <Box component="img" src="/branding/merchtyl-logo-horizontal.png" alt="Merchtyl" sx={{ width: 210, height: 54, objectFit: 'contain' }} />
+            <Typography variant="h5" component="h1" color="primary.dark">Platform Administration</Typography>
           </Stack>
           {error && <Alert severity="error">{error}</Alert>}
           <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />

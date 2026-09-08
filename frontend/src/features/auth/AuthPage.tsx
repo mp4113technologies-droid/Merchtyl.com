@@ -1,4 +1,3 @@
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import LoginIcon from '@mui/icons-material/Login';
 import {
   Alert,
@@ -78,21 +77,20 @@ export function AuthPage() {
   });
 
   return (
-    <Box sx={{ minHeight: '100dvh', bgcolor: 'background.default', py: { xs: 4, md: 8 } }}>
+    <Box sx={{ minHeight: '100dvh', bgcolor: 'background.default', py: { xs: 4, md: 7 }, display: 'grid', alignItems: 'center' }}>
       <Container maxWidth="sm">
-        <Stack spacing={3}>
-          <Stack spacing={1} alignItems="center">
-            <LockOutlinedIcon color="primary" sx={{ fontSize: 40 }} />
-            <Typography variant="h5" component="h1">Merchtyl</Typography>
-            <Typography variant="h4" component="h2">
-              {merchant ? `Welcome to ${merchant.displayName}` : 'Welcome to Merchtyl'}
+        <Stack spacing={2.5}>
+          <Stack spacing={0.75} alignItems="center">
+            <Box component="img" src="/branding/merchtyl-logo-horizontal.png" alt="Merchtyl" sx={{ width: 220, maxWidth: '70vw', height: 58, objectFit: 'contain' }} />
+            <Typography variant="h5" component="h1" color="primary.dark">
+              {merchant ? `Welcome to ${merchant.displayName}` : 'Merchtyl'}
             </Typography>
             <Typography color="text.secondary" textAlign="center">
-              {merchant ? `Sign in to continue to ${merchant.displayName}.` : 'Sign in to open the retail workspace.'}
+              {merchant ? `Sign in to continue to ${merchant.displayName}.` : 'Sign in to Merchtyl.'}
             </Typography>
           </Stack>
 
-          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 2, sm: 3 } }}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 2.5, sm: 3 }, borderRadius: 2 }}>
             <Stack component="form" spacing={2.5} onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
               {sessionExpired ? (
                 <Alert severity="warning">Your session expired. Sign in again to continue.</Alert>
@@ -147,6 +145,7 @@ export function AuthPage() {
                   Sign in to platform admin
                 </MuiLink>
               </Typography> : null}
+              <Typography variant="caption" textAlign="center" color="text.secondary">Powered by Merchtyl</Typography>
             </Stack>
           </Paper>
         </Stack>

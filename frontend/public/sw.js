@@ -1,12 +1,11 @@
-const CACHE_VERSION = 'merchtyl-shell-v1';
+const CACHE_VERSION = 'merchtyl-shell-v2';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL_URLS = [
   '/',
   OFFLINE_URL,
   '/manifest.json',
-  '/icon.svg',
-  '/icon-192.svg',
-  '/icon-512.svg'
+  '/branding/merchtyl-logo-mark.svg',
+  '/branding/merchtyl-logo-horizontal.png'
 ];
 
 self.addEventListener('install', (event) => {

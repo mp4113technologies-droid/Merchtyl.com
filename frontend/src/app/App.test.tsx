@@ -175,6 +175,17 @@ describe('App authentication', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByRole('heading', { name: 'Owner dashboard' })).toBeInTheDocument();
+    const navigation = screen.getByRole('navigation', { name: 'Primary navigation' });
+    expect(navigation).toHaveTextContent('Overview');
+    expect(navigation).toHaveTextContent('Store Operations');
+    expect(navigation).toHaveTextContent('Sales');
+    expect(navigation).toHaveTextContent('Catalog');
+    expect(navigation).toHaveTextContent('Inventory');
+    expect(navigation).toHaveTextContent('Reports');
+    expect(navigation).toHaveTextContent('Configuration');
+    expect(navigation).toHaveTextContent('Access & Security');
+    expect(screen.getByRole('link', { name: 'Retail POS' })).toHaveAttribute('href', '/pos');
+    expect(screen.queryByRole('link', { name: 'Unauthorized' })).not.toBeInTheDocument();
     expect(screen.getAllByText('owner@example.local')).not.toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/login', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/me', expect.anything());

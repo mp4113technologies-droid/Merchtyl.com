@@ -13,9 +13,7 @@ describe('PWA public assets', () => {
     expect(manifest.display).toBe('standalone');
     expect(manifest.start_url).toBe('/');
     expect(manifest.icons).toEqual(expect.arrayContaining([
-      expect.objectContaining({ src: '/icon.svg', sizes: 'any' }),
-      expect.objectContaining({ src: '/icon-192.svg', sizes: '192x192', purpose: 'any maskable' }),
-      expect.objectContaining({ src: '/icon-512.svg', sizes: '512x512', purpose: 'any maskable' })
+      expect.objectContaining({ src: '/branding/merchtyl-logo-mark.svg', sizes: 'any' })
     ]));
   });
 

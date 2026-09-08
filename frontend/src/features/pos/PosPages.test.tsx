@@ -476,7 +476,7 @@ describe('POS pages', () => {
     expect(await screen.findByRole('heading', { name: 'Checkout' })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Primary navigation' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to Store Menu' })).toBeInTheDocument();
-    expect(await screen.findByText('Main Store (MAIN)')).toBeInTheDocument();
+    expect((await screen.findAllByText('Main Store (MAIN)')).length).toBeGreaterThan(0);
 
     await userEvent.type(screen.getByRole('textbox', { name: 'Barcode' }), '0012345{enter}');
 
@@ -499,6 +499,51 @@ describe('POS pages', () => {
       const url = new URL(String(input), window.location.origin);
       return url.pathname.includes('/api/v1/register-sessions/') && init?.method === 'POST';
     })).toBe(false);
+  });
+
+  it('uses a fixed checkout viewport with only the cart body as the scrolling region', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => commonApi(input) ?? jsonResponse({}, 404));
+    document.body.style.overflow = 'auto';
+
+    const view = render(<App initialEntries={['/pos']} />);
+
+    const shell = await screen.findByTestId('retail-checkout-shell');
+    const cartScrollRegion = await screen.findByTestId('cart-scroll-region');
+    expect(shell).toHaveStyle({ height: 'calc(100dvh - 88px)', overflow: 'hidden' });
+    expect(cartScrollRegion).toHaveStyle({ overflowY: 'auto' });
+    expect(document.body).toHaveStyle({ overflow: 'hidden' });
+    expect(screen.getByRole('button', { name: 'Barcode' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('textbox', { name: 'Barcode' })).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Product search' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Checkout' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Complete sale' })).toBeVisible();
+
+    view.unmount();
+    expect(document.body).toHaveStyle({ overflow: 'auto' });
+  });
+
+  it('keeps checkout controls visible while a long recovered cart stays in the internal cart scroller', async () => {
+    const baseSale = sale('DRAFT');
+    await saveDraftCartRecovery({
+      ...baseSale,
+      items: Array.from({ length: 24 }, (_, index) => ({
+        ...baseSale.items[0],
+        id: `00000000-0000-0000-0001-${String(index).padStart(12, '0')}`,
+        productId: `00000000-0000-0000-0002-${String(index).padStart(12, '0')}`,
+        lineNumber: index + 1,
+        productName: `Cart Product ${index + 1}`,
+        productSku: `SKU-${index + 1}`
+      }))
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => commonApi(input) ?? jsonResponse({}, 404));
+
+    render(<App initialEntries={['/pos']} />);
+
+    expect(await screen.findByText('Cart Product 24')).toBeInTheDocument();
+    expect(screen.getByTestId('cart-scroll-region')).toHaveStyle({ overflowY: 'auto' });
+    expect(screen.getByRole('button', { name: 'Clear cart' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Take payment' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Complete sale' })).toBeVisible();
   });
 
   it('loads a saved Store discount once and sends only its definition id at Retail checkout', async () => {
@@ -655,7 +700,7 @@ describe('POS pages', () => {
     render(<App initialEntries={['/pos']} />);
 
     expect(await screen.findByRole('heading', { name: 'Checkout' })).toBeInTheDocument();
-    expect(await screen.findByText('Main Store (MAIN)')).toBeInTheDocument();
+    expect((await screen.findAllByText('Main Store (MAIN)')).length).toBeGreaterThan(0);
 
     for (const key of ['9', '9', '9', '9', '9', 'Enter']) {
       fireEvent.keyDown(window, { key });
@@ -1062,6 +1107,7 @@ describe('POS pages', () => {
 
     render(<App initialEntries={['/pos']} />);
 
+    await userEvent.click(await screen.findByRole('button', { name: 'Product Search' }));
     await userEvent.type(await screen.findByRole('textbox', { name: 'Product search' }), 'coffee');
     await userEvent.click(screen.getByRole('button', { name: 'Search' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Add Coffee' }));
@@ -1093,6 +1139,7 @@ describe('POS pages', () => {
     });
 
     render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Product Search' }));
     const input = await screen.findByRole('textbox', { name: 'Product search' });
     await userEvent.type(input, '  COCA  ');
 
