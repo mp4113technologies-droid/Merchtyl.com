@@ -2,6 +2,7 @@ package com.merchtyl.inventory;
 
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
+import com.merchtyl.product.ProductVariant;
 import com.merchtyl.store.Store;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,8 +20,8 @@ import java.time.Instant;
 @Table(
         name = "inventory_balances",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_inventory_balances_store_product",
-                columnNames = {"store_id", "product_id"}))
+                name = "uq_inventory_balances_store_product_variant",
+                columnNames = {"store_id", "product_id", "variant_id"}))
 public class InventoryBalance extends BaseUuidEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "store_id", nullable = false, foreignKey = @ForeignKey(name = "fk_inventory_balances_store"))
@@ -29,6 +30,10 @@ public class InventoryBalance extends BaseUuidEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "product_id", nullable = false, foreignKey = @ForeignKey(name = "fk_inventory_balances_product"))
     private Product product;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name="variant_id",foreignKey=@ForeignKey(name="fk_inventory_balances_variant"))
+    private ProductVariant variant;
 
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal quantityOnHand;
@@ -40,8 +45,13 @@ public class InventoryBalance extends BaseUuidEntity {
     }
 
     public InventoryBalance(Store store, Product product, BigDecimal quantityOnHand, Instant lastTransactionAt) {
+        this(store,product,null,quantityOnHand,lastTransactionAt);
+    }
+
+    public InventoryBalance(Store store, Product product, ProductVariant variant, BigDecimal quantityOnHand, Instant lastTransactionAt) {
         this.store = store;
         this.product = product;
+        this.variant = variant;
         this.quantityOnHand = quantityOnHand;
         this.lastTransactionAt = lastTransactionAt;
         initializeIdAndTimestamps();
@@ -59,6 +69,7 @@ public class InventoryBalance extends BaseUuidEntity {
     public Product getProduct() {
         return product;
     }
+    public ProductVariant getVariant(){return variant;}
 
     public BigDecimal getQuantityOnHand() {
         return quantityOnHand;

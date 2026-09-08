@@ -37,6 +37,11 @@ public class StoreProduct extends BaseUuidEntity {
         minimumSellingPrice=request.minimumSellingPrice(); lowStockThreshold=request.lowStockThreshold();
         allowDiscount=request.allowDiscount(); allowPriceOverride=request.allowPriceOverride();
     }
+    public void activateFromProduct(Product product) {
+        this.active = product.isActive(); this.sellable = product.isActive();
+        this.sellingPrice = product.getPrice(); this.costPrice = product.getCost();
+    }
+    public void deactivate() { this.active=false; this.sellable=false; }
     public UUID getTenantId(){return tenantId;} public Store getStore(){return store;} public Product getProduct(){return product;}
     public boolean isActive(){return active;} public boolean isSellable(){return sellable;} public BigDecimal getSellingPrice(){return sellingPrice;}
     public BigDecimal getCostPrice(){return costPrice;} public BigDecimal getMinimumSellingPrice(){return minimumSellingPrice;}

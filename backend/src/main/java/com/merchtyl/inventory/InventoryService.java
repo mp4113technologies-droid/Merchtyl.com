@@ -6,6 +6,10 @@ import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.ProductVariant;
+import com.merchtyl.product.ProductVariantRepository;
+import com.merchtyl.product.ProductAvailabilityScope;
+import com.merchtyl.product.StoreProductRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
@@ -44,6 +48,8 @@ public class InventoryService {
     private final UserRepository userRepository;
     private final Clock clock;
     @Autowired private StoreAccessService storeAccessService;
+    @Autowired private ProductVariantRepository productVariantRepository;
+    @Autowired private StoreProductRepository storeProductRepository;
 
     @Autowired
     public InventoryService(
@@ -93,13 +99,18 @@ public class InventoryService {
         if (!product.isInventoryTrackingEnabled()) {
             throw new BadRequestException("Product does not track inventory");
         }
+        boolean available=storeProductRepository==null||product.getAvailabilityScope()==ProductAvailabilityScope.ALL_STORES
+                ||storeProductRepository.findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(actor.getTenantId(),store.getId(),product.getId()).isPresent();
+        if(!available)throw new NotFoundException("PRODUCT_NOT_AVAILABLE_IN_STORE");
+        ProductVariant variant=requireVariant(product,request.variantId());
 
         BigDecimal quantityDelta = normalizeQuantityDelta(request.quantityDelta());
         requireValidDirection(request.transactionType(), quantityDelta);
         Instant occurredAt = request.occurredAt() == null ? Instant.now(clock) : request.occurredAt();
 
-        InventoryBalance balance = balanceRepository.findByStoreIdAndProductId(store.getId(), product.getId())
-                .orElseGet(() -> new InventoryBalance(store, product, BigDecimal.ZERO.setScale(QUANTITY_SCALE), occurredAt));
+        InventoryBalance balance = request.variantId()==null
+                ? baseBalance(store.getId(),product.getId()).orElseGet(()->new InventoryBalance(store,product,null,BigDecimal.ZERO.setScale(QUANTITY_SCALE),occurredAt))
+                : balanceRepository.findByStoreIdAndProductIdAndVariantId(store.getId(),product.getId(),request.variantId()).orElseGet(()->new InventoryBalance(store,product,variant,BigDecimal.ZERO.setScale(QUANTITY_SCALE),occurredAt));
         requireCurrentVersion(balance, request.balanceVersion());
 
         BigDecimal resultingQuantity = balance.getQuantityOnHand().add(quantityDelta).setScale(QUANTITY_SCALE);
@@ -138,11 +149,27 @@ public class InventoryService {
 
     @Transactional(readOnly = true)
     public InventoryBalanceResponse currentStock(UUID storeId, UUID productId) {
+        return currentStock(storeId,productId,null);
+    }
+    @Transactional(readOnly = true)
+    public InventoryBalanceResponse currentStock(UUID storeId, UUID productId,UUID variantId) {
         requireExistingStore(storeId);
         requireExistingProduct(productId);
-        return balanceRepository.findByStoreIdAndProductId(storeId, productId)
+        var found=variantId==null?baseBalance(storeId,productId):balanceRepository.findByStoreIdAndProductIdAndVariantId(storeId,productId,variantId);
+        return found
                 .map(InventoryBalanceResponse::from)
-                .orElseGet(() -> InventoryBalanceResponse.zero(storeId, productId));
+                .orElseGet(() -> InventoryBalanceResponse.zero(storeId, productId, variantId));
+    }
+
+    private java.util.Optional<InventoryBalance> baseBalance(UUID storeId,UUID productId){
+        return productVariantRepository==null?balanceRepository.findByStoreIdAndProductId(storeId,productId):balanceRepository.findByStoreIdAndProductIdAndVariantIsNull(storeId,productId);
+    }
+
+    private ProductVariant requireVariant(Product product,UUID variantId){
+        if(variantId==null)return null;
+        ProductVariant variant=productVariantRepository.findById(variantId).orElseThrow(()->new NotFoundException("PRODUCT_VARIANT_NOT_FOUND"));
+        if(!variant.getProduct().getId().equals(product.getId()))throw new BadRequestException("PRODUCT_VARIANT_INVALID");
+        return variant;
     }
 
     @Transactional(readOnly = true)

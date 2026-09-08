@@ -28,7 +28,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -41,6 +40,7 @@ public class ReceiptService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final ReceiptNumberService receiptNumberService;
     private final Clock clock;
     @Autowired
     private StoreAccessService storeAccessService;
@@ -51,8 +51,9 @@ public class ReceiptService {
             SaleRepository saleRepository,
             UserRepository userRepository,
             AuditService auditService,
-            ObjectMapper objectMapper) {
-        this(receiptRepository, saleRepository, userRepository, auditService, objectMapper, Clock.systemUTC());
+            ObjectMapper objectMapper,
+            ReceiptNumberService receiptNumberService) {
+        this(receiptRepository, saleRepository, userRepository, auditService, objectMapper, receiptNumberService, Clock.systemUTC());
     }
 
     ReceiptService(
@@ -61,12 +62,14 @@ public class ReceiptService {
             UserRepository userRepository,
             AuditService auditService,
             ObjectMapper objectMapper,
+            ReceiptNumberService receiptNumberService,
             Clock clock) {
         this.receiptRepository = receiptRepository;
         this.saleRepository = saleRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
+        this.receiptNumberService = receiptNumberService;
         this.clock = clock;
     }
 
@@ -127,7 +130,7 @@ public class ReceiptService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal taxableAmount = money(sale.getItems().stream()
                 .filter(item -> item.getEstimatedTaxAmount().signum() > 0)
-                .map(SaleItem::getLineSubtotal)
+                .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         List<ReceiptTaxSummaryDto> taxSummaries = sale.getEstimatedTaxAmount().signum() == 0
                 ? List.of()
@@ -152,7 +155,7 @@ public class ReceiptService {
                         sale.getCompletedBy().getId(),
                         sale.getCompletedBy().getDisplayName(),
                         sale.getCompletedBy().getEmail()),
-                receiptNumber(sale),
+                receiptNumberService.nextNumber(),
                 sale.getId(),
                 sale.getId().toString(),
                 sale.getBusinessDate(),
@@ -173,7 +176,8 @@ public class ReceiptService {
                         .toList(),
                 cashTendered,
                 changeDue,
-                sale.getFoodOrderToken());
+                sale.getFoodOrderToken(),
+                sale.getDiscountName());
     }
 
     private ReceiptItemDto item(SaleItem item) {
@@ -248,10 +252,6 @@ public class ReceiptService {
                 null,
                 response,
                 reason));
-    }
-
-    private static String receiptNumber(Sale sale) {
-        return "RCT-" + sale.getBusinessDate() + "-" + sale.getId().toString().substring(0, 8).toUpperCase(Locale.ROOT);
     }
 
     private static BigDecimal money(BigDecimal value) {

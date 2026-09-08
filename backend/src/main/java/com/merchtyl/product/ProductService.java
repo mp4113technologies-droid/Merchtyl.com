@@ -17,6 +17,7 @@ import com.merchtyl.security.User;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.inventory.InventoryBalanceRepository;
+import com.merchtyl.inventory.InventoryBalance;
 import com.merchtyl.tax.TaxCategoryRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -79,19 +81,23 @@ public class ProductService {
     @Transactional
     public ProductResponse create(ProductRequest request, Authentication authentication) {
         UUID tenantId = currentTenantId(authentication);
+        ProductAvailabilityScope availabilityScope = effectiveScope(request.availabilityScope());
+        Set<UUID> suppliedStoreIds = effectiveStoreIds(request.storeIds());
+        validateAvailability(availabilityScope, suppliedStoreIds);
+        Set<UUID> requestedStoreIds = availabilityScope == ProductAvailabilityScope.SELECTED_STORES ? suppliedStoreIds : Set.of();
         log.info("product_event event=PRODUCT_CREATE_REQUESTED tenant_id={} store_ids={} requested_store_count={} actor={}",
-                tenantId, request.storeIds(), request.storeIds().size(), actorName(authentication));
+                tenantId, requestedStoreIds, requestedStoreIds.size(), actorName(authentication));
         if (storeAccessService != null) {
             try {
-                User actor = storeAccessService.requireProductManagementScope(authentication, request.storeIds());
+                User actor = storeAccessService.requireProductManagementScope(authentication, requestedStoreIds);
                 int assignedStoreCount = StoreAccessService.isOwner(storeAccessService.roles(actor))
-                        ? request.storeIds().size()
+                        ? requestedStoreIds.size()
                         : storeAccessService.getActiveManagedStoreIds(actor.getId()).size();
                 log.info("product_event event=PRODUCT_STORE_SCOPE_RESOLVED tenant_id={} store_ids={} actor_user_id={} assigned_store_count={} requested_store_count={}",
-                        tenantId, request.storeIds(), actor.getId(), assignedStoreCount, request.storeIds().size());
+                        tenantId, requestedStoreIds, actor.getId(), assignedStoreCount, requestedStoreIds.size());
             } catch (RuntimeException exception) {
                 log.warn("product_event event=PRODUCT_CREATE_DENIED tenant_id={} store_ids={} requested_store_count={} actor={} reason={}",
-                        tenantId, request.storeIds(), request.storeIds().size(), actorName(authentication), exception.getMessage());
+                        tenantId, requestedStoreIds, requestedStoreIds.size(), actorName(authentication), exception.getMessage());
                 throw exception;
             }
         }
@@ -99,19 +105,21 @@ public class ProductService {
         requireUniqueCodesForCreate(tenantId, values);
         Product product = new Product(values);
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
+        product.setAvailabilityScope(availabilityScope);
         product.assignTenant(tenantId);
         Product saved = save(product);
-        if (storeAccessService != null) request.storeIds().forEach(storeId -> {
+        if (storeAccessService != null) requestedStoreIds.forEach(storeId -> {
             var store = storeAccessService.tenantStore(tenantId, storeId);
             StoreProduct mapping = new StoreProduct(tenantId, store, saved);
             mapping.update(new StoreProductRequest(storeId, request.active(), request.active(), request.price(), null,
                     null, null, true, true));
             storeProductRepository.save(mapping);
+            ensureInventoryBalances(store,saved);
         });
-        ProductResponse response = ProductResponse.from(saved);
+        ProductResponse response = response(saved, tenantId, null);
         audit(authentication, AuditAction.PRODUCT_CREATED, response.id(), null,
-                java.util.Map.of("product", response, "storeIds", request.storeIds()));
-        log.info("product_event event=PRODUCT_CREATED tenant_id={} store_ids={} product_id={} actor={}", tenantId, request.storeIds(), response.id(), actorName(authentication));
+                java.util.Map.of("product", response, "storeIds", requestedStoreIds));
+        log.info("product_event event=PRODUCT_CREATED tenant_id={} store_ids={} product_id={} actor={}", tenantId, requestedStoreIds, response.id(), actorName(authentication));
         return response;
     }
 
@@ -147,7 +155,7 @@ public class ProductService {
         UUID tenantId = currentTenantId(authentication);
         Product product = find(id, tenantId);
         requireProductVisibility(product, authentication);
-        return ProductResponse.from(product);
+        return response(product, product.getTenantId(), null);
     }
 
     @Transactional(readOnly = true)
@@ -170,17 +178,18 @@ public class ProductService {
         }
         StoreProduct storeProduct = storeProductRepository
                 .findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(tenantId, storeId, product.getId())
-                .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_AVAILABLE_IN_STORE"));
+                .orElse(null);
+        if(product.getAvailabilityScope()!=ProductAvailabilityScope.ALL_STORES&&storeProduct==null)throw new NotFoundException("PRODUCT_NOT_AVAILABLE_IN_STORE");
         var taxCategory = product.getTaxCategoryId() == null ? null
                 : taxCategoryRepository.findById(product.getTaxCategoryId()).filter(category -> category.isActive()).orElse(null);
-        var quantity = inventoryBalanceRepository.findByStoreIdAndProductId(storeId, product.getId())
+        var quantity = (variant==null?inventoryBalanceRepository.findByStoreIdAndProductIdAndVariantIsNull(storeId,product.getId()):inventoryBalanceRepository.findByStoreIdAndProductIdAndVariantId(storeId,product.getId(),variant.getId()))
                 .map(balance -> balance.getQuantityOnHand()).orElse(java.math.BigDecimal.ZERO.setScale(4));
         PosBarcodeLookupResponse response = new PosBarcodeLookupResponse(
                 product.getId(), variant == null ? null : variant.getId(), product.getName(),
                 variant == null ? null : variant.getName(), mapping.getBarcode(),
                 variant == null ? product.getSku() : variant.getSku(),
                 product.getUnitOfMeasure() == null ? null : product.getUnitOfMeasure().getId(),
-                variant == null ? storeProduct.getSellingPrice() : variant.getPrice(),
+                variant == null ? storeProduct==null?product.getPrice():storeProduct.getSellingPrice() : variant.getPrice(),
                 product.getTaxCategoryId(), taxCategory == null ? null : taxCategory.getName(), quantity, true,
                 product.hasCapability(ProductCapability.REQUIRE_AGE_VERIFICATION), product.getMinimumAge());
         log.debug("pos_event event=POS_BARCODE_RESOLVED tenant_id={} store_id={} product_id={} variant_id={}",
@@ -192,6 +201,11 @@ public class ProductService {
     public ProductResponse update(UUID id, ProductUpdateRequest request, Authentication authentication) {
         UUID tenantId = currentTenantId(authentication);
         Product product = find(id, tenantId);
+        ProductAvailabilityScope availabilityScope = effectiveScope(request.availabilityScope());
+        Set<UUID> suppliedStoreIds = effectiveStoreIds(request.storeIds());
+        validateAvailability(availabilityScope, suppliedStoreIds);
+        Set<UUID> requestedStoreIds = availabilityScope == ProductAvailabilityScope.SELECTED_STORES ? suppliedStoreIds : Set.of();
+        if (storeAccessService != null) storeAccessService.requireProductManagementScope(authentication, requestedStoreIds);
         requireAllProductStoresManaged(product, authentication);
         requireCurrentVersion(product, request.version());
         ProductValues values = values(request);
@@ -200,7 +214,10 @@ public class ProductService {
         ProductResponse before = ProductResponse.from(product);
         product.update(values);
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
-        ProductResponse after = ProductResponse.from(save(product));
+        product.setAvailabilityScope(availabilityScope);
+        Product saved=save(product);
+        reconcileAvailability(saved, tenantId, availabilityScope, requestedStoreIds);
+        ProductResponse after = response(saved,tenantId,null);
         audit(authentication, AuditAction.PRODUCT_UPDATED, id, before, after);
         log.info("product_event event=PRODUCT_UPDATED tenant_id={} product_id={} actor={}", tenantId, id, actorName(authentication));
         return after;
@@ -467,7 +484,9 @@ public class ProductService {
     }
 
     private ProductResponse response(Product product, UUID tenantId, UUID storeId) {
-        ProductResponse response = ProductResponse.from(product);
+        Set<UUID> assigned=storeProductRepository==null?Set.of():storeProductRepository.findByTenantIdAndProduct_Id(tenantId,product.getId()).stream()
+                .filter(mapping->mapping.isActive()&&mapping.isSellable()).map(mapping->mapping.getStore().getId()).collect(Collectors.toSet());
+        ProductResponse response = ProductResponse.from(product).withAvailability(assigned);
         if (storeId == null || storeProductRepository == null) return response;
         return storeProductRepository.findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(tenantId, storeId, product.getId())
                 .map(mapping -> response.withPrice(mapping.getSellingPrice())).orElse(response);
@@ -475,7 +494,8 @@ public class ProductService {
 
     private Specification<Product> specification(ProductSearchRequest request) {
         return Specification
-                .where(containsString("name", request.name()))
+                .where(posQuickSearch(request.query()))
+                .and(containsString("name", request.name()))
                 .and(equalString("sku", normalizeSkuFilter(request.sku())))
                 .and(equalEnum("sellableType", request.sellableType()))
                 .and(equalReference("category", request.categoryId()))
@@ -484,6 +504,29 @@ public class ProductService {
                 .and(equalBoolean("active", request.active()))
                 .and(equalBoolean("restaurantMenuManaged", false))
                 .and(barcodeEquals(request.barcode()));
+    }
+
+    /**
+     * Quick search used by POS. Product and active variant names are matched by a
+     * case-insensitive substring; SKUs are included because they are cashier-facing
+     * catalogue identifiers. Barcode scanning deliberately remains on the exact,
+     * store-scoped barcode endpoint.
+     */
+    private static Specification<Product> posQuickSearch(String value) {
+        if (value == null || value.isBlank()) return null;
+        String pattern = "%" + value.trim().toLowerCase(Locale.ROOT) + "%";
+        return (root, query, builder) -> {
+            var variant = root.join("variants", jakarta.persistence.criteria.JoinType.LEFT);
+            if (query != null) query.distinct(true);
+            return builder.or(
+                    builder.like(builder.lower(root.get("name")), pattern),
+                    builder.like(builder.lower(root.get("sku")), pattern),
+                    builder.and(
+                            builder.isTrue(variant.get("active")),
+                            builder.or(
+                                    builder.like(builder.lower(variant.get("name")), pattern),
+                                    builder.like(builder.lower(variant.get("sku")), pattern))));
+        };
     }
 
     private static Specification<Product> equalUuid(String field, UUID value) {
@@ -503,7 +546,7 @@ public class ProductService {
                     builder.equal(mapping.get("store").get("id"), storeId),
                     builder.isTrue(mapping.get("active")),
                     builder.isTrue(mapping.get("sellable")));
-            return root.get("id").in(subquery);
+            return builder.or(builder.equal(root.get("availabilityScope"),ProductAvailabilityScope.ALL_STORES),root.get("id").in(subquery));
         };
     }
 
@@ -516,14 +559,44 @@ public class ProductService {
             subquery.select(mapping.get("product").get("id"));
             subquery.where(builder.equal(mapping.get("tenantId"), tenantId), mapping.get("store").get("id").in(storeIds),
                     builder.isTrue(mapping.get("active")));
-            return root.get("id").in(subquery);
+            return builder.or(builder.equal(root.get("availabilityScope"),ProductAvailabilityScope.ALL_STORES),root.get("id").in(subquery));
         };
+    }
+
+    private void validateAvailability(ProductAvailabilityScope scope,Set<UUID> storeIds){
+        if(scope==ProductAvailabilityScope.SELECTED_STORES&&(storeIds==null||storeIds.isEmpty()))throw new BadRequestException("Select at least one Store");
+    }
+
+    private ProductAvailabilityScope effectiveScope(ProductAvailabilityScope scope) {
+        return scope == null ? ProductAvailabilityScope.ALL_STORES : scope;
+    }
+
+    private Set<UUID> effectiveStoreIds(Set<UUID> storeIds) {
+        return storeIds == null ? Set.of() : Set.copyOf(storeIds);
+    }
+
+    private void reconcileAvailability(Product product,UUID tenantId,ProductAvailabilityScope scope,Set<UUID> desired){
+        if(storeProductRepository==null||storeAccessService==null)return;
+        Map<UUID,StoreProduct> existing=storeProductRepository.findByTenantIdAndProduct_Id(tenantId,product.getId()).stream()
+                .collect(Collectors.toMap(mapping->mapping.getStore().getId(),Function.identity()));
+        if(scope==ProductAvailabilityScope.ALL_STORES){existing.values().forEach(StoreProduct::deactivate);storeProductRepository.saveAll(existing.values());return;}
+        existing.forEach((storeId,mapping)->{if(desired.contains(storeId))mapping.activateFromProduct(product);else mapping.deactivate();});
+        desired.stream().filter(storeId->!existing.containsKey(storeId)).forEach(storeId->{var store=storeAccessService.tenantStore(tenantId,storeId);storeProductRepository.save(new StoreProduct(tenantId,store,product));ensureInventoryBalances(store,product);});
+        storeProductRepository.saveAll(existing.values());
+    }
+
+    private void ensureInventoryBalances(com.merchtyl.store.Store store,Product product){
+        if(inventoryBalanceRepository==null||!product.isInventoryTrackingEnabled())return;
+        var now=java.time.Instant.now();
+        if(product.getVariants().isEmpty())inventoryBalanceRepository.findByStoreIdAndProductIdAndVariantIsNull(store.getId(),product.getId()).orElseGet(()->inventoryBalanceRepository.save(new InventoryBalance(store,product,null,java.math.BigDecimal.ZERO.setScale(4),now)));
+        else product.getVariants().stream().filter(ProductVariant::isActive).forEach(variant->inventoryBalanceRepository.findByStoreIdAndProductIdAndVariantId(store.getId(),product.getId(),variant.getId()).orElseGet(()->inventoryBalanceRepository.save(new InventoryBalance(store,product,variant,java.math.BigDecimal.ZERO.setScale(4),now))));
     }
 
     private void requireProductVisibility(Product product, Authentication authentication) {
         User actor = storeAccessService.currentTenantUser(authentication);
         if (StoreAccessService.isOwner(storeAccessService.roles(actor))) return;
         Set<UUID> assigned = storeAccessService.getActiveAssignedStoreIds(actor.getId());
+        if(product.getAvailabilityScope()==ProductAvailabilityScope.ALL_STORES&&!assigned.isEmpty())return;
         boolean visible = storeProductRepository.findByTenantIdAndProduct_IdOrderByStore_NameAsc(product.getTenantId(), product.getId())
                 .stream().anyMatch(mapping -> mapping.isActive() && assigned.contains(mapping.getStore().getId()));
         if (!visible) throw new com.merchtyl.common.ForbiddenOperationException("PRODUCT_STORE_ACCESS_DENIED");

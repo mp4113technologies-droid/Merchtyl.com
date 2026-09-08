@@ -84,7 +84,7 @@ class StockCountServiceTest {
         when(storeRepository.findById(STORE_ID)).thenReturn(Optional.of(store));
         when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
         when(userRepository.findByEmailIgnoreCase("manager@example.test")).thenReturn(Optional.of(user));
-        when(balanceRepository.findByStoreIdAndProductId(STORE_ID, PRODUCT_ID)).thenReturn(Optional.of(balance));
+        when(balanceRepository.findByStoreIdAndProductIdAndVariantIsNull(STORE_ID, PRODUCT_ID)).thenReturn(Optional.of(balance));
         when(stockCountRepository.saveAndFlush(any(StockCount.class))).thenAnswer(invocation -> {
             savedCount = invocation.getArgument(0);
             return savedCount;

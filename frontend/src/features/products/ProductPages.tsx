@@ -53,7 +53,7 @@ import {
   type ProductSearchParams,
   type ProductUpdatePayload
 } from '../../api/client';
-import type { CatalogueReference, Product, ProductCapability, SellableType, TaxCategory, UserRole } from '../../api/types';
+import type { AssignedStore, CatalogueReference, Product, ProductCapability, SellableType, TaxCategory, UserRole } from '../../api/types';
 import { compactFilterBarSx } from '../../app/responsive';
 import { useSession } from '../../app/session';
 
@@ -141,7 +141,10 @@ const productSchema = z.object({
   barcodes: z.array(barcodeSchema),
   capabilities: z.array(z.enum(productCapabilities)),
   minimumAge: z.number().int().min(1, 'Minimum age must be at least 1').max(99, 'Minimum age must be 99 or less').optional()
+  ,availabilityScope:z.enum(['ALL_STORES','SELECTED_STORES']),
+  storeIds:z.array(z.string().regex(uuidPattern))
 }).superRefine((values, context) => {
+  if(values.availabilityScope==='SELECTED_STORES'&&!values.storeIds.length)context.addIssue({code:'custom',path:['storeIds'],message:'Select at least one Store'});
   if (values.capabilities.includes('REQUIRE_AGE_VERIFICATION') && values.minimumAge == null) {
     context.addIssue({ code: 'custom', path: ['minimumAge'], message: 'Enter the required minimum age' });
   }
@@ -190,6 +193,7 @@ const emptyProductForm: ProductFormValues = {
   barcodes: [],
   capabilities: ['TRACK_INVENTORY'],
   minimumAge: undefined
+  ,availabilityScope:'ALL_STORES',storeIds:[]
 };
 
 function canViewProducts(roles: UserRole[]) {
@@ -278,6 +282,7 @@ function productFormValues(product: Product): ProductFormValues {
     })),
     capabilities: product.capabilities,
     minimumAge: product.minimumAge ?? undefined
+    ,availabilityScope:product.availabilityScope??'ALL_STORES',storeIds:product.storeIds??[]
   };
 }
 
@@ -327,6 +332,7 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
     })),
     capabilities: Array.from(capabilities),
     minimumAge: capabilities.has('REQUIRE_AGE_VERIFICATION') ? values.minimumAge : undefined
+    ,availabilityScope:values.availabilityScope,storeIds:values.availabilityScope==='ALL_STORES'?[]:values.storeIds
   };
 }
 
@@ -376,6 +382,7 @@ function ProductForm({
   error,
   disabled,
   onSubmit
+  ,stores
 }: {
   categories: CatalogueReference[];
   brands: CatalogueReference[];
@@ -390,6 +397,7 @@ function ProductForm({
   error?: string;
   disabled?: boolean;
   onSubmit: (values: ProductFormValues) => void;
+  stores: AssignedStore[];
 }) {
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -467,6 +475,13 @@ function ProductForm({
     >
       {error ? <Alert severity="error">{error}</Alert> : null}
       {disabled ? <Alert severity="info">This account can view products but cannot change product records.</Alert> : null}
+
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
+        <Stack spacing={1.5}><Typography variant="h6" component="h2">Store Availability</Typography><Typography variant="body2" color="text.secondary">Choose where this product can be sold. Inventory is managed separately for each Store.</Typography>
+          <Controller name="availabilityScope" control={form.control} render={({field})=><Stack direction={{xs:'column',sm:'row'}}><FormControlLabel control={<input type="radio" checked={field.value==='ALL_STORES'} onChange={()=>{field.onChange('ALL_STORES');form.setValue('storeIds',[])}}/>} label="Available at all stores"/><FormControlLabel control={<input type="radio" checked={field.value==='SELECTED_STORES'} onChange={()=>field.onChange('SELECTED_STORES')}/>} label="Selected stores"/></Stack>}/>
+          {form.watch('availabilityScope')==='SELECTED_STORES'?<Controller name="storeIds" control={form.control} render={({field,fieldState})=><><FormGroup row>{stores.map(store=><FormControlLabel key={store.storeId} label={store.storeName} control={<Checkbox checked={field.value.includes(store.storeId)} onChange={(_,checked)=>field.onChange(checked?[...field.value,store.storeId]:field.value.filter(id=>id!==store.storeId))}/>}/>)}</FormGroup>{fieldState.error?<Typography color="error" variant="caption">{fieldState.error.message}</Typography>:null}</>}/>:null}
+        </Stack>
+      </Paper>
 
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
         <Stack spacing={{ xs: 1.5, lg: 2 }}>
@@ -984,6 +999,7 @@ export function ProductsPage() {
                   <TableCell>Category</TableCell>
                   <TableCell>Brand</TableCell>
                   <TableCell align="right">Price</TableCell>
+                  <TableCell>Stores</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
@@ -1003,6 +1019,7 @@ export function ProductsPage() {
                     <TableCell>{referenceLabel(categoryMap.get(product.categoryId ?? ''))}</TableCell>
                     <TableCell>{referenceLabel(brandMap.get(product.brandId ?? ''))}</TableCell>
                     <TableCell align="right">{formatMoney(product.price)}</TableCell>
+                    <TableCell>{product.availabilityScope==='ALL_STORES'?'All Stores':`${product.storeIds?.length??0} Store${product.storeIds?.length===1?'':'s'}`}</TableCell>
                     <TableCell><ProductStatusChip active={product.active} /></TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -1031,7 +1048,7 @@ export function ProductsPage() {
                 ))}
                 {(products.data?.content.length ?? 0) === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={7}>
                       <Typography color="text.secondary" textAlign="center" sx={{ py: 5 }}>
                         No products match the current filters.
                       </Typography>
@@ -1070,13 +1087,8 @@ export function NewProductPage() {
     queryFn: async () => listAssignedStores(await getValidAccessToken()),
     enabled: canCreate
   });
-  const [storeIds, setStoreIds] = React.useState<string[]>([]);
-  React.useEffect(() => {
-    if (stores.data?.length === 1) setStoreIds([stores.data[0].storeId]);
-  }, [stores.data]);
-
   const mutation = useMutation({
-    mutationFn: async (values: ProductFormValues) => createProduct(await getValidAccessToken(), { ...cleanPayload(values), storeIds }),
+    mutationFn: async (values: ProductFormValues) => createProduct(await getValidAccessToken(), cleanPayload(values)),
     onSuccess: async (product) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['products'] }),
@@ -1111,21 +1123,6 @@ export function NewProductPage() {
       {references.brands.isError ? <Alert severity="error">{errorMessage(references.brands.error)}</Alert> : null}
       {references.units.isError ? <Alert severity="error">{errorMessage(references.units.error)}</Alert> : null}
       {stores.isError ? <Alert severity="error">{errorMessage(stores.error)}</Alert> : null}
-      {!stores.isLoading ? (
-        <Paper elevation={0} sx={{ width: '100%', maxWidth: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 1.5, lg: 3 }, minWidth: 0 }}>
-          <Typography variant="h6" component="h2">Assigned stores</Typography>
-          <FormGroup row sx={{ minWidth: 0 }}>
-            {(stores.data ?? []).map((store) => (
-              <FormControlLabel key={store.storeId} label={store.storeName} sx={{ minWidth: 0, '& .MuiFormControlLabel-label': { overflowWrap: 'anywhere' } }} control={(
-                <Checkbox checked={storeIds.includes(store.storeId)} onChange={(_, checked) => setStoreIds((current) => checked
-                  ? [...current, store.storeId]
-                  : current.filter((id) => id !== store.storeId))} />
-              )} />
-            ))}
-          </FormGroup>
-          {storeIds.length === 0 ? <Typography color="error" variant="body2">Select at least one authorized store.</Typography> : null}
-        </Paper>
-      ) : null}
       {!loadingOptions ? (
         <ProductForm
           key="new-product"
@@ -1143,7 +1140,8 @@ export function NewProductPage() {
           submitLabel="Create product"
           loading={mutation.isPending}
           error={mutation.isError ? errorMessage(mutation.error) : undefined}
-          onSubmit={(values) => { if (storeIds.length > 0) mutation.mutate(values); }}
+          onSubmit={(values) => mutation.mutate(values)}
+          stores={stores.data??[]}
         />
       ) : null}
     </Stack>
@@ -1156,6 +1154,7 @@ export function ProductDetailPage() {
   const queryClient = useQueryClient();
   const { canView, canUpdate, canDeactivate } = useProductPermissions();
   const references = useReferenceOptions(canView);
+  const stores=useQuery({queryKey:['assigned-stores','product-edit'],queryFn:async()=>listAssignedStores(await getValidAccessToken()),enabled:canView});
 
   const product = useQuery({
     queryKey: ['product', id],
@@ -1266,6 +1265,7 @@ export function ProductDetailPage() {
         disabled={!canUpdate || statusMutation.isPending}
         error={updateMutation.isError ? errorMessage(updateMutation.error) : undefined}
         onSubmit={(values) => updateMutation.mutate(values)}
+        stores={stores.data??[]}
       />
     </Stack>
   );

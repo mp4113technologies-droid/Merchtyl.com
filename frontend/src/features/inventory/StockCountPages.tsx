@@ -46,6 +46,7 @@ import { useSession } from '../../app/session';
 
 const countLineSchema = z.object({
   productId: z.string().trim().min(1, 'Product is required'),
+  variantId: z.string().optional(),
   countedQuantity: z.coerce.number().min(0, 'Actual count must be zero or greater')
 });
 
@@ -62,7 +63,7 @@ const emptyCountForm: CountFormValues = {
   storeId: '',
   reference: '',
   notes: '',
-  lines: [{ productId: '', countedQuantity: 0 }]
+  lines: [{ productId: '', variantId: '', countedQuantity: 0 }]
 };
 
 function canViewInventory(roles: UserRole[]) {
@@ -93,7 +94,7 @@ function cleanPayload(values: CountFormValues): StockCountPayload {
     storeId: values.storeId,
     reference: values.reference.trim(),
     notes: optionalText(values.notes),
-    lines: values.lines.map((line) => ({ productId: line.productId, countedQuantity: Number(line.countedQuantity) }))
+    lines: values.lines.map((line) => ({ productId: line.productId, variantId: optionalText(line.variantId), countedQuantity: Number(line.countedQuantity) }))
   };
 }
 
@@ -333,7 +334,10 @@ function CountForm({
     queryFn: async () => listInventoryBalances(await getValidAccessToken(), { storeId: selectedStoreId, page: 0, size: 100 }),
     enabled: Boolean(selectedStoreId)
   });
-  const balanceByProduct = new Map((balances.data?.content ?? []).map((balance) => [balance.productId, balance.quantityOnHand]));
+  const balanceKey = (productId: string, variantId?: string | null) => `${productId}:${variantId || 'base'}`;
+  const balanceByProduct = new Map((balances.data?.content ?? []).map((balance) => [balanceKey(balance.productId, balance.variantId), balance.quantityOnHand]));
+  const storeProducts = products.filter((product) => !product.availabilityScope || product.availabilityScope === 'ALL_STORES'
+    || Boolean(selectedStoreId && product.storeIds?.includes(selectedStoreId)));
 
   return (
     <Stack component="form" spacing={3} onSubmit={form.handleSubmit(onSubmit)}>
@@ -345,7 +349,7 @@ function CountForm({
               name="storeId"
               control={form.control}
               render={({ field, fieldState }) => (
-                <TextField {...field} select label="Store" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
+                <TextField {...field} onChange={(event) => { field.onChange(event); form.setValue('lines', [{ productId: '', variantId: '', countedQuantity: 0 }]); }} select label="Store" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
                   {stores.map((store) => <MenuItem key={store.id} value={store.id}>{storeLabel(store)}</MenuItem>)}
                 </TextField>
               )}
@@ -376,32 +380,42 @@ function CountForm({
         <Stack spacing={2}>
           <Stack direction="row" spacing={2} alignItems="center">
             <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>Lines</Typography>
-            <Button type="button" variant="outlined" startIcon={<AddIcon />} onClick={() => lines.append({ productId: '', countedQuantity: 0 })}>
+            <Button type="button" variant="outlined" startIcon={<AddIcon />} onClick={() => lines.append({ productId: '', variantId: '', countedQuantity: 0 })}>
               Add line
             </Button>
           </Stack>
           {lines.fields.map((line, index) => (
             <Paper key={line.id} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
               <Grid container spacing={2} alignItems="flex-start">
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={12} sm={3}>
                   <Controller
                     name={`lines.${index}.productId`}
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <TextField {...field} select label="Product" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
-                        {products.map((product) => <MenuItem key={product.id} value={product.id}>{productLabel(product)}</MenuItem>)}
+                        {storeProducts.map((product) => <MenuItem key={product.id} value={product.id}>{productLabel(product)}</MenuItem>)}
                       </TextField>
                     )}
                   />
                 </Grid>
+                <Grid item xs={12} sm={3}>
+                  <Controller name={`lines.${index}.variantId`} control={form.control} render={({ field }) => {
+                    const product = products.find((candidate) => candidate.id === form.watch(`lines.${index}.productId`));
+                    return <TextField {...field} select label="Variant" fullWidth disabled={!product?.variants.length}>
+                      <MenuItem value="">Base product</MenuItem>
+                      {product?.variants.filter((variant) => variant.active).map((variant) =>
+                        <MenuItem key={variant.id} value={variant.id}>{variant.name} ({variant.sku})</MenuItem>)}
+                    </TextField>;
+                  }} />
+                </Grid>
                 <Grid item xs={6} sm={2}>
                   <Typography variant="overline" color="text.secondary">Current Stock</Typography>
-                  <Typography>{formatQuantity(balanceByProduct.get(form.watch(`lines.${index}.productId`)) ?? 0)}</Typography>
+                  <Typography>{formatQuantity(balanceByProduct.get(balanceKey(form.watch(`lines.${index}.productId`), form.watch(`lines.${index}.variantId`))) ?? 0)}</Typography>
                 </Grid>
                 <Grid item xs={6} sm={3}>
                   <Controller name={`lines.${index}.countedQuantity`} control={form.control} render={({ field, fieldState }) => (
                     <TextField {...field} type="number" label="Actual Count" inputProps={{ min: 0, step: '0.0001' }}
-                      error={Boolean(fieldState.error)} helperText={fieldState.error?.message ?? `Difference: ${formatQuantity(countDifference(field.value, balanceByProduct.get(form.watch(`lines.${index}.productId`)) ?? 0))}`} fullWidth />
+                      error={Boolean(fieldState.error)} helperText={fieldState.error?.message ?? `Difference: ${formatQuantity(countDifference(field.value, balanceByProduct.get(balanceKey(form.watch(`lines.${index}.productId`), form.watch(`lines.${index}.variantId`))) ?? 0))}`} fullWidth />
                   )} />
                 </Grid>
                 <Grid item xs={12} sm={1}>

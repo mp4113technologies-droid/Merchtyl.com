@@ -35,6 +35,8 @@ describe('food order printing', () => {
     expect(html).toContain('+ Extra Cheese');
     expect(html).toContain('Extra sauce');
     expect(html).not.toMatch(/\$|Subtotal|Tax|Total|Payment|Tendered|Change/);
+    expect(html).not.toContain(ticket().saleId);
+    expect(html).not.toContain(ticket().items[0].saleItemId);
   });
 
   it('marks kitchen reprints while preserving the original token', () => {

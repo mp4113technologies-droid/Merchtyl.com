@@ -291,7 +291,7 @@ public class RefundService {
                     refund.getId(),
                     item.getProductName(),
                     refund.getOccurredAt(),
-                    null), authentication);
+                    null,item.getOriginalSaleItem().getVariant()==null?null:item.getOriginalSaleItem().getVariant().getId()), authentication);
         }
     }
 

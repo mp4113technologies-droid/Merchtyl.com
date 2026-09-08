@@ -21,6 +21,11 @@ public record SaleResponse(
         boolean pricesIncludeTax,
         BigDecimal subtotalAmount,
         BigDecimal discountAmount,
+        UUID discountDefinitionId,
+        String discountName,
+        SaleAdjustmentType discountType,
+        BigDecimal discountValue,
+        String discountReason,
         BigDecimal estimatedTaxAmount,
         BigDecimal totalAmount,
         Instant heldAt,
@@ -46,7 +51,7 @@ public record SaleResponse(
             BigDecimal paidAmount, BigDecimal balanceDue, BigDecimal changeDue, boolean paymentComplete,
             Instant createdAt, Instant updatedAt, long version) {
         this(id, storeId, registerId, registerSessionId, createdBy, customerId, status, businessDate,
-                saleChannel, null, currencyCode, pricesIncludeTax, subtotalAmount, discountAmount,
+                saleChannel, null, currencyCode, pricesIncludeTax, subtotalAmount, discountAmount, null, null, null, null, null,
                 estimatedTaxAmount, totalAmount, heldAt, cancelledAt, completedBy, completedAt, items,
                 payments, paidAmount, balanceDue, changeDue, paymentComplete, createdAt, updatedAt, version);
     }
@@ -74,6 +79,7 @@ public record SaleResponse(
                 sale.isPricesIncludeTax(),
                 sale.getSubtotalAmount(),
                 sale.getDiscountAmount(),
+                sale.getDiscountDefinitionId(), sale.getDiscountName(), sale.getDiscountType(), sale.getDiscountValue(), sale.getDiscountReason(),
                 sale.getEstimatedTaxAmount(),
                 sale.getTotalAmount(),
                 sale.getHeldAt(),

@@ -8,6 +8,7 @@ import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.ProductVariant;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.store.Store;
@@ -83,6 +84,7 @@ public class StockAdjustmentService {
 
         for (StockAdjustmentLineRequest lineRequest : requireLines(request.lines())) {
             Product product = findProduct(lineRequest.productId());
+            ProductVariant variant = findVariant(product, lineRequest.variantId());
             BigDecimal quantity = normalizeQuantity(lineRequest.quantity());
             StockAdjustmentType adjustmentType = requireAdjustmentType(lineRequest.adjustmentType());
             BigDecimal quantityDelta = quantity.multiply(BigDecimal.valueOf(adjustmentType.directionMultiplier()))
@@ -90,6 +92,7 @@ public class StockAdjustmentService {
             StockAdjustmentLine line = new StockAdjustmentLine(
                     adjustment,
                     product,
+                    variant,
                     adjustmentType,
                     quantity,
                     quantityDelta);
@@ -102,7 +105,8 @@ public class StockAdjustmentService {
                     adjustment.getId(),
                     adjustment.getReason(),
                     approvedAt,
-                    lineRequest.balanceVersion()), authentication);
+                    lineRequest.balanceVersion(),
+                    variant == null ? null : variant.getId()), authentication);
             line.complete(transaction.id(), transaction.resultingQuantity());
             adjustment.addLine(line);
         }
@@ -144,6 +148,12 @@ public class StockAdjustmentService {
         }
         return productRepository.findById(productId)
                 .orElseThrow(() -> new NotFoundException("Product not found"));
+    }
+
+    private ProductVariant findVariant(Product product, UUID variantId) {
+        if (variantId == null) return null;
+        return product.getVariants().stream().filter(v -> v.getId().equals(variantId)).findFirst()
+                .orElseThrow(() -> new BadRequestException("Variant does not belong to product"));
     }
 
     private User actor(Authentication authentication) {

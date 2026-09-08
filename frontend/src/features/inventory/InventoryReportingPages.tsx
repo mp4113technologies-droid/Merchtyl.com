@@ -384,7 +384,7 @@ function InventoryTable({ rows, emptyLabel }: { rows: InventoryStockReportRow[];
               <TableRow key={`${row.storeId}:${row.productId}`}>
                 <TableCell>
                   <Typography fontWeight={600}>{row.productName}</Typography>
-                  <Typography variant="body2" color="text.secondary">{row.productSku}</Typography>
+                  <Typography variant="body2" color="text.secondary">{row.variantName ? `${row.variantName} · ${row.variantSku}` : row.productSku}</Typography>
                 </TableCell>
                 <TableCell>{row.storeName} ({row.storeCode})</TableCell>
                 <TableCell align="right">
@@ -435,7 +435,7 @@ function ActivityTable({ rows, emptyLabel }: { rows: InventoryActivityReportRow[
                 <TableCell>{formatDate(row.occurredAt)}</TableCell>
                 <TableCell>
                   <Typography fontWeight={600}>{row.productName}</Typography>
-                  <Typography variant="body2" color="text.secondary">{row.productSku}</Typography>
+                  <Typography variant="body2" color="text.secondary">{row.variantName ? `${row.variantName} · ${row.variantSku}` : row.productSku}</Typography>
                 </TableCell>
                 <TableCell>{row.storeName} ({row.storeCode})</TableCell>
                 <TableCell><Chip label={label(row.transactionType)} size="small" /></TableCell>

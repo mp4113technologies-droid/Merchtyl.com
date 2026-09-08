@@ -1,0 +1,5 @@
+CREATE SEQUENCE receipt_number_sequence
+    AS BIGINT
+    START WITH 1000
+    INCREMENT BY 1
+    NO CYCLE;

@@ -3,6 +3,7 @@ package com.merchtyl.product;
 import java.util.UUID;
 
 public record ProductSearchRequest(
+        String query,
         String name,
         String sku,
         String barcode,

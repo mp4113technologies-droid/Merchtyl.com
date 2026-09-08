@@ -16,6 +16,7 @@ import com.merchtyl.sales.Sale;
 import com.merchtyl.sales.SaleItem;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
+import com.merchtyl.sales.SaleAdjustmentType;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.store.Store;
@@ -33,6 +34,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import java.util.Optional;
 import java.util.Set;
 
@@ -51,6 +53,7 @@ class ReceiptServiceTest {
     private final SaleRepository saleRepository = mock(SaleRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final AuditService auditService = mock(AuditService.class);
+    private final ReceiptNumberService receiptNumberService = mock(ReceiptNumberService.class);
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final User cashier = new User("cashier@example.test", "Cashier One", "hash");
     private final ReceiptService service = new ReceiptService(
@@ -59,12 +62,14 @@ class ReceiptServiceTest {
             userRepository,
             auditService,
             objectMapper,
+            receiptNumberService,
             Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
     void setUp() {
         when(userRepository.findByEmailIgnoreCase("cashier@example.test")).thenReturn(Optional.of(cashier));
         when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(receiptNumberService.nextNumber()).thenReturn("1024");
     }
 
     @Test
@@ -75,7 +80,7 @@ class ReceiptServiceTest {
 
         ReceiptResponse response = service.getForSale(sale.getId(), auth());
 
-        assertThat(response.receiptNumber()).startsWith("RCT-2026-07-27-");
+        assertThat(response.receiptNumber()).isEqualTo("1024");
         assertThat(response.generatedAt()).isEqualTo(sale.getCompletedAt());
         assertThat(response.document().brandName()).isEqualTo("Merchtyl");
         assertThat(response.document().store().name()).isEqualTo("Main Store");
@@ -86,7 +91,9 @@ class ReceiptServiceTest {
         assertThat(response.document().items().getFirst().completedProductPrice()).isEqualByComparingTo("5.0000");
         assertThat(response.document().items().getFirst().completedProductCapabilities()).contains("TRACK_INVENTORY");
         assertThat(response.document().discountAmount()).isEqualByComparingTo("1.00");
+        assertThat(response.document().discountName()).isEqualTo("Staff Discount");
         assertThat(response.document().taxSummaries()).hasSize(1);
+        assertThat(response.document().taxSummaries().getFirst().taxableAmount()).isEqualByComparingTo("9.00");
         assertThat(response.document().taxSummaries().getFirst().taxAmount()).isEqualByComparingTo("1.35");
         assertThat(response.document().payments().getFirst().method()).isEqualTo(PaymentMethod.CASH);
         assertThat(response.document().cashTendered()).isEqualByComparingTo("20.00");
@@ -162,9 +169,11 @@ class ReceiptServiceTest {
         invoke(item, "snapshotForCompletion");
         invoke(sale, "addItem", new Class<?>[]{SaleItem.class}, item);
         invoke(item, "setCalculatedAmounts", new Class<?>[]{BigDecimal.class, BigDecimal.class, BigDecimal.class},
-                new BigDecimal("9.00"), new BigDecimal("1.35"), new BigDecimal("10.35"));
+                new BigDecimal("10.00"), new BigDecimal("1.35"), new BigDecimal("10.35"));
         invoke(sale, "setTotals", new Class<?>[]{BigDecimal.class, BigDecimal.class, BigDecimal.class, BigDecimal.class},
                 new BigDecimal("10.00"), new BigDecimal("1.00"), new BigDecimal("1.35"), new BigDecimal("10.35"));
+        invoke(sale, "applyDiscountSnapshot", new Class<?>[]{UUID.class, String.class, SaleAdjustmentType.class, BigDecimal.class, String.class},
+                UUID.randomUUID(), "Staff Discount", SaleAdjustmentType.DISCOUNT_PERCENTAGE, new BigDecimal("10"), null);
         invoke(sale, "addPayment", new Class<?>[]{Class.forName("com.merchtyl.sales.Payment")},
                 payment(sale, new BigDecimal("10.35"), new BigDecimal("20.00"), new BigDecimal("10.65")));
         invoke(sale, "complete", new Class<?>[]{User.class, Instant.class}, cashier, NOW);

@@ -2,6 +2,7 @@ package com.merchtyl.inventory;
 
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
+import com.merchtyl.product.ProductVariant;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -26,6 +27,10 @@ public class StockAdjustmentLine extends BaseUuidEntity {
     @JoinColumn(name = "product_id", nullable = false, foreignKey = @ForeignKey(name = "fk_stock_adjustment_lines_product"))
     private Product product;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "variant_id", foreignKey = @ForeignKey(name = "fk_stock_adjustment_lines_variant"))
+    private ProductVariant variant;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
     private StockAdjustmentType adjustmentType;
@@ -48,11 +53,13 @@ public class StockAdjustmentLine extends BaseUuidEntity {
     public StockAdjustmentLine(
             StockAdjustment adjustment,
             Product product,
+            ProductVariant variant,
             StockAdjustmentType adjustmentType,
             BigDecimal quantity,
             BigDecimal quantityDelta) {
         this.adjustment = adjustment;
         this.product = product;
+        this.variant = variant;
         this.adjustmentType = adjustmentType;
         this.quantity = quantity;
         this.quantityDelta = quantityDelta;
@@ -71,6 +78,8 @@ public class StockAdjustmentLine extends BaseUuidEntity {
     public Product getProduct() {
         return product;
     }
+
+    public ProductVariant getVariant() { return variant; }
 
     public StockAdjustmentType getAdjustmentType() {
         return adjustmentType;

@@ -480,7 +480,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <tr>
       <td>
         <strong>${escapeHtml(item.productName)}</strong><br>
-        <span class="muted">${escapeHtml(item.productSku)}</span>
+        ${receipt.tokenNumber ? '' : `<span class="muted">${escapeHtml(item.productSku)}</span>`}
       </td>
       <td class="qty">${formatQuantity(item.quantity)}</td>
       <td class="money">${formatMoney(item.lineTotal, receipt.currencyCode)}</td>
@@ -505,7 +505,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
   return `
     <h1>${escapeHtml(receipt.brandName)}</h1>
     <div class="center muted">${escapeHtml(receipt.brandTagline)}</div>
-    ${receipt.tokenNumber ? `<div class="token">TOKEN ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
+    ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="rule"></div>
     <div class="center">
       <strong>${escapeHtml(receipt.store.name)}</strong><br>
@@ -514,8 +514,8 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
       ${receipt.store.email ? `<br>${escapeHtml(receipt.store.email)}` : ''}
     </div>
     <div class="rule"></div>
-    <div class="row"><span>Receipt</span><strong>${escapeHtml(receipt.receiptNumber)}</strong></div>
-    <div class="row"><span>Sale</span><strong>${escapeHtml(receipt.saleNumber)}</strong></div>
+    <div class="row"><span>Receipt</span><strong>#${escapeHtml(receipt.receiptNumber)}</strong></div>
+    ${receipt.tokenNumber ? `<div class="row"><span>Order</span><strong>${escapeHtml(receipt.tokenNumber)}</strong></div>` : ''}
     <div class="row"><span>Date</span><strong>${escapeHtml(new Date(receipt.completedAt).toLocaleString())}</strong></div>
     <div class="row"><span>Register</span><strong>${escapeHtml(receipt.register.name)}</strong></div>
     <div class="row"><span>Cashier</span><strong>${escapeHtml(receipt.cashier.displayName)}</strong></div>
@@ -528,7 +528,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     </table>
     <div class="rule"></div>
     <div class="row"><span>Subtotal</span><strong>${formatMoney(receipt.subtotalAmount, receipt.currencyCode)}</strong></div>
-    <div class="row"><span>Discounts</span><strong>${formatMoney(receipt.discountAmount, receipt.currencyCode)}</strong></div>
+    <div class="row"><span>${escapeHtml(receipt.discountName || 'Discount')}</span><strong>${receipt.discountAmount > 0 ? '-' : ''}${formatMoney(receipt.discountAmount, receipt.currencyCode)}</strong></div>
     ${taxRows}
     <div class="row total"><span>Total</span><strong>${formatMoney(receipt.totalAmount, receipt.currencyCode)}</strong></div>
     <div class="rule"></div>
@@ -536,7 +536,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="row"><span>Cash tendered</span><strong>${formatMoney(receipt.cashTendered, receipt.currencyCode)}</strong></div>
     <div class="row"><span>Change</span><strong>${formatMoney(receipt.changeDue, receipt.currencyCode)}</strong></div>
     <div class="rule"></div>
-    ${receipt.tokenNumber ? `<div class="token">TOKEN ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
+    ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="center">Thank you</div>
   `;
 }

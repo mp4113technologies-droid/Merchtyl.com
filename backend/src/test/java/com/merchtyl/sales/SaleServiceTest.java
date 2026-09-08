@@ -21,6 +21,9 @@ import com.merchtyl.inventory.InventoryTransactionResponse;
 import com.merchtyl.inventory.InventoryTransactionType;
 import com.merchtyl.foodmenu.FoodMenuItem;
 import com.merchtyl.foodmenu.FoodMenuItemRepository;
+import com.merchtyl.discount.DiscountDefinition;
+import com.merchtyl.discount.DiscountEngine;
+import com.merchtyl.discount.DiscountDefinitionService;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductCapability;
 import com.merchtyl.product.ProductRepository;
@@ -88,7 +91,9 @@ class SaleServiceTest {
     private final InventoryService inventoryService = mock(InventoryService.class);
     private final CashLedgerService cashLedgerService = mock(CashLedgerService.class);
     private final FoodMenuItemRepository foodMenuItemRepository = mock(FoodMenuItemRepository.class);
+    private final SaleAdjustmentRepository saleAdjustmentRepository = mock(SaleAdjustmentRepository.class);
     private final RegisterCapabilityService registerCapabilityService = mock(RegisterCapabilityService.class);
+    private final DiscountDefinitionService discountDefinitionService = mock(DiscountDefinitionService.class);
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final TransactionOperations transactions = new TransactionOperations() {
         @Override
@@ -138,6 +143,9 @@ class SaleServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(service, "foodMenuItemRepository", foodMenuItemRepository);
         ReflectionTestUtils.setField(service, "registerCapabilityService", registerCapabilityService);
+        ReflectionTestUtils.setField(service, "saleAdjustmentRepository", saleAdjustmentRepository);
+        ReflectionTestUtils.setField(service, "discountDefinitionService", discountDefinitionService);
+        ReflectionTestUtils.setField(service, "discountEngine", new DiscountEngine());
         when(store.getId()).thenReturn(STORE_ID);
         when(store.getTimezone()).thenReturn("America/Los_Angeles");
         when(store.getCurrencyCode()).thenReturn("USD");
@@ -222,6 +230,83 @@ class SaleServiceTest {
 
         assertThat(response.items()).hasSize(2);
         verify(taxEngine, org.mockito.Mockito.times(2)).calculate(any(TaxCalculationRequest.class), any());
+    }
+
+    @Test
+    void restaurantCheckoutAppliesPercentageDiscountBeforeAuthoritativeTax() {
+        FoodMenuItem menuItem = discountableMenuItem(new BigDecimal("12.00"));
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.of(menuItem));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenAnswer(invocation -> {
+            TaxCalculationRequest request = invocation.getArgument(0);
+            assertThat(request.discountAmount()).isEqualByComparingTo("2.40");
+            return taxResponse(new BigDecimal("21.60"), new BigDecimal("3.24"), new BigDecimal("24.84"));
+        });
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(null, null, MENU_ITEM_ID, new BigDecimal("2"), false)),
+                new SaleCheckoutDiscountRequest(SaleAdjustmentType.DISCOUNT_PERCENTAGE, new BigDecimal("10"), "Employee meal")), discountAuth());
+
+        assertThat(response.subtotalAmount()).isEqualByComparingTo("24.00");
+        assertThat(response.discountAmount()).isEqualByComparingTo("2.40");
+        assertThat(response.estimatedTaxAmount()).isEqualByComparingTo("3.24");
+        assertThat(response.totalAmount()).isEqualByComparingTo("24.84");
+        verify(saleAdjustmentRepository).save(any(SaleAdjustment.class));
+    }
+
+    @Test
+    void restaurantCheckoutResolvesSavedDiscountAndSnapshotsItsCurrentDefinition() {
+        UUID definitionId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        FoodMenuItem menuItem = discountableMenuItem(new BigDecimal("12.00"));
+        DiscountDefinition definition = mock(DiscountDefinition.class);
+        when(store.getTenantId()).thenReturn(tenantId);
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.of(menuItem));
+        when(discountDefinitionService.requireActive(definitionId, tenantId)).thenReturn(definition);
+        when(definition.getId()).thenReturn(definitionId);
+        when(definition.getName()).thenReturn("Staff Discount");
+        when(definition.getType()).thenReturn(SaleAdjustmentType.DISCOUNT_PERCENTAGE);
+        when(definition.getValue()).thenReturn(new BigDecimal("10"));
+        when(definition.isActive()).thenReturn(true);
+        when(definition.isAllStores()).thenReturn(true);
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenReturn(taxResponse(new BigDecimal("10.80"), new BigDecimal("1.62"), new BigDecimal("12.42")));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(null, null, MENU_ITEM_ID, BigDecimal.ONE, false)),
+                new SaleCheckoutDiscountRequest(definitionId, null, null, null)), discountAuth());
+
+        assertThat(response.discountDefinitionId()).isEqualTo(definitionId);
+        assertThat(response.discountName()).isEqualTo("Staff Discount");
+        assertThat(response.discountValue()).isEqualByComparingTo("10");
+        verify(discountDefinitionService).requireActive(definitionId, tenantId);
+    }
+
+    @Test
+    void restaurantCheckoutAppliesFixedDiscountAndRejectsInvalidOrUnauthorizedDiscounts() {
+        FoodMenuItem menuItem = discountableMenuItem(new BigDecimal("12.00"));
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.of(menuItem));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenAnswer(invocation -> {
+            TaxCalculationRequest request = invocation.getArgument(0);
+            return taxResponse(new BigDecimal("7.00"), new BigDecimal("1.05"), new BigDecimal("8.05"));
+        });
+        List<SaleCheckoutItemRequest> items = List.of(new SaleCheckoutItemRequest(null, null, MENU_ITEM_ID, BigDecimal.ONE, false));
+
+        SaleResponse fixed = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", items,
+                new SaleCheckoutDiscountRequest(SaleAdjustmentType.DISCOUNT_AMOUNT, new BigDecimal("5.00"), null)), discountAuth());
+        assertThat(fixed.discountAmount()).isEqualByComparingTo("5.00");
+        assertThat(fixed.totalAmount()).isEqualByComparingTo("8.05");
+
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", items,
+                new SaleCheckoutDiscountRequest(SaleAdjustmentType.DISCOUNT_AMOUNT, new BigDecimal("12.01"), null)), discountAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("DISCOUNT_EXCEEDS_ELIGIBLE_SUBTOTAL");
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", items,
+                new SaleCheckoutDiscountRequest(SaleAdjustmentType.DISCOUNT_PERCENTAGE, new BigDecimal("100.01"), null)), discountAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("DISCOUNT_PERCENTAGE_EXCEEDS_MAXIMUM");
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", items,
+                new SaleCheckoutDiscountRequest(SaleAdjustmentType.DISCOUNT_AMOUNT, BigDecimal.ZERO, null)), discountAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("DISCOUNT_VALUE_INVALID");
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", items,
+                new SaleCheckoutDiscountRequest(SaleAdjustmentType.DISCOUNT_AMOUNT, BigDecimal.ONE, null)), cashierAuth()))
+                .isInstanceOf(ForbiddenOperationException.class).hasMessage("POS_SALE_DISCOUNT is required");
     }
 
     @Test
@@ -402,7 +487,7 @@ class SaleServiceTest {
     }
 
     @Test
-    void paymentValidationRejectsOverpayInsufficientCashAndMissingCardReference() {
+    void paymentValidationRejectsOverpayAndInsufficientCashWhileCardReferenceRemainsOptional() {
         Sale sale = payableSale();
         when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
 
@@ -413,7 +498,7 @@ class SaleServiceTest {
                 "auth-1",
                 null), cashierAuth()))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("amount cannot exceed remaining balance due");
+                .hasMessage("PAYMENT_AMOUNT_EXCEEDS_REMAINING");
 
         assertThatThrownBy(() -> service.recordPayment(sale.getId(), new SalePaymentRequest(
                 PaymentMethod.CASH,
@@ -424,14 +509,64 @@ class SaleServiceTest {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("cashTendered must be greater than or equal to amount");
 
-        assertThatThrownBy(() -> service.recordPayment(sale.getId(), new SalePaymentRequest(
+        SaleResponse debit = service.recordPayment(sale.getId(), new SalePaymentRequest(
                 PaymentMethod.DEBIT,
                 new BigDecimal("5.00"),
                 null,
                 null,
-                null), cashierAuth()))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessage("reference is required for manual debit and credit payments");
+                null), cashierAuth());
+        assertThat(debit.paidAmount()).isEqualByComparingTo("5.00");
+        assertThat(debit.balanceDue()).isEqualByComparingTo("6.50");
+    }
+
+    @Test
+    void cashDebitCashSplitTenderPreservesExactDecimalBalanceUntilFinalPayment() {
+        Sale sale = payableSale();
+        sale.getItems().getFirst().setCalculatedAmounts(new BigDecimal("51.75"), BigDecimal.ZERO.setScale(2), new BigDecimal("51.75"));
+        sale.setTotals(new BigDecimal("51.75"), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), new BigDecimal("51.75"));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse first = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("20.00"), new BigDecimal("20.00"), null, null), cashierAuth());
+        assertThat(first.status()).isEqualTo(SaleStatus.DRAFT);
+        assertThat(first.paidAmount()).isEqualByComparingTo("20.00");
+        assertThat(first.balanceDue()).isEqualByComparingTo("31.75");
+        assertThat(first.paymentComplete()).isFalse();
+
+        SaleResponse second = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("20.25"), null, null, null), cashierAuth());
+        assertThat(second.payments()).hasSize(2);
+        assertThat(second.status()).isEqualTo(SaleStatus.DRAFT);
+        assertThat(second.paidAmount()).isEqualByComparingTo("40.25");
+        assertThat(second.balanceDue()).isEqualByComparingTo("11.50");
+        assertThat(second.paymentComplete()).isFalse();
+
+        SaleResponse third = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("11.50"), new BigDecimal("20.00"), null, null), cashierAuth());
+        assertThat(third.payments()).hasSize(3);
+        assertThat(third.paidAmount()).isEqualByComparingTo("51.75");
+        assertThat(third.balanceDue()).isEqualByComparingTo("0.00");
+        assertThat(third.changeDue()).isEqualByComparingTo("8.50");
+        assertThat(third.paymentComplete()).isTrue();
+        assertThat(third.status()).isEqualTo(SaleStatus.DRAFT);
+
+        assertThatThrownBy(() -> service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CREDIT, new BigDecimal("1.00"), null, null, null), cashierAuth()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("SALE_ALREADY_FULLY_PAID");
+    }
+
+    @Test
+    void zeroAndNegativePaymentsAreRejectedWithStableCode() {
+        Sale sale = payableSale();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        for (String invalid : List.of("0.00", "-0.01")) {
+            assertThatThrownBy(() -> service.recordPayment(sale.getId(), new SalePaymentRequest(
+                    PaymentMethod.OTHER, new BigDecimal(invalid), null, null, null), cashierAuth()))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasMessage("PAYMENT_AMOUNT_INVALID");
+        }
     }
 
     @Test
@@ -637,6 +772,15 @@ class SaleServiceTest {
                 null);
     }
 
+    private FoodMenuItem discountableMenuItem(BigDecimal price) {
+        FoodMenuItem menuItem = mock(FoodMenuItem.class);
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(menuItem.getProduct()).thenReturn(product);
+        when(menuItem.getPrice()).thenReturn(price);
+        when(menuItem.isAvailable()).thenReturn(true);
+        return menuItem;
+    }
+
     private static InventoryTransactionResponse inventoryResponse(Sale sale) {
         return new InventoryTransactionResponse(
                 UUID.fromString("00000000-0000-0000-0000-000000000930"),
@@ -660,5 +804,13 @@ class SaleServiceTest {
                 "cashier@example.test",
                 "n/a",
                 List.of(new SimpleGrantedAuthority("ROLE_CASHIER")));
+    }
+
+    private static UsernamePasswordAuthenticationToken discountAuth() {
+        return new UsernamePasswordAuthenticationToken(
+                "cashier@example.test",
+                "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_KITCHEN"),
+                        new SimpleGrantedAuthority("POS_SALE_DISCOUNT")));
     }
 }

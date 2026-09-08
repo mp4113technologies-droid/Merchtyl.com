@@ -2,6 +2,7 @@ package com.merchtyl.inventory;
 
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
+import com.merchtyl.product.ProductVariant;
 import com.merchtyl.store.Store;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -31,6 +32,10 @@ public class InventoryTransaction extends BaseUuidEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "product_id", nullable = false, updatable = false, foreignKey = @ForeignKey(name = "fk_inventory_transactions_product"))
     private Product product;
+
+    @ManyToOne(fetch=FetchType.LAZY)
+    @JoinColumn(name="variant_id",updatable=false,foreignKey=@ForeignKey(name="fk_inventory_transactions_variant"))
+    private ProductVariant variant;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40, updatable = false)
@@ -73,6 +78,7 @@ public class InventoryTransaction extends BaseUuidEntity {
         this.balance = balance;
         this.store = balance.getStore();
         this.product = balance.getProduct();
+        this.variant = balance.getVariant();
         this.transactionType = transactionType;
         this.quantityDelta = quantityDelta;
         this.resultingQuantity = resultingQuantity;
@@ -95,6 +101,7 @@ public class InventoryTransaction extends BaseUuidEntity {
     public Product getProduct() {
         return product;
     }
+    public ProductVariant getVariant(){return variant;}
 
     public InventoryTransactionType getTransactionType() {
         return transactionType;

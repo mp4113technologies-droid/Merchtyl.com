@@ -15,6 +15,7 @@ import type {
 
 const STORE_ID = '00000000-0000-0000-0000-000000000901';
 const PRODUCT_ID = '00000000-0000-0000-0000-000000000902';
+const VARIANT_ID = '00000000-0000-0000-0000-000000000912';
 const COUNT_ID = '00000000-0000-0000-0000-000000000903';
 const LINE_ID = '00000000-0000-0000-0000-000000000904';
 
@@ -82,7 +83,7 @@ function product(): Product {
     decimalQuantityAllowed: false,
     imageUrl: null,
     taxCategoryId: null,
-    variants: [],
+    variants: [{ id: VARIANT_ID, sku: 'COFFEE-LARGE', name: 'Large', description: null, cost: 1.5, price: 4, active: true, createdAt: '2026-07-27T12:00:00Z', updatedAt: '2026-07-27T12:00:00Z', version: 0 }],
     barcodes: [],
     capabilities: ['TRACK_INVENTORY'],
     createdAt: '2026-07-27T12:00:00Z',
@@ -228,7 +229,7 @@ describe('Stock count pages', () => {
         return jsonResponse(productPage([product()]));
       }
       if (url.pathname.endsWith('/api/v1/inventory/balances')) {
-        return jsonResponse({ content: [{ productId: PRODUCT_ID, quantityOnHand: 10 }], page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true });
+        return jsonResponse({ content: [{ productId: PRODUCT_ID, variantId: VARIANT_ID, quantityOnHand: 10 }], page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true });
       }
       if (url.pathname.endsWith('/api/v1/inventory/counts') && init?.method === 'POST') {
         return jsonResponse(count(), 201);
@@ -248,6 +249,8 @@ describe('Stock count pages', () => {
     await userEvent.type(screen.getByLabelText('Notes'), 'Back shelf count');
     await userEvent.click(screen.getByLabelText('Product'));
     await userEvent.click(await screen.findByRole('option', { name: 'House Coffee (COFFEE-12OZ)' }));
+    await userEvent.click(screen.getByLabelText('Variant'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Large (COFFEE-LARGE)' }));
     const actualCount = screen.getByLabelText('Actual Count');
     await userEvent.clear(actualCount);
     await userEvent.type(actualCount, '7');
@@ -264,6 +267,7 @@ describe('Stock count pages', () => {
           && payload.reference === 'Cycle count A'
           && payload.notes === 'Back shelf count'
           && payload.lines[0].productId === PRODUCT_ID
+          && payload.lines[0].variantId === VARIANT_ID
           && payload.lines[0].countedQuantity === 7;
       })).toBe(true);
     });

@@ -7,6 +7,10 @@ import java.util.UUID;
 
 public record StockCountLineCreateRequest(
         @NotNull UUID productId,
-        BigDecimal countedQuantity
+        BigDecimal countedQuantity,
+        UUID variantId
 ) {
+    public StockCountLineCreateRequest(UUID productId, BigDecimal countedQuantity) {
+        this(productId, countedQuantity, null);
+    }
 }

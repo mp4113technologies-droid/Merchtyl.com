@@ -54,6 +54,7 @@ import {
   holdSale,
   listDevices,
   listProducts,
+  listActiveStoreDiscounts,
   lookupPosBarcode,
   listRegisters,
   listSales,
@@ -63,7 +64,7 @@ import {
   reprintSaleReceipt,
   resumeSale,
 } from '../../api/client';
-import type { Device, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, Store } from '../../api/types';
+import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import {
@@ -86,6 +87,8 @@ import {
   saveReceiptPrinterPreferences,
   type ReceiptPrinterPreferences
 } from './receiptPrinter';
+import { cashDenominations, centsToInput, decimalInputToCents, moneyToCents } from './paymentDenominations';
+import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Request failed';
@@ -190,8 +193,32 @@ function ProductSearchResults({
   onAdd: (product: Product) => void;
   disabled: boolean;
 }) {
-  if (products.length === 0) {
-    return <Alert severity="info">No products match the current search.</Alert>;
+  type SearchResultRow = {
+    key: string;
+    product: Product;
+    variantId?: string;
+    variantName: string | null;
+    sku: string;
+    price: number;
+  };
+  const rows = products.flatMap<SearchResultRow>((product) => {
+    const activeVariants = product.variants.filter((variant) => variant.active);
+    if (activeVariants.length === 0) {
+      if (product.variants.length > 0) return [];
+      return [{ key: product.id, product, variantId: undefined, variantName: null, sku: product.sku, price: product.price }];
+    }
+    return activeVariants.map((variant) => ({
+      key: `${product.id}:${variant.id}`,
+      product,
+      variantId: variant.id,
+      variantName: variant.name,
+      sku: variant.sku,
+      price: variant.price
+    }));
+  });
+
+  if (rows.length === 0) {
+    return <Alert severity="info">No products found in this store.</Alert>;
   }
 
   return (
@@ -205,18 +232,27 @@ function ProductSearchResults({
         </TableRow>
       </TableHead>
       <TableBody>
-        {products.map((product) => (
-          <TableRow key={product.id} hover>
+        {rows.map((row) => (
+          <TableRow key={row.key} hover>
             <TableCell>
-              <Typography fontWeight={700}>{product.name}</Typography>
-              <Typography variant="body2" color="text.secondary">{product.sellableType.replaceAll('_', ' ')}</Typography>
+              <Typography fontWeight={700}>{row.product.name}</Typography>
+              <Typography variant="body2" color="text.secondary">{row.variantName ?? row.product.sellableType.replaceAll('_', ' ')}</Typography>
             </TableCell>
-            <TableCell sx={{ fontFamily: 'monospace' }}>{product.sku}</TableCell>
-            <TableCell align="right">{money(product.price, currencyCode)}</TableCell>
+            <TableCell sx={{ fontFamily: 'monospace' }}>{row.sku}</TableCell>
+            <TableCell align="right">{money(row.price, currencyCode)}</TableCell>
             <TableCell align="right">
-              <Tooltip title={`Add ${product.name}`}>
+              <Tooltip title={`Add ${row.product.name}${row.variantName ? ` — ${row.variantName}` : ''}`}>
                 <span>
-                  <IconButton aria-label={`Add ${product.name}`} onClick={() => onAdd(product)} disabled={disabled || !product.active}>
+                  <IconButton
+                    aria-label={`Add ${row.product.name}${row.variantName ? ` — ${row.variantName}` : ''}`}
+                    onClick={() => onAdd({
+                      ...row.product,
+                      sku: row.sku,
+                      price: row.price,
+                      variants: row.variantId ? row.product.variants.filter((variant) => variant.id === row.variantId) : []
+                    })}
+                    disabled={disabled || !row.product.active}
+                  >
                     <AddCircleOutlineIcon />
                   </IconButton>
                 </span>
@@ -334,9 +370,9 @@ function CartLines({
   );
 }
 
-function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0 }: { sale: Sale | null; currencyCode: string; provisionalSubtotal?: number }) {
+function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount }: { sale: Sale | null; currencyCode: string; provisionalSubtotal?: number; discount?: OrderDiscount | null }) {
   const subtotal = sale?.subtotalAmount ?? provisionalSubtotal;
-  const discount = sale?.discountAmount ?? 0;
+  const discountAmount = sale?.discountAmount ?? (discount ? Math.min(provisionalSubtotal,discount.type==='DISCOUNT_PERCENTAGE'?provisionalSubtotal*discount.value/100:discount.value):0);
   const tax = sale?.estimatedTaxAmount ?? 0;
   const total = sale?.totalAmount ?? 0;
 
@@ -348,8 +384,8 @@ function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0 }: { sale: Sa
           <Typography>{money(subtotal, currencyCode)}</Typography>
         </Stack>
         <Stack direction="row" justifyContent="space-between">
-          <Typography color="text.secondary">Discount</Typography>
-          <Typography>{money(discount, currencyCode)}</Typography>
+          <Typography color="text.secondary">{sale?.discountName ?? discount?.name ?? 'Discount'}</Typography>
+          <Typography>{money(-discountAmount, currencyCode)}</Typography>
         </Stack>
         <Stack direction="row" justifyContent="space-between">
           <Typography color="text.secondary">Estimated tax</Typography>
@@ -373,6 +409,42 @@ const paymentMethods: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'OTHER', label: 'Other' }
 ];
 
+function CashPaymentPanel({ currencyCode, cashReceivedCents, manualCashInput, busy, onManualInput, onKeypad, onAdd, onExact }: {
+  currencyCode: string; cashReceivedCents: number; manualCashInput: string; busy: boolean;
+  onManualInput: (value: string) => void; onKeypad: (value: string) => void;
+  onAdd: (cents: number) => void; onExact: () => void;
+}) {
+  const denominations = cashDenominations(currencyCode);
+  return <Paper variant="outlined" sx={{ p: 1.5, height: '100%' }}><Stack spacing={1}>
+    <Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="subtitle2">Cash received</Typography><Typography variant="h4" color="success.main" fontWeight={800}>{money(cashReceivedCents / 100, currencyCode)}</Typography></Box><Button variant="outlined" onClick={onExact} disabled={busy} sx={{ minHeight: 44 }}>Exact</Button></Stack>
+    {denominations ? <>
+      <Typography variant="caption" color="text.secondary">Bills</Typography>
+      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>{denominations.bills.map(item => <Button key={item.label} variant="outlined" disabled={busy} onClick={() => onAdd(item.cents)} sx={{ minHeight: 44, minWidth: 62 }}>{item.label}</Button>)}</Stack>
+      <Typography variant="caption" color="text.secondary">Coins</Typography>
+      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>{denominations.coins.map(item => <Button key={item.label} variant="outlined" disabled={busy} onClick={() => onAdd(item.cents)} sx={{ minHeight: 44, minWidth: 62 }}>{item.label}</Button>)}</Stack>
+    </> : <Alert severity="info">Use manual amount entry for {currencyCode} cash.</Alert>}
+    <Typography variant="caption" color="text.secondary" textAlign="center">Or enter amount</Typography>
+    <TextField label="Cash received" value={manualCashInput} disabled={busy} onChange={event => onManualInput(event.target.value)} inputProps={{ inputMode: 'decimal' }} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} size="small" />
+    <Grid container spacing={0.5} aria-label="Cash received keypad">{['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', '0', '00', '.'].map(value => <Grid item xs={3} key={value}><Button fullWidth variant="text" disabled={busy} onClick={() => onKeypad(value)} sx={{ minHeight: 36 }}>{value === 'back' ? '⌫' : value === 'clear' ? 'C' : value}</Button></Grid>)}</Grid>
+  </Stack></Paper>;
+}
+
+function PaymentSummary({ sale, method, currencyCode, cashReceived, appliedAmount, changeDue, balanceDue }: {
+  sale: Sale | null; method: PaymentMethod; currencyCode: string; cashReceived: number;
+  appliedAmount: number; changeDue: number; balanceDue: number;
+}) {
+  const remaining = roundedMoney(Math.max(0, balanceDue - appliedAmount));
+  return <Paper variant="outlined" sx={{ p: 1.5, height: '100%', bgcolor: 'action.hover' }}><Stack spacing={1}>
+    <Typography variant="subtitle1" fontWeight={800}>Payment summary</Typography>
+    <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Total</Typography><Typography fontWeight={700}>{money(sale?.totalAmount ?? 0, currencyCode)}</Typography></Stack>
+    <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Paid</Typography><Typography>{money(sale?.paidAmount ?? 0, currencyCode)}</Typography></Stack>
+    <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">{method === 'CASH' ? 'Cash received' : 'This payment'}</Typography><Typography>{money(method === 'CASH' ? cashReceived : appliedAmount, currencyCode)}</Typography></Stack>
+    {method === 'CASH' ? <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Cash applied</Typography><Typography>{money(appliedAmount, currencyCode)}</Typography></Stack> : null}
+    <Divider />
+    <Stack direction="row" justifyContent="space-between"><Typography fontWeight={800}>{changeDue > 0 ? 'Change due' : 'Remaining'}</Typography><Typography variant="h6" color={changeDue > 0 ? 'success.main' : 'text.primary'}>{money(changeDue > 0 ? changeDue : remaining, currencyCode)}</Typography></Stack>
+  </Stack></Paper>;
+}
+
 export function PaymentDialog({
   open,
   sale,
@@ -387,10 +459,12 @@ export function PaymentDialog({
   onSubmit: (payment: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => void;
 }) {
   const balanceDue = roundedMoney(Math.max(0, sale?.balanceDue ?? sale?.totalAmount ?? 0));
+  const balanceDueCents = moneyToCents(balanceDue);
   const currencyCode = sale?.currencyCode ?? 'USD';
   const [method, setMethod] = React.useState<PaymentMethod>('CASH');
   const [amount, setAmount] = React.useState('');
-  const [cashTendered, setCashTendered] = React.useState('');
+  const [cashReceivedCents, setCashReceivedCents] = React.useState(0);
+  const [manualCashInput, setManualCashInput] = React.useState('0.00');
   const [reference, setReference] = React.useState('');
   const [notes, setNotes] = React.useState('');
 
@@ -398,19 +472,20 @@ export function PaymentDialog({
     if (open) {
       setMethod('CASH');
       setAmount(balanceDue > 0 ? balanceDue.toFixed(2) : '');
-      setCashTendered(balanceDue > 0 ? balanceDue.toFixed(2) : '');
+      setCashReceivedCents(0);
+      setManualCashInput('0.00');
       setReference('');
       setNotes('');
     }
   }, [balanceDue, open]);
 
   const parsedAmount = Number(amount);
-  const parsedCashTendered = Number(cashTendered);
-  const appliedAmount = method === 'CASH' && Number.isFinite(parsedCashTendered)
-    ? roundedMoney(Math.min(Math.max(0, parsedCashTendered), balanceDue))
+  const cashReceived = cashReceivedCents / 100;
+  const appliedAmount = method === 'CASH'
+    ? Math.min(cashReceivedCents, balanceDueCents) / 100
     : roundedMoney(parsedAmount);
-  const changeDue = method === 'CASH' && Number.isFinite(parsedCashTendered)
-    ? roundedMoney(Math.max(0, parsedCashTendered - balanceDue))
+  const changeDue = method === 'CASH'
+    ? Math.max(0, cashReceivedCents - balanceDueCents) / 100
     : 0;
   const validation = (() => {
     if (!sale || sale.items.length === 0) {
@@ -422,24 +497,40 @@ export function PaymentDialog({
     if (appliedAmount > balanceDue) {
       return 'Payment amount cannot exceed the remaining balance.';
     }
-    if (method === 'CASH' && (!Number.isFinite(parsedCashTendered) || parsedCashTendered <= 0)) {
-      return 'Cash tendered must be greater than zero.';
+    if (method === 'CASH' && cashReceivedCents <= 0) {
+      return 'Cash received must be greater than zero.';
     }
     return null;
   })();
 
+  function setCashFromInput(value: string) {
+    if (!/^\d*(?:\.\d{0,2})?$/.test(value)) return;
+    setManualCashInput(value);
+    setCashReceivedCents(decimalInputToCents(value) ?? 0);
+  }
+
   function appendCashInput(value: string) {
-    setCashTendered((current) => {
+    setManualCashInput((current) => {
+      let next: string;
       if (value === 'clear') {
-        return '';
+        next = '0.00';
+      } else if (value === 'back') {
+        next = current.slice(0, -1) || '0';
+      } else if (value === '.' && current.includes('.')) {
+        next = current;
+      } else {
+        next = current === '0.00' ? value : `${current}${value}`;
       }
-      if (value === 'back') {
-        return current.slice(0, -1);
-      }
-      if (value === '.' && current.includes('.')) {
-        return current;
-      }
-      return `${current}${value}`;
+      setCashReceivedCents(decimalInputToCents(next) ?? 0);
+      return next;
+    });
+  }
+
+  function addDenomination(cents: number) {
+    setCashReceivedCents((current) => {
+      const next = current + cents;
+      setManualCashInput(centsToInput(next));
+      return next;
     });
   }
 
@@ -451,125 +542,26 @@ export function PaymentDialog({
     onSubmit({
       method,
       amount: appliedAmount,
-      cashTendered: method === 'CASH' ? roundedMoney(parsedCashTendered) : undefined,
+      cashTendered: method === 'CASH' ? cashReceived : undefined,
       reference: reference.trim() || undefined,
       notes: notes.trim() || undefined
     });
   }
 
-  return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
-      <Box component="form" onSubmit={submit}>
-        <DialogTitle>Take payment</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between">
-              <Box><Typography variant="caption" color="text.secondary">Total</Typography><Typography variant="h6">{money(sale?.totalAmount ?? 0, currencyCode)}</Typography></Box>
-              <Box><Typography variant="caption" color="text.secondary">Paid</Typography><Typography variant="h6">{money(sale?.paidAmount ?? 0, currencyCode)}</Typography></Box>
-              <Box><Typography variant="caption" color="text.secondary">Remaining</Typography><Typography variant="h6">{money(balanceDue, currencyCode)}</Typography></Box>
-            </Stack>
-            {sale && sale.payments.length > 0 ? (
-              <Paper variant="outlined" sx={{ p: 1.5 }}>
-                <Typography variant="subtitle2" gutterBottom>Payments recorded</Typography>
-                <Stack spacing={1}>
-                  {sale.payments.map((payment) => (
-                    <Stack key={payment.id} direction="row" justifyContent="space-between">
-                      <Typography color="text.secondary">{payment.method.replaceAll('_', ' ')}</Typography>
-                      <Typography>{money(payment.amount, sale.currencyCode)}</Typography>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Paper>
-            ) : null}
-            <FormControl fullWidth>
-              <InputLabel id="payment-method-label">Payment method</InputLabel>
-              <Select
-                labelId="payment-method-label"
-                label="Payment method"
-                value={method}
-                disabled={busy}
-                onChange={(event) => setMethod(event.target.value as PaymentMethod)}
-              >
-                {paymentMethods.map((item) => (
-                  <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {method !== 'CASH' ? <TextField
-              label="Payment amount"
-              type="number"
-              value={amount}
-              disabled={busy}
-              inputProps={{ min: 0.01, step: 0.01 }}
-              onChange={(event) => setAmount(event.target.value)}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-              fullWidth
-            /> : null}
-            {method === 'CASH' ? (
-              <Stack spacing={1.5}>
-                <TextField
-                  label="Cash tendered"
-                  type="number"
-                  value={cashTendered}
-                  disabled={busy}
-                  inputProps={{ min: 0.01, step: 0.01 }}
-                  onChange={(event) => setCashTendered(event.target.value)}
-                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-                  fullWidth
-                />
-                <Grid container spacing={1} aria-label="Cash tender keypad">
-                  {['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '00'].map((value) => (
-                    <Grid item xs={4} key={value}>
-                      <Button fullWidth variant="outlined" disabled={busy} onClick={() => appendCashInput(value)}>{value}</Button>
-                    </Grid>
-                  ))}
-                  <Grid item xs={4}>
-                    <Button fullWidth variant="outlined" disabled={busy} onClick={() => setCashTendered(balanceDue.toFixed(2))}>Exact</Button>
-                  </Grid>
-                  <Grid item xs={4}>
-                    <Button fullWidth variant="outlined" disabled={busy} onClick={() => appendCashInput('back')}>Back</Button>
-                  </Grid>
-                  <Grid item xs={4}>
-                    <Button fullWidth variant="outlined" disabled={busy} onClick={() => appendCashInput('clear')}>Clear</Button>
-                  </Grid>
-                </Grid>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography color="text.secondary">Cash applied</Typography>
-                  <Typography variant="h6">{money(appliedAmount, currencyCode)}</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography color="text.secondary">Change due</Typography>
-                  <Typography variant="h6">{money(changeDue, currencyCode)}</Typography>
-                </Stack>
-              </Stack>
-            ) : (
-              <TextField
-                label="Reference"
-                value={reference}
-                disabled={busy}
-                onChange={(event) => setReference(event.target.value)}
-                fullWidth
-              />
-            )}
-            <TextField
-              label="Notes"
-              value={notes}
-              disabled={busy}
-              onChange={(event) => setNotes(event.target.value)}
-              fullWidth
-            />
-            {validation ? <Alert severity="warning">{validation}</Alert> : null}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="contained" disabled={busy || Boolean(validation)}>
-            Record payment
-          </Button>
-        </DialogActions>
-      </Box>
-    </Dialog>
-  );
+  return <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="md" PaperProps={{ sx: { maxHeight: 'calc(100dvh - 24px)', m: 1.5 } }}>
+    <Box component="form" onSubmit={submit} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <DialogTitle aria-label="Take payment" sx={{ py: 1.25 }}>💵 Take payment<Typography component="div" variant="body2" color="text.secondary">Collect payment for this sale</Typography></DialogTitle>
+      <DialogContent dividers sx={{ py: 1.25 }}><Stack spacing={1.25}>
+        <Grid container spacing={1}>{[['Subtotal', sale?.subtotalAmount ?? 0], ['Tax', sale?.estimatedTaxAmount ?? 0], ['Total', sale?.totalAmount ?? 0], ['Paid', sale?.paidAmount ?? 0], ['Remaining', balanceDue]].map(([label, value]) => <Grid item xs={label === 'Remaining' ? 4 : 2} key={String(label)}><Paper variant="outlined" sx={{ px: 1, py: .75 }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography fontWeight={700}>{money(Number(value), currencyCode)}</Typography></Paper></Grid>)}</Grid>
+        {sale && sale.payments.length > 0 ? <Paper variant="outlined" sx={{ p: 1 }}><Typography variant="subtitle2">Payments recorded</Typography><Stack direction="row" spacing={2} useFlexGap flexWrap="wrap">{sale.payments.map(payment => <Stack key={payment.id} direction="row" spacing={1}><Typography color="text.secondary">{payment.method.replaceAll('_', ' ')}</Typography><Typography>{money(payment.amount, sale.currencyCode)}</Typography></Stack>)}</Stack></Paper> : null}
+        <Box><Typography variant="subtitle2" gutterBottom>Payment method</Typography><Stack direction="row" spacing={.75} useFlexGap flexWrap="wrap">{paymentMethods.map(item => <Button key={item.value} aria-pressed={method === item.value} variant={method === item.value ? 'contained' : 'outlined'} disabled={busy} onClick={() => setMethod(item.value)} sx={{ minHeight: 44, minWidth: 92 }}>{item.label}</Button>)}</Stack></Box>
+        <Grid container spacing={1.25} alignItems="stretch"><Grid item xs={12} md={8}>{method === 'CASH' ? <CashPaymentPanel currencyCode={currencyCode} cashReceivedCents={cashReceivedCents} manualCashInput={manualCashInput} busy={busy} onManualInput={setCashFromInput} onKeypad={appendCashInput} onAdd={addDenomination} onExact={() => { setCashReceivedCents(balanceDueCents); setManualCashInput(centsToInput(balanceDueCents)); }} /> : <Paper variant="outlined" sx={{ p: 1.5 }}><Stack spacing={1.25}><TextField label="Payment amount" type="number" value={amount} disabled={busy} inputProps={{ min: .01, step: .01 }} onChange={event => setAmount(event.target.value)} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} /><TextField label="Reference" value={reference} disabled={busy} onChange={event => setReference(event.target.value)} /></Stack></Paper>}</Grid><Grid item xs={12} md={4}><PaymentSummary sale={sale} method={method} currencyCode={currencyCode} cashReceived={cashReceived} appliedAmount={appliedAmount} changeDue={changeDue} balanceDue={balanceDue} /></Grid></Grid>
+        <TextField label="Notes (optional)" placeholder="Add a note for this payment" value={notes} disabled={busy} onChange={event => setNotes(event.target.value)} size="small" />
+        {validation ? <Alert severity="warning" sx={{ py: 0 }}>{validation}</Alert> : null}
+      </Stack></DialogContent>
+      <DialogActions sx={{ px: 3, py: 1 }}><Button onClick={onClose} disabled={busy}>Cancel</Button><Button type="submit" variant="contained" disabled={busy || Boolean(validation)}>Record payment</Button></DialogActions>
+    </Box>
+  </Dialog>;
 }
 
 function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthMm: number }) {
@@ -607,7 +599,7 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
         <Stack spacing={0.5}>
           <Stack direction="row" justifyContent="space-between">
             <Typography variant="body2">Receipt</Typography>
-            <Typography variant="body2" fontWeight={700}>{receipt.receiptNumber}</Typography>
+            <Typography variant="body2" fontWeight={700}>#{receipt.receiptNumber}</Typography>
           </Stack>
           <Stack direction="row" justifyContent="space-between">
             <Typography variant="body2">Register</Typography>
@@ -624,7 +616,7 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             <Stack direction="row" justifyContent="space-between" spacing={1}>
               <Box>
                 <Typography variant="body2" fontWeight={700}>{item.productName}</Typography>
-                <Typography variant="caption" color="text.secondary">{item.productSku} x {item.quantity}</Typography>
+                <Typography variant="caption" color="text.secondary">{receipt.tokenNumber ? `${item.quantity}` : `${item.productSku} x ${item.quantity}`}</Typography>
               </Box>
               <Typography variant="body2">{money(item.lineTotal, receipt.currencyCode)}</Typography>
             </Stack>
@@ -640,8 +632,8 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             <Typography variant="body2">{money(receipt.subtotalAmount, receipt.currencyCode)}</Typography>
           </Stack>
           <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2">Discounts</Typography>
-            <Typography variant="body2">{money(receipt.discountAmount, receipt.currencyCode)}</Typography>
+            <Typography variant="body2">Discount</Typography>
+            <Typography variant="body2">{money(-receipt.discountAmount, receipt.currencyCode)}</Typography>
           </Stack>
           {receipt.taxSummaries.map((tax) => (
             <Stack direction="row" justifyContent="space-between" key={tax.componentCode}>
@@ -803,7 +795,7 @@ function SuccessfulSaleScreen({
 }
 
 export function PosCartPage() {
-  const { getValidAccessToken } = useSession();
+  const { currentUser, getValidAccessToken } = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -814,6 +806,8 @@ export function PosCartPage() {
   const cartRevisionRef = React.useRef(0);
   const [barcode, setBarcode] = React.useState('');
   const [productSearch, setProductSearch] = React.useState('');
+  const [discount,setDiscount]=React.useState<OrderDiscount|null>(null);
+  const [discountOpen,setDiscountOpen]=React.useState(false);
   const [submittedSearch, setSubmittedSearch] = React.useState('');
   const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false);
   const [scannerPreferences] = React.useState<BarcodeScannerPreferences>(() => loadBarcodeScannerPreferences());
@@ -837,6 +831,7 @@ export function PosCartPage() {
   const automaticPrintSaleIdRef = React.useRef<string | null>(null);
   const autoPrintedReceiptRef = React.useRef<string | null>(null);
   const recoveryCheckedRef = React.useRef(false);
+  const previousSearchStoreIdRef = React.useRef<string | undefined>(undefined);
 
   React.useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -889,9 +884,25 @@ export function PosCartPage() {
 
   const productResults = useQuery({
     queryKey: ['products', 'pos-search', current.data?.storeId, submittedSearch],
-    queryFn: async () => listProducts(await getValidAccessToken(), { name: submittedSearch, storeId: current.data?.storeId, active: true, size: 10 }),
+    queryFn: async () => listProducts(await getValidAccessToken(), { q: submittedSearch, storeId: current.data?.storeId, active: true, size: 20 }),
     enabled: submittedSearch.trim().length > 0 && Boolean(current.data?.storeId)
   });
+  const savedDiscounts=useQuery({queryKey:['active-pos-discounts',current.data?.storeId],queryFn:async()=>listActiveStoreDiscounts(await getValidAccessToken(),current.data?.storeId??''),enabled:Boolean(current.data?.storeId)&&Boolean(currentUser?.permissions?.includes('POS_SALE_DISCOUNT')),staleTime:5*60_000});
+
+  React.useEffect(() => {
+    const normalized = productSearch.trim();
+    const timer = window.setTimeout(() => setSubmittedSearch(normalized), 250);
+    return () => window.clearTimeout(timer);
+  }, [productSearch]);
+
+  React.useEffect(() => {
+    const storeId = current.data?.storeId;
+    if (previousSearchStoreIdRef.current !== undefined && previousSearchStoreIdRef.current !== storeId) {
+      setProductSearch('');
+      setSubmittedSearch('');
+    }
+    previousSearchStoreIdRef.current = storeId;
+  }, [current.data?.storeId]);
 
   const store = stores.data?.content.find((item) => item.id === current.data?.storeId);
   const register = registers.data?.content.find((item) => item.id === current.data?.registerId);
@@ -1017,11 +1028,17 @@ export function PosCartPage() {
   }
 
   function addProduct(product: Product) {
+    const selectedVariant = product.variants.length === 1 ? product.variants[0] : undefined;
     if (product.capabilities.includes('REQUIRE_AGE_VERIFICATION')) {
-      queueRestrictedItem({ productId: product.id, label: product.name, sku: product.sku, price: product.price, minimumAge: product.minimumAge ?? null });
+      queueRestrictedItem({ productId: product.id, variantId: selectedVariant?.id,
+        label: selectedVariant ? `${product.name} — ${selectedVariant.name}` : product.name,
+        sku: selectedVariant?.sku ?? product.sku, price: selectedVariant?.price ?? product.price,
+        minimumAge: product.minimumAge ?? null });
       return;
     }
-    addResolvedProduct({ productId: product.id, name: product.name, sku: product.sku, price: product.price });
+    addResolvedProduct({ productId: product.id, variantId: selectedVariant?.id,
+      name: selectedVariant ? `${product.name} — ${selectedVariant.name}` : product.name,
+      sku: selectedVariant?.sku ?? product.sku, price: selectedVariant?.price ?? product.price });
   }
 
   const barcodeMutation = useMutation({
@@ -1074,20 +1091,21 @@ export function PosCartPage() {
   });
 
   const recalculateMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (openPayment: boolean) => {
       if (!current.data || cartItems.length === 0) throw new Error('Cart is empty');
       const revision = cartRevisionRef.current;
       const sale = await checkoutSaleCart(await getValidAccessToken(), {
         registerSessionId: current.data.id, saleChannel: 'POS',
-        items: cartItems.map(item => ({ productId: item.productId, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified }))
+        items: cartItems.map(item => ({ productId: item.productId, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified })),
+        discount: discount ? (discount.definitionId ? {discountDefinitionId:discount.definitionId}:{type:discount.type,value:discount.value,reason:discount.reason||undefined}) : undefined
       });
-      return { sale, revision };
+      return { sale, revision, openPayment };
     },
-    onSuccess: ({ sale, revision }) => {
+    onSuccess: ({ sale, revision, openPayment }) => {
       if (revision !== cartRevisionRef.current) return;
       setCartItems(sale.items);
       rememberSale(sale);
-      setPaymentDialogOpen(true);
+      if (openPayment) setPaymentDialogOpen(true);
     }
   });
 
@@ -1232,9 +1250,9 @@ export function PosCartPage() {
             variant="outlined"
             startIcon={<RefreshIcon />}
             disabled={!activeSale || busy}
-            onClick={() => recalculateMutation.mutate()}
+            onClick={() => recalculateMutation.mutate(false)}
           >
-            Recalculate
+            {recalculateMutation.isPending ? 'Calculating…' : 'Calculate Tax'}
           </Button>
         </Stack>
       </Stack>
@@ -1377,13 +1395,19 @@ export function PosCartPage() {
 
           <Grid item xs={12} md={4} sx={{ minWidth: 0 }}>
             <Stack spacing={2} sx={{ position: { md: 'sticky' }, top: { md: 72 }, maxHeight: { md: 'calc(100dvh - 88px)' }, overflowY: { md: 'auto' } }}>
-              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} />
+              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discount} />
               <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack spacing={1.5}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography color="text.secondary">Status</Typography>
                     <Chip label={activeSale?.status ?? 'NO SALE'} size="small" />
                   </Stack>
+                  {currentUser?.permissions?.includes('POS_SALE_DISCOUNT') ? <>
+                    <TextField select size="small" label="Discount" value={discount?.definitionId??(discount?'__custom__':'')} disabled={!cartItems.length||busy} onChange={event=>{if(event.target.value==='__custom__'){setDiscountOpen(true);return;}const selected=savedDiscounts.data?.find((value:DiscountDefinition)=>value.id===event.target.value);if(selected){setDiscount({definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:''});cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);}}}>
+                      <MenuItem value=""><em>Select discount</em></MenuItem>{(savedDiscounts.data??[]).map((value:DiscountDefinition)=><MenuItem key={value.id} value={value.id}>{value.name} — {value.type==='DISCOUNT_PERCENTAGE'?`${value.value}%`:money(value.value,currencyCode)}</MenuItem>)}<Divider/><MenuItem value="__custom__">Custom Discount</MenuItem>
+                    </TextField>
+                    {discount?<Button size="small" color="error" onClick={()=>{setDiscount(null);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);}}>Remove Discount</Button>:null}
+                  </>:null}
                   <Button
                     variant="contained"
                     startIcon={<PauseCircleOutlineIcon />}
@@ -1420,7 +1444,7 @@ export function PosCartPage() {
                     variant="contained"
                     startIcon={<PaymentOutlinedIcon />}
                     disabled={cartItems.length === 0 || busy || Boolean(activeSale?.paymentComplete)}
-                    onClick={() => activeSale ? setPaymentDialogOpen(true) : recalculateMutation.mutate()}
+                    onClick={() => activeSale ? setPaymentDialogOpen(true) : recalculateMutation.mutate(true)}
                   >
                     {recalculateMutation.isPending ? 'Calculating total…' : activeSale ? 'Take payment' : 'Checkout'}
                   </Button>
@@ -1450,6 +1474,7 @@ export function PosCartPage() {
         onClose={() => setPaymentDialogOpen(false)}
         onSubmit={(payment) => paymentMutation.mutate(payment)}
       />
+      <DiscountDialog open={discountOpen} initial={discount} currencyCode={currencyCode} onClose={()=>setDiscountOpen(false)} onApply={value=>{setDiscount(value);setDiscountOpen(false);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);}}/>
       <Dialog
         open={Boolean(pendingAgeVerification)}
         onClose={() => {

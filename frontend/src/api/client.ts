@@ -305,6 +305,7 @@ export type ProductPayload = {
   capabilities: ProductCapability[];
   minimumAge?: number;
   storeIds?: string[];
+  availabilityScope?: 'ALL_STORES' | 'SELECTED_STORES';
 };
 
 export type ProductUpdatePayload = ProductPayload & {
@@ -317,6 +318,7 @@ export type ProductStatusPayload = {
 };
 
 export type ProductSearchParams = {
+  q?: string;
   name?: string;
   sku?: string;
   barcode?: string;
@@ -457,6 +459,7 @@ export type InventoryReportParams = {
 
 export type StockAdjustmentLinePayload = {
   productId: string;
+  variantId?: string;
   adjustmentType: StockAdjustmentType;
   quantity: number;
   balanceVersion?: number;
@@ -481,6 +484,7 @@ export type StockAdjustmentSearchParams = {
 
 export type StockCountLineCreatePayload = {
   productId: string;
+  variantId?: string;
   countedQuantity?: number;
 };
 
@@ -892,6 +896,12 @@ export type SaleCheckoutPayload = {
     quantity: number;
     ageVerified?: boolean;
   }>;
+  discount?: {
+    discountDefinitionId?: string;
+    type?: 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT';
+    value?: number;
+    reason?: string;
+  };
 };
 
 export type SaleUpdateQuantityPayload = {
@@ -1473,6 +1483,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   TENANT_CODE_ALREADY_EXISTS: 'A merchant with this code already exists.',
   BUSINESS_NUMBER_ALREADY_EXISTS: 'This business number is already associated with another merchant.',
   PAYMENT_AMOUNT_INVALID: 'Enter a valid payment amount.',
+  PAYMENT_AMOUNT_EXCEEDS_REMAINING: 'Payment amount cannot exceed the remaining balance.',
+  SALE_ALREADY_FULLY_PAID: 'This sale is already fully paid.',
   CONCURRENT_MODIFICATION: 'This information was updated by someone else. Refresh the page and try again.',
   RECORD_UPDATED_BY_ANOTHER_USER: 'This information was updated by someone else. Refresh the page and try again.',
   VALIDATION_FAILED: 'Please review the highlighted fields and correct the information.',
@@ -2002,6 +2014,11 @@ export function updateFoodMenuItem(token: string, storeId: string, id: string, p
 export function updateFoodMenuItemAvailability(token: string, storeId: string, id: string, available: boolean) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items/${id}/availability`, { method: 'PATCH', body: JSON.stringify({ available }) }, token); }
 export function deleteFoodMenuItem(token: string, storeId: string, id: string) { return request<void>(`/stores/${storeId}/food-menu/items/${id}`, { method: 'DELETE' }, token); }
 export function addFoodMenuItemToSale(token: string, storeId: string, itemId: string, saleId: string, quantity: number) { return request<Sale>(`/stores/${storeId}/food-menu/items/${itemId}/sales/${saleId}`, { method: 'POST', body: JSON.stringify({ quantity }) }, token); }
+export function listDiscountDefinitions(token: string) { return request<import('./types').DiscountDefinition[]>('/discounts', undefined, token); }
+export function listActiveStoreDiscounts(token: string, storeId: string) { return request<import('./types').DiscountDefinition[]>(`/stores/${storeId}/discounts`, undefined, token); }
+export function createDiscountDefinition(token: string, payload: import('./types').DiscountDefinitionPayload) { return request<import('./types').DiscountDefinition>('/discounts', { method: 'POST', body: JSON.stringify(payload) }, token); }
+export function updateDiscountDefinition(token: string, id: string, payload: import('./types').DiscountDefinitionPayload) { return request<import('./types').DiscountDefinition>(`/discounts/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token); }
+export function deleteDiscountDefinition(token: string,id:string){return request<void>(`/discounts/${id}`,{method:'DELETE'},token);}
 
 export function createStore(token: string, payload: StorePayload) {
   return request<Store>('/stores', {
@@ -2145,9 +2162,9 @@ export function recordInventoryStockChange(token: string, payload: InventoryStoc
   }, token);
 }
 
-export function getCurrentInventoryStock(token: string, storeId: string, productId: string) {
+export function getCurrentInventoryStock(token: string, storeId: string, productId: string,variantId?:string) {
   return request<InventoryBalance>(
-    `/inventory/balances/current${queryString({ storeId, productId })}`,
+    `/inventory/balances/current${queryString({ storeId, productId,variantId })}`,
     undefined,
     token
   );

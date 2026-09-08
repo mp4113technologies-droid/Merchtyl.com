@@ -15,6 +15,7 @@ import type {
 
 const STORE_ID = '00000000-0000-0000-0000-000000000901';
 const PRODUCT_ID = '00000000-0000-0000-0000-000000000902';
+const VARIANT_ID = '00000000-0000-0000-0000-000000000912';
 const ADJUSTMENT_ID = '00000000-0000-0000-0000-000000000903';
 
 function authResponse(roles: UserRole[] = ['OWNER']): AuthResponse {
@@ -81,7 +82,7 @@ function product(): Product {
     decimalQuantityAllowed: false,
     imageUrl: null,
     taxCategoryId: null,
-    variants: [],
+    variants: [{ id: VARIANT_ID, sku: 'COFFEE-LARGE', name: 'Large', description: null, cost: 1.5, price: 4, active: true, createdAt: '2026-07-23T12:00:00Z', updatedAt: '2026-07-23T12:00:00Z', version: 0 }],
     barcodes: [],
     capabilities: ['TRACK_INVENTORY'],
     createdAt: '2026-07-23T12:00:00Z',
@@ -261,6 +262,8 @@ describe('Inventory adjustment pages', () => {
     await userEvent.type(screen.getByLabelText('Approval notes'), 'Manager approved');
     await userEvent.click(screen.getByLabelText('Product'));
     await userEvent.click(await screen.findByRole('option', { name: 'House Coffee (COFFEE-12OZ)' }));
+    await userEvent.click(screen.getByLabelText('Variant'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Large (COFFEE-LARGE)' }));
     await userEvent.click(screen.getByLabelText('Type'));
     await userEvent.click(await screen.findByRole('option', { name: 'DAMAGED' }));
     await userEvent.clear(screen.getByLabelText('Quantity'));
@@ -279,6 +282,7 @@ describe('Inventory adjustment pages', () => {
           && payload.notes === 'Two bags torn'
           && payload.approvalNotes === 'Manager approved'
           && payload.lines[0].productId === PRODUCT_ID
+          && payload.lines[0].variantId === VARIANT_ID
           && payload.lines[0].adjustmentType === 'DAMAGED'
           && payload.lines[0].quantity === 2;
       })).toBe(true);

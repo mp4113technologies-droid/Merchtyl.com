@@ -2,6 +2,7 @@ package com.merchtyl.inventory;
 
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
+import com.merchtyl.product.ProductVariant;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -23,6 +24,10 @@ public class StockCountLine extends BaseUuidEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "product_id", nullable = false, foreignKey = @ForeignKey(name = "fk_stock_count_lines_product"))
     private Product product;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "variant_id", foreignKey = @ForeignKey(name = "fk_stock_count_lines_variant"))
+    private ProductVariant variant;
 
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal expectedQuantity;
@@ -48,11 +53,13 @@ public class StockCountLine extends BaseUuidEntity {
     public StockCountLine(
             StockCount stockCount,
             Product product,
+            ProductVariant variant,
             BigDecimal expectedQuantity,
             BigDecimal countedQuantity,
             Long balanceVersion) {
         this.stockCount = stockCount;
         this.product = product;
+        this.variant = variant;
         this.expectedQuantity = expectedQuantity;
         this.balanceVersion = balanceVersion;
         initializeIdAndTimestamps();
@@ -87,6 +94,8 @@ public class StockCountLine extends BaseUuidEntity {
     public Product getProduct() {
         return product;
     }
+
+    public ProductVariant getVariant() { return variant; }
 
     public BigDecimal getExpectedQuantity() {
         return expectedQuantity;

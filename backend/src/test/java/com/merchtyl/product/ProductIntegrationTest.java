@@ -13,6 +13,7 @@ import com.merchtyl.catalogue.UnitOfMeasureRepository;
 import com.merchtyl.security.RefreshTokenRepository;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.UserRoleRepository;
+import com.merchtyl.store.StoreRepository;
 import com.merchtyl.tax.TaxCategory;
 import com.merchtyl.tax.TaxCategoryRepository;
 import com.merchtyl.tax.TaxTreatment;
@@ -64,6 +65,12 @@ class ProductIntegrationTest {
     ProductBarcodeRepository productBarcodeRepository;
 
     @Autowired
+    StoreProductRepository storeProductRepository;
+
+    @Autowired
+    StoreRepository storeRepository;
+
+    @Autowired
     CategoryRepository categoryRepository;
 
     @Autowired
@@ -95,9 +102,11 @@ class ProductIntegrationTest {
     @BeforeEach
     void resetData() {
         auditRecordRepository.deleteAll();
+        storeProductRepository.deleteAll();
         productBarcodeRepository.deleteAll();
         productVariantRepository.deleteAll();
         productRepository.deleteAll();
+        storeRepository.deleteAll();
         taxCategoryRepository.deleteAll();
         categoryRepository.deleteAll();
         brandRepository.deleteAll();
@@ -180,6 +189,54 @@ class ProductIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sku").value("COFFEE-12OZ"));
+    }
+
+    @Test
+    void posQuickSearchIsCaseInsensitiveTrimmedAndScopedToCurrentStore() throws Exception {
+        String token = registerAndGetToken("owner-pos-search@products.test", "POS Search Owner");
+        JsonNode storeA = createStore(token, "store-a", "Store A");
+        JsonNode storeB = createStore(token, "store-b", "Store B");
+        JsonNode coke = createProduct(token, "coke", "Coca Cola Classic", "111111111111", true,
+                storeA.get("id").asText(), storeB.get("id").asText());
+        createProduct(token, "coffee", "Coffee", "222222222222", true, storeB.get("id").asText());
+        createProduct(token, "inactive", "Coca Cola Retired", "333333333333", false, storeA.get("id").asText());
+
+        mockMvc.perform(put("/api/v1/products/{id}/stores", coke.get("id").asText())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [
+                                  {"storeId":"%s","active":true,"sellable":true,"sellingPrice":2.50,"allowDiscount":true,"allowPriceOverride":true},
+                                  {"storeId":"%s","active":true,"sellable":true,"sellingPrice":3.00,"allowDiscount":true,"allowPriceOverride":true}
+                                ]
+                                """.formatted(storeA.get("id").asText(), storeB.get("id").asText())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .param("q", "  cOcA  ")
+                        .param("storeId", storeA.get("id").asText())
+                        .param("active", "true")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].name").value("Coca Cola Classic"))
+                .andExpect(jsonPath("$.content[0].price").value(2.50));
+
+        mockMvc.perform(get("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .param("q", "coffee")
+                        .param("storeId", storeA.get("id").asText())
+                        .param("active", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+
+        mockMvc.perform(get("/api/v1/products/barcodes/{barcode}", "111111111111")
+                        .header("Authorization", "Bearer " + token)
+                        .param("storeId", storeA.get("id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productName").value("Coca Cola Classic"))
+                .andExpect(jsonPath("$.price").value(4.00));
     }
 
     @Test
@@ -290,6 +347,32 @@ class ProductIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+        return objectMapper.readTree(body);
+    }
+
+    private JsonNode createProduct(String token, String sku, String name, String barcode, boolean active, String... storeIds) throws Exception {
+        String ids = java.util.Arrays.stream(storeIds).map(id -> "\"" + id + "\"").collect(java.util.stream.Collectors.joining(","));
+        String payload = productJson(sku, name, barcode, active)
+                .replace("\"variants\": [", "\"storeIds\": [" + ids + "],\n                  \"variants\": [");
+        String body = mockMvc.perform(post("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(body);
+    }
+
+    private JsonNode createStore(String token, String code, String name) throws Exception {
+        String body = mockMvc.perform(post("/api/v1/stores")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"%s","name":"%s","countryCode":"US","administrativeAreaCode":"CA",
+                                 "address":"100 Market Street","currencyCode":"USD","locale":"en-US",
+                                 "timezone":"America/Los_Angeles","pricesIncludeTax":false,"negativeStockAllowed":false,
+                                 "active":true,"capabilities":["RETAIL"]}
+                                """.formatted(code, name)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body);
     }
 

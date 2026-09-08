@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
+import { PaymentDialog } from './PosPages';
 import { applicationDeviceIdentifierKey } from '../../app/deviceIdentity';
 import { clearDraftCartRecovery, loadDraftCartRecovery, saveDraftCartRecovery } from './draftCartRecovery';
 import { barcodeScannerPreferencesKey, defaultBarcodeScannerPreferences } from '../hardware/barcodeScanner';
@@ -420,6 +421,34 @@ describe('POS pages', () => {
     vi.restoreAllMocks();
   });
 
+  it('starts cash at zero and accumulates CAD denominations before recording only the applied balance', async () => {
+    const onSubmit = vi.fn();
+    const cadSale = { ...sale(), currencyCode: 'CAD', subtotalAmount: 46.20, estimatedTaxAmount: 5.55, totalAmount: 51.75, balanceDue: 51.75 };
+    render(<PaymentDialog open sale={cadSale} busy={false} onClose={vi.fn()} onSubmit={onSubmit} />);
+
+    expect(screen.getByRole('button', { name: 'Cash' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('textbox', { name: 'Cash received' })).toHaveValue('0.00');
+    expect(screen.getByRole('button', { name: 'Record payment' })).toBeDisabled();
+    for (const denomination of ['$100', '$50', '$20', '$10', '$5', '$2', '$1', '25¢', '10¢', '5¢']) {
+      expect(screen.getByRole('button', { name: denomination })).toBeVisible();
+    }
+    await userEvent.click(screen.getByRole('button', { name: '$20' }));
+    await userEvent.click(screen.getByRole('button', { name: '$20' }));
+    await userEvent.click(screen.getByRole('button', { name: '$10' }));
+    await userEvent.click(screen.getByRole('button', { name: '$2' }));
+    expect(screen.getByRole('textbox', { name: 'Cash received' })).toHaveValue('52.00');
+    expect(screen.getAllByText('CA$0.25').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ method: 'CASH', amount: 51.75, cashTendered: 52 }));
+  });
+
+  it('sets exact remaining only after the cashier explicitly selects Exact', async () => {
+    render(<PaymentDialog open sale={{ ...sale(), currencyCode: 'CAD' }} busy={false} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.getByRole('textbox', { name: 'Cash received' })).toHaveValue('0.00');
+    await userEvent.click(screen.getByRole('button', { name: 'Exact' }));
+    expect(screen.getByRole('textbox', { name: 'Cash received' })).toHaveValue('5.75');
+  });
+
   it('adds a barcode item locally and calculates tax only at checkout', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
@@ -470,6 +499,31 @@ describe('POS pages', () => {
       const url = new URL(String(input), window.location.origin);
       return url.pathname.includes('/api/v1/register-sessions/') && init?.method === 'POST';
     })).toBe(false);
+  });
+
+  it('loads a saved Store discount once and sends only its definition id at Retail checkout', async () => {
+    let checkoutBody: unknown;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['POS_SALE_DISCOUNT'] });
+      const common = commonApi(input);
+      if (common) return common;
+      if (url.pathname.endsWith(`/api/v1/stores/${storeId}/discounts`)) return jsonResponse([{ id: 'staff', name: 'Staff Discount', type: 'DISCOUNT_PERCENTAGE', value: 10, active: true }]);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 2, active: true });
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') { checkoutBody=JSON.parse(String(init.body)); return jsonResponse({ ...sale(), discountAmount:.5, discountName:'Staff Discount' }); }
+      if (url.pathname.endsWith('/api/v1/sales')) return jsonResponse(page([]));
+      return jsonResponse({},404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await screen.findByRole('heading',{name:'Checkout'});
+    await userEvent.type(await screen.findByRole('textbox',{name:'Barcode'}),'12345{enter}');
+    await screen.findByText('Coffee');
+    await userEvent.click(screen.getByRole('combobox',{name:'Discount'}));
+    await userEvent.click(await screen.findByRole('option',{name:'Staff Discount — 10%'}));
+    expect(fetchMock.mock.calls.filter(([input])=>new URL(String(input),window.location.origin).pathname.endsWith(`/api/v1/stores/${storeId}/discounts`))).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button',{name:'Checkout'}));
+    await waitFor(()=>expect(checkoutBody).toEqual(expect.objectContaining({discount:{discountDefinitionId:'staff'}})));
   });
 
   it('submits the completed scanner value with a configured Tab suffix and adds it once', async () => {
@@ -671,8 +725,7 @@ describe('POS pages', () => {
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
 
     await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Payment method' }));
-    await userEvent.click(await screen.findByRole('option', { name: 'Debit' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Debit' }));
     await userEvent.clear(screen.getByRole('spinbutton', { name: 'Payment amount' }));
     await userEvent.type(screen.getByRole('spinbutton', { name: 'Payment amount' }), '2.75');
     await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
@@ -680,8 +733,7 @@ describe('POS pages', () => {
     expect(await screen.findByText('Payments recorded')).toBeInTheDocument();
     expect(screen.getAllByText('$3.00').length).toBeGreaterThan(0);
 
-    await userEvent.clear(screen.getByRole('spinbutton', { name: 'Cash tendered' }));
-    await userEvent.click(screen.getByRole('button', { name: '5' }));
+    await userEvent.click(screen.getByRole('button', { name: '$5' }));
     expect(await screen.findByText('$2.00')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
 
@@ -750,14 +802,14 @@ describe('POS pages', () => {
 
     await userEvent.type(await screen.findByRole('textbox', { name: 'Barcode' }), '12345{enter}');
     await userEvent.click(await screen.findByRole('button', { name: 'Checkout' }));
-    await userEvent.clear(screen.getByRole('spinbutton', { name: 'Cash tendered' }));
-    await userEvent.type(screen.getByRole('spinbutton', { name: 'Cash tendered' }), '1');
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Cash received' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Cash received' }), '1');
 
-    expect(await screen.findByText('$1.00')).toBeInTheDocument();
+    expect((await screen.findAllByText('$1.00')).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
     await screen.findByText('Payments recorded');
     expect(submittedPayment).toMatchObject({ method: 'CASH', amount: 1, cashTendered: 1 });
-    expect(screen.getByText('Remaining')).toBeInTheDocument();
+    expect(screen.getAllByText('Remaining').length).toBeGreaterThan(0);
     expect(screen.getAllByText('$4.75').length).toBeGreaterThan(0);
   });
 
@@ -996,7 +1048,10 @@ describe('POS pages', () => {
         return common;
       }
       const url = new URL(String(input), window.location.origin);
-      if (url.pathname.endsWith('/api/v1/products') && url.searchParams.get('name') === 'coffee') {
+      if (url.pathname.endsWith('/api/v1/products')
+        && url.searchParams.get('q') === 'coffee'
+        && url.searchParams.get('storeId') === storeId
+        && url.searchParams.get('active') === 'true') {
         return jsonResponse(page([product()]));
       }
       if (url.pathname.endsWith('/api/v1/sales/drafts') && init?.method === 'POST') {
@@ -1022,6 +1077,30 @@ describe('POS pages', () => {
       const url = new URL(String(input), window.location.origin);
       return url.pathname.includes('/api/v1/sales/') && init?.method !== undefined;
     })).toBe(false);
+  });
+
+  it('debounces typed product-name search and sends only the current Store scope', async () => {
+    const searchRequests: URL[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/products')) {
+        searchRequests.push(url);
+        return jsonResponse(page(url.searchParams.get('q') === 'COCA' ? [{ ...product(), name: 'Coca Cola Classic' }] : []));
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    const input = await screen.findByRole('textbox', { name: 'Product search' });
+    await userEvent.type(input, '  COCA  ');
+
+    expect(await screen.findByText('Coca Cola Classic')).toBeInTheDocument();
+    expect(searchRequests).toHaveLength(1);
+    expect(searchRequests[0].searchParams.get('q')).toBe('COCA');
+    expect(searchRequests[0].searchParams.get('storeId')).toBe(storeId);
+    expect(searchRequests[0].searchParams.get('size')).toBe('20');
   });
 
   it('resumes a held sale back into the POS cart', async () => {

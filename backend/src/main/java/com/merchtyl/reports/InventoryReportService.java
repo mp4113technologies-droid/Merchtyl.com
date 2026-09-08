@@ -147,9 +147,10 @@ public class InventoryReportService {
 
     private static InventoryStockReportRow stockRow(InventoryBalance balance) {
         Product product = balance.getProduct();
+        var variant = balance.getVariant();
         UUID categoryId = product.getCategory() == null ? null : product.getCategory().getId();
         BigDecimal quantityOnHand = quantity(balance.getQuantityOnHand());
-        BigDecimal cost = money(product.getCost());
+        BigDecimal cost = money(variant == null ? product.getCost() : variant.getCost());
         return new InventoryStockReportRow(
                 balance.getStore().getId(),
                 balance.getStore().getCode(),
@@ -157,6 +158,9 @@ public class InventoryReportService {
                 product.getId(),
                 product.getSku(),
                 product.getName(),
+                variant == null ? null : variant.getId(),
+                variant == null ? null : variant.getSku(),
+                variant == null ? null : variant.getName(),
                 categoryId,
                 cost,
                 quantityOnHand,
@@ -166,6 +170,7 @@ public class InventoryReportService {
 
     private static InventoryActivityReportRow activityRow(InventoryTransaction transaction) {
         Product product = transaction.getProduct();
+        var variant = transaction.getVariant();
         UUID categoryId = product.getCategory() == null ? null : product.getCategory().getId();
         BigDecimal absoluteQuantity = quantity(transaction.getQuantityDelta().abs());
         return new InventoryActivityReportRow(
@@ -176,11 +181,14 @@ public class InventoryReportService {
                 product.getId(),
                 product.getSku(),
                 product.getName(),
+                variant == null ? null : variant.getId(),
+                variant == null ? null : variant.getSku(),
+                variant == null ? null : variant.getName(),
                 categoryId,
                 transaction.getTransactionType(),
                 quantity(transaction.getQuantityDelta()),
                 absoluteQuantity,
-                money(absoluteQuantity.multiply(money(product.getCost()))),
+                money(absoluteQuantity.multiply(money(variant == null ? product.getCost() : variant.getCost()))),
                 transaction.getReferenceType(),
                 transaction.getReferenceId(),
                 transaction.getReason(),

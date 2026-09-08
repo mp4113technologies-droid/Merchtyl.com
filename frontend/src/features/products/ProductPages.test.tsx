@@ -320,6 +320,9 @@ describe('Product pages', () => {
     expect(screen.queryByLabelText('Tax category ID')).not.toBeInTheDocument();
     expect(await screen.findByRole('combobox', { name: 'Unit' })).toHaveTextContent('Each');
     expect(screen.queryByText('00000000-0000-0000-0000-000000000803')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Available at all stores')).toBeChecked();
+    await userEvent.click(screen.getByLabelText('Selected stores'));
+    await userEvent.click(await screen.findByLabelText('Main'));
     await userEvent.click(await screen.findByRole('combobox', { name: 'Tax Category' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Standard Tax' }));
     expect(screen.queryByText('00000000-0000-0000-0000-000000000901')).not.toBeInTheDocument();
@@ -362,6 +365,8 @@ describe('Product pages', () => {
         && body.unitOfMeasureId === '00000000-0000-0000-0000-000000000803'
         && body.taxCategoryId === '00000000-0000-0000-0000-000000000901'
         && body.taxCategoryId !== 'Standard Tax'
+        && body.availabilityScope === 'SELECTED_STORES'
+        && body.storeIds[0] === '00000000-0000-0000-0000-000000000701'
         && body.capabilities.includes('ALLOW_DISCOUNT');
     })).toBe(true);
   });

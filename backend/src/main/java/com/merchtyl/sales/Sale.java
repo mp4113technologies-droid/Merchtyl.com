@@ -73,6 +73,12 @@ public class Sale extends BaseUuidEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount;
 
+    @Column(name = "discount_definition_id") private UUID discountDefinitionId;
+    @Column(name = "discount_name", length = 120) private String discountName;
+    @Enumerated(EnumType.STRING) @Column(name = "discount_type", length = 40) private SaleAdjustmentType discountType;
+    @Column(name = "discount_value", precision = 12, scale = 4) private BigDecimal discountValue;
+    @Column(name = "discount_reason", length = 500) private String discountReason;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal estimatedTaxAmount;
 
@@ -151,6 +157,10 @@ public class Sale extends BaseUuidEntity {
         this.discountAmount = discountAmount;
         this.estimatedTaxAmount = estimatedTaxAmount;
         this.totalAmount = totalAmount;
+    }
+
+    void applyDiscountSnapshot(UUID definitionId, String name, SaleAdjustmentType type, BigDecimal value, String reason) {
+        this.discountDefinitionId=definitionId; this.discountName=name; this.discountType=type; this.discountValue=value; this.discountReason=reason;
     }
 
     void hold(Instant heldAt) {
@@ -241,6 +251,8 @@ public class Sale extends BaseUuidEntity {
     public BigDecimal getDiscountAmount() {
         return discountAmount;
     }
+    public UUID getDiscountDefinitionId(){return discountDefinitionId;} public String getDiscountName(){return discountName;}
+    public SaleAdjustmentType getDiscountType(){return discountType;} public BigDecimal getDiscountValue(){return discountValue;} public String getDiscountReason(){return discountReason;}
 
     public BigDecimal getEstimatedTaxAmount() {
         return estimatedTaxAmount;

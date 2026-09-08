@@ -14,6 +14,7 @@ import com.merchtyl.idempotency.IdempotencyResult;
 import com.merchtyl.idempotency.IdempotencyService;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.ProductVariant;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
@@ -108,14 +109,17 @@ public class StockCountService {
         User actor = actor(authentication);
         StockCount count = new StockCount(store, cleanRequired(request.reference(), "reference"), cleanOptional(request.notes()), actor);
         requireStoreScope(authentication, store.getId());
-        HashSet<UUID> productIds = new HashSet<>();
+        HashSet<String> productIds = new HashSet<>();
 
         for (StockCountLineCreateRequest lineRequest : requireLines(request.lines())) {
-            if (!productIds.add(lineRequest.productId())) {
-                throw new BadRequestException("Product can only appear once in a stock count");
-            }
             Product product = findTrackedProduct(lineRequest.productId());
-            var balance = balanceRepository.findByStoreIdAndProductId(store.getId(), product.getId()).orElse(null);
+            ProductVariant variant = findVariant(product, lineRequest.variantId());
+            if (!productIds.add(product.getId() + ":" + (variant == null ? "base" : variant.getId()))) {
+                throw new BadRequestException("Product variant can only appear once in a stock count");
+            }
+            var balance = variant == null
+                    ? balanceRepository.findByStoreIdAndProductIdAndVariantIsNull(store.getId(), product.getId()).orElse(null)
+                    : balanceRepository.findByStoreIdAndProductIdAndVariantId(store.getId(), product.getId(), variant.getId()).orElse(null);
             BigDecimal expectedQuantity = balance == null
                     ? BigDecimal.ZERO.setScale(QUANTITY_SCALE)
                     : normalizeNonNegativeQuantity(balance.getQuantityOnHand(), "expectedQuantity");
@@ -125,6 +129,7 @@ public class StockCountService {
             count.addLine(new StockCountLine(
                     count,
                     product,
+                    variant,
                     expectedQuantity,
                     countedQuantity,
                     balance == null ? null : balance.getVersion()));
@@ -198,7 +203,9 @@ public class StockCountService {
             if (line.getCountedQuantity() == null) {
                 throw new BadRequestException("All count lines require an actual quantity");
             }
-            InventoryBalance balance = balanceRepository.findByStoreIdAndProductId(count.getStore().getId(), line.getProduct().getId()).orElse(null);
+            InventoryBalance balance = line.getVariant() == null
+                    ? balanceRepository.findByStoreIdAndProductIdAndVariantIsNull(count.getStore().getId(), line.getProduct().getId()).orElse(null)
+                    : balanceRepository.findByStoreIdAndProductIdAndVariantId(count.getStore().getId(), line.getProduct().getId(), line.getVariant().getId()).orElse(null);
             BigDecimal previousQuantity = balance == null ? BigDecimal.ZERO.setScale(QUANTITY_SCALE) : balance.getQuantityOnHand();
             Long balanceVersion = balance == null ? null : balance.getVersion();
             BigDecimal countedQuantity = normalizeNonNegativeQuantity(line.getCountedQuantity(), "countedQuantity");
@@ -212,7 +219,8 @@ public class StockCountService {
                     ? InventoryTransactionType.STOCK_COUNT_INCREASE : InventoryTransactionType.STOCK_COUNT_DECREASE;
             InventoryTransactionResponse transaction = inventoryService.recordStockChange(new InventoryStockChangeRequest(
                     count.getStore().getId(), line.getProduct().getId(), transactionType, difference,
-                    STOCK_COUNT_REFERENCE_TYPE, count.getId(), count.getReference(), savedAt, balanceVersion), authentication);
+                    STOCK_COUNT_REFERENCE_TYPE, count.getId(), count.getReference(), savedAt, balanceVersion,
+                    line.getVariant() == null ? null : line.getVariant().getId()), authentication);
             line.completePost(transaction.id(), transaction.resultingQuantity());
         }
         count.markSaved(actor, savedAt);
@@ -320,6 +328,12 @@ public class StockCountService {
             throw new BadRequestException("Product does not track inventory");
         }
         return product;
+    }
+
+    private ProductVariant findVariant(Product product, UUID variantId) {
+        if (variantId == null) return null;
+        return product.getVariants().stream().filter(v -> v.getId().equals(variantId)).findFirst()
+                .orElseThrow(() -> new BadRequestException("Variant does not belong to product"));
     }
 
     private Product findProduct(UUID productId) {

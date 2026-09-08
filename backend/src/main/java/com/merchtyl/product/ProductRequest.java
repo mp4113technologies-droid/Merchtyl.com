@@ -31,9 +31,19 @@ public record ProductRequest(
         @Valid List<ProductVariantRequest> variants,
         @Valid List<ProductBarcodeRequest> barcodes,
         Set<ProductCapability> capabilities,
-        @NotNull @Size(min = 1) Set<UUID> storeIds,
-        @Min(1) @Max(99) Integer minimumAge
+        Set<UUID> storeIds,
+        @Min(1) @Max(99) Integer minimumAge,
+        ProductAvailabilityScope availabilityScope
 ) {
+    public ProductRequest(String sku, String name, String description, SellableType sellableType, UUID unitOfMeasureId,
+                          BigDecimal cost, BigDecimal price, UUID categoryId, UUID brandId, boolean active,
+                          boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed, String imageUrl,
+                          UUID taxCategoryId, List<ProductVariantRequest> variants, List<ProductBarcodeRequest> barcodes,
+                          Set<ProductCapability> capabilities, Set<UUID> storeIds, Integer minimumAge) {
+        this(sku,name,description,sellableType,unitOfMeasureId,cost,price,categoryId,brandId,active,
+                inventoryTrackingEnabled,decimalQuantityAllowed,imageUrl,taxCategoryId,variants,barcodes,capabilities,
+                storeIds,minimumAge,ProductAvailabilityScope.SELECTED_STORES);
+    }
     public ProductRequest(String sku, String name, String description, SellableType sellableType, UUID unitOfMeasureId,
                           BigDecimal cost, BigDecimal price, UUID categoryId, UUID brandId, boolean active,
                           boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed, String imageUrl,
@@ -41,7 +51,7 @@ public record ProductRequest(
                           Set<ProductCapability> capabilities) {
         this(sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
                 inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants, barcodes,
-                capabilities, Set.of(), null);
+                capabilities, Set.of(), null, ProductAvailabilityScope.ALL_STORES);
     }
 
 
@@ -52,6 +62,6 @@ public record ProductRequest(
                           Set<ProductCapability> capabilities, Set<UUID> storeIds) {
         this(sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
                 inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants, barcodes,
-                capabilities, storeIds, null);
+                capabilities, storeIds, null, ProductAvailabilityScope.SELECTED_STORES);
     }
 }

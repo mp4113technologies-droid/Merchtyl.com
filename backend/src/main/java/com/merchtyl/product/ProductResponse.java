@@ -28,7 +28,9 @@ public record ProductResponse(
         Instant createdAt,
         Instant updatedAt,
         long version,
-        Integer minimumAge
+        Integer minimumAge,
+        ProductAvailabilityScope availabilityScope,
+        Set<UUID> storeIds
 ) {
     static ProductResponse from(Product product) {
         return new ProductResponse(
@@ -52,13 +54,13 @@ public record ProductResponse(
                 product.getCapabilities(),
                 product.getCreatedAt(),
                 product.getUpdatedAt(),
-                product.getVersion(), product.getMinimumAge());
+                product.getVersion(), product.getMinimumAge(), product.getAvailabilityScope(), Set.of());
     }
 
     ProductResponse withPrice(BigDecimal effectivePrice) {
         return new ProductResponse(id, sku, name, description, sellableType, unitOfMeasureId, cost, effectivePrice,
                 categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId,
-                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge);
+                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, storeIds);
     }
 
     public ProductResponse(UUID id, String sku, String name, String description, SellableType sellableType,
@@ -69,6 +71,12 @@ public record ProductResponse(
                            Instant createdAt, Instant updatedAt, long version) {
         this(id, sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
                 inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants, barcodes,
-                capabilities, createdAt, updatedAt, version, null);
+                capabilities, createdAt, updatedAt, version, null, ProductAvailabilityScope.SELECTED_STORES, Set.of());
+    }
+
+    ProductResponse withAvailability(Set<UUID> assignedStoreIds) {
+        return new ProductResponse(id, sku, name, description, sellableType, unitOfMeasureId, cost, price,
+                categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId,
+                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, assignedStoreIds);
     }
 }

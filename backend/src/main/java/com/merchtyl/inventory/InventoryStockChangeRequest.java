@@ -16,6 +16,12 @@ public record InventoryStockChangeRequest(
         UUID referenceId,
         @Size(max = 1000) String reason,
         Instant occurredAt,
-        Long balanceVersion
+        Long balanceVersion,
+        UUID variantId
 ) {
+    public InventoryStockChangeRequest(UUID storeId,UUID productId,InventoryTransactionType transactionType,
+                                       BigDecimal quantityDelta,String referenceType,UUID referenceId,String reason,
+                                       Instant occurredAt,Long balanceVersion){
+        this(storeId,productId,transactionType,quantityDelta,referenceType,referenceId,reason,occurredAt,balanceVersion,null);
+    }
 }

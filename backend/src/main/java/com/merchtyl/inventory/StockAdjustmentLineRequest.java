@@ -9,6 +9,10 @@ public record StockAdjustmentLineRequest(
         @NotNull UUID productId,
         @NotNull StockAdjustmentType adjustmentType,
         @NotNull BigDecimal quantity,
-        Long balanceVersion
+        Long balanceVersion,
+        UUID variantId
 ) {
+    public StockAdjustmentLineRequest(UUID productId, StockAdjustmentType adjustmentType, BigDecimal quantity, Long balanceVersion) {
+        this(productId, adjustmentType, quantity, balanceVersion, null);
+    }
 }

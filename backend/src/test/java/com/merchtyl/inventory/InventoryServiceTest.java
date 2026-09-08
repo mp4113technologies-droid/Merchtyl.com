@@ -5,6 +5,7 @@ import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.NotFoundException;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.ProductVariant;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.store.Store;
@@ -33,6 +34,7 @@ class InventoryServiceTest {
     private static final UUID STORE_ID = UUID.fromString("00000000-0000-0000-0000-000000000901");
     private static final UUID PRODUCT_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000903");
+    private static final UUID VARIANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000904");
     private static final Instant NOW = Instant.parse("2026-07-23T12:00:00Z");
 
     private final InventoryBalanceRepository balanceRepository = mock(InventoryBalanceRepository.class);
@@ -169,6 +171,25 @@ class InventoryServiceTest {
         assertThat(response.id()).isNull();
         assertThat(response.quantityOnHand()).isEqualByComparingTo("0.0000");
         assertThat(response.version()).isNull();
+    }
+
+    @Test
+    void currentStockIsResolvedForTheExactStoreAndVariant() {
+        InventoryBalance variantBalance = mock(InventoryBalance.class);
+        ProductVariant variant = mock(ProductVariant.class);
+        when(variant.getId()).thenReturn(VARIANT_ID);
+        when(variantBalance.getStore()).thenReturn(store);
+        when(variantBalance.getProduct()).thenReturn(product);
+        when(variantBalance.getVariant()).thenReturn(variant);
+        when(variantBalance.getQuantityOnHand()).thenReturn(new BigDecimal("8.0000"));
+        when(balanceRepository.findByStoreIdAndProductIdAndVariantId(STORE_ID, PRODUCT_ID, VARIANT_ID))
+                .thenReturn(Optional.of(variantBalance));
+
+        InventoryBalanceResponse response = inventoryService.currentStock(STORE_ID, PRODUCT_ID, VARIANT_ID);
+
+        assertThat(response.variantId()).isEqualTo(VARIANT_ID);
+        assertThat(response.quantityOnHand()).isEqualByComparingTo("8.0000");
+        verify(balanceRepository).findByStoreIdAndProductIdAndVariantId(STORE_ID, PRODUCT_ID, VARIANT_ID);
     }
 
     @Test

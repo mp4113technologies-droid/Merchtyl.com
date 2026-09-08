@@ -51,8 +51,10 @@ public class InventoryController {
 
     @GetMapping("/balances/current")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).INVENTORY_VIEW)")
-    InventoryBalanceResponse currentStock(@RequestParam UUID storeId, @RequestParam UUID productId) {
-        return inventoryService.currentStock(storeId, productId);
+    InventoryBalanceResponse currentStock(@RequestParam UUID storeId, @RequestParam UUID productId,@RequestParam(required=false) UUID variantId) {
+        return variantId == null
+                ? inventoryService.currentStock(storeId, productId)
+                : inventoryService.currentStock(storeId, productId, variantId);
     }
 
     @GetMapping("/balances")

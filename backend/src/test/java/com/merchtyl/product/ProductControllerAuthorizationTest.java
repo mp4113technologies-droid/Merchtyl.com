@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -160,6 +161,22 @@ class ProductControllerAuthorizationTest {
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray());
+    }
+
+    @Test
+    void productViewerCanSendStoreScopedPosQuickSearch() throws Exception {
+        UUID storeId = UUID.randomUUID();
+        when(productService.search(any(), any())).thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true, true));
+
+        mockMvc.perform(get("/api/v1/products")
+                        .param("q", "  cOcA  ")
+                        .param("storeId", storeId.toString())
+                        .param("active", "true")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                .andExpect(status().isOk());
+
+        verify(productService).search(argThat(request -> "  cOcA  ".equals(request.query())
+                && storeId.equals(request.storeId()) && Boolean.TRUE.equals(request.active())), any());
     }
 
     @SpringBootConfiguration

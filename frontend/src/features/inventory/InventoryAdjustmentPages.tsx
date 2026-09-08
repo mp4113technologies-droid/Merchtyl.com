@@ -45,6 +45,7 @@ const adjustmentTypes = ['INCREASE', 'DECREASE', 'DAMAGED', 'EXPIRED'] as const;
 
 const adjustmentLineSchema = z.object({
   productId: z.string().trim().min(1, 'Product is required'),
+  variantId: z.string().optional(),
   adjustmentType: z.enum(adjustmentTypes),
   quantity: z.coerce.number().positive('Quantity must be greater than zero')
 });
@@ -65,7 +66,7 @@ const emptyAdjustmentForm: AdjustmentFormValues = {
   reason: '',
   notes: '',
   approvalNotes: '',
-  lines: [{ productId: '', adjustmentType: 'INCREASE', quantity: 1 }]
+  lines: [{ productId: '', variantId: '', adjustmentType: 'INCREASE', quantity: 1 }]
 };
 
 function canViewInventory(roles: UserRole[]) {
@@ -101,6 +102,7 @@ function cleanPayload(values: AdjustmentFormValues): StockAdjustmentPayload {
     approvalNotes: optionalText(values.approvalNotes),
     lines: values.lines.map((line) => ({
       productId: line.productId,
+      variantId: optionalText(line.variantId),
       adjustmentType: line.adjustmentType as StockAdjustmentType,
       quantity: Number(line.quantity)
     }))
@@ -331,6 +333,9 @@ function AdjustmentForm({
     defaultValues
   });
   const lines = useFieldArray({ control: form.control, name: 'lines' });
+  const selectedStoreId = form.watch('storeId');
+  const storeProducts = products.filter((product) => !product.availabilityScope || product.availabilityScope === 'ALL_STORES'
+    || Boolean(selectedStoreId && product.storeIds?.includes(selectedStoreId)));
 
   return (
     <Stack component="form" spacing={3} onSubmit={form.handleSubmit(onSubmit)}>
@@ -342,7 +347,7 @@ function AdjustmentForm({
               name="storeId"
               control={form.control}
               render={({ field, fieldState }) => (
-                <TextField {...field} select label="Store" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
+                <TextField {...field} onChange={(event) => { field.onChange(event); form.setValue('lines', [{ productId: '', variantId: '', adjustmentType: 'INCREASE', quantity: 1 }]); }} select label="Store" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
                   {stores.map((store) => <MenuItem key={store.id} value={store.id}>{storeLabel(store)}</MenuItem>)}
                 </TextField>
               )}
@@ -368,7 +373,7 @@ function AdjustmentForm({
               type="button"
               variant="outlined"
               startIcon={<AddIcon />}
-              onClick={() => lines.append({ productId: '', adjustmentType: 'INCREASE', quantity: 1 })}
+              onClick={() => lines.append({ productId: '', variantId: '', adjustmentType: 'INCREASE', quantity: 1 })}
             >
               Add line
             </Button>
@@ -382,12 +387,22 @@ function AdjustmentForm({
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <TextField {...field} select label="Product" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
-                        {products.map((product) => <MenuItem key={product.id} value={product.id}>{productLabel(product)}</MenuItem>)}
+                        {storeProducts.map((product) => <MenuItem key={product.id} value={product.id}>{productLabel(product)}</MenuItem>)}
                       </TextField>
                     )}
                   />
                 </Grid>
-                <Grid item xs={12} sm={5} md={3}>
+                <Grid item xs={12} md={3}>
+                  <Controller name={`lines.${index}.variantId`} control={form.control} render={({ field }) => {
+                    const product = products.find((candidate) => candidate.id === form.watch(`lines.${index}.productId`));
+                    return <TextField {...field} select label="Variant" fullWidth disabled={!product?.variants.length}>
+                      <MenuItem value="">Base product</MenuItem>
+                      {product?.variants.filter((variant) => variant.active).map((variant) =>
+                        <MenuItem key={variant.id} value={variant.id}>{variant.name} ({variant.sku})</MenuItem>)}
+                    </TextField>;
+                  }} />
+                </Grid>
+                <Grid item xs={12} sm={5} md={2}>
                   <Controller
                     name={`lines.${index}.adjustmentType`}
                     control={form.control}
@@ -398,7 +413,7 @@ function AdjustmentForm({
                     )}
                   />
                 </Grid>
-                <Grid item xs={8} sm={5} md={3}>
+                <Grid item xs={8} sm={5} md={2}>
                   <TextInput control={form.control} name={`lines.${index}.quantity`} label="Quantity" type="number" />
                 </Grid>
                 <Grid item xs={4} sm={2} md={1}>
@@ -411,11 +426,11 @@ function AdjustmentForm({
               </Grid>
             </Paper>
           ))}
-          {products.length === 0 ? <Alert severity="info">No active tracked products are available.</Alert> : null}
+          {selectedStoreId && storeProducts.length === 0 ? <Alert severity="info">No tracked products are available at this Store.</Alert> : null}
         </Stack>
       </Paper>
 
-      <Button type="submit" variant="contained" startIcon={<SaveIcon />} disabled={loading || products.length === 0} sx={{ alignSelf: 'flex-start' }}>
+      <Button type="submit" variant="contained" startIcon={<SaveIcon />} disabled={loading || storeProducts.length === 0} sx={{ alignSelf: 'flex-start' }}>
         Create adjustment
       </Button>
     </Stack>

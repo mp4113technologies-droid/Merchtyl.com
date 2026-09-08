@@ -91,6 +91,16 @@ class ErrorHandlingAndCorrelationIdTest {
     }
 
     @Test
+    void paymentDomainErrorsKeepStableCodeAndCorrelationId() throws Exception {
+        mockMvc.perform(get("/test/payment-overage")
+                        .header(CorrelationIdFilter.HEADER_NAME, "payment-correlation"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_AMOUNT_EXCEEDS_REMAINING"))
+                .andExpect(jsonPath("$.message").value("Payment amount cannot exceed the remaining balance."))
+                .andExpect(jsonPath("$.correlationId").value("payment-correlation"));
+    }
+
+    @Test
     void knownDatabaseConstraintReturnsSafeDomainErrorAndFieldViolation() throws Exception {
         mockMvc.perform(get("/test/duplicate-tenant"))
                 .andExpect(status().isConflict())
@@ -130,6 +140,11 @@ class ErrorHandlingAndCorrelationIdTest {
         @GetMapping("/previous-day-open")
         void previousDayOpen() {
             throw new ConflictException("PREVIOUS_BUSINESS_DAY_STILL_OPEN");
+        }
+
+        @GetMapping("/payment-overage")
+        void paymentOverage() {
+            throw new BadRequestException("PAYMENT_AMOUNT_EXCEEDS_REMAINING");
         }
 
         @GetMapping("/duplicate-tenant")

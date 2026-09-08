@@ -100,6 +100,7 @@ import { InventoryReportingPage } from '../features/inventory/InventoryReporting
 import { NewStockCountPage, StockCountDetailPage, StockCountsPage } from '../features/inventory/StockCountPages';
 import { HeldSalesPage, PosCartPage } from '../features/pos/PosPages';
 import { FoodPosPage } from '../features/pos/FoodPosPage';
+import { DiscountDefinitionsPage } from '../features/discounts/DiscountDefinitionsPage';
 import { FoodMenuPage } from '../features/foodmenu/FoodMenuPage';
 import { NewReturnPage, ReturnDetailPage, ReturnsPage } from '../features/returns/ReturnPages';
 import { LotteryOperatorDetailPage, LotteryOperatorsPage, NewLotteryOperatorPage } from '../features/lottery/LotteryOperatorPages';
@@ -344,6 +345,7 @@ function StoreMenuPage() {
   const operations = [
     { label: 'Retail POS', to: '/pos', visible: retailEnabled && permissions.includes('POS_ACCESS') },
     { label: 'Restaurant Menu', to: '/food-menu', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
+    { label: 'Discounts', to: '/discounts', visible: permissions.includes('DISCOUNT_VIEW') },
     { label: 'Orders', to: '/sales', visible: foodServiceEnabled && permissions.includes('FOOD_ORDER_VIEW') },
     { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
     { label: 'Inventory / Product Lookup', to: '/inventory', visible: true },
@@ -465,6 +467,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     ...(canViewMerchantBilling ? [{ label: 'Subscription & Billing', to: '/billing', icon: <PaymentsOutlinedIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'POS', to: '/pos', icon: <PointOfSaleOutlinedIcon /> }] : []),
     ...(foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') ? [{ label: 'Restaurant Menu', to: '/food-menu', icon: <RestaurantIcon /> }] : []),
+    ...(permissions.includes('DISCOUNT_VIEW') ? [{ label: 'Discounts', to: '/discounts', icon: <ConfirmationNumberOutlinedIcon /> }] : []),
     ...(foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') ? [{ label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon /> }] : []),
     ...(canViewRegisters ? [{ label: 'Held sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon /> }] : []),
     ...(canViewStores ? [{ label: 'Stores', to: '/stores', icon: <StoreMallDirectoryOutlinedIcon /> }] : []),
@@ -773,6 +776,7 @@ function AppRoutes() {
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/store-menu" element={<StoreMenuPage />} />
           <Route path="/food-menu" element={<FoodMenuPage />} />
+          <Route path="/discounts" element={<DiscountDefinitionsPage />} />
           <Route path="/platform" element={<PlatformDashboardPage />} />
           <Route path="/platform/merchants" element={<PlatformMerchantsPage />} />
           <Route path="/platform/merchants/new" element={<NewPlatformMerchantPage />} />

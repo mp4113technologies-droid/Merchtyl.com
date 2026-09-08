@@ -422,6 +422,8 @@ export type FoodMenuCategory = { id: string; storeId: string; name: string; disp
 export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; version: number };
 export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
 export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string };
+export type DiscountDefinition = { id: string; name: string; type: 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT'; value: number; description: string | null; minimumPurchaseAmount:number|null; maximumPurchaseAmount:number|null; maximumDiscountAmount:number|null; minimumQuantity:number|null; eligibleCategoryIds:string[]; eligibleProductIds:string[]; allStores:boolean; storeIds:string[]; startsAt:string|null; endsAt:string|null; active: boolean; createdAt: string; updatedAt: string; version: number };
+export type DiscountDefinitionPayload = { name: string; type: 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT'; value: number; description?: string; minimumPurchaseAmount?:number; maximumPurchaseAmount?:number; maximumDiscountAmount?:number; minimumQuantity?:number; eligibleCategoryIds:string[]; eligibleProductIds:string[]; allStores:boolean; storeIds:string[]; startsAt?:string; endsAt?:string; active: boolean };
 
 export type ProductVariant = {
   id: string;
@@ -468,6 +470,8 @@ export type Product = {
   barcodes: ProductBarcode[];
   capabilities: ProductCapability[];
   minimumAge?: number | null;
+  availabilityScope?: 'ALL_STORES' | 'SELECTED_STORES';
+  storeIds?: string[];
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -853,6 +857,7 @@ export type InventoryBalance = {
   createdAt: string | null;
   updatedAt: string | null;
   version: number | null;
+  variantId?: string | null;
 };
 
 export type InventoryTransaction = {
@@ -870,6 +875,7 @@ export type InventoryTransaction = {
   occurredAt: string;
   createdAt: string;
   version: number;
+  variantId?: string | null;
 };
 
 export type InventoryBalanceListResponse = PageResponse<InventoryBalance>;
@@ -883,6 +889,9 @@ export type InventoryStockReportRow = {
   productId: string;
   productSku: string;
   productName: string;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantName?: string | null;
   categoryId: string | null;
   cost: number;
   quantityOnHand: number;
@@ -898,6 +907,9 @@ export type InventoryActivityReportRow = {
   productId: string;
   productSku: string;
   productName: string;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantName?: string | null;
   categoryId: string | null;
   transactionType: InventoryTransactionType;
   quantityDelta: number;
@@ -951,6 +963,7 @@ export type StockAdjustmentApprovalStatus = 'POSTED';
 export type StockAdjustmentLine = {
   id: string;
   productId: string;
+  variantId?: string | null;
   adjustmentType: StockAdjustmentType;
   quantity: number;
   quantityDelta: number;
@@ -983,6 +996,7 @@ export type StockCountStatus = 'DRAFT' | 'IN_REVIEW' | 'POSTED' | 'SAVED';
 export type StockCountLine = {
   id: string;
   productId: string;
+  variantId?: string | null;
   expectedQuantity: number;
   countedQuantity: number | null;
   varianceQuantity: number | null;
@@ -1780,6 +1794,11 @@ export type Sale = {
   pricesIncludeTax: boolean;
   subtotalAmount: number;
   discountAmount: number;
+  discountDefinitionId?: string | null;
+  discountName?: string | null;
+  discountType?: 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT' | null;
+  discountValue?: number | null;
+  discountReason?: string | null;
   estimatedTaxAmount: number;
   totalAmount: number;
   heldAt: string | null;
@@ -1979,6 +1998,7 @@ export type ReceiptDocument = {
   cashTendered: number;
   changeDue: number;
   tokenNumber?: string | null;
+  discountName?: string | null;
 };
 
 export type PrintDocumentType = 'CUSTOMER_RECEIPT' | 'KITCHEN_TICKET';

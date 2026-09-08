@@ -22,6 +22,9 @@ import com.merchtyl.inventory.InventoryStockChangeRequest;
 import com.merchtyl.inventory.InventoryTransactionType;
 import com.merchtyl.foodmenu.FoodMenuItem;
 import com.merchtyl.foodmenu.FoodMenuItemRepository;
+import com.merchtyl.discount.DiscountDefinitionService;
+import com.merchtyl.discount.DiscountDefinition;
+import com.merchtyl.discount.DiscountEngine;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
 import com.merchtyl.product.ProductVariant;
@@ -35,6 +38,7 @@ import com.merchtyl.register.RegisterType;
 import com.merchtyl.register.RegisterCapabilityService;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.PermissionCode;
 import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
 import com.merchtyl.tax.TaxEngine;
@@ -94,6 +98,10 @@ public class SaleService {
     private FoodMenuItemRepository foodMenuItemRepository;
     @Autowired
     private RegisterCapabilityService registerCapabilityService;
+    @Autowired
+    private DiscountDefinitionService discountDefinitionService;
+    @Autowired
+    private DiscountEngine discountEngine;
 
     @Autowired
     public SaleService(
@@ -178,6 +186,7 @@ public class SaleService {
                 cleanOptional(request.saleChannel()), session.getStore().getCurrencyCode(),
                 session.getStore().isPricesIncludeTax());
 
+        List<DiscountEngine.Line> discountLines=new java.util.ArrayList<>();
         for (SaleCheckoutItemRequest line : request.items()) {
             ResolvedCheckoutItem resolved = resolveCheckoutItem(session, sale, line);
             Product product = resolved.product();
@@ -188,12 +197,49 @@ public class SaleService {
                     Boolean.TRUE.equals(line.ageVerified()), null, null, null, null);
             saleItemHandlerRegistry.validate(item.validationRequest());
             sale.addItem(item);
+            discountLines.add(new DiscountEngine.Line(item.getId(),product.getId(),resolved.sourceItemId(),resolved.categoryId(),item.getQuantity(),money(unitPrice.multiply(item.getQuantity())),product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
         }
+        ResolvedDiscount resolvedDiscount = resolveCheckoutDiscount(sale, request.discount());
+        BigDecimal checkoutDiscount = applyCheckoutDiscount(sale, resolvedDiscount, discountLines, authentication);
+        if (resolvedDiscount != null) sale.applyDiscountSnapshot(resolvedDiscount.definitionId(), resolvedDiscount.name(), resolvedDiscount.type(), resolvedDiscount.value(), resolvedDiscount.reason());
         recalculate(sale, authentication);
-        SaleResponse response = SaleResponse.from(save(sale));
+        Sale saved = save(sale);
+        if (request.discount() != null) {
+            BigDecimal subtotal = saved.getSubtotalAmount();
+            saleAdjustmentRepository.save(new SaleAdjustment(saved, null, resolvedDiscount.type(), subtotal,
+                    subtotal.subtract(checkoutDiscount),
+                    resolvedDiscount.type() == SaleAdjustmentType.DISCOUNT_PERCENTAGE ? resolvedDiscount.value() : null,
+                    resolvedDiscount.definitionId() == null ? "CUSTOM_ORDER_DISCOUNT" : "SAVED_ORDER_DISCOUNT",
+                    resolvedDiscount.name() == null ? resolvedDiscount.reason() : resolvedDiscount.name(), actor, actor,
+                    Instant.now(clock), MDC.get("correlationId")));
+            audit(actor, AuditAction.SALE_DISCOUNT_APPLIED, SaleResponse.from(saved), "POS_ORDER_DISCOUNT");
+        }
+        SaleResponse response = SaleResponse.from(saved);
         audit(actor, AuditAction.SALE_DRAFT_CREATED, response, "checkout cart items=" + request.items().size());
         return response;
     }
+
+    private ResolvedDiscount resolveCheckoutDiscount(Sale sale, SaleCheckoutDiscountRequest request) {
+        if (request == null) return null;
+        if (request.discountDefinitionId() != null) {
+            var definition = discountDefinitionService.requireActive(request.discountDefinitionId(), sale.getStore().getTenantId());
+            return new ResolvedDiscount(definition.getId(), definition.getName(), definition.getType(), definition.getValue(), definition.getDescription(),definition);
+        }
+        return new ResolvedDiscount(null, "Custom Discount", request.type(), request.value(), cleanOptional(request.reason()),null);
+    }
+
+    private BigDecimal applyCheckoutDiscount(Sale sale, ResolvedDiscount request,List<DiscountEngine.Line> lines, Authentication authentication) {
+        if (request == null) return moneyZero();
+        boolean permitted = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> PermissionCode.POS_SALE_DISCOUNT.name().equals(authority.getAuthority()));
+        if (!permitted) throw new ForbiddenOperationException("POS_SALE_DISCOUNT is required");
+        var result=discountEngine.evaluate(request.type(),request.value(),request.definition(),sale.getStore().getId(),lines,Instant.now(clock));
+        var amounts=result.allocations().stream().collect(java.util.stream.Collectors.toMap(DiscountEngine.Allocation::lineId,DiscountEngine.Allocation::amount));
+        sale.getItems().forEach(item->{var amount=amounts.get(item.getId());if(amount!=null)item.applyDiscount(amount);});
+        return result.amount();
+    }
+
+    private record ResolvedDiscount(UUID definitionId, String name, SaleAdjustmentType type, BigDecimal value, String reason, DiscountDefinition definition) {}
 
     private ResolvedCheckoutItem resolveCheckoutItem(RegisterSession session, Sale sale, SaleCheckoutItemRequest line) {
         if (line.foodMenuItemId() != null) {
@@ -214,7 +260,7 @@ public class SaleService {
             if (line.productId() != null && !line.productId().equals(product.getId())) {
                 throw new BadRequestException("INVALID_CHECKOUT_ITEM: product does not match food menu item");
             }
-            return new ResolvedCheckoutItem(product, null, menuItem.getPrice());
+            return new ResolvedCheckoutItem(product, null, menuItem.getPrice(),menuItem.getId(),menuItem.getCategory()==null?null:menuItem.getCategory().getId());
         }
 
         if (line.productId() == null) {
@@ -225,10 +271,11 @@ public class SaleService {
                 .filter(candidate -> candidate.getProduct().getId().equals(storeProduct.product().getId()) && candidate.isActive())
                 .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_AVAILABLE"));
         return new ResolvedCheckoutItem(storeProduct.product(), variant,
-                variant == null ? storeProduct.sellingPrice() : variant.getPrice());
+                variant == null ? storeProduct.sellingPrice() : variant.getPrice(),null,
+                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId());
     }
 
-    private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice) {}
+    private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice,UUID sourceItemId,UUID categoryId) {}
 
     @Transactional(readOnly = true)
     public SaleResponse get(UUID id) {
@@ -507,16 +554,16 @@ public class SaleService {
             throw new ConflictException("Sale must have a payable total before recording payment");
         }
 
-        BigDecimal amount = normalizeMoney(request.amount(), "amount");
-        if (amount.signum() <= 0) {
-            throw new BadRequestException("amount must be greater than zero");
+        if (request.amount() == null || request.amount().signum() <= 0) {
+            throw new BadRequestException("PAYMENT_AMOUNT_INVALID");
         }
+        BigDecimal amount = normalizeMoney(request.amount(), "amount");
         BigDecimal balanceDue = balanceDue(sale);
         if (balanceDue.signum() <= 0) {
-            throw new ConflictException("Sale is already fully paid");
+            throw new ConflictException("SALE_ALREADY_FULLY_PAID");
         }
         if (amount.compareTo(balanceDue) > 0) {
-            throw new BadRequestException("amount cannot exceed remaining balance due");
+            throw new BadRequestException("PAYMENT_AMOUNT_EXCEEDS_REMAINING");
         }
 
         PaymentMethod method = request.method();
@@ -539,9 +586,6 @@ public class SaleService {
         }
 
         String reference = cleanOptional(request.reference());
-        if ((method == PaymentMethod.DEBIT || method == PaymentMethod.CREDIT) && reference == null) {
-            throw new BadRequestException("reference is required for manual debit and credit payments");
-        }
 
         Payment payment = new Payment(
                 sale,
@@ -718,7 +762,7 @@ public class SaleService {
                 sale.getId(),
                 item.getProductName(),
                 completedAt,
-                null), authentication);
+                null,item.getVariant()==null?null:item.getVariant().getId()), authentication);
     }
 
     private void appendCashLedgerEntries(Sale sale, User actor, Instant completedAt) {

@@ -12,7 +12,8 @@ public record InventoryBalanceResponse(
         Instant lastTransactionAt,
         Instant createdAt,
         Instant updatedAt,
-        Long version
+        Long version,
+        UUID variantId
 ) {
     static InventoryBalanceResponse from(InventoryBalance balance) {
         return new InventoryBalanceResponse(
@@ -23,10 +24,14 @@ public record InventoryBalanceResponse(
                 balance.getLastTransactionAt(),
                 balance.getCreatedAt(),
                 balance.getUpdatedAt(),
-                balance.getVersion());
+                balance.getVersion(),balance.getVariant()==null?null:balance.getVariant().getId());
     }
 
     static InventoryBalanceResponse zero(UUID storeId, UUID productId) {
+        return zero(storeId, productId, null);
+    }
+
+    static InventoryBalanceResponse zero(UUID storeId, UUID productId, UUID variantId) {
         return new InventoryBalanceResponse(
                 null,
                 storeId,
@@ -35,6 +40,8 @@ public record InventoryBalanceResponse(
                 null,
                 null,
                 null,
-                null);
+                null,variantId);
     }
+
+    public InventoryBalanceResponse(UUID id,UUID storeId,UUID productId,BigDecimal quantityOnHand,Instant lastTransactionAt,Instant createdAt,Instant updatedAt,Long version){this(id,storeId,productId,quantityOnHand,lastTransactionAt,createdAt,updatedAt,version,null);}
 }

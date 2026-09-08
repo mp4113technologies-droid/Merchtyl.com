@@ -78,6 +78,10 @@ public class Product extends BaseUuidEntity {
     @Column(nullable = false)
     private boolean restaurantMenuManaged;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "availability_scope", nullable = false, length = 32)
+    private ProductAvailabilityScope availabilityScope = ProductAvailabilityScope.SELECTED_STORES;
+
     @Column(length = 1000)
     private String imageUrl;
 
@@ -133,6 +137,10 @@ public class Product extends BaseUuidEntity {
         this.active = active;
     }
 
+    public void setAvailabilityScope(ProductAvailabilityScope availabilityScope) {
+        this.availabilityScope = availabilityScope == null ? ProductAvailabilityScope.SELECTED_STORES : availabilityScope;
+    }
+
     public void markRestaurantMenuManaged() {
         this.restaurantMenuManaged = true;
     }
@@ -168,6 +176,8 @@ public class Product extends BaseUuidEntity {
     public boolean isRestaurantMenuManaged() {
         return restaurantMenuManaged;
     }
+
+    public ProductAvailabilityScope getAvailabilityScope() { return availabilityScope; }
 
     private void reconcileChildren(List<ProductVariantValues> variantValues, List<ProductBarcodeValues> barcodeValues) {
         Set<ProductVariant> retainedVariants = reconcileVariants(variantValues);

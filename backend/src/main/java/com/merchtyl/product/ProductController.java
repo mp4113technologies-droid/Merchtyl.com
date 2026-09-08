@@ -37,6 +37,7 @@ public class ProductController {
     @GetMapping
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_VIEW)")
     PageResponse<ProductResponse> list(
+            @RequestParam(required = false, name = "q") String query,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String sku,
             @RequestParam(required = false) String barcode,
@@ -49,6 +50,7 @@ public class ProductController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, Authentication authentication) {
         return productService.search(new ProductSearchRequest(
+                query,
                 name,
                 sku,
                 barcode,

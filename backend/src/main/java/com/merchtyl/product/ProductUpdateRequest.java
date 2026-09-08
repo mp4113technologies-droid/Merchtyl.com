@@ -32,8 +32,19 @@ public record ProductUpdateRequest(
         @Valid List<ProductBarcodeRequest> barcodes,
         Set<ProductCapability> capabilities,
         @NotNull Long version,
-        @Min(1) @Max(99) Integer minimumAge
+        @Min(1) @Max(99) Integer minimumAge,
+        @NotNull ProductAvailabilityScope availabilityScope,
+        Set<UUID> storeIds
 ) {
+    public ProductUpdateRequest(String sku, String name, String description, SellableType sellableType, UUID unitOfMeasureId,
+                                BigDecimal cost, BigDecimal price, UUID categoryId, UUID brandId, boolean active,
+                                boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed, String imageUrl,
+                                UUID taxCategoryId, List<ProductVariantRequest> variants, List<ProductBarcodeRequest> barcodes,
+                                Set<ProductCapability> capabilities, Long version, Integer minimumAge) {
+        this(sku,name,description,sellableType,unitOfMeasureId,cost,price,categoryId,brandId,active,
+                inventoryTrackingEnabled,decimalQuantityAllowed,imageUrl,taxCategoryId,variants,barcodes,capabilities,
+                version,minimumAge,ProductAvailabilityScope.ALL_STORES,Set.of());
+    }
     public ProductUpdateRequest(String sku, String name, String description, SellableType sellableType, UUID unitOfMeasureId,
                                 BigDecimal cost, BigDecimal price, UUID categoryId, UUID brandId, boolean active,
                                 boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed, String imageUrl,
@@ -41,6 +52,6 @@ public record ProductUpdateRequest(
                                 Set<ProductCapability> capabilities, Long version) {
         this(sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
                 inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants, barcodes,
-                capabilities, version, null);
+                capabilities, version, null, ProductAvailabilityScope.ALL_STORES, Set.of());
     }
 }

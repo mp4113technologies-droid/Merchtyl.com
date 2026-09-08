@@ -16,4 +16,6 @@ public interface InventoryBalanceRepository extends JpaRepository<InventoryBalan
     List<InventoryBalance> findAll(Specification<InventoryBalance> specification, Sort sort);
 
     Optional<InventoryBalance> findByStoreIdAndProductId(UUID storeId, UUID productId);
+    Optional<InventoryBalance> findByStoreIdAndProductIdAndVariantId(UUID storeId,UUID productId,UUID variantId);
+    Optional<InventoryBalance> findByStoreIdAndProductIdAndVariantIsNull(UUID storeId,UUID productId);
 }

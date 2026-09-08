@@ -108,6 +108,50 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('Sales tax');
   });
 
+  it('renders a customer-facing discount as a deduction', () => {
+    const discounted = { ...receipt(), discountAmount: 5, discountName: 'Staff Discount', discountDefinitionId: 'internal-definition-uuid' };
+    const html = receiptHtml(discounted, 80);
+    expect(html).toContain('<span>Staff Discount</span>');
+    expect(html).toContain('-$5.00');
+    expect(html).not.toContain('internal-definition-uuid');
+  });
+
+  it('renders a restaurant customer receipt without Sale UUID or generated menu SKU', () => {
+    const document = receipt();
+    document.receiptNumber = '1024';
+    document.saleId = '1cc7c25b-88a1-4e15-adc5-6e58ae4d25d3';
+    document.saleNumber = document.saleId;
+    document.tokenNumber = 'A008';
+    document.items[0].productName = 'Monkey Fingers';
+    document.items[0].productSku = 'MENU-DBAABF2FE35E4C3989B3';
+
+    const html = receiptHtml(document);
+
+    expect(html).toContain('Receipt</span><strong>#1024');
+    expect(html).toContain('Order</span><strong>A008');
+    expect(html).toContain('ORDER A008');
+    expect(html).toContain('Monkey Fingers');
+    expect(html).toContain('2</td>');
+    expect(html).toContain('$11.50');
+    expect(html).not.toContain(document.saleId);
+    expect(html).not.toContain('MENU-');
+  });
+
+  it('keeps a customer-appropriate Retail SKU but never renders internal entity IDs', () => {
+    const document = receipt();
+    document.saleId = 'sale-uuid-not-for-customer';
+    document.saleNumber = document.saleId;
+    document.items[0].id = 'sale-item-uuid-not-for-customer';
+    document.items[0].productId = 'product-variant-uuid-not-for-customer';
+
+    const html = receiptHtml(document);
+
+    expect(html).toContain('COFFEE');
+    expect(html).not.toContain('sale-uuid-not-for-customer');
+    expect(html).not.toContain('sale-item-uuid-not-for-customer');
+    expect(html).not.toContain('product-variant-uuid-not-for-customer');
+  });
+
   it('defines an 80mm print-only receipt layout', () => {
     const printCss = JSON.stringify(receiptPrintStyles);
     expect(printCss).toContain('@media print');
