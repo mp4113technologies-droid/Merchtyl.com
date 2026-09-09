@@ -1,4 +1,5 @@
 import type { ReceiptDocument } from '../../api/types';
+import { brandAssets } from '../../app/brandAssets';
 import { posPrintQueue } from './posPrintQueue';
 
 export interface ReceiptPrinter {
@@ -441,11 +442,13 @@ export function receiptHtml(receipt: ReceiptDocument, widthMm = 80) {
       width: ${widthMm}mm;
       padding: 4mm;
     }
-    h1 {
-      margin: 0 0 2mm;
-      font-size: 18px;
-      text-align: center;
-      letter-spacing: 0;
+    .brand-logo {
+      display: block;
+      width: min(58%, 46mm);
+      height: auto;
+      max-height: 10mm;
+      object-fit: contain;
+      margin: 0 auto 2mm;
     }
     .center { text-align: center; }
     .muted { color: #444; }
@@ -464,6 +467,7 @@ export function receiptHtml(receipt: ReceiptDocument, widthMm = 80) {
     }
     @media print {
       body { background: #fff; }
+      .brand-logo { filter: none; opacity: 1; }
     }
   </style>
 </head>
@@ -503,11 +507,12 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
   `).join('');
 
   return `
-    <h1>${escapeHtml(receipt.brandName)}</h1>
+    <img class="brand-logo" src="${brandAssets.blackLogo}" alt="Merchtyl" onerror="this.remove()">
     <div class="center muted">${escapeHtml(receipt.brandTagline)}</div>
     ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="rule"></div>
     <div class="center">
+      ${receipt.store.legalName && receipt.store.legalName !== receipt.store.name ? `<strong>${escapeHtml(receipt.store.legalName)}</strong><br>` : ''}
       <strong>${escapeHtml(receipt.store.name)}</strong><br>
       ${escapeHtml(receipt.store.address)}
       ${receipt.store.phone ? `<br>${escapeHtml(receipt.store.phone)}` : ''}

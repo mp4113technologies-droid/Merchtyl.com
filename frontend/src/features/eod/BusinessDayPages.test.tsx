@@ -449,6 +449,32 @@ describe('Business day pages', () => {
     }
   );
 
+  it('shows a friendly conflict when a previous-day close has open registers', async () => {
+    storeSession(['MANAGER']);
+    const previous = businessDay({ businessDate: '2026-09-01', status: 'OPEN', version: 0 });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_CLOSE']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId, currentBusinessDate: '2026-09-02', currentBusinessDay: null, previousBusinessDay: previous,
+        state: 'PREVIOUS_DAY_STILL_OPEN', availableAction: 'NONE'
+      });
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') return jsonResponse({
+        code: 'BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS',
+        message: 'This business day cannot close while registers are open.', status: 409,
+        path: url.pathname, method: 'POST', correlationId: 'test-correlation', violations: [], timestamp: new Date().toISOString()
+      }, 409);
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Close Previous Business Day' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close Previous Business Day' }));
+
+    expect(await screen.findByText('Close all open registers before closing the business day.')).toBeInTheDocument();
+  });
+
   it('shows the previous-day blocker without a close action when close permission is absent', async () => {
     storeSession(['CASHIER']);
     const previous = businessDay({ businessDate: '2026-09-01', status: 'OPEN' });

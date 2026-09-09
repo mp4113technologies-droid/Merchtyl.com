@@ -27,7 +27,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    baseline-on-migrate: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    clean-disabled: true
 
 management:
   endpoint:
@@ -71,10 +73,10 @@ merchtyl:
       admin-max-per-hour: ${MERCHTYL_PASSWORD_RESET_ADMIN_MAX_PER_HOUR:5}
   platform:
     bootstrap:
-      enabled: ${MERCHTYL_BOOTSTRAP_ADMIN_ENABLED:false}
-      email: ${MERCHTYL_BOOTSTRAP_ADMIN_EMAIL:}
-      name: ${MERCHTYL_BOOTSTRAP_ADMIN_NAME:}
-      password: ${MERCHTYL_BOOTSTRAP_ADMIN_PASSWORD:}
+      enabled: ${MERCHTYL_BOOTSTRAP_SUPERADMIN_ENABLED:${MERCHTYL_BOOTSTRAP_ADMIN_ENABLED:false}}
+      email: ${MERCHTYL_BOOTSTRAP_SUPERADMIN_EMAIL:${MERCHTYL_BOOTSTRAP_ADMIN_EMAIL:}}
+      name: ${MERCHTYL_BOOTSTRAP_SUPERADMIN_NAME:${MERCHTYL_BOOTSTRAP_ADMIN_NAME:Merchtyl Administrator}}
+      password: ${MERCHTYL_BOOTSTRAP_SUPERADMIN_PASSWORD:${MERCHTYL_BOOTSTRAP_ADMIN_PASSWORD:}}
     owner-invitation:
       expiry-hours: ${MERCHTYL_OWNER_INVITATION_EXPIRY_HOURS:48}
       resend-max-per-hour: ${MERCHTYL_OWNER_INVITATION_RESEND_MAX_PER_HOUR:3}

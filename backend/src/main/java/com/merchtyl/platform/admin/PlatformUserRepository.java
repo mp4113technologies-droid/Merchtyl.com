@@ -82,10 +82,14 @@ public class PlatformUserRepository {
         Boolean exists = jdbcTemplate.queryForObject("""
                 select exists(
                     select 1 from platform_users
-                    where role = 'PLATFORM_SUPER_ADMIN' and enabled = true
+                    where role = 'PLATFORM_SUPER_ADMIN'
                 )
                 """, Boolean.class);
         return Boolean.TRUE.equals(exists);
+    }
+
+    public void acquireBootstrapLock() {
+        jdbcTemplate.queryForObject("select pg_advisory_xact_lock(hashtext('merchtyl:platform-super-admin-bootstrap'))", Object.class);
     }
 
     public long activeSuperAdminCount() {

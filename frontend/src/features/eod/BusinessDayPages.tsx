@@ -42,6 +42,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  ApiClientError,
   closeBusinessDay,
   exportEndOfDayReportCsv,
   exportEndOfDayReportPdf,
@@ -91,6 +92,12 @@ function useBusinessDayAccess() {
 }
 
 function errorMessage(error: unknown) {
+  if (error instanceof ApiClientError) {
+    if (error.code === 'BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS') return 'Close all open registers before closing the business day.';
+    if (error.code === 'BUSINESS_DAY_STATE_CHANGED' || error.code === 'RECORD_UPDATED_BY_ANOTHER_USER') return 'The business day changed. Refresh and try again.';
+    if (error.code === 'VARIANCE_EXPLANATION_REQUIRED') return 'Please explain the cash variance before closing.';
+    if (error.code === 'BUSINESS_DAY_RECONCILIATION_INCOMPLETE') return 'Complete register reconciliation before closing the business day.';
+  }
   return error instanceof Error ? error.message : 'Request failed';
 }
 

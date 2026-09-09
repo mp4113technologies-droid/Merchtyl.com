@@ -89,6 +89,7 @@ import {
 import type { MerchantOnboardingPayload, OwnerInvitationResendPayload, PlatformMerchantUpdatePayload, TenantLifecyclePayload, TenantSubscriptionPayload } from '../../api/client';
 import type { EmailDelivery, MerchantStoreCapability, OwnerActivationStatus, StoreCapability, StoreCapabilityChangePreview, TenantDeletionEligibility, TenantDetail, TenantSummary } from '../../api/types';
 import { useSession } from '../../app/session';
+import { MerchtylLogo } from '../../app/MerchtylLogo';
 
 const steps = ['Merchant details', 'Business defaults', 'Initial owner', 'Pricing Plan', 'Review', 'Completion'];
 
@@ -1619,7 +1620,7 @@ export function PlatformLoginPage() {
       <Paper component="form" onSubmit={submit} variant="outlined" sx={{ width: '100%', maxWidth: 440, p: 3, borderRadius: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.5} alignItems="center">
-            <Box component="img" src="/branding/merchtyl-logo-horizontal.png" alt="Merchtyl" sx={{ width: 210, height: 54, objectFit: 'contain' }} />
+            <MerchtylLogo size="medium" />
             <Typography variant="h5" component="h1" color="primary.dark">Platform Administration</Typography>
           </Stack>
           {error && <Alert severity="error">{error}</Alert>}

@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://ep-holy-forest-au795cxk-pooler.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-    username: neondb_owner
-    password: npg_Ji0gpIVLs9Yb
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/merchtyl}
+    username: ${SPRING_DATASOURCE_USERNAME:merchtyl}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
 
 management:
   endpoint:
@@ -19,22 +19,22 @@ logging:
 merchtyl:
   jwt:
     issuer: merchtyl-local
-    secret: MERCHTYL_IS_THE_BEST_POS_SYSTEM_IN_THE_WORLD
+    secret: ${MERCHTYL_JWT_SECRET:replace-with-a-local-secret-at-least-32-characters}
   security:
     cors:
       allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080
   testing:
     user-provisioning:
       enabled: true
-      key: merchtyl-local-test-key
-      default-user-password: Test1234!
+      key: ${MERCHTYL_TEST_USER_PROVISIONING_KEY:}
+      default-user-password: ${MERCHTYL_TEST_DEFAULT_USER_PASSWORD:}
   email:
-    provider: resend
-    from-address: support@merchtyl.com
+    provider: ${MERCHTYL_EMAIL_PROVIDER:console}
+    from-address: ${MERCHTYL_EMAIL_FROM_ADDRESS:}
     frontend-base-url: http://localhost:5173
     resend:
-      enabled: true
-      api-key: re_bsVQkPbD_FqqwBYXpHMdQ9k4GSVdLJwM8
+      enabled: ${RESEND_ENABLED:false}
+      api-key: ${RESEND_API_KEY:}
 
 springdoc:
   api-docs:

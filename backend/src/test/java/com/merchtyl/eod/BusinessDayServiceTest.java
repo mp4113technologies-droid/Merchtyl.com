@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.merchtyl.audit.AuditService;
 import com.merchtyl.cash.CashLedgerService;
 import com.merchtyl.cash.CashMovementRepository;
+import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
 import com.merchtyl.features.FeatureService;
 import com.merchtyl.inventory.InventoryBalanceRepository;
@@ -33,6 +34,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -185,6 +187,34 @@ class BusinessDayServiceTest {
 
         verify(storeAccess).requireStoreAccess(authentication, storeId);
         verify(storeAccess, never()).requireStoreManagement(authentication, storeId);
+    }
+
+    @Test
+    void staleCloseVersionUsesStableBusinessDayStateChangedCode() {
+        assertThatThrownBy(() -> service.close(
+                dayId,
+                new BusinessDayCloseRequest(0L, "Recovery close", "", true),
+                authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("BUSINESS_DAY_STATE_CHANGED");
+    }
+
+    @Test
+    void blankVarianceExplanationIsAllowedWhenVarianceIsZero() {
+        BusinessDayConfiguration configuration = BusinessDayConfiguration.defaults(store);
+
+        ReflectionTestUtils.invokeMethod(service, "validateSignOff", configuration,
+                BigDecimal.ZERO, "Recovery close", "", true);
+    }
+
+    @Test
+    void blankVarianceExplanationUsesStableValidationCodeWhenVarianceExceedsThreshold() {
+        BusinessDayConfiguration configuration = BusinessDayConfiguration.defaults(store);
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(service, "validateSignOff", configuration,
+                new BigDecimal("5.01"), "Recovery close", "", true))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("VARIANCE_EXPLANATION_REQUIRED");
     }
 
     @Test

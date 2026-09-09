@@ -130,8 +130,9 @@ describe('App authentication', () => {
 
     render(<App initialEntries={['/login']} hostname="adviam.merchtyl.com" />);
 
-    expect(await screen.findByRole('heading', { name: 'Welcome to Adviam Creatives' })).toBeInTheDocument();
-    expect(screen.getByText('Sign in to continue to Adviam Creatives.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Adviam Creatives' })).toBeInTheDocument();
+    expect(screen.getByText('Sign in to your workspace')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Merchtyl' })).toHaveAttribute('src', '/branding/Full main.svg');
     expect(screen.queryByText('adviam')).not.toBeInTheDocument();
     expect(document.title).toBe('Adviam Creatives | Merchtyl');
     expect(fetchMock).toHaveBeenCalledTimes(1);

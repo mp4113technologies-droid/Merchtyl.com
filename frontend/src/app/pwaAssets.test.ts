@@ -3,7 +3,7 @@ import offlineShell from '../../public/offline.html?raw';
 import serviceWorker from '../../public/sw.js?raw';
 
 describe('PWA public assets', () => {
-  it('defines an installable manifest with generated app icons', () => {
+  it('defines an installable manifest with official size-matched app icons', () => {
     const manifest = JSON.parse(manifestText) as {
       display: string;
       start_url: string;
@@ -13,12 +13,14 @@ describe('PWA public assets', () => {
     expect(manifest.display).toBe('standalone');
     expect(manifest.start_url).toBe('/');
     expect(manifest.icons).toEqual(expect.arrayContaining([
-      expect.objectContaining({ src: '/branding/merchtyl-logo-mark.svg', sizes: 'any' })
+      expect.objectContaining({ src: '/branding/256_256.png', sizes: '256x256' }),
+      expect.objectContaining({ src: '/branding/512_512.png', sizes: '512x512' })
     ]));
   });
 
   it('provides an offline shell that excludes checkout and live register actions', () => {
     expect(offlineShell).toContain('Merchtyl is offline');
+    expect(offlineShell).toContain('/branding/Full main.svg');
     expect(offlineShell).toContain('checkout');
     expect(offlineShell).toContain('require a connection');
   });

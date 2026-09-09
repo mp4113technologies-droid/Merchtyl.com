@@ -19,6 +19,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ApiClientError } from '../../api/client';
 import { useSession } from '../../app/session';
 import { useMerchantPortal } from '../../app/MerchantPortalContext';
+import { MerchtylLogo } from '../../app/MerchtylLogo';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -81,12 +82,12 @@ export function AuthPage() {
       <Container maxWidth="sm">
         <Stack spacing={2.5}>
           <Stack spacing={0.75} alignItems="center">
-            <Box component="img" src="/branding/merchtyl-logo-horizontal.png" alt="Merchtyl" sx={{ width: 220, maxWidth: '70vw', height: 58, objectFit: 'contain' }} />
+            <MerchtylLogo size="large" sx={{ maxWidth: '70vw' }} />
             <Typography variant="h5" component="h1" color="primary.dark">
-              {merchant ? `Welcome to ${merchant.displayName}` : 'Merchtyl'}
+              {merchant ? merchant.displayName : 'Merchtyl'}
             </Typography>
             <Typography color="text.secondary" textAlign="center">
-              {merchant ? `Sign in to continue to ${merchant.displayName}.` : 'Sign in to Merchtyl.'}
+              {merchant ? 'Sign in to your workspace' : 'Sign in to Merchtyl.'}
             </Typography>
           </Stack>
 

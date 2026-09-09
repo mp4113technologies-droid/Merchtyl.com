@@ -366,8 +366,7 @@ describe('Register session pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Open register' })).toBeInTheDocument();
     expect(await screen.findByText('Not required for current browser deployment')).toBeInTheDocument();
-    await screen.findByRole('button', { name: 'Open register' });
-    const openingCash = screen.getByLabelText('Opening cash');
+    const openingCash = await screen.findByLabelText('Opening cash');
     fireEvent.change(openingCash, { target: { value: '125.50' } });
     await userEvent.click(await screen.findByRole('button', { name: 'Open register' }));
 

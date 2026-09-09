@@ -435,6 +435,14 @@ public class BusinessDayService {
         BusinessDay day = dayForUpdate(id);
         User actor = currentUser(authentication);
         requireStoreAccess(authentication, day.getStore().getId());
+        log.info("business_day_event event=BUSINESS_DAY_CLOSE_REQUESTED tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={} requested_version={} current_version={}",
+                actor.getTenantId(), day.getStore().getId(), day.getId(), day.getBusinessDate(), actor.getId(),
+                request == null ? null : request.version(), day.getVersion());
+        if (request != null && request.version() != null && day.getVersion() != request.version()) {
+            log.warn("business_day_event event=BUSINESS_DAY_CLOSE_CONFLICT tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={} requested_version={} current_version={} failure_code=BUSINESS_DAY_STATE_CHANGED",
+                    actor.getTenantId(), day.getStore().getId(), day.getId(), day.getBusinessDate(), actor.getId(),
+                    request.version(), day.getVersion());
+        }
         requireVersion(day, request == null ? null : request.version());
         if (day.getStatus() == BusinessDayStatus.CLOSED) {
             return reportRepository.findFirstByBusinessDay_IdOrderByRevisionDesc(day.getId())
@@ -443,6 +451,12 @@ public class BusinessDayService {
         }
         ClosingValidationResponse validation = validate(day, false);
         if (!validation.closable()) {
+            long openRegisterCount = validation.blockers().stream()
+                    .filter(blocker -> "OPEN_REGISTER_SESSION".equals(blocker.code()))
+                    .count();
+            log.warn("business_day_event event=BUSINESS_DAY_CLOSE_VALIDATION_FAILED tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={} current_version={} open_register_count={} failure_code={}",
+                    actor.getTenantId(), day.getStore().getId(), day.getId(), day.getBusinessDate(), actor.getId(), day.getVersion(),
+                    openRegisterCount, openRegisterCount > 0 ? "BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS" : "BUSINESS_DAY_RECONCILIATION_INCOMPLETE");
             audit(actor, AuditAction.BUSINESS_DAY_CLOSING_VALIDATION_FAILED, day, null, validation, null);
             throw new ClosingValidationException(validation);
         }
@@ -1102,7 +1116,7 @@ public class BusinessDayService {
             throw new BadRequestException("confirmationAccepted must be true");
         }
         if (cashVariance.abs().compareTo(configuration.getCashVarianceExplanationThreshold()) > 0 && cleanOptional(varianceExplanation) == null) {
-            throw new BadRequestException("varianceExplanation is required when cash variance exceeds the configured threshold");
+            throw new BadRequestException("VARIANCE_EXPLANATION_REQUIRED");
         }
     }
 
@@ -1210,7 +1224,7 @@ public class BusinessDayService {
             throw new BadRequestException("version is required");
         }
         if (day.getVersion() != version) {
-            throw new ConflictException("Business day was modified by another transaction");
+            throw new ConflictException("BUSINESS_DAY_STATE_CHANGED");
         }
     }
 

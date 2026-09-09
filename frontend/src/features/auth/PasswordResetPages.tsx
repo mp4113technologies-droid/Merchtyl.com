@@ -5,12 +5,13 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiClientError, forgotPassword, getPasswordPolicy, resetPassword } from '../../api/client';
 import { PASSWORD_POLICY_HELP, validPassword } from './passwordPolicy';
+import { MerchtylLogo } from '../../app/MerchtylLogo';
 
 const genericMessage = 'If an eligible account exists, password reset instructions have been sent.';
 
 function ResetShell({ children, title }: { children: React.ReactNode; title: string }) {
   return <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: { xs: 4, md: 8 } }}><Container maxWidth="sm"><Stack spacing={3}>
-    <Stack alignItems="center" spacing={1}><LockResetIcon color="primary" sx={{ fontSize: 42 }} /><Typography variant="h4" component="h1">{title}</Typography></Stack>
+    <Stack alignItems="center" spacing={1}><MerchtylLogo size="medium" /><Stack direction="row" alignItems="center" spacing={1}><LockResetIcon color="primary" /><Typography variant="h4" component="h1">{title}</Typography></Stack></Stack>
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>{children}</Paper>
   </Stack></Container></Box>;
 }

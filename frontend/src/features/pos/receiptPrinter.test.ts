@@ -103,7 +103,10 @@ describe('BrowserReceiptPrinter', () => {
     const html = receiptHtml(receipt(), 58);
 
     expect(html).toContain('@page { size: 58mm auto; margin: 0; }');
-    expect(html).toContain('Merchtyl');
+    expect(html).toContain('/branding/Full black.svg');
+    expect(html).toContain('alt="Merchtyl"');
+    expect(html).toContain('onerror="this.remove()"');
+    expect(html).toContain('width: min(58%, 46mm)');
     expect(html).toContain('Coffee');
     expect(html).toContain('Sales tax');
   });

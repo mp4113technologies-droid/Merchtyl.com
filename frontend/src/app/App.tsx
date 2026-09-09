@@ -139,6 +139,7 @@ import { OwnerDashboardPage } from '../features/dashboard/OwnerDashboardPage';
 import { PwaPrompt } from '../features/pwa/PwaPrompt';
 import { getBusinessDayOperationalState, getCurrentRegisterSession, listRegisters, listStores, openBusinessDay } from '../api/client';
 import { MerchantPortalProvider, useMerchantPortal } from './MerchantPortalContext';
+import { MerchtylLogo } from './MerchtylLogo';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import {
   NewPlatformMerchantPage,
@@ -169,6 +170,7 @@ type AppProps = {
 function LoadingState() {
   return (
     <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} role="status" aria-live="polite">
+      <MerchtylLogo variant="icon" size="icon" decorative />
       <CircularProgress aria-label="Loading application" />
       <Typography color="text.secondary">Loading workspace</Typography>
     </Stack>
@@ -177,7 +179,8 @@ function LoadingState() {
 
 function PublicWebsite() {
   return <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} px={3} textAlign="center">
-    <Typography variant="h2" component="h1">Merchtyl</Typography>
+    <MerchtylLogo size="large" />
+    <Typography variant="h4" component="h1">Modern commerce operations</Typography>
     <Typography color="text.secondary">Modern commerce operations for growing merchants.</Typography>
     <Button href="mailto:hello@merchtyl.com" variant="contained">Request a demo</Button>
   </Stack>;
@@ -295,7 +298,7 @@ function PosLayout() {
           </Button>
           <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1, minWidth: 0 }}>
             <Box sx={{ width: 34, height: 34, borderRadius: 1, bgcolor: '#fff', p: 0.35, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <Box component="img" src="/branding/merchtyl-logo-mark.svg" alt="Merchtyl" sx={{ width: 30, height: 30, objectFit: 'contain' }} />
+              <MerchtylLogo variant="icon" size="icon" />
             </Box>
             <Typography variant="h6" noWrap sx={{ fontSize: 19 }}>{posLabel}</Typography>
           </Stack>
@@ -558,7 +561,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <Stack sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
       <Toolbar sx={{ minHeight: 64, px: 2, bgcolor: '#fff', flexShrink: 0 }}>
-        <Box component="img" src="/branding/merchtyl-logo-horizontal.png" alt="Merchtyl" sx={{ width: 150, height: 38, objectFit: 'contain', objectPosition: 'left center' }} />
+        <MerchtylLogo size="small" sx={{ objectPosition: 'left center' }} />
       </Toolbar>
       <Divider />
       <List component="div" sx={{ px: 1, py: 1.5, minWidth: 0, flex: 1, minHeight: 0, overflowY: 'auto' }}>

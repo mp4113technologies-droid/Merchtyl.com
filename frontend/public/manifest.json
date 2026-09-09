@@ -11,21 +11,21 @@
   "categories": ["business", "productivity"],
   "icons": [
     {
-      "src": "/branding/merchtyl-logo-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/branding/256_256.png",
+      "sizes": "256x256",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/branding/merchtyl-logo-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/branding/512_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/branding/merchtyl-logo-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/branding/512_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],
@@ -34,13 +34,13 @@
       "name": "Dashboard",
       "short_name": "Dashboard",
       "url": "/",
-      "icons": [{ "src": "/branding/merchtyl-logo-mark.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "icons": [{ "src": "/branding/256_256.png", "sizes": "256x256", "type": "image/png" }]
     },
     {
       "name": "Reports",
       "short_name": "Reports",
       "url": "/reports/sales",
-      "icons": [{ "src": "/branding/merchtyl-logo-mark.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "icons": [{ "src": "/branding/256_256.png", "sizes": "256x256", "type": "image/png" }]
     }
   ]
 }
