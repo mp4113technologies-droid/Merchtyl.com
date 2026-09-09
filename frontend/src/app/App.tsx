@@ -101,6 +101,7 @@ import { InventoryReportingPage } from '../features/inventory/InventoryReporting
 import { NewStockCountPage, StockCountDetailPage, StockCountsPage } from '../features/inventory/StockCountPages';
 import { HeldSalesPage, PosCartPage } from '../features/pos/PosPages';
 import { FoodPosPage } from '../features/pos/FoodPosPage';
+import { PosDeviceGuard } from '../features/pos/PosDeviceGuard';
 import { DiscountDefinitionsPage } from '../features/discounts/DiscountDefinitionsPage';
 import { FoodMenuPage } from '../features/foodmenu/FoodMenuPage';
 import { NewReturnPage, ReturnDetailPage, ReturnsPage } from '../features/returns/ReturnPages';
@@ -140,6 +141,9 @@ import { PwaPrompt } from '../features/pwa/PwaPrompt';
 import { getBusinessDayOperationalState, getCurrentRegisterSession, listRegisters, listStores, openBusinessDay } from '../api/client';
 import { MerchantPortalProvider, useMerchantPortal } from './MerchantPortalContext';
 import { MerchtylLogo } from './MerchtylLogo';
+import { useDeviceEnvironment } from './deviceEnvironment';
+import { isMobileManagementRoute, isMobileNavigationRoute } from './mobileAccessPolicy';
+import { MobileManagementRouteGuard, MobilePortalGuard } from './MobileAccessGuards';
 import { PublicComingSoonPage } from '../features/public/PublicComingSoonPage';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import {
@@ -365,18 +369,19 @@ function StoreMenuPage() {
     ? Boolean(store?.capabilities?.includes('RETAIL'))
     : Boolean(stores.data?.content.some((item) => item.capabilities?.includes('RETAIL')));
   const isCashier = roles.includes('CASHIER');
+  const { isDesktop } = useDeviceEnvironment();
   const operations = [
-    { label: 'Retail POS', to: '/pos', visible: retailEnabled && permissions.includes('POS_ACCESS') },
+    { label: 'Retail POS', to: '/pos', visible: retailEnabled && permissions.includes('POS_ACCESS'), desktopOnly: true },
     { label: 'Restaurant Menu', to: '/food-menu', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
     { label: 'Discounts', to: '/discounts', visible: permissions.includes('DISCOUNT_VIEW') },
     { label: 'Orders', to: '/sales', visible: foodServiceEnabled && permissions.includes('FOOD_ORDER_VIEW') },
-    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
+    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS'), desktopOnly: true },
     { label: 'Inventory / Product Lookup', to: '/inventory', visible: true },
     { label: 'Returns', to: '/returns', visible: true },
     { label: 'Current Register', to: '/register/current', visible: true },
     { label: 'Cash Operations', to: '/register/cash-movements', visible: true },
     { label: 'Dashboard', to: '/', visible: !isCashier }
-  ].filter((item) => item.visible);
+  ].filter((item) => item.visible && (isDesktop || item.desktopOnly || isMobileManagementRoute(item.to)));
 
   return (
     <Stack spacing={{ xs: 2, lg: 3 }} sx={{ width: '100%', maxWidth: 1100, mx: 'auto', minWidth: 0 }}>
@@ -391,14 +396,16 @@ function StoreMenuPage() {
             <Typography variant="h6">{register ? `${register.name} (${register.code})` : activeSession.registerId}</Typography>
             <Typography>{store ? `${store.name} (${store.code})` : activeSession.storeId} • OPEN</Typography>
             <Typography variant="body2" color="text.secondary">Opened {new Date(activeSession.openedAt).toLocaleString()}</Typography>
-            <Button component={Link} to={activeSession.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} variant="contained" startIcon={<PointOfSaleOutlinedIcon />} sx={{ alignSelf: 'flex-start' }}>
-              Return to POS
+            <Button component={Link} to={activeSession.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} variant="contained" startIcon={<PointOfSaleOutlinedIcon />} disabled={!isDesktop} sx={{ alignSelf: 'flex-start' }}>
+              {isDesktop ? 'Return to POS' : 'Desktop register required'}
             </Button>
           </Stack>
         ) : (
           <Stack spacing={1.5}>
             <Typography variant="h6">No active register</Typography>
-            <Button component={Link} to="/register/open" variant="contained" sx={{ alignSelf: 'flex-start' }}>Open / Select Register</Button>
+            <Button component={Link} to="/register/open" variant="contained" disabled={!isDesktop} sx={{ alignSelf: 'flex-start' }}>
+              {isDesktop ? 'Open / Select Register' : 'Desktop register required'}
+            </Button>
           </Stack>
         )}
       </Paper>
@@ -438,7 +445,12 @@ function StoreMenuPage() {
         <Grid container spacing={2}>
           {operations.map((item) => (
             <Grid item xs={12} sm={6} md={4} key={item.to}>
-              <Button component={Link} to={item.to} variant="outlined" fullWidth sx={{ minHeight: 64 }}>{item.label}</Button>
+              <Button component={Link} to={item.to} variant="outlined" fullWidth disabled={item.desktopOnly && !isDesktop} sx={{ minHeight: 64 }}>
+                <Stack spacing={0.25}>
+                  <span>{item.label}</span>
+                  {item.desktopOnly && !isDesktop ? <Typography component="span" variant="caption">Desktop register required</Typography> : null}
+                </Stack>
+              </Button>
             </Grid>
           ))}
         </Grid>
@@ -479,6 +491,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
   const permissions = currentUser?.permissions ?? [];
   const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
+  const { isDesktop: isDesktopDevice } = useDeviceEnvironment();
   const navigationSections = canViewPlatform ? [
     { id: 'platform', label: 'Platform', items: [
       { label: 'Overview', to: '/platform', icon: <ShieldOutlinedIcon /> },
@@ -502,8 +515,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       { label: 'Business Day', to: '/business-day', icon: <EventAvailableOutlinedIcon />, visible: businessDayAccess.canView }
     ] },
     { id: 'sales', label: 'Sales', items: [
-      { label: 'Retail POS', to: '/pos', icon: <PointOfSaleOutlinedIcon />, visible: canViewRegisters },
-      { label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon />, visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
+      { label: 'Retail POS', to: '/pos', icon: <PointOfSaleOutlinedIcon />, visible: canViewRegisters, desktopOnly: true },
+      { label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon />, visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS'), desktopOnly: true },
       { label: 'Held Sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon />, visible: canViewRegisters },
       { label: 'Returns', to: '/returns', icon: <ReceiptLongOutlinedIcon />, visible: canViewRegisters },
       { label: 'Discounts', to: '/discounts', icon: <ConfirmationNumberOutlinedIcon />, visible: permissions.includes('DISCOUNT_VIEW') }
@@ -558,7 +571,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <Divider />
       <List component="div" sx={{ px: 1, py: 1.5, minWidth: 0, flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {navigationSections.map((section) => {
-          const visibleItems = section.items.filter((item) => !('visible' in item) || item.visible !== false);
+          const visibleItems = section.items.filter((item) => (!('visible' in item) || item.visible !== false)
+            && (isDesktopDevice || canViewPlatform || isMobileNavigationRoute(item.to)));
           if (visibleItems.length === 0) return null;
           return <Box component="li" key={section.id} sx={{ listStyle: 'none', mb: 1.75, '&:last-child': { mb: 0 } }}>
             <Typography component="div" variant="overline" sx={{ display: 'block', px: 1.25, mb: 0.25, color: 'text.secondary', fontSize: 11, fontWeight: 700, letterSpacing: '.07em', lineHeight: '22px' }}>{section.label}</Typography>
@@ -569,7 +583,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                   : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
                 return <ListItemButton key={item.to} component={Link} to={item.to} selected={selected} onClick={onNavigate} sx={{ minHeight: 40, py: 0.5, px: 1.25, mb: 0.25, borderRadius: 1, position: 'relative', '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: 2, bgcolor: 'primary.main' }, '& .MuiListItemIcon-root': { minWidth: 34, color: selected ? 'primary.main' : 'text.secondary' }, '& .MuiSvgIcon-root': { fontSize: 20 }, '& .MuiListItemText-primary': { fontSize: 14, fontWeight: selected ? 700 : 500 } }}>
                   <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.label} />
+                  <ListItemText primary={item.label} secondary={'desktopOnly' in item && item.desktopOnly && !isDesktopDevice ? 'Desktop required' : undefined} />
                 </ListItemButton>;
               })}
             </List>
@@ -582,8 +596,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Typography variant="body2" fontWeight={700} noWrap>
             Register {activeRegister.data.registerId.slice(0, 8)} • OPEN
           </Typography>
-          <Button component={Link} to={activeRegister.data.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} size="small" variant="contained" fullWidth sx={{ mt: 1 }} onClick={onNavigate}>
-            Return to POS
+          <Button component={Link} to={activeRegister.data.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} size="small" variant="contained" fullWidth sx={{ mt: 1 }} onClick={onNavigate} disabled={!isDesktopDevice}>
+            {isDesktopDevice ? 'Return to POS' : 'Desktop required'}
           </Button>
         </Box>
       ) : null}
@@ -770,7 +784,7 @@ function AppShell() {
       >
         <Toolbar />
         <Box sx={{ width: '100%', maxWidth: 1920, mx: 'auto', minWidth: 0, p: { xs: 2, lg: 2.5, xl: 3 } }}>
-          <Outlet />
+          <MobileManagementRouteGuard><Outlet /></MobileManagementRouteGuard>
         </Box>
       </Box>
       <PwaPrompt />
@@ -814,12 +828,12 @@ function AppRoutes() {
       <Route path="/platform/login" element={session ? <Navigate to="/platform" replace /> : <PlatformLoginPage />} />
       <Route path="/activate-platform-admin" element={<PlatformAdminActivationPage />} />
       <Route element={<ProtectedRoute />}>
-        <Route element={<PosLayout />}>
+        <Route element={<PosDeviceGuard><PosLayout /></PosDeviceGuard>}>
           <Route path="/pos" element={<PosCartPage />} />
           <Route path="/pos/food" element={<FoodPosPage />} />
           <Route path="/pos/held-sales" element={<HeldSalesPage />} />
         </Route>
-        <Route element={<AppShell />}>
+        <Route element={<MobilePortalGuard><AppShell /></MobilePortalGuard>}>
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/store-menu" element={<StoreMenuPage />} />
           <Route path="/food-menu" element={<FoodMenuPage />} />
