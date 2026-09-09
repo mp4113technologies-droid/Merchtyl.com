@@ -1567,6 +1567,10 @@ export type RegisterSession = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  tillSecured?: boolean;
+  tillSecuredAt?: string | null;
+  tillPinLockedUntil?: string | null;
+  posPinConfigured?: boolean;
 };
 
 export type RegisterSessionListResponse = PageResponse<RegisterSession>;
@@ -2056,6 +2060,7 @@ export type UserAdmin = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  posPinConfigured?: boolean;
 };
 
 export type UserAdminListResponse = PageResponse<UserAdmin>;

@@ -90,6 +90,12 @@ public class User extends BaseUuidEntity {
     @Column(name = "credentials_delivery_status", length = 40)
     private String credentialsDeliveryStatus;
 
+    @Column(name = "pos_pin_hash", length = 255)
+    private String posPinHash;
+
+    @Column(name = "pos_pin_updated_at")
+    private Instant posPinUpdatedAt;
+
     protected User() {
     }
 
@@ -184,6 +190,15 @@ public class User extends BaseUuidEntity {
 
     public String getCredentialsDeliveryStatus() {
         return credentialsDeliveryStatus;
+    }
+
+    public String getPosPinHash() { return posPinHash; }
+    public Instant getPosPinUpdatedAt() { return posPinUpdatedAt; }
+    public boolean hasPosPin() { return posPinHash != null && !posPinHash.isBlank(); }
+
+    public void configurePosPin(String encodedPin, Instant updatedAt) {
+        this.posPinHash = encodedPin;
+        this.posPinUpdatedAt = updatedAt == null ? Instant.now() : updatedAt;
     }
 
     public void changePasswordHash(String passwordHash) {

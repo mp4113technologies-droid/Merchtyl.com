@@ -1176,4 +1176,34 @@ describe('POS pages', () => {
     expect(await screen.findByRole('heading', { name: 'Checkout' })).toBeInTheDocument();
     expect(await screen.findByText('Coffee')).toBeInTheDocument();
   });
+
+  it('secures and resumes the same Retail cart with backend PIN verification', async () => {
+    const baseSession = { ...registerSession(), posPinConfigured: true };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser());
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse(baseSession);
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${sessionId}/secure`)) return jsonResponse({ ...baseSession, tillSecured: true });
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${sessionId}/unlock`)) {
+        expect(JSON.parse(String(init?.body))).toEqual({ pin: '123456' });
+        return jsonResponse({ ...baseSession, tillSecured: false });
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page([register()]));
+      if (url.pathname.endsWith('/api/v1/devices')) return jsonResponse(page([device()]));
+      if (url.pathname.endsWith('/api/v1/products')) return jsonResponse(page([product()]));
+      return jsonResponse({}, 404);
+    });
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Product Search' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Product search' }), 'Coffee');
+    await userEvent.click(await screen.findByRole('button', { name: /Add Coffee/ }));
+    expect(screen.getByText('Coffee')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Secure Till' }));
+    expect(await screen.findByRole('dialog', { name: 'Till Secured' })).toBeInTheDocument();
+    for (const digit of ['1','2','3','4','5','6']) await userEvent.click(screen.getByRole('button', { name: digit }));
+    await userEvent.click(screen.getByRole('button', { name: 'Resume Till' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Till Secured' })).not.toBeInTheDocument());
+    expect(screen.getByText('Coffee')).toBeInTheDocument();
+  });
 });

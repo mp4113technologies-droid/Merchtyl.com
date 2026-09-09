@@ -19,6 +19,7 @@ import com.merchtyl.auth.PasswordPolicyException;
 import com.merchtyl.auth.PasswordConfirmationException;
 import com.merchtyl.auth.PasswordResetRestrictionException;
 import com.merchtyl.registersession.RegisterDeviceRequiredException;
+import com.merchtyl.registersession.InvalidTillCredentialException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -114,6 +115,11 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(),
                 request.getMethod());
         return error(HttpStatus.UNAUTHORIZED, "LOGIN_FAILED", DomainErrorCatalog.message("LOGIN_FAILED", null), request, List.of());
+    }
+
+    @ExceptionHandler(InvalidTillCredentialException.class)
+    ResponseEntity<ApiError> invalidTillCredential(HttpServletRequest request) {
+        return error(HttpStatus.UNAUTHORIZED, "INVALID_TILL_CREDENTIAL", "Invalid PIN or password. Try again.", request, List.of());
     }
 
     @ExceptionHandler(AccountLockedException.class)

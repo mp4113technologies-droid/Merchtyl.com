@@ -20,7 +20,8 @@ public record UserResponse(
         UUID updatedByUserId,
         Instant createdAt,
         Instant updatedAt,
-        long version
+        long version,
+        boolean posPinConfigured
 ) {
     public UserResponse(
             UUID id,
@@ -35,6 +36,6 @@ public record UserResponse(
             Instant updatedAt,
             long version) {
         this(id, email, displayName, enabled, locked, roles, storeIds, registerIds,
-                locked ? "LOCKED" : enabled ? "ACTIVE" : "DISABLED", List.of(), null, null, null, createdAt, updatedAt, version);
+                locked ? "LOCKED" : enabled ? "ACTIVE" : "DISABLED", List.of(), null, null, null, createdAt, updatedAt, version, false);
     }
 }

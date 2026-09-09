@@ -2538,6 +2538,22 @@ export async function getCurrentRegisterSession(token: string, params: { deviceI
   )) ?? null;
 }
 
+export function secureTill(token: string, registerSessionId: string) {
+  return request<RegisterSession>(`/register-sessions/${registerSessionId}/secure`, { method: 'POST' }, token);
+}
+
+export function unlockTill(token: string, registerSessionId: string, payload: { pin?: string; password?: string }) {
+  return request<RegisterSession>(`/register-sessions/${registerSessionId}/unlock`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }, token);
+}
+
+export function setUserPosPin(token: string, userId: string, pin: string) {
+  return request<UserAdmin>(`/users/${userId}/pos-pin`, {
+    method: 'POST', body: JSON.stringify({ pin })
+  }, token);
+}
+
 export function listRegisterSessions(token: string, params: RegisterSessionSearchParams = {}) {
   return request<RegisterSessionListResponse>(`/register-sessions${queryString(params)}`, undefined, token);
 }

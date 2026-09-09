@@ -36,6 +36,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,6 +84,8 @@ public class RegisterSessionService {
     private BusinessDayService businessDayService;
     @Autowired(required = false)
     private RegisterCapabilityService registerCapabilityService;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
     public RegisterSessionService(
@@ -245,6 +248,68 @@ public class RegisterSessionService {
                 .filter(session -> canViewCurrent(session, actor, authentication))
                 .map(session -> RegisterSessionResponse.from(session, cashLedgerService.breakdown(session)))
                 .orElse(null);
+    }
+
+    @Transactional
+    public RegisterSessionResponse secureTill(UUID id, Authentication authentication) {
+        RegisterSession session = registerSessionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Register session not found"));
+        User actor = requireTillOperator(session, authentication);
+        if (session.getStatus() != RegisterSessionStatus.OPEN) throw new ConflictException("REGISTER_SESSION_NOT_OPEN");
+        if (!actor.hasPosPin()) throw new ConflictException("POS_PIN_NOT_CONFIGURED");
+        if (!session.isTillSecured()) session.secureTill(Instant.now(clock));
+        RegisterSession saved = saveClosing(session);
+        auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.TILL_SECURED,
+                "REGISTER_SESSION", saved.getId(), saved.getStore().getId(), saved.getRegister().getId(), null,
+                Map.of("secured", true), null));
+        log.info("register_event event=TILL_SECURED tenant_id={} store_id={} register_id={} session_id={} actor_user_id={}",
+                actor.getTenantId(), saved.getStore().getId(), saved.getRegister().getId(), saved.getId(), actor.getId());
+        return RegisterSessionResponse.from(saved, cashLedgerService.breakdown(saved));
+    }
+
+    @Transactional(noRollbackFor = InvalidTillCredentialException.class)
+    public RegisterSessionResponse unlockTill(UUID id, TillUnlockRequest request, Authentication authentication) {
+        RegisterSession session = registerSessionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Register session not found"));
+        User actor = requireTillOperator(session, authentication);
+        if (session.getStatus() != RegisterSessionStatus.OPEN) throw new ConflictException("REGISTER_SESSION_NOT_OPEN");
+        if (!session.isTillSecured()) return RegisterSessionResponse.from(session, cashLedgerService.breakdown(session));
+        Instant now = Instant.now(clock);
+        boolean passwordMode = request.password() != null && !request.password().isBlank();
+        if (!passwordMode && session.getTillPinLockedUntil() != null && session.getTillPinLockedUntil().isAfter(now)) {
+            throw new ConflictException("TILL_PIN_TEMPORARILY_LOCKED");
+        }
+        boolean valid = passwordMode
+                ? passwordEncoder.matches(request.password(), actor.getPasswordHash())
+                : request.pin() != null && actor.hasPosPin() && passwordEncoder.matches(request.pin(), actor.getPosPinHash());
+        if (!valid) {
+            int nextAttempts = session.getTillPinFailedAttempts() + 1;
+            Instant lockedUntil = !passwordMode && nextAttempts >= 5 ? now.plusSeconds(300) : null;
+            session.recordTillPinFailure(lockedUntil);
+            registerSessionRepository.saveAndFlush(session);
+            auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.PIN_UNLOCK_FAILED,
+                    "REGISTER_SESSION", session.getId(), session.getStore().getId(), session.getRegister().getId(), null,
+                    Map.of("method", passwordMode ? "PASSWORD" : "PIN", "temporarilyLocked", lockedUntil != null), null));
+            throw new InvalidTillCredentialException();
+        }
+        session.resumeTill();
+        RegisterSession saved = saveClosing(session);
+        auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.TILL_RESUMED,
+                "REGISTER_SESSION", saved.getId(), saved.getStore().getId(), saved.getRegister().getId(), null,
+                Map.of("method", passwordMode ? "PASSWORD" : "PIN"), null));
+        log.info("register_event event=TILL_RESUMED tenant_id={} store_id={} register_id={} session_id={} actor_user_id={} method={}",
+                actor.getTenantId(), saved.getStore().getId(), saved.getRegister().getId(), saved.getId(), actor.getId(), passwordMode ? "PASSWORD" : "PIN");
+        return RegisterSessionResponse.from(saved, cashLedgerService.breakdown(saved));
+    }
+
+    private User requireTillOperator(RegisterSession session, Authentication authentication) {
+        User actor = currentUser(authentication);
+        if (!actor.isEnabled() || actor.isLocked() || !session.getAssignedCashier().getId().equals(actor.getId())
+                || !java.util.Objects.equals(session.getStore().getTenantId(), actor.getTenantId())) {
+            throw new ForbiddenOperationException("REGISTER_SESSION_OWNED_BY_ANOTHER_USER");
+        }
+        if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, session.getStore().getId());
+        return actor;
     }
 
     @Transactional

@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.Instant;
 
 @Service
 public class UserAdministrationService {
@@ -258,6 +259,19 @@ public class UserAdministrationService {
         UserResponse after = response(save(user));
         audit(authentication, AuditAction.USER_PASSWORD_RESET, id, before, after, "USER", null, null);
         return after;
+    }
+
+    @Transactional
+    public UserResponse setPosPin(UUID id, PosPinRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        User user = permittedTarget(actor, id, true, authentication);
+        requireCanModify(actor, user, primaryEmployeeRole(user), authentication);
+        user.configurePosPin(passwordEncoder.encode(request.pin()), Instant.now());
+        user.markUpdatedBy(actor.getId());
+        UserResponse response = response(save(user));
+        audit(authentication, AuditAction.USER_POS_PIN_UPDATED, id, null,
+                Map.of("posPinConfigured", true), "USER", null, null);
+        return response;
     }
 
     @Transactional
@@ -601,7 +615,8 @@ public class UserAdministrationService {
                 user.getUpdatedByUserId(),
                 user.getCreatedAt(),
                 user.getUpdatedAt(),
-                user.getVersion());
+                user.getVersion(),
+                user.hasPosPin());
     }
 
     private List<UserResponse> responses(List<User> users, UUID tenantId) {
@@ -635,7 +650,8 @@ public class UserAdministrationService {
                         user.getUpdatedByUserId(),
                         user.getCreatedAt(),
                         user.getUpdatedAt(),
-                        user.getVersion()))
+                        user.getVersion(),
+                        user.hasPosPin()))
                 .toList();
     }
 

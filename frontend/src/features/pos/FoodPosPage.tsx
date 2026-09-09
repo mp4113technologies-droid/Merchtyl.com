@@ -14,6 +14,7 @@ import { PaymentDialog } from './PosPages';
 import { loadReceiptPrinterPreferences } from './receiptPrinter';
 import { printFoodDocuments, type FoodPrintDocument, type FoodPrintStatus } from './foodOrderPrinter';
 import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
+import { SecureTill } from './SecureTill';
 
 function money(value: number, currency = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
@@ -41,6 +42,7 @@ export function FoodPosPage() {
   const [discount, setDiscount] = React.useState<OrderDiscount | null>(null);
   const [discountOpen, setDiscountOpen] = React.useState(false);
   const [printStates, setPrintStates] = React.useState<FoodPrintStates>(freshPrintStates);
+  const restoredSessionRef = React.useRef<string | null>(null);
   const deviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const permitted = currentUser?.permissions?.includes('FOOD_POS_ACCESS') ?? false;
   const current = useQuery({ queryKey: ['register-session', 'food-pos', deviceIdentifier], queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier }), enabled: permitted });
@@ -51,6 +53,26 @@ export function FoodPosPage() {
   const categories = useQuery({ queryKey: ['food-menu-categories', current.data?.storeId], queryFn: async () => listFoodMenuCategories(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
   const products = useQuery({ queryKey: ['food-menu-items', current.data?.storeId], queryFn: async () => listFoodMenuItems(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
   const savedDiscounts = useQuery({ queryKey: ['active-pos-discounts', current.data?.storeId], queryFn: async () => listActiveStoreDiscounts(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && canDiscount && Boolean(current.data?.storeId), staleTime: 5 * 60_000 });
+
+  React.useEffect(() => {
+    if (!current.data || restoredSessionRef.current === current.data.id) return;
+    restoredSessionRef.current = current.data.id;
+    try {
+      const raw = localStorage.getItem(`merchtyl.food-pos-state:${current.data.id}`);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { cart?: typeof cart; sale?: Sale | null; discount?: OrderDiscount | null };
+      if (Array.isArray(saved.cart)) setCart(saved.cart);
+      if (saved.sale) setSale(saved.sale);
+      if (saved.discount) setDiscount(saved.discount);
+    } catch { /* A corrupt recovery snapshot must never prevent POS access. */ }
+  }, [current.data]);
+
+  React.useEffect(() => {
+    if (!current.data || restoredSessionRef.current !== current.data.id) return;
+    const key = `merchtyl.food-pos-state:${current.data.id}`;
+    if (!cart.length && !sale && !discount) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify({ cart, sale, discount }));
+  }, [cart, sale, discount, current.data]);
 
   React.useEffect(() => {
     if (!categoryId && categories.data?.find(category => category.active)) setCategoryId(categories.data.find(category => category.active)?.id ?? null);
@@ -103,6 +125,7 @@ export function FoodPosPage() {
     checkout.reset();
     payment.reset();
     complete.reset();
+    if (current.data) localStorage.removeItem(`merchtyl.food-pos-state:${current.data.id}`);
   }
 
   if (currentUser && !permitted) return <Alert severity="error">FOOD_POS_ACCESS is required.</Alert>;
@@ -149,7 +172,7 @@ export function FoodPosPage() {
 
   return (
     <Stack spacing={2} sx={{ minHeight: 'calc(100dvh - 88px)', minWidth: 0 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}><RestaurantIcon color="primary" fontSize="large" /><Box sx={{ minWidth: 0 }}><Typography variant="h4">{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography color="text.secondary" noWrap>{store?.name}</Typography></Box></Stack>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ minWidth: 0 }}><Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}><RestaurantIcon color="primary" fontSize="large" /><Box sx={{ minWidth: 0 }}><Typography variant="h4">{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography color="text.secondary" noWrap>{store?.name}</Typography></Box></Stack>{current.data ? <SecureTill session={current.data} storeName={store?.name} busy={busy} /> : null}</Stack>
       {(current.isLoading || configuration.isLoading) ? <CircularProgress aria-label="Loading Food POS" /> : null}
       {categories.isSuccess && products.isSuccess && categories.data.length === 0 && products.data.length === 0 ? (
         <Alert severity="info" action={canManageMenu ? <Button component={Link} to="/food-menu">Create Restaurant Menu</Button> : undefined}>

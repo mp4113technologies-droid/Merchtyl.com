@@ -123,6 +123,12 @@ public class UserAdministrationController {
         return userAdministrationService.resetPassword(id, request, authentication);
     }
 
+    @PostMapping("/{id}/pos-pin")
+    @PreAuthorize("@authorizationService.hasTenantPermission(authentication, T(com.merchtyl.security.PermissionCode).USER_UPDATE)")
+    UserResponse setPosPin(@PathVariable UUID id, @Valid @RequestBody PosPinRequest request, Authentication authentication) {
+        return userAdministrationService.setPosPin(id, request, authentication);
+    }
+
     @PutMapping("/{id}/roles")
     @PreAuthorize("@authorizationService.hasTenantPermission(authentication, T(com.merchtyl.security.PermissionCode).USER_UPDATE)")
     UserResponse updateRoles(

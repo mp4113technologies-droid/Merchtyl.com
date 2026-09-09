@@ -75,6 +75,15 @@ public class RegisterSession extends BaseUuidEntity {
     @Column(length = 1000)
     private String forceCloseReason;
 
+    @Column(name = "till_secured_at")
+    private Instant tillSecuredAt;
+
+    @Column(name = "till_pin_failed_attempts", nullable = false)
+    private int tillPinFailedAttempts;
+
+    @Column(name = "till_pin_locked_until")
+    private Instant tillPinLockedUntil;
+
     protected RegisterSession() {
     }
 
@@ -176,6 +185,28 @@ public class RegisterSession extends BaseUuidEntity {
 
     public String getForceCloseReason() {
         return forceCloseReason;
+    }
+
+    public Instant getTillSecuredAt() { return tillSecuredAt; }
+    public int getTillPinFailedAttempts() { return tillPinFailedAttempts; }
+    public Instant getTillPinLockedUntil() { return tillPinLockedUntil; }
+    public boolean isTillSecured() { return tillSecuredAt != null; }
+
+    void secureTill(Instant securedAt) {
+        this.tillSecuredAt = securedAt;
+        this.tillPinFailedAttempts = 0;
+        this.tillPinLockedUntil = null;
+    }
+
+    void recordTillPinFailure(Instant lockedUntil) {
+        this.tillPinFailedAttempts++;
+        if (lockedUntil != null) this.tillPinLockedUntil = lockedUntil;
+    }
+
+    void resumeTill() {
+        this.tillSecuredAt = null;
+        this.tillPinFailedAttempts = 0;
+        this.tillPinLockedUntil = null;
     }
 
     void startClosing() {

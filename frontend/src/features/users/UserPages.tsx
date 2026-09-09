@@ -50,6 +50,7 @@ import {
   listUsers,
   reactivateUser,
   resetUserPassword,
+  setUserPosPin,
   updateUser,
   type UserAdminCreatePayload,
   type UserAdminSearchParams,
@@ -739,6 +740,7 @@ export function UserDetailPage() {
   const options = useAssignmentOptions(canView);
   const [savedMessage, setSavedMessage] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
+  const [newPosPin, setNewPosPin] = React.useState('');
 
   const user = useQuery({
     queryKey: merchantUserKeys.detail(id),
@@ -804,6 +806,14 @@ export function UserDetailPage() {
     }
   });
 
+  const pinMutation = useMutation({
+    mutationFn: async () => setUserPosPin(await getValidAccessToken(), id ?? '', newPosPin),
+    onSuccess: async (updated) => {
+      setNewPosPin(''); setSavedMessage('POS PIN configured.');
+      queryClient.setQueryData(merchantUserKeys.detail(id), updated);
+    }
+  });
+
   if (!canView) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -842,6 +852,7 @@ export function UserDetailPage() {
       {savedMessage ? <Alert severity="success" onClose={() => setSavedMessage('')}>{savedMessage}</Alert> : null}
       {statusMutation.isError ? <Alert severity="error">{errorMessage(statusMutation.error)}</Alert> : null}
       {resetMutation.isError ? <Alert severity="error">{errorMessage(resetMutation.error)}</Alert> : null}
+      {pinMutation.isError ? <Alert severity="error">{errorMessage(pinMutation.error)}</Alert> : null}
 
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
         <UserForm
@@ -856,6 +867,17 @@ export function UserDetailPage() {
           onSubmit={(values) => updateMutation.mutate(values)}
         />
       </Paper>
+
+      {canManage ? (
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
+          <Stack spacing={2} sx={{ maxWidth: 520 }}>
+            <Typography variant="h6" component="h2">POS Security</Typography>
+            <Typography color="text.secondary">POS PIN: {user.data.posPinConfigured ? 'Configured' : 'Not configured'}</Typography>
+            <TextField type="password" inputMode="numeric" label="New 6-digit POS PIN" value={newPosPin} onChange={event => setNewPosPin(event.target.value.replace(/\D/g, '').slice(0, 6))} inputProps={{ maxLength: 6 }} />
+            <Button variant="outlined" startIcon={<KeyIcon />} disabled={pinMutation.isPending || !/^\d{6}$/.test(newPosPin)} onClick={() => pinMutation.mutate()} sx={{ alignSelf: 'flex-start' }}>{user.data.posPinConfigured ? 'Reset PIN' : 'Set PIN'}</Button>
+          </Stack>
+        </Paper>
+      ) : null}
 
       {canManage ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>

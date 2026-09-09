@@ -90,6 +90,7 @@ import {
 } from './receiptPrinter';
 import { cashDenominations, centsToInput, decimalInputToCents, moneyToCents } from './paymentDenominations';
 import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
+import { SecureTill } from './SecureTill';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Request failed';
@@ -1274,7 +1275,7 @@ export function PosCartPage() {
     || cancelMutation.isPending
     || paymentMutation.isPending
     || completeMutation.isPending;
-  const cartLocked = busy || Boolean(activeSale?.payments.length) || activeSale?.status === 'COMPLETED';
+  const cartLocked = busy || Boolean(current.data?.tillSecured) || Boolean(activeSale?.payments.length) || activeSale?.status === 'COMPLETED';
   const barcodeError = barcodeMutation.error && !errorMessage(barcodeMutation.error).includes('BARCODE_NOT_FOUND')
     ? barcodeMutation.error
     : null;
@@ -1320,6 +1321,7 @@ export function PosCartPage() {
           <Typography variant="body2" color="text.secondary" noWrap>Scan, verify pricing and tax, then record payment.</Typography>
         </Box>
         <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
+          {current.data ? <SecureTill session={current.data} storeName={store?.name} busy={busy} /> : null}
           <Button size="small" component={Link} to="/pos/held-sales" variant="outlined" startIcon={<PlayCircleOutlineIcon />} sx={{ bgcolor: posTokens.colors.card }}>
             Held sales
           </Button>

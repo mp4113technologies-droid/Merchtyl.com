@@ -30,6 +30,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -65,6 +66,7 @@ class RegisterSessionServiceTest {
     private final RegisterSessionProperties properties = new RegisterSessionProperties();
     private final BusinessDayService businessDayService = mock(BusinessDayService.class);
     private final RolePermissionRepository rolePermissionRepository = mock(RolePermissionRepository.class);
+    private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final RegisterSessionService service = new RegisterSessionService(
             registerSessionRepository,
             storeRepository,
@@ -92,8 +94,10 @@ class RegisterSessionServiceTest {
         businessDay = mock(BusinessDay.class);
         ReflectionTestUtils.setField(service, "businessDayService", businessDayService);
         ReflectionTestUtils.setField(service, "rolePermissionRepository", rolePermissionRepository);
+        ReflectionTestUtils.setField(service, "passwordEncoder", passwordEncoder);
 
         when(store.getId()).thenReturn(STORE_ID);
+        when(store.getTenantId()).thenReturn(cashier.getTenantId());
         when(store.isActive()).thenReturn(true);
         when(register.getId()).thenReturn(REGISTER_ID);
         when(register.getStore()).thenReturn(store);
@@ -128,6 +132,69 @@ class RegisterSessionServiceTest {
                 new BigDecimal("5.00"),
                 new BigDecimal("130.50"),
                 List.of()));
+    }
+
+    @Test
+    void secureAndPinUnlockPreserveTheSameOpenSessionAndOpeningCash() {
+        cashier.configurePosPin("pin-hash", NOW);
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(passwordEncoder.matches("123456", "pin-hash")).thenReturn(true);
+
+        RegisterSessionResponse secured = service.secureTill(session.getId(), authentication("ROLE_CASHIER"));
+        RegisterSessionResponse resumed = service.unlockTill(session.getId(), new TillUnlockRequest("123456", null), authentication("ROLE_CASHIER"));
+
+        assertThat(secured.id()).isEqualTo(resumed.id());
+        assertThat(secured.tillSecured()).isTrue();
+        assertThat(resumed.tillSecured()).isFalse();
+        assertThat(resumed.status()).isEqualTo(RegisterSessionStatus.OPEN);
+        assertThat(resumed.openingCash()).isEqualByComparingTo("125.50");
+        assertThat(resumed.assignedCashierId()).isEqualTo(cashier.getId());
+    }
+
+    @Test
+    void wrongPinKeepsTillSecuredAndRecordsFailure() {
+        cashier.configurePosPin("pin-hash", NOW);
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        session.secureTill(NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(passwordEncoder.matches("000000", "pin-hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.unlockTill(session.getId(), new TillUnlockRequest("000000", null), authentication("ROLE_CASHIER")))
+                .isInstanceOf(InvalidTillCredentialException.class);
+        assertThat(session.isTillSecured()).isTrue();
+        assertThat(session.getTillPinFailedAttempts()).isEqualTo(1);
+        verify(registerSessionRepository).saveAndFlush(session);
+    }
+
+    @Test
+    void passwordFallbackResumesSameTill() {
+        cashier.configurePosPin("pin-hash", NOW);
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        session.secureTill(NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(passwordEncoder.matches("correct password", cashier.getPasswordHash())).thenReturn(true);
+
+        RegisterSessionResponse response = service.unlockTill(session.getId(),
+                new TillUnlockRequest(null, "correct password"), authentication("ROLE_CASHIER"));
+
+        assertThat(response.tillSecured()).isFalse();
+        assertThat(response.id()).isEqualTo(session.getId());
+    }
+
+    @Test
+    void userWithoutPinCannotSecureTillOrChangeRegisterState() {
+        RegisterSession session = new RegisterSession(store, register, businessDay, device, cashier,
+                new BigDecimal("125.50"), NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.secureTill(session.getId(), authentication("ROLE_CASHIER")))
+                .isInstanceOf(ConflictException.class).hasMessage("POS_PIN_NOT_CONFIGURED");
+        assertThat(session.isTillSecured()).isFalse();
+        assertThat(session.getStatus()).isEqualTo(RegisterSessionStatus.OPEN);
     }
 
     @Test

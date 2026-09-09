@@ -33,7 +33,11 @@ public record RegisterSessionResponse(
         Instant openedAt,
         Instant createdAt,
         Instant updatedAt,
-        long version
+        long version,
+        boolean tillSecured,
+        Instant tillSecuredAt,
+        Instant tillPinLockedUntil,
+        boolean posPinConfigured
 ) {
     public RegisterSessionResponse(
             UUID id, UUID storeId, UUID registerId, UUID deviceId,
@@ -46,7 +50,7 @@ public record RegisterSessionResponse(
         this(id, storeId, registerId, RegisterType.RETAIL, deviceId, null, assignedCashierId, assignedCashierEmail,
                 assignedCashierDisplayName, assignedCashierId, assignedCashierDisplayName, status, openingCash, expectedCash, countedCash,
                 expectedCashAtClose, differenceCash, closedByUserId, closedByEmail, closedByDisplayName,
-                closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version);
+                closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false);
     }
 
     static RegisterSessionResponse from(RegisterSession session, BigDecimal expectedCash) {
@@ -77,7 +81,8 @@ public record RegisterSessionResponse(
                 session.getOpenedAt(),
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
-                session.getVersion());
+                session.getVersion(), session.isTillSecured(), session.getTillSecuredAt(),
+                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin());
     }
 
     static RegisterSessionResponse from(RegisterSession session, CashLedgerBreakdownResponse reconciliation) {
@@ -108,6 +113,7 @@ public record RegisterSessionResponse(
                 session.getOpenedAt(),
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
-                session.getVersion());
+                session.getVersion(), session.isTillSecured(), session.getTillSecuredAt(),
+                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin());
     }
 }

@@ -37,6 +37,19 @@ public class RegisterSessionController {
         return registerSessionService.open(request, authentication);
     }
 
+    @PostMapping("/{id}/secure")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_VIEW)")
+    RegisterSessionResponse secure(@org.springframework.web.bind.annotation.PathVariable UUID id, Authentication authentication) {
+        return registerSessionService.secureTill(id, authentication);
+    }
+
+    @PostMapping("/{id}/unlock")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_VIEW)")
+    RegisterSessionResponse unlock(@org.springframework.web.bind.annotation.PathVariable UUID id,
+            @Valid @RequestBody TillUnlockRequest request, Authentication authentication) {
+        return registerSessionService.unlockTill(id, request, authentication);
+    }
+
     @GetMapping("/current")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_VIEW)")
     ResponseEntity<RegisterSessionResponse> current(
