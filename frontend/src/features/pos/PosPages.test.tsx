@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
 import { PaymentDialog } from './PosPages';
@@ -965,7 +965,10 @@ describe('POS pages', () => {
     render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
 
     expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
-    expect(await screen.findByLabelText('Receipt preview')).toHaveTextContent('Merchtyl');
+    const receiptPreview = await screen.findByLabelText('Receipt preview');
+    expect(within(receiptPreview).getByRole('heading', { name: 'Main Store' })).toBeInTheDocument();
+    expect(within(receiptPreview).getByText('Powered by')).toBeInTheDocument();
+    expect(within(receiptPreview).getByRole('img', { name: 'Merchtyl' })).toHaveAttribute('src', '/branding/Full black.svg');
     expect(screen.getAllByText('RCT-2026-07-21-00000000').length).toBeGreaterThan(0);
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Receipt width' }));

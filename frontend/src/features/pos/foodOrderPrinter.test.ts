@@ -37,6 +37,8 @@ describe('food order printing', () => {
     expect(html).not.toMatch(/\$|Subtotal|Tax|Total|Payment|Tendered|Change/);
     expect(html).not.toContain(ticket().saleId);
     expect(html).not.toContain(ticket().items[0].saleItemId);
+    expect(html).not.toContain('brand-logo');
+    expect(html).not.toContain('/branding/Full black.svg');
   });
 
   it('marks kitchen reprints while preserving the original token', () => {

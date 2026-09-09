@@ -106,9 +106,28 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('/branding/Full black.svg');
     expect(html).toContain('alt="Merchtyl"');
     expect(html).toContain('onerror="this.remove()"');
-    expect(html).toContain('width: min(58%, 46mm)');
+    expect(html).toContain('width: min(48%, 34mm)');
+    expect(html).toContain('height: auto');
+    expect(html).not.toContain('/branding/Full main.svg');
     expect(html).toContain('Coffee');
     expect(html).toContain('Sales tax');
+  });
+
+  it('makes the Store display name primary and moves Merchtyl attribution to the footer', () => {
+    const document = receipt();
+    document.store.name = 'Downtown Convenience & Food Services';
+    document.store.code = 'STORE1234';
+    document.store.legalName = 'Adviam Creatives';
+    const html = receiptHtml(document);
+
+    expect(html).toContain('<div class="store-name">Downtown Convenience &amp; Food Services</div>');
+    expect(html).toContain('font-size: 22px');
+    expect(html).toContain('overflow-wrap: anywhere');
+    expect(html).toContain('<div class="store-address">100 Market Street</div>');
+    expect(html).not.toContain('STORE1234');
+    expect(html.indexOf('Downtown Convenience')).toBeLessThan(html.indexOf('Powered by'));
+    expect(html.indexOf('Powered by')).toBeLessThan(html.indexOf('/branding/Full black.svg'));
+    expect(html.match(/\/branding\/Full black\.svg/g)).toHaveLength(1);
   });
 
   it('renders a customer-facing discount as a deduction', () => {
@@ -138,6 +157,8 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('$11.50');
     expect(html).not.toContain(document.saleId);
     expect(html).not.toContain('MENU-');
+    expect(html).toContain('/branding/Full black.svg');
+    expect(html).toContain('Powered by');
   });
 
   it('keeps a customer-appropriate Retail SKU but never renders internal entity IDs', () => {

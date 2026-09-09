@@ -1,4 +1,10 @@
 spring:
+  config:
+    # For local execution, copy this file to application-local.yml or keep an
+    # ignored application-local.yml containing local secrets. The optional
+    # import lets SPRING_PROFILES_ACTIVE=local.example use that file without
+    # committing credentials to this example.
+    import: optional:classpath:application-local.yml
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/merchtyl}
     username: ${SPRING_DATASOURCE_USERNAME:merchtyl}

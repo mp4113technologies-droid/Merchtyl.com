@@ -442,13 +442,25 @@ export function receiptHtml(receipt: ReceiptDocument, widthMm = 80) {
       width: ${widthMm}mm;
       padding: 4mm;
     }
+    .store-name {
+      max-width: 100%;
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+    .store-address { margin-top: 1mm; font-size: 12px; line-height: 1.25; }
+    .receipt-type { margin-top: 2mm; font-size: 13px; font-weight: 600; }
+    .receipt-branding { margin-top: 4mm; text-align: center; break-inside: avoid; }
+    .powered-by { margin-bottom: 1mm; font-size: 10px; font-weight: 500; line-height: 1.2; }
     .brand-logo {
       display: block;
-      width: min(58%, 46mm);
+      width: min(48%, 34mm);
       height: auto;
-      max-height: 10mm;
+      max-height: 7mm;
       object-fit: contain;
-      margin: 0 auto 2mm;
+      margin: 0 auto;
     }
     .center { text-align: center; }
     .muted { color: #444; }
@@ -507,17 +519,15 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
   `).join('');
 
   return `
-    <img class="brand-logo" src="${brandAssets.blackLogo}" alt="Merchtyl" onerror="this.remove()">
-    <div class="center muted">${escapeHtml(receipt.brandTagline)}</div>
-    ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
-    <div class="rule"></div>
     <div class="center">
-      ${receipt.store.legalName && receipt.store.legalName !== receipt.store.name ? `<strong>${escapeHtml(receipt.store.legalName)}</strong><br>` : ''}
-      <strong>${escapeHtml(receipt.store.name)}</strong><br>
-      ${escapeHtml(receipt.store.address)}
+      ${receipt.store.legalName?.trim() && receipt.store.legalName.trim() !== receipt.store.name?.trim() ? `<div><strong>${escapeHtml(receipt.store.legalName.trim())}</strong></div>` : ''}
+      <div class="store-name">${escapeHtml(receipt.store.name?.trim() || receipt.store.legalName?.trim() || 'Store')}</div>
+      ${receipt.store.address?.trim() ? `<div class="store-address">${escapeHtml(receipt.store.address.trim())}</div>` : ''}
       ${receipt.store.phone ? `<br>${escapeHtml(receipt.store.phone)}` : ''}
       ${receipt.store.email ? `<br>${escapeHtml(receipt.store.email)}` : ''}
+      <div class="receipt-type">${escapeHtml(receipt.brandTagline)}</div>
     </div>
+    ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="rule"></div>
     <div class="row"><span>Receipt</span><strong>#${escapeHtml(receipt.receiptNumber)}</strong></div>
     ${receipt.tokenNumber ? `<div class="row"><span>Order</span><strong>${escapeHtml(receipt.tokenNumber)}</strong></div>` : ''}
@@ -543,7 +553,23 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="rule"></div>
     ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="center">Thank you</div>
+    <div class="receipt-branding">
+      <div class="powered-by">Powered by</div>
+      <img class="brand-logo" src="${brandAssets.blackLogo}" alt="Merchtyl" onerror="this.remove()">
+    </div>
   `;
+}
+
+async function waitForPrintImages(document: Document, timeoutMs = 750) {
+  const pending = Array.from(document.images).filter((image) => !image.complete);
+  if (pending.length === 0) return;
+  await Promise.race([
+    Promise.all(pending.map((image) => new Promise<void>((resolve) => {
+      image.addEventListener('load', () => resolve(), { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+    }))),
+    new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs))
+  ]);
 }
 
 function escapeHtml(value: unknown) {
@@ -644,6 +670,7 @@ function createBrowserPrintFrame(): PosPrintFrame {
       printWindow.document.write(html);
       printWindow.document.close();
       if (printWindow.document.fonts?.ready) await printWindow.document.fonts.ready;
+      await waitForPrintImages(printWindow.document);
       await nextPaint(printWindow);
     },
     async printAndWait() {

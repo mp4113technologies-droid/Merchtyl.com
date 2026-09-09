@@ -91,6 +91,7 @@ import {
 import { cashDenominations, centsToInput, decimalInputToCents, moneyToCents } from './paymentDenominations';
 import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
 import { SecureTill } from './SecureTill';
+import { CustomerReceiptFooter, CustomerReceiptHeader } from './ReceiptBranding';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Request failed';
@@ -626,12 +627,7 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
       }}
     >
       <Stack spacing={1}>
-        <Box textAlign="center">
-          <Typography variant="h6" sx={{ fontFamily: 'inherit' }}>{receipt.brandName}</Typography>
-          <Typography variant="body2" color="text.secondary">{receipt.brandTagline}</Typography>
-          <Typography fontWeight={700}>{receipt.store.name}</Typography>
-          <Typography variant="body2">{receipt.store.address}</Typography>
-        </Box>
+        <CustomerReceiptHeader receipt={receipt} />
         <Divider />
         <Stack spacing={0.5}>
           <Stack direction="row" justifyContent="space-between">
@@ -698,6 +694,8 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
           <Typography variant="body2">Change</Typography>
           <Typography variant="body2">{money(receipt.changeDue, receipt.currencyCode)}</Typography>
         </Stack>
+        <Typography textAlign="center" variant="body2">Thank you</Typography>
+        <CustomerReceiptFooter />
       </Stack>
     </Paper>
   );
