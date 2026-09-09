@@ -7,10 +7,12 @@ export type PortalContext =
 
 const reserved = new Set(['www', 'api', 'platform', 'admin', 'app', 'portal', 'login', 'logout', 'signup', 'support', 'help', 'status', 'billing', 'docs', 'assets', 'static', 'mail', 'cdn']);
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const localPublicPreviewHosts = new Set(['public.localhost', '127.0.0.1.nip.io']);
 
 export function resolvePortalContext(hostname: string, publicBaseDomain = import.meta.env.VITE_PUBLIC_BASE_DOMAIN ?? 'merchtyl.com'): PortalContext {
   const host = hostname.trim().toLowerCase().replace(/\.$/, '');
   const base = publicBaseDomain.trim().toLowerCase();
+  if (localPublicPreviewHosts.has(host)) return { type: 'PUBLIC' };
   if (host === 'localhost' || host.endsWith('.localhost')) {
     const candidate = host === 'localhost' ? undefined : host.slice(0, -'.localhost'.length);
     return candidate && slugPattern.test(candidate) && !reserved.has(candidate)

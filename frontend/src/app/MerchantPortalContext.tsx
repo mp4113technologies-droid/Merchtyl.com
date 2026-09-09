@@ -33,6 +33,7 @@ export function MerchantPortalProvider({ children, hostname }: { children: React
   useEffect(() => {
     if (merchantSlug && query.data?.displayName) document.title = `${query.data.displayName} | Merchtyl`;
     else if (portalContext.type === 'PLATFORM') document.title = 'Merchtyl Platform';
+    else if (portalContext.type === 'PUBLIC') document.title = 'Merchtyl — Coming Soon';
     else document.title = 'Merchtyl';
   }, [merchantSlug, portalContext.type, query.data?.displayName]);
 

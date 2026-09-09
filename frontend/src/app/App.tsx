@@ -140,6 +140,7 @@ import { PwaPrompt } from '../features/pwa/PwaPrompt';
 import { getBusinessDayOperationalState, getCurrentRegisterSession, listRegisters, listStores, openBusinessDay } from '../api/client';
 import { MerchantPortalProvider, useMerchantPortal } from './MerchantPortalContext';
 import { MerchtylLogo } from './MerchtylLogo';
+import { PublicComingSoonPage } from '../features/public/PublicComingSoonPage';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import {
   NewPlatformMerchantPage,
@@ -177,15 +178,6 @@ function LoadingState() {
   );
 }
 
-function PublicWebsite() {
-  return <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} px={3} textAlign="center">
-    <MerchtylLogo size="large" />
-    <Typography variant="h4" component="h1">Modern commerce operations</Typography>
-    <Typography color="text.secondary">Modern commerce operations for growing merchants.</Typography>
-    <Button href="mailto:hello@merchtyl.com" variant="contained">Request a demo</Button>
-  </Stack>;
-}
-
 function UnknownPortal({ unavailable = false }: { unavailable?: boolean }) {
   return <Stack minHeight="100dvh" alignItems="center" justifyContent="center" spacing={2} px={3} textAlign="center">
     <Typography variant="h4" component="h1">{unavailable ? 'This Merchtyl portal is currently unavailable.' : "We couldn't find this Merchtyl portal."}</Typography>
@@ -197,7 +189,7 @@ function PortalBoundary({ children }: { children: React.ReactNode }) {
   const { portalContext: context, merchant, loading, error } = useMerchantPortal();
   const location = useLocation();
   const merchantPortal = context.type === 'MERCHANT' || (context.type === 'DEVELOPMENT' && Boolean(context.merchantSlug));
-  if (context.type === 'PUBLIC') return <PublicWebsite />;
+  if (context.type === 'PUBLIC') return <PublicComingSoonPage />;
   if (context.type === 'UNKNOWN') return <UnknownPortal />;
   if (context.type === 'PLATFORM' && !location.pathname.startsWith('/platform') && location.pathname !== '/activate-platform-admin') {
     return <Navigate to="/platform" replace />;

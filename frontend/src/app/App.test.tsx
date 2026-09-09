@@ -120,6 +120,18 @@ describe('App authentication', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
+  it('renders the branded Coming Soon page only on the public host', () => {
+    render(<App initialEntries={['/']} hostname="www.merchtyl.com" />);
+
+    expect(screen.getByRole('heading', { name: 'Coming Soon' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Merchtyl' })).toHaveAttribute('src', '/branding/Full main.svg');
+    expect(screen.getByText('Modern Commerce')).toBeInTheDocument();
+    expect(screen.getByText('Smarter Operations')).toBeInTheDocument();
+    expect(screen.getByText('Growing Merchants')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /request a demo/i })).toHaveAttribute('href', 'mailto:mp4113technologies@gmail.com?subject=Merchtyl%20demo%20request');
+    expect(document.title).toBe('Merchtyl — Coming Soon');
+  });
+
   it('brands a merchant login from public portal metadata without displaying the slug', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       if (String(input).endsWith('/api/v1/public/merchant-portals/adviam')) {
@@ -133,6 +145,7 @@ describe('App authentication', () => {
     expect(await screen.findByRole('heading', { name: 'Adviam Creatives' })).toBeInTheDocument();
     expect(screen.getByText('Sign in to your workspace')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Merchtyl' })).toHaveAttribute('src', '/branding/Full main.svg');
+    expect(screen.queryByRole('heading', { name: 'Coming Soon' })).not.toBeInTheDocument();
     expect(screen.queryByText('adviam')).not.toBeInTheDocument();
     expect(document.title).toBe('Adviam Creatives | Merchtyl');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -153,6 +166,7 @@ describe('App authentication', () => {
     render(<App initialEntries={['/platform/login']} hostname="platform.merchtyl.com" />);
 
     expect(await screen.findByRole('heading', { name: /platform/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Coming Soon' })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(document.title).toBe('Merchtyl Platform');
   });
