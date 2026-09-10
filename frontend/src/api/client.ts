@@ -179,7 +179,7 @@ export type MerchantOnboardingPayload = {
   defaultTaxRegionCode?: string;
   currencyOverrideReason?: string;
   businessNumber?: string;
-  industryType?: string;
+  industryType: import('../features/platform/industryTypes').IndustryType;
   estimatedStoreCount?: number;
   notes?: string;
   pricingPlanId: string;
@@ -1762,7 +1762,7 @@ export type PlatformMerchantUpdatePayload = {
   contactPhone?: string | null;
   billingAddress?: string | null;
   postalCode?: string | null;
-  industryType?: string | null;
+  industryType: import('../features/platform/industryTypes').IndustryType;
   estimatedStoreCount?: number | null;
   notes?: string | null;
   countryCode: string;

@@ -1,5 +1,6 @@
 package com.merchtyl.common;
 
+import com.merchtyl.platform.admin.IndustryType;
 import com.merchtyl.platform.web.CorrelationIdFilter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -71,6 +72,17 @@ class ErrorHandlingAndCorrelationIdTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.violations[0].field").value("name"))
                 .andExpect(jsonPath("$.violations[0].message").isNotEmpty());
+    }
+
+    @Test
+    void invalidIndustryTypeIsAFieldLevelBadRequest() throws Exception {
+        mockMvc.perform(post("/test/industry")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"industryType\":\"XYZ\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INDUSTRY_TYPE"))
+                .andExpect(jsonPath("$.message").value("Please select a valid Industry Type."))
+                .andExpect(jsonPath("$.violations[0].field").value("industryType"));
     }
 
     @Test
@@ -166,8 +178,15 @@ class ErrorHandlingAndCorrelationIdTest {
         @PostMapping("/validate")
         void validate(@Valid @RequestBody TestRequest request) {
         }
+
+        @PostMapping("/industry")
+        void industry(@RequestBody IndustryRequest request) {
+        }
     }
 
     record TestRequest(@NotBlank String name) {
+    }
+
+    record IndustryRequest(IndustryType industryType) {
     }
 }

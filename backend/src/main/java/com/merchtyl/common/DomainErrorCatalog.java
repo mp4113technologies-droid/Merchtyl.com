@@ -47,6 +47,8 @@ final class DomainErrorCatalog {
             entry("SALE_STATE_CHANGED", "The sale changed. Refresh and try again."),
             entry("SALE_NOT_DRAFT", "Only an unresolved draft or held sale can be force closed."),
             entry("SALE_FORCE_CLOSE_REASON_REQUIRED", "Select a force-close reason. Other reasons also require a note."),
+            entry("INDUSTRY_TYPE_REQUIRED", "Industry Type is required."),
+            entry("INVALID_INDUSTRY_TYPE", "Please select a valid Industry Type."),
             entry("BUSINESS_DAY_STATE_CHANGED", "The business day changed. Refresh the page and try again."),
             entry("VARIANCE_EXPLANATION_REQUIRED", "Explain the cash variance before closing the business day."),
             entry("OPEN_REGISTER_SESSION", "This business day can't be closed while registers are still open. Close the open register sessions first."),

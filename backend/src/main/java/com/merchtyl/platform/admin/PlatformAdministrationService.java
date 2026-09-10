@@ -294,7 +294,7 @@ public class PlatformAdministrationService {
                     geography.currency().getId(),
                     geography.timezone().getId(),
                     geography.taxRegion().getId(),
-                    cleanOptional(request.industryType()),
+                    request.industryType().name(),
                     request.estimatedStoreCount(),
                     cleanOptional(request.notes()));
 
@@ -564,7 +564,7 @@ public class PlatformAdministrationService {
                 cleanOptional(request.contactPhone()),
                 cleanOptional(request.billingAddress()),
                 cleanOptional(request.postalCode()),
-                cleanOptional(request.industryType()),
+                request.industryType().name(),
                 request.estimatedStoreCount(),
                 cleanOptional(request.notes()),
                 geography.country().getCode(),
@@ -1667,7 +1667,7 @@ public class PlatformAdministrationService {
                 rs.getString("primary_timezone"),
                 rs.getString("default_tax_region_code"),
                 rs.getString("postal_code"),
-                rs.getString("industry_type"),
+                IndustryType.valueOf(rs.getString("industry_type")),
                 (Integer) rs.getObject("estimated_store_count"),
                 rs.getString("notes"),
                 rs.getLong("version")), tenantId);

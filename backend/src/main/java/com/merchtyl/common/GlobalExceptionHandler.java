@@ -1,5 +1,7 @@
 package com.merchtyl.common;
 
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.merchtyl.platform.admin.IndustryType;
 import com.merchtyl.platform.web.CorrelationIdFilter;
 import com.merchtyl.platform.web.RequestLoggingFilter;
 import com.merchtyl.logging.LogSanitizer;
@@ -24,6 +26,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -170,6 +173,21 @@ public class GlobalExceptionHandler {
                 .map(error -> new ApiError.FieldViolation(error.getField(), "VALIDATION_ERROR", error.getDefaultMessage()))
                 .toList();
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", DomainErrorCatalog.message("VALIDATION_FAILED", null), request, violations);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> malformedRequest(HttpMessageNotReadableException exception, HttpServletRequest request) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof InvalidFormatException invalid
+                    && invalid.getTargetType() == IndustryType.class) {
+                String message = DomainErrorCatalog.message("INVALID_INDUSTRY_TYPE", null);
+                return error(HttpStatus.BAD_REQUEST, "INVALID_INDUSTRY_TYPE", message, request,
+                        List.of(new ApiError.FieldViolation("industryType", "INVALID_INDUSTRY_TYPE", message)));
+            }
+            cause = cause.getCause();
+        }
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", DomainErrorCatalog.message("VALIDATION_FAILED", null), request, List.of());
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

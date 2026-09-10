@@ -43,10 +43,26 @@ class PlatformMerchantUpdateContractTest {
                 .doesNotContain("merchantSlug");
     }
 
+    @Test
+    void requiresIndustryType() {
+        var request = new PlatformDtos.TenantUpdateRequest(
+                "Adviam Creatives Inc.", "Adviam Retail Group", "BN-1", "John Doe", "john@example.com",
+                "+1 506 555 0100", "10 Main Street, Moncton", "E1C 1A1", null, 3,
+                "Preferred merchant", "CA", "NB", "CAD", "America/Moncton", "CA-NB",
+                "Profile correction", 0L);
+        try (var validatorFactory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(validatorFactory.getValidator().validate(request))
+                    .anySatisfy(violation -> {
+                        assertThat(violation.getPropertyPath().toString()).isEqualTo("industryType");
+                        assertThat(violation.getMessage()).isEqualTo("INDUSTRY_TYPE_REQUIRED");
+                    });
+        }
+    }
+
     private static PlatformDtos.TenantUpdateRequest request(String displayName, String email) {
         return new PlatformDtos.TenantUpdateRequest(
                 "Adviam Creatives Inc.", displayName, "BN-1", "John Doe", email, "+1 506 555 0100",
-                "10 Main Street, Moncton", "E1C 1A1", "Retail", 3, "Preferred merchant",
+                "10 Main Street, Moncton", "E1C 1A1", IndustryType.RETAIL, 3, "Preferred merchant",
                 "CA", "NB", "CAD", "America/Moncton", "CA-NB", "Profile correction", 0L);
     }
 }

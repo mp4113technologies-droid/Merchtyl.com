@@ -85,7 +85,7 @@ function tenantDetail(): TenantDetail {
       primaryTimezone: 'America/Los_Angeles',
       defaultTaxRegionCode: 'CA',
       postalCode: null,
-      industryType: null,
+      industryType: 'OTHER',
       estimatedStoreCount: 1,
       notes: null,
       version: 0
@@ -310,7 +310,7 @@ describe('Platform merchant owner activation', () => {
         detail = {
           ...detail,
           tenant: { ...detail.tenant, displayName: body.displayName, legalName: body.legalName, version: 1 },
-          merchantProfile: { ...detail.merchantProfile, operatingName: body.displayName, contactPhone: body.contactPhone, version: 1 }
+          merchantProfile: { ...detail.merchantProfile, operatingName: body.displayName, contactPhone: body.contactPhone, industryType: body.industryType, version: 1 }
         };
         return jsonResponse(detail);
       }
@@ -330,18 +330,20 @@ describe('Platform merchant owner activation', () => {
     expect(within(dialog).getByLabelText(/^Contact email/)).toHaveValue('owner@example.local');
     expect(within(dialog).getByLabelText('Merchant slug')).toHaveValue('acme-market');
     expect(within(dialog).getByLabelText('Merchant slug')).toHaveAttribute('readonly');
+    expect(within(dialog).getByRole('combobox', { name: 'Industry Type' })).toHaveTextContent('Other');
     expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeDisabled();
 
-    await userEvent.clear(within(dialog).getByLabelText(/^Display name/));
-    await userEvent.type(within(dialog).getByLabelText(/^Display name/), 'Acme Retail Group');
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Industry Type' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Grocery Store' }));
     expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeEnabled();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save Changes' }));
 
-    expect(await screen.findByRole('heading', { name: 'Acme Retail Group' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Acme Market' })).toBeInTheDocument();
+    expect(await screen.findByText('Industry: Grocery Store')).toBeInTheDocument();
     expect(screen.getByText('https://acme-market.merchtyl.com')).toBeInTheDocument();
     expect(await screen.findByText('Merchant details updated successfully.')).toBeInTheDocument();
     const updateCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith(`/api/v1/platform/tenants/${tenantId}`) && init?.method === 'PUT');
-    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({ displayName: 'Acme Retail Group' });
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({ displayName: 'Acme Market', industryType: 'GROCERY_STORE' });
     expect(JSON.parse(String(updateCall?.[1]?.body))).not.toHaveProperty('merchantSlug');
   });
 });
@@ -488,6 +490,9 @@ describe('Pricing-plan-driven merchant onboarding', () => {
     await userEvent.type(await screen.findByLabelText(/^Legal business name/), 'Acme Market LLC');
     await userEvent.type(screen.getByLabelText(/^Operating name/), 'Acme Market');
     await userEvent.type(screen.getByLabelText(/^Tenant code/), 'ACME');
+    expect(screen.getByText('Industry Type is required.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('combobox', { name: 'Industry Type' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Convenience Store' }));
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Country' }));
@@ -515,6 +520,7 @@ describe('Pricing-plan-driven merchant onboarding', () => {
 
     await waitFor(() => expect(submitted).toBeDefined());
     expect(submitted?.pricingPlanId).toBe('plan-growth');
+    expect(submitted?.industryType).toBe('CONVENIENCE_STORE');
     expect(submitted?.storeCapabilities).toEqual(['RETAIL', 'FOOD_SERVICE']);
     expect(submitted?.kitchenDisplayName).toBe('Acme Kitchen');
     expect(submitted).not.toHaveProperty('subscriptionPlan');

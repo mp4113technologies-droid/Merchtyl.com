@@ -97,7 +97,7 @@ export type MerchantProfile = {
   primaryTimezone: string | null;
   defaultTaxRegionCode: string | null;
   postalCode: string | null;
-  industryType: string | null;
+  industryType: import('../features/platform/industryTypes').IndustryType;
   estimatedStoreCount: number | null;
   notes: string | null;
   version: number;
