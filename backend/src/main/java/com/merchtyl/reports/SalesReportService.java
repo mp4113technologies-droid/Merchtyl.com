@@ -62,8 +62,8 @@ public class SalesReportService {
 
         for (Sale sale : sales) {
             List<SaleItem> matchingItems = sale.getItems().stream()
-                    .filter(item -> matchesProductFilters(item.getProduct().getId(),
-                            item.getProduct().getCategory() == null ? null : item.getProduct().getCategory().getId(),
+                    .filter(item -> matchesProductFilters(item.getProduct() == null ? null : item.getProduct().getId(),
+                            item.getProduct() == null || item.getProduct().getCategory() == null ? null : item.getProduct().getCategory().getId(),
                             filters))
                     .toList();
             if (matchingItems.isEmpty()) {
@@ -86,8 +86,8 @@ public class SalesReportService {
         long refundCount = 0;
         for (Refund refund : refunds) {
             List<ReturnItem> matchingItems = refund.getReturnRecord().getItems().stream()
-                    .filter(item -> matchesProductFilters(item.getProduct().getId(),
-                            item.getProduct().getCategory() == null ? null : item.getProduct().getCategory().getId(),
+                    .filter(item -> matchesProductFilters(item.getProduct() == null ? null : item.getProduct().getId(),
+                            item.getProduct() == null || item.getProduct().getCategory() == null ? null : item.getProduct().getCategory().getId(),
                             filters))
                     .toList();
             if (matchingItems.isEmpty()) {

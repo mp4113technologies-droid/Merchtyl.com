@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record SaleItemResponse(
         UUID id,
+        SaleLineType lineType,
         UUID productId,
         UUID variantId,
         int lineNumber,
@@ -12,6 +13,7 @@ public record SaleItemResponse(
         String productName,
         String variantSku,
         String variantName,
+        CustomItemTaxTreatment customItemTaxTreatment,
         BigDecimal quantity,
         BigDecimal unitPrice,
         BigDecimal discountAmount,
@@ -35,7 +37,7 @@ public record SaleItemResponse(
                             String completedProductCapabilities, boolean priceOverride, boolean ageVerified,
                             String serialNumber, String externalReference, UUID customerId, String paymentMethodCode,
                             BigDecimal lineSubtotal, BigDecimal estimatedTaxAmount, BigDecimal lineTotal, long version) {
-        this(id, productId, null, lineNumber, productSku, productName, null, null, quantity, unitPrice,
+        this(id, SaleLineType.CATALOG_PRODUCT, productId, null, lineNumber, productSku, productName, null, null, null, quantity, unitPrice,
                 discountAmount, completedProductCost, completedProductPrice, completedProductCapabilities,
                 priceOverride, ageVerified, serialNumber, externalReference, customerId, paymentMethodCode,
                 lineSubtotal, estimatedTaxAmount, lineTotal, version);
@@ -44,13 +46,15 @@ public record SaleItemResponse(
     static SaleItemResponse from(SaleItem item) {
         return new SaleItemResponse(
                 item.getId(),
-                item.getProduct().getId(),
+                item.getLineType(),
+                item.getProduct() == null ? null : item.getProduct().getId(),
                 item.getVariant() == null ? null : item.getVariant().getId(),
                 item.getLineNumber(),
                 item.getProductSku(),
                 item.getProductName(),
                 item.getVariantSku(),
                 item.getVariantName(),
+                item.getCustomItemTaxTreatment(),
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getDiscountAmount(),

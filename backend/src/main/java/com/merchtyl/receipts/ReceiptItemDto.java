@@ -7,7 +7,6 @@ public record ReceiptItemDto(
         UUID id,
         UUID productId,
         int lineNumber,
-        String productSku,
         String productName,
         BigDecimal quantity,
         BigDecimal unitPrice,
@@ -19,4 +18,11 @@ public record ReceiptItemDto(
         BigDecimal taxAmount,
         BigDecimal lineTotal
 ) {
+    public ReceiptItemDto(UUID id, UUID productId, int lineNumber, String ignoredProductSku,
+            String productName, BigDecimal quantity, BigDecimal unitPrice, BigDecimal completedProductCost,
+            BigDecimal completedProductPrice, String completedProductCapabilities, BigDecimal discountAmount,
+            BigDecimal lineSubtotal, BigDecimal taxAmount, BigDecimal lineTotal) {
+        this(id, productId, lineNumber, productName, quantity, unitPrice, completedProductCost,
+                completedProductPrice, completedProductCapabilities, discountAmount, lineSubtotal, taxAmount, lineTotal);
+    }
 }

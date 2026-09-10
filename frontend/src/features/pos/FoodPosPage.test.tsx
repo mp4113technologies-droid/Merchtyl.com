@@ -120,7 +120,7 @@ describe('Food POS', () => {
     await userEvent.clear(firstCashInput);
     await userEvent.type(firstCashInput, '60');
     expect(within(firstPaymentDialog).getAllByText(/CA\$60\.00/).length).toBeGreaterThan(0);
-    expect(within(firstPaymentDialog).getByText(/CA\$35\.16/)).toBeInTheDocument();
+    expect(within(firstPaymentDialog).getByText(/CA\$35\.15/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
     expect(await screen.findByText(/RCT-FOOD-1/)).toBeInTheDocument();

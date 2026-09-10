@@ -5,6 +5,8 @@ import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductVariant;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.JoinColumn;
@@ -23,9 +25,19 @@ public class SaleItem extends BaseUuidEntity {
     @JoinColumn(name = "sale_id", nullable = false, foreignKey = @ForeignKey(name = "fk_sale_items_sale"))
     private Sale sale;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "product_id", nullable = false, foreignKey = @ForeignKey(name = "fk_sale_items_product"))
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", foreignKey = @ForeignKey(name = "fk_sale_items_product"))
     private Product product;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private SaleLineType lineType = SaleLineType.CATALOG_PRODUCT;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private CustomItemTaxTreatment customItemTaxTreatment;
+
+    private UUID taxCategorySnapshotId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "variant_id", foreignKey = @ForeignKey(name = "fk_sale_items_variant"))
@@ -125,6 +137,23 @@ public class SaleItem extends BaseUuidEntity {
                 externalReference, customerId, paymentMethodCode);
     }
 
+    static SaleItem customItem(Sale sale, String description, BigDecimal quantity, BigDecimal unitPrice,
+                               CustomItemTaxTreatment taxTreatment, UUID taxCategoryId) {
+        SaleItem item = new SaleItem();
+        item.sale = sale;
+        item.product = null;
+        item.lineType = SaleLineType.CUSTOM_ITEM;
+        item.customItemTaxTreatment = taxTreatment;
+        item.taxCategorySnapshotId = taxCategoryId;
+        item.productSku = null;
+        item.productName = description;
+        item.updateInputs(quantity, unitPrice, BigDecimal.ZERO.setScale(2), false, false,
+                null, null, null, null);
+        item.setCalculatedAmounts(BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2));
+        item.initializeIdAndTimestamps();
+        return item;
+    }
+
     void assignLineNumber(int lineNumber) {
         this.lineNumber = lineNumber;
     }
@@ -170,6 +199,12 @@ public class SaleItem extends BaseUuidEntity {
     }
 
     void snapshotForCompletion() {
+        if (isCustomItem()) {
+            completedProductCost = BigDecimal.ZERO.setScale(4);
+            completedProductPrice = unitPrice;
+            completedProductCapabilities = null;
+            return;
+        }
         this.completedProductCost = product.getCost();
         this.completedProductPrice = product.getPrice();
         this.completedProductCapabilities = product.getCapabilities().stream()
@@ -179,6 +214,9 @@ public class SaleItem extends BaseUuidEntity {
     }
 
     SaleItemRequest validationRequest() {
+        if (isCustomItem()) {
+            throw new IllegalStateException("Custom items do not use catalog item handlers");
+        }
         return new SaleItemRequest(
                 product,
                 quantity,
@@ -199,6 +237,11 @@ public class SaleItem extends BaseUuidEntity {
     public Product getProduct() {
         return product;
     }
+
+    public SaleLineType getLineType() { return lineType; }
+    public boolean isCustomItem() { return lineType == SaleLineType.CUSTOM_ITEM; }
+    public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
+    public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
 
     public ProductVariant getVariant() { return variant; }
 

@@ -343,12 +343,20 @@ describe('Product pages', () => {
     await userEvent.clear(screen.getAllByLabelText('Price')[1]);
     await userEvent.type(screen.getAllByLabelText('Price')[1], '3.25');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add barcode' }));
-    expect(screen.getByTestId('product-barcode-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    const writesBeforeScanning = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT').length;
+    await userEvent.click(screen.getByRole('button', { name: 'Scan Multiple Barcodes' }));
+    const scanner = screen.getByRole('textbox', { name: 'Scan or enter barcode' });
+    await userEvent.type(scanner, '987654321098{enter}');
+    await userEvent.type(scanner, '987654321099{enter}');
+    await userEvent.type(scanner, '987654321098{enter}');
+    expect(screen.getByText('Barcode already scanned.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add All (2)' })).toBeEnabled();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT')).toHaveLength(writesBeforeScanning);
+    await userEvent.click(screen.getByRole('button', { name: 'Add All (2)' }));
+    expect(await screen.findAllByTestId('product-barcode-card')).toHaveLength(2);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('product-barcode-card')[0]).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
     expect(screen.getByRole('button', { name: 'Create product' })).toBeVisible();
-    await userEvent.click(screen.getByRole('combobox', { name: 'Assign To Variant' }));
-    await userEvent.click(await screen.findByRole('option', { name: 'Large — TEA-LARGE' }));
-    await userEvent.type(screen.getByLabelText('Barcode'), '987654321098');
     await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
 
     expect(await screen.findByRole('heading', { name: 'Iced Tea' })).toBeInTheDocument();
@@ -362,6 +370,7 @@ describe('Product pages', () => {
         && body.variants[0].sku === 'TEA-LARGE'
         && body.barcodes[0].barcode === '987654321098'
         && body.barcodes[0].variantSku === 'TEA-LARGE'
+        && body.barcodes[1].barcode === '987654321099'
         && body.unitOfMeasureId === '00000000-0000-0000-0000-000000000803'
         && body.taxCategoryId === '00000000-0000-0000-0000-000000000901'
         && body.taxCategoryId !== 'Standard Tax'
@@ -423,6 +432,12 @@ describe('Product pages', () => {
         && body.barcodes[0].variantId == null
         && body.barcodes[0].variantSku == null;
     })).toBe(true));
+  });
+
+  it('sends one bulk request after scanning multiple aliases for an existing variant', async () => {
+    storeSession(['OWNER']);const current=product({taxCategoryId:'00000000-0000-0000-0000-000000000901'});let bulkBody:any;
+    const fetchMock=vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),window.location.origin);if(url.pathname.endsWith('/api/v1/auth/me'))return jsonResponse(currentUser(['OWNER']));const reference=mockReferenceEndpoints(url);if(reference)return reference;if(url.pathname.endsWith(`/api/v1/product-variants/${current.variants[0].id}/barcodes/bulk`)&&init?.method==='POST'){bulkBody=JSON.parse(String(init.body));return jsonResponse({variantId:current.variants[0].id,addedCount:3,barcodes:bulkBody.barcodes.map((barcode:string,index:number)=>({id:`00000000-0000-0000-0000-00000000900${index}`,barcode,variantId:current.variants[0].id,variantSku:current.variants[0].sku,primaryBarcode:false,active:true}))});}if(url.pathname.endsWith(`/api/v1/products/${current.id}`))return jsonResponse(current);return apiError('Unexpected request');});
+    render(<App initialEntries={[`/products/${current.id}`]}/>);await screen.findByRole('heading',{name:current.name});await userEvent.click(screen.getByRole('button',{name:'Scan Multiple Barcodes'}));const scanner=screen.getByRole('textbox',{name:'Scan or enter barcode'});for(const code of ['00001','00002','00003'])await userEvent.type(scanner,`${code}{enter}`);expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(0);await userEvent.click(screen.getByRole('button',{name:'Add All (3)'}));await waitFor(()=>expect(bulkBody).toEqual({barcodes:['00001','00002','00003']}));expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(1);
   });
 
   it('validates, edits, and deactivates a product', async () => {

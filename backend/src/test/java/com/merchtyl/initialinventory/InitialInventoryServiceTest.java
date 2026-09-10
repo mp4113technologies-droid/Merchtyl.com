@@ -48,12 +48,12 @@ class InitialInventoryServiceTest {
     private static byte[] workbook() throws Exception {
         try(var workbook=new XSSFWorkbook();var out=new ByteArrayOutputStream()){
             var setup=workbook.createSheet("Inventory Setup");var refs=workbook.createSheet("Reference Data");
-            String[] headers={"Product Reference","Product Name *","Variant Name *","Barcode","SKU","Selling Price *","Cost Price","Opening Quantity *","Low Stock Level","Category","Brand","Unit","Tax Category *","Supplier","Age Restricted","Active"};
+            String[] headers={"Product Reference","Product Name *","Variant Name *","Barcode","Additional Barcodes","SKU","Selling Price *","Cost Price","Opening Quantity *","Low Stock Level","Category","Brand","Unit","Tax Category *","Supplier","Age Restricted","Active"};
             var header=setup.createRow(0);for(int i=0;i<headers.length;i++)header.createCell(i).setCellValue(headers[i]);
             add(setup,1,"355 ml","B1",1.99,24);add(setup,2,"500 ml","B2",2.79,18);add(setup,3,"2 L","B3",4.49,8);
-            refs.createRow(0).createCell(24).setCellValue("templateVersion");refs.createRow(1).createCell(24).setCellValue(1);workbook.write(out);return out.toByteArray();
+            refs.createRow(0).createCell(24).setCellValue("templateVersion");refs.createRow(1).createCell(24).setCellValue(2);workbook.write(out);return out.toByteArray();
         }
     }
 
-    private static void add(org.apache.poi.ss.usermodel.Sheet sheet,int index,String variant,String barcode,double price,int quantity){var row=sheet.createRow(index);row.createCell(1).setCellValue("Coca Cola");row.createCell(2).setCellValue(variant);row.createCell(3).setCellValue(barcode);row.createCell(5).setCellValue(price);row.createCell(7).setCellValue(quantity);row.createCell(12).setCellValue("Standard");row.createCell(14).setCellValue("NO");row.createCell(15).setCellValue("YES");}
+    private static void add(org.apache.poi.ss.usermodel.Sheet sheet,int index,String variant,String barcode,double price,int quantity){var row=sheet.createRow(index);row.createCell(1).setCellValue("Coca Cola");row.createCell(2).setCellValue(variant);row.createCell(3).setCellValue(barcode);row.createCell(6).setCellValue(price);row.createCell(8).setCellValue(quantity);row.createCell(13).setCellValue("Standard");row.createCell(15).setCellValue("NO");row.createCell(16).setCellValue("YES");}
 }

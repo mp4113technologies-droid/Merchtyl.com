@@ -26,14 +26,14 @@ public class ReturnItem extends BaseUuidEntity {
     @JoinColumn(name = "original_sale_item_id", nullable = false, foreignKey = @ForeignKey(name = "fk_return_items_sale_item"))
     private SaleItem originalSaleItem;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "product_id", nullable = false, foreignKey = @ForeignKey(name = "fk_return_items_product"))
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", foreignKey = @ForeignKey(name = "fk_return_items_product"))
     private Product product;
 
     @Column(nullable = false)
     private int lineNumber;
 
-    @Column(nullable = false, length = 64)
+    @Column(length = 64)
     private String productSku;
 
     @Column(nullable = false, length = 180)
@@ -120,7 +120,9 @@ public class ReturnItem extends BaseUuidEntity {
         this.originalProductCost = originalSaleItem.getCompletedProductCost();
         this.originalProductPrice = originalSaleItem.getCompletedProductPrice();
         this.originalProductCapabilities = originalSaleItem.getCompletedProductCapabilities();
-        this.originalProductTaxCategoryId = originalSaleItem.getProduct().getTaxCategoryId();
+        this.originalProductTaxCategoryId = originalSaleItem.isCustomItem()
+                ? originalSaleItem.getTaxCategorySnapshotId()
+                : originalSaleItem.getProduct().getTaxCategoryId();
         this.returnSubtotalAmount = returnSubtotalAmount;
         this.returnTaxAmount = returnTaxAmount;
         this.returnTotalAmount = returnTotalAmount;

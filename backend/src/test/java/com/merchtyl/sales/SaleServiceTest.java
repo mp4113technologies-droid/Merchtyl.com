@@ -44,6 +44,9 @@ import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
 import com.merchtyl.tax.TaxEngine;
 import com.merchtyl.tax.TaxRoundingStrategy;
+import com.merchtyl.tax.TaxCategory;
+import com.merchtyl.tax.TaxCategoryRepository;
+import com.merchtyl.tax.TaxTreatment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -87,6 +90,7 @@ class SaleServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final SaleItemHandlerRegistry saleItemHandlerRegistry = mock(SaleItemHandlerRegistry.class);
     private final TaxEngine taxEngine = mock(TaxEngine.class);
+    private final TaxCategoryRepository taxCategoryRepository = mock(TaxCategoryRepository.class);
     private final AuditService auditService = mock(AuditService.class);
     private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
     private final InventoryService inventoryService = mock(InventoryService.class);
@@ -149,6 +153,7 @@ class SaleServiceTest {
         ReflectionTestUtils.setField(service, "discountDefinitionService", discountDefinitionService);
         ReflectionTestUtils.setField(service, "discountEngine", new DiscountEngine());
         ReflectionTestUtils.setField(service, "storeAccessService", storeAccessService);
+        ReflectionTestUtils.setField(service, "taxCategoryRepository", taxCategoryRepository);
         when(store.getId()).thenReturn(STORE_ID);
         when(store.getTimezone()).thenReturn("America/Los_Angeles");
         when(store.getCurrencyCode()).thenReturn("USD");
@@ -168,6 +173,82 @@ class SaleServiceTest {
         when(userRepository.findByEmailIgnoreCase("other@example.test")).thenReturn(Optional.of(otherCashier));
         when(saleRepository.saveAndFlush(any(Sale.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenReturn(taxResponse(new BigDecimal("10.00"), new BigDecimal("1.50"), new BigDecimal("11.50")));
+    }
+
+    @Test
+    void checkoutCreatesTaxableCustomItemWithoutCatalogOrInventoryIdentity() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, " Grocery Item ",
+                        new BigDecimal("7.99"), CustomItemTaxTreatment.TAXABLE, new BigDecimal("2"), false))), customItemAuth());
+
+        SaleItemResponse item = response.items().getFirst();
+        assertThat(item.lineType()).isEqualTo(SaleLineType.CUSTOM_ITEM);
+        assertThat(item.productId()).isNull();
+        assertThat(item.productName()).isEqualTo("Grocery Item");
+        assertThat(item.customItemTaxTreatment()).isEqualTo(CustomItemTaxTreatment.TAXABLE);
+        ArgumentCaptor<TaxCalculationRequest> request = ArgumentCaptor.forClass(TaxCalculationRequest.class);
+        verify(taxEngine).calculate(request.capture(), any());
+        assertThat(request.getValue().productId()).isNull();
+        assertThat(request.getValue().productTaxCategoryId()).isEqualTo(standard.getId());
+        verify(productRepository, never()).findById(any());
+    }
+
+    @Test
+    void checkoutRejectsCustomItemWithoutPermissionAndRejectsProductIdentityMasqueradingAsCustom() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        SaleCheckoutItemRequest custom = new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null,
+                "Grocery", BigDecimal.ONE, CustomItemTaxTreatment.NON_TAXABLE, BigDecimal.ONE, false);
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(custom)), cashierAuth()))
+                .isInstanceOf(ForbiddenOperationException.class).hasMessage("CUSTOM_ITEM_NOT_ALLOWED");
+
+        SaleCheckoutItemRequest tampered = new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, PRODUCT_ID, null, null,
+                "Cheap product", BigDecimal.ONE, CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false);
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(tampered)), customItemAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("INVALID_CHECKOUT_ITEM");
+        verify(productRepository, never()).findById(PRODUCT_ID);
+    }
+
+    @Test
+    void checkoutUsesExemptCategoryForNonTaxableCustomItem() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        TaxCategory exempt = new TaxCategory(null, "EXEMPT", "Exempt", TaxTreatment.EXEMPT, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("EXEMPT")).thenReturn(Optional.of(exempt));
+
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Fresh Produce",
+                        new BigDecimal("3.50"), CustomItemTaxTreatment.NON_TAXABLE, new BigDecimal("3"), false))), customItemAuth());
+
+        ArgumentCaptor<TaxCalculationRequest> request = ArgumentCaptor.forClass(TaxCalculationRequest.class);
+        verify(taxEngine).calculate(request.capture(), any());
+        assertThat(request.getValue().productTaxCategoryId()).isEqualTo(exempt.getId());
+        assertThat(request.getValue().unitPrice()).isEqualByComparingTo("3.50");
+        assertThat(request.getValue().quantity()).isEqualByComparingTo("3.0000");
+    }
+
+    @Test
+    void completingCustomItemPreservesSnapshotAndNeverTouchesInventory() {
+        Sale sale = draftSale();
+        SaleItem item = SaleItem.customItem(sale, "Bakery Item", BigDecimal.ONE, new BigDecimal("4.50"),
+                CustomItemTaxTreatment.NON_TAXABLE, UUID.randomUUID());
+        item.setCalculatedAmounts(new BigDecimal("4.50"), BigDecimal.ZERO.setScale(2), new BigDecimal("4.50"));
+        sale.addItem(item);
+        sale.setTotals(new BigDecimal("4.50"), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), new BigDecimal("4.50"));
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(PaymentMethod.DEBIT, new BigDecimal("4.50"), null, null, null), cashierAuth());
+
+        SaleResponse completed = service.complete(sale.getId(), cashier, cashierAuth());
+
+        assertThat(completed.status()).isEqualTo(SaleStatus.COMPLETED);
+        assertThat(completed.items().getFirst().productId()).isNull();
+        assertThat(completed.items().getFirst().productName()).isEqualTo("Bakery Item");
+        assertThat(completed.items().getFirst().completedProductPrice()).isEqualByComparingTo("4.50");
+        verify(inventoryService, never()).recordStockChange(any(), any());
+        verify(saleItemHandlerRegistry, never()).validate(any());
     }
 
     @Test
@@ -594,6 +675,29 @@ class SaleServiceTest {
     }
 
     @Test
+    void finalCadCashSettlementRoundsRemainingBalanceWithoutChangingAppliedAmount() {
+        when(store.getCurrencyCode()).thenReturn("CAD");
+        Sale sale = payableSale();
+        ReflectionTestUtils.setField(sale, "currencyCode", "CAD");
+        sale.getItems().getFirst().setCalculatedAmounts(new BigDecimal("30.03"), BigDecimal.ZERO.setScale(2), new BigDecimal("30.03"));
+        sale.setTotals(new BigDecimal("30.03"), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), new BigDecimal("30.03"));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("20.00"), null, null, null), cashierAuth());
+        SaleResponse result = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("10.03"), new BigDecimal("20.00"), null, null), cashierAuth());
+
+        PaymentResponse cash = result.payments().getLast();
+        assertThat(cash.amount()).isEqualByComparingTo("10.03");
+        assertThat(cash.cashRoundingAdjustment()).isEqualByComparingTo("0.02");
+        assertThat(cash.cashSettlementAmount()).isEqualByComparingTo("10.05");
+        assertThat(cash.changeDue()).isEqualByComparingTo("9.95");
+        assertThat(result.paidAmount()).isEqualByComparingTo("30.03");
+        assertThat(result.balanceDue()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
     void zeroAndNegativePaymentsAreRejectedWithStableCode() {
         Sale sale = payableSale();
         when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
@@ -849,5 +953,10 @@ class SaleServiceTest {
                 "n/a",
                 List.of(new SimpleGrantedAuthority("ROLE_KITCHEN"),
                         new SimpleGrantedAuthority("POS_SALE_DISCOUNT")));
+    }
+
+    private static UsernamePasswordAuthenticationToken customItemAuth() {
+        return new UsernamePasswordAuthenticationToken("cashier@example.test", "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_CASHIER"), new SimpleGrantedAuthority("POS_CUSTOM_ITEM")));
     }
 }

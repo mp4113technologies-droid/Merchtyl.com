@@ -484,6 +484,7 @@ export type InitialInventoryRowPreview = {
   productName: string;
   variantName: string;
   barcode: string | null;
+  additionalBarcodes: string | null;
   sku: string;
   sellingPrice: number;
   openingQuantity: number;
@@ -1789,6 +1790,8 @@ export type Payment = {
   amount: number;
   currencyCode: string;
   cashTendered: number | null;
+  cashRoundingAdjustment?: number;
+  cashSettlementAmount?: number | null;
   changeDue: number;
   reference: string | null;
   notes: string | null;
@@ -1800,13 +1803,15 @@ export type Payment = {
 
 export type SaleItem = {
   id: string;
-  productId: string;
+  lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM';
+  productId: string | null;
   variantId?: string | null;
   lineNumber: number;
-  productSku: string;
+  productSku: string | null;
   productName: string;
   variantSku?: string | null;
   variantName?: string | null;
+  customItemTaxTreatment?: 'TAXABLE' | 'NON_TAXABLE' | null;
   quantity: number;
   unitPrice: number;
   discountAmount: number;
@@ -1884,9 +1889,9 @@ export type SaleListResponse = PageResponse<Sale>;
 export type ReturnItem = {
   id: string;
   originalSaleItemId: string;
-  productId: string;
+  productId: string | null;
   lineNumber: number;
-  productSku: string;
+  productSku: string | null;
   productName: string;
   quantity: number;
   reason: string;
@@ -2009,7 +2014,7 @@ export type ReceiptItem = {
   id: string;
   productId: string;
   lineNumber: number;
-  productSku: string;
+  productSku?: string;
   productName: string;
   quantity: number;
   unitPrice: number;
@@ -2034,6 +2039,8 @@ export type ReceiptPayment = {
   method: PaymentMethod;
   amount: number;
   cashTendered: number | null;
+  cashRoundingAdjustment?: number;
+  cashSettlementAmount?: number | null;
   changeDue: number;
   reference: string | null;
   completedAt: string;
@@ -2057,6 +2064,8 @@ export type ReceiptDocument = {
   taxSummaries: ReceiptTaxSummary[];
   taxAmount: number;
   totalAmount: number;
+  cashRoundingAdjustment?: number;
+  cashTotal?: number;
   payments: ReceiptPayment[];
   cashTendered: number;
   changeDue: number;

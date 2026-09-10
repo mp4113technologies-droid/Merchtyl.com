@@ -322,12 +322,51 @@ public class ProductService {
         return nullSafe(requests).stream()
                 .map(request -> new ProductBarcodeValues(
                         request.id(),
-                        cleanRequired(request.barcode(), "barcode"),
+                        BarcodeNormalizer.normalize(request.barcode()),
                         request.variantId(),
                         normalizeOptionalSku(request.variantSku(), "barcode variantSku"),
                         request.primaryBarcode(),
                         request.active()))
                 .toList();
+    }
+
+    @Transactional
+    public BulkVariantBarcodeResponse addVariantBarcodes(UUID variantId, BulkVariantBarcodeRequest request,
+                                                         Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
+        ProductVariant variant = productVariantRepository.findById(variantId)
+                .filter(candidate -> tenantId.equals(candidate.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_FOUND"));
+        Product product = find(variant.getProduct().getId(), tenantId);
+        requireAllProductStoresManaged(product, authentication);
+
+        if (request.barcodes().size() > 500) throw new BadRequestException("BARCODE_BATCH_TOO_LARGE");
+        List<String> normalized = request.barcodes().stream().map(BarcodeNormalizer::normalize).toList();
+        Set<String> keys = new HashSet<>();
+        for (String barcode : normalized) {
+            if (!keys.add(barcode.toLowerCase(Locale.ROOT))) throw new BadRequestException("BARCODE_DUPLICATE_IN_REQUEST");
+        }
+        List<ProductBarcode> existing = productBarcodeRepository.findOwnedInBulk(tenantId, keys);
+        if (!existing.isEmpty()) {
+            boolean allSameVariant = existing.stream().allMatch(barcode -> barcode.getVariant() != null
+                    && variantId.equals(barcode.getVariant().getId()));
+            throw new ConflictException(allSameVariant ? "BARCODE_ALREADY_EXISTS" : "BARCODE_ALREADY_ASSIGNED");
+        }
+        normalized.forEach(barcode -> product.addBarcode(variant,
+                new ProductBarcodeValues(barcode, variant.getSku(), false, true)));
+        try {
+            Product saved = productRepository.saveAndFlush(product);
+            List<ProductBarcodeResponse> result = saved.getBarcodes().stream()
+                    .filter(barcode -> barcode.getVariant() != null && variantId.equals(barcode.getVariant().getId()))
+                    .map(ProductBarcodeResponse::from).toList();
+            log.info("product_event event=BARCODES_ADDED tenant_id={} product_id={} variant_id={} count={} actor={}",
+                    tenantId, product.getId(), variantId, normalized.size(), actorName(authentication));
+            audit(authentication, AuditAction.PRODUCT_BARCODES_ADDED, product.getId(), null,
+                    Map.of("variantId", variantId, "count", normalized.size(), "barcodes", normalized));
+            return new BulkVariantBarcodeResponse(variantId, normalized.size(), result);
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConflictException("BARCODE_ALREADY_ASSIGNED");
+        }
     }
 
     private Set<ProductCapability> capabilities(Set<ProductCapability> requestedCapabilities, boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed) {

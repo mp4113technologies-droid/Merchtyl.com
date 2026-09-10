@@ -153,7 +153,8 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('Order</span><strong>A008');
     expect(html).toContain('ORDER A008');
     expect(html).toContain('Monkey Fingers');
-    expect(html).toContain('2</td>');
+    expect(html).toContain('2 × $5.00');
+    expect(html).toContain('$10.00');
     expect(html).toContain('$11.50');
     expect(html).not.toContain(document.saleId);
     expect(html).not.toContain('MENU-');
@@ -161,7 +162,7 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('Powered by');
   });
 
-  it('keeps a customer-appropriate Retail SKU but never renders internal entity IDs', () => {
+  it('removes Retail SKU and internal entity IDs from the customer receipt', () => {
     const document = receipt();
     document.saleId = 'sale-uuid-not-for-customer';
     document.saleNumber = document.saleId;
@@ -170,10 +171,32 @@ describe('BrowserReceiptPrinter', () => {
 
     const html = receiptHtml(document);
 
-    expect(html).toContain('COFFEE');
+    expect(html).not.toContain('COFFEE');
     expect(html).not.toContain('sale-uuid-not-for-customer');
     expect(html).not.toContain('sale-item-uuid-not-for-customer');
     expect(html).not.toContain('product-variant-uuid-not-for-customer');
+  });
+
+  it('renders the persisted cash rounding snapshot separately from tax and sale total', () => {
+    const document = receipt();
+    document.currencyCode = 'CAD';
+    document.totalAmount = 18.68;
+    document.cashRoundingAdjustment = 0.02;
+    document.cashTotal = 18.70;
+    document.payments[0].amount = 18.68;
+    document.payments[0].cashSettlementAmount = 18.70;
+    document.payments[0].cashTendered = 20;
+    document.payments[0].changeDue = 1.30;
+    document.cashTendered = 20;
+    document.changeDue = 1.30;
+
+    const html = receiptHtml(document);
+
+    expect(html).toContain('Cash rounding');
+    expect(html).toContain('Cash total');
+    expect(html).toContain('CA$18.68');
+    expect(html).toContain('CA$18.70');
+    expect(html).toContain('CA$1.30');
   });
 
   it('defines an 80mm print-only receipt layout', () => {

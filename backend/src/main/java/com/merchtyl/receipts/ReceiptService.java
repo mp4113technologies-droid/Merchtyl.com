@@ -94,6 +94,15 @@ public class ReceiptService {
         return response;
     }
 
+    @Transactional(readOnly = true)
+    public ReceiptResponse findByReceiptNumber(String receiptNumber, Authentication authentication) {
+        String normalized = receiptNumber == null ? "" : receiptNumber.trim();
+        Receipt receipt = receiptRepository.findByReceiptNumberIgnoreCase(normalized)
+                .orElseThrow(() -> new NotFoundException("Receipt not found"));
+        requireSaleAccess(receipt.getSale().getId(), authentication);
+        return response(receipt);
+    }
+
     private Receipt createReceipt(UUID saleId, Authentication authentication) {
         User actor = actor(authentication);
         Sale sale = saleRepository.findById(saleId)
@@ -128,6 +137,10 @@ public class ReceiptService {
         BigDecimal changeDue = money(sale.getPayments().stream()
                 .map(Payment::getChangeDue)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal cashRoundingAdjustment = money(sale.getPayments().stream()
+                .map(Payment::getCashRoundingAdjustment)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal cashTotal = money(sale.getTotalAmount().add(cashRoundingAdjustment));
         BigDecimal taxableAmount = money(sale.getItems().stream()
                 .filter(item -> item.getEstimatedTaxAmount().signum() > 0)
                 .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
@@ -170,6 +183,8 @@ public class ReceiptService {
                 taxSummaries,
                 sale.getEstimatedTaxAmount(),
                 sale.getTotalAmount(),
+                cashRoundingAdjustment,
+                cashTotal,
                 sale.getPayments().stream()
                         .sorted(Comparator.comparing(Payment::getCompletedAt))
                         .map(this::payment)
@@ -183,12 +198,11 @@ public class ReceiptService {
     private ReceiptItemDto item(SaleItem item) {
         return new ReceiptItemDto(
                 item.getId(),
-                item.getProduct().getId(),
+                item.getProduct() == null ? null : item.getProduct().getId(),
                 item.getLineNumber(),
-                item.getProductSku(),
                 item.getProductName(),
                 item.getQuantity(),
-                item.getUnitPrice(),
+                item.getLineSubtotal().divide(item.getQuantity(), 4, RoundingMode.HALF_UP),
                 item.getCompletedProductCost(),
                 item.getCompletedProductPrice(),
                 item.getCompletedProductCapabilities(),
@@ -204,6 +218,8 @@ public class ReceiptService {
                 payment.getMethod(),
                 payment.getAmount(),
                 payment.getMethod() == PaymentMethod.CASH ? payment.getCashTendered() : null,
+                payment.getCashRoundingAdjustment(),
+                payment.getCashSettlementAmount(),
                 payment.getChangeDue(),
                 payment.getReference(),
                 payment.getCompletedAt());
