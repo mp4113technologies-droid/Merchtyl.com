@@ -150,6 +150,8 @@ class PricingPlanCreationIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from tenants where id=?", Integer.class, tenantId)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from security_users where tenant_id=?", Integer.class, tenantId)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from tenant_subscriptions where tenant_id=? and pricing_plan_id=? and pricing_plan_version_id is not null", Integer.class, tenantId, plan.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select industry_type from merchant_profiles where tenant_id=?", String.class, tenantId)).isEqualTo("OTHER");
+        assertThat(created.merchantProfile().industryType()).isEqualTo(com.merchtyl.platform.admin.IndustryType.OTHER);
         assertThat(jdbc.queryForObject("select count(*) from tenant_subscription_capability_price_snapshots where subscription_id in(select id from tenant_subscriptions where tenant_id=?)", Integer.class, tenantId)).isZero();
         assertThat(jdbc.queryForList("select capability from tenant_store_operation_defaults where tenant_id=? order by capability", String.class, tenantId))
                 .containsExactly("FOOD_SERVICE", "RETAIL");
@@ -233,7 +235,7 @@ class PricingPlanCreationIntegrationTest {
 
     private static MerchantOnboardingRequest onboardingRequest(String tenantCode, String ownerEmail, UUID planId) {
         return new MerchantOnboardingRequest(tenantCode, "Test3", "test3", "CA", "NL", "America/St_Johns", "CAD", "CA-NL",
-                null, "Test1234", "123", 2, "", planId, "Test123", "test123", ownerEmail,
+                null, "Test1234", com.merchtyl.platform.admin.IndustryType.OTHER, 2, "", planId, "Test123", "test123", ownerEmail,
                 "123123123123", null, Set.of(StoreCapability.RETAIL, StoreCapability.FOOD_SERVICE), "Sweetshop");
     }
 

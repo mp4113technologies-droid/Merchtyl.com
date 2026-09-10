@@ -46,6 +46,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { compactFilterBarSx } from '../../app/responsive';
+import { industryTypeLabel, industryTypeOptions, type IndustryType } from './industryTypes';
 import {
   activateOwnerInvitation,
   closePlatformTenant,
@@ -484,7 +485,8 @@ export function NewPlatformMerchantPage() {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [created, setCreated] = useState<TenantDetail | null>(null);
-  const [form, setForm] = useState<MerchantOnboardingPayload>({
+  type MerchantOnboardingForm = Omit<MerchantOnboardingPayload, 'industryType'> & { industryType: IndustryType | '' };
+  const [form, setForm] = useState<MerchantOnboardingForm>({
     tenantCode: '',
     legalBusinessName: '',
     operatingName: '',
@@ -537,21 +539,24 @@ export function NewPlatformMerchantPage() {
   const selectedTimezone = timezones.data?.find((timezone) => timezone.ianaName === form.primaryTimezone);
   const selectedTaxRegion = taxRegions.data?.find((region) => region.code === form.defaultTaxRegionCode);
   const mutation = useMutation({
-    mutationFn: async () => createPlatformTenant(await getValidAccessToken(), form),
+    mutationFn: async () => createPlatformTenant(await getValidAccessToken(), {
+      ...form,
+      industryType: form.industryType as IndustryType
+    }),
     onSuccess: (tenant) => {
       setCreated(tenant);
       setActiveStep(5);
     },
     onError: (error) => {
       const fields = getApiFieldErrors(error);
-      if (fields.tenantCode || fields.businessNumber) setActiveStep(0);
+      if (fields.tenantCode || fields.businessNumber || fields.industryType) setActiveStep(0);
       else if (fields.ownerEmail) setActiveStep(2);
       else if (fields.pricingPlanId) setActiveStep(3);
     }
   });
   const fieldErrors = getApiFieldErrors(mutation.error);
 
-  function field<K extends keyof MerchantOnboardingPayload>(key: K, value: MerchantOnboardingPayload[K]) {
+  function field<K extends keyof MerchantOnboardingForm>(key: K, value: MerchantOnboardingForm[K]) {
     if (mutation.error) mutation.reset();
     setForm((current) => {
       const next = { ...current, [key]: value };
@@ -612,7 +617,7 @@ export function NewPlatformMerchantPage() {
             <Grid item xs={12} md={6}><TextField fullWidth required label="Operating name" value={form.operatingName} onChange={(e) => field('operatingName', e.target.value)} /></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth required label="Tenant code" value={form.tenantCode} error={Boolean(fieldErrors.tenantCode)} helperText={fieldErrors.tenantCode} onChange={(e) => field('tenantCode', e.target.value.toUpperCase())} /></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth label="Business number" value={form.businessNumber} error={Boolean(fieldErrors.businessNumber)} helperText={fieldErrors.businessNumber} onChange={(e) => field('businessNumber', e.target.value)} /></Grid>
-            <Grid item xs={12} md={4}><TextField fullWidth label="Industry type" value={form.industryType} onChange={(e) => field('industryType', e.target.value)} /></Grid>
+            <Grid item xs={12} md={4}><TextField fullWidth select required label="Industry Type" value={form.industryType} error={Boolean(fieldErrors.industryType)} helperText={fieldErrors.industryType || (!form.industryType ? 'Industry Type is required.' : undefined)} onChange={(e) => field('industryType', e.target.value as IndustryType)}><MenuItem value="" disabled>Select Industry Type</MenuItem>{industryTypeOptions.map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth type="number" label="Estimated store count" value={form.estimatedStoreCount} onChange={(e) => field('estimatedStoreCount', Number(e.target.value))} /></Grid>
           </Grid>
         )}
@@ -688,6 +693,7 @@ export function NewPlatformMerchantPage() {
             <Divider sx={{ my: 2 }} />
             <Typography>{form.operatingName} ({form.legalBusinessName})</Typography>
             <Typography color="text.secondary">Tenant code: {form.tenantCode}</Typography>
+            <Typography color="text.secondary">Industry: {industryTypeLabel(form.industryType)}</Typography>
             <Typography color="text.secondary">{selectedCountry?.name ?? form.countryCode} · {selectedDivision?.name ?? form.administrativeDivisionCode}</Typography>
             <Typography color="text.secondary">{selectedCurrency ? `${selectedCurrency.code} — ${selectedCurrency.name}` : form.defaultCurrencyCode} · {selectedTimezone?.ianaName ?? form.primaryTimezone} · {selectedTaxRegion ? `${selectedTaxRegion.code} — ${selectedTaxRegion.name}` : form.defaultTaxRegionCode}</Typography>
             <Typography color="text.secondary">Owner: {form.ownerFirstName} {form.ownerLastName} · {form.ownerEmail}</Typography>
@@ -696,7 +702,7 @@ export function NewPlatformMerchantPage() {
         )}
         {activeStep === 5 && created && (
           <Alert severity="success" icon={<CheckCircleIcon />}>
-            Merchant {created.tenant.displayName} created with code {created.tenant.tenantCode} on Pricing Plan {selectedPlan?.name}. {created.tenant.countryCode}/{created.tenant.administrativeDivisionCode}; {created.tenant.defaultCurrencyCode}; {created.tenant.primaryTimezone}; tax region {created.tenant.defaultTaxRegionCode}. Owner {created.tenant.primaryOwnerEmail}. Onboarding: {created.onboarding.currentStage.replaceAll('_', ' ')}.
+            Merchant {created.tenant.displayName} created with code {created.tenant.tenantCode} in {industryTypeLabel(created.merchantProfile.industryType)} on Pricing Plan {selectedPlan?.name}. {created.tenant.countryCode}/{created.tenant.administrativeDivisionCode}; {created.tenant.defaultCurrencyCode}; {created.tenant.primaryTimezone}; tax region {created.tenant.defaultTaxRegionCode}. Owner {created.tenant.primaryOwnerEmail}. Onboarding: {created.onboarding.currentStage.replaceAll('_', ' ')}.
           </Alert>
         )}
         <Stack direction="row" gap={1}>
@@ -1281,7 +1287,10 @@ function InfoValue({ label, value }: { label: string; value: string }) {
   );
 }
 
-type MerchantEditForm = Omit<PlatformMerchantUpdatePayload, 'estimatedStoreCount'> & { estimatedStoreCount: string };
+type MerchantEditForm = Omit<PlatformMerchantUpdatePayload, 'estimatedStoreCount' | 'industryType'> & {
+  estimatedStoreCount: string;
+  industryType: IndustryType | '';
+};
 
 function merchantEditValues(detail: TenantDetail): MerchantEditForm {
   const profile = detail.merchantProfile;
@@ -1294,7 +1303,7 @@ function merchantEditValues(detail: TenantDetail): MerchantEditForm {
     contactPhone: profile.contactPhone ?? '',
     billingAddress: profile.billingAddress ?? '',
     postalCode: profile.postalCode ?? '',
-    industryType: profile.industryType ?? '',
+    industryType: profile.industryType,
     estimatedStoreCount: profile.estimatedStoreCount?.toString() ?? '',
     notes: profile.notes ?? '',
     countryCode: detail.tenant.countryCode,
@@ -1329,7 +1338,7 @@ function MerchantEditDialog({ open, tenant, saving, error, onClose, onSave }: {
   const valid = form.displayName.trim() !== '' && form.legalName.trim() !== '' && form.contactName.trim() !== ''
     && /^\S+@\S+\.\S+$/.test(form.contactEmail.trim()) && form.countryCode.trim().length === 2
     && form.administrativeDivisionCode.trim() !== '' && form.defaultCurrencyCode.trim().length === 3
-    && form.primaryTimezone.trim() !== '' && form.defaultTaxRegionCode.trim() !== ''
+    && form.primaryTimezone.trim() !== '' && form.defaultTaxRegionCode.trim() !== '' && form.industryType !== ''
     && (form.estimatedStoreCount === '' || Number(form.estimatedStoreCount) >= 0);
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -1343,7 +1352,7 @@ function MerchantEditDialog({ open, tenant, saving, error, onClose, onSave }: {
       defaultCurrencyCode: form.defaultCurrencyCode.trim().toUpperCase(), primaryTimezone: form.primaryTimezone.trim(),
       defaultTaxRegionCode: form.defaultTaxRegionCode.trim().toUpperCase(), businessNumber: optional(form.businessNumber),
       contactPhone: optional(form.contactPhone), billingAddress: optional(form.billingAddress), postalCode: optional(form.postalCode),
-      industryType: optional(form.industryType), notes: optional(form.notes), reason: optional(form.reason),
+      industryType: form.industryType as IndustryType, notes: optional(form.notes), reason: optional(form.reason),
       estimatedStoreCount: form.estimatedStoreCount === '' ? null : Number(form.estimatedStoreCount), version: tenant.tenant.version
     });
   };
@@ -1356,7 +1365,7 @@ function MerchantEditDialog({ open, tenant, saving, error, onClose, onSave }: {
           <Grid item xs={12} sm={6}><TextField fullWidth required label="Display name" value={form.displayName} onChange={set('displayName')} inputProps={{ maxLength: 180 }} /></Grid>
           <Grid item xs={12} sm={6}><TextField fullWidth required label="Legal / business name" value={form.legalName} onChange={set('legalName')} inputProps={{ maxLength: 255 }} /></Grid>
           <Grid item xs={12} sm={6}><TextField fullWidth label="Business number" value={form.businessNumber} onChange={set('businessNumber')} /></Grid>
-          <Grid item xs={12} sm={6}><TextField fullWidth label="Industry type" value={form.industryType} onChange={set('industryType')} /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth select required label="Industry Type" value={form.industryType} onChange={set('industryType')}><MenuItem value="" disabled>Select Industry Type</MenuItem>{industryTypeOptions.map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField></Grid>
           <Grid item xs={12} sm={6}><TextField fullWidth type="number" label="Estimated store count" value={form.estimatedStoreCount} onChange={set('estimatedStoreCount')} inputProps={{ min: 0 }} /></Grid>
           <Grid item xs={12} sm={6}><TextField fullWidth label="Merchant slug" value={tenant.merchantSlug ?? ''} InputProps={{ readOnly: true }} helperText="Stable portal address; it is not changed with the display name." /></Grid>
         </Grid></Box>
@@ -1395,6 +1404,7 @@ function TenantOverview({ tenant }: { tenant: TenantDetail }) {
       <Typography variant="h6">Merchant details</Typography>
       <Stack spacing={1} sx={{ mt: 2 }}>
         <Typography>Legal name: {profile.legalBusinessName}</Typography>
+        <Typography>Industry: {industryTypeLabel(profile.industryType)}</Typography>
         <Typography>Contact: {profile.contactName}</Typography>
         <Typography>Contact email: {profile.contactEmail}</Typography>
         <Typography>Contact phone: {profile.contactPhone ?? 'Not set'}</Typography>
