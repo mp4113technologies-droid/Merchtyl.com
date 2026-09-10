@@ -35,6 +35,9 @@ public class Product extends BaseUuidEntity {
     @Column(name = "tenant_id")
     private UUID tenantId;
 
+    @Column(name = "product_reference", nullable = false, length = 32, updatable = false)
+    private String productReference;
+
     @Column(nullable = false, length = 64)
     private String sku;
 
@@ -171,6 +174,29 @@ public class Product extends BaseUuidEntity {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public String getProductReference() { return productReference; }
+
+    public void assignProductReference(String productReference) {
+        if (this.productReference != null && !this.productReference.equals(productReference)) {
+            throw new IllegalStateException("Product reference cannot be changed");
+        }
+        this.productReference = productReference;
+    }
+
+    public ProductVariant addVariant(ProductVariantValues values) {
+        ProductVariant variant = new ProductVariant(this, values);
+        variant.assignTenant(tenantId);
+        variants.add(variant);
+        return variant;
+    }
+
+    public ProductBarcode addBarcode(ProductVariant variant, ProductBarcodeValues values) {
+        ProductBarcode barcode = new ProductBarcode(this, variant, values);
+        barcode.assignTenant(tenantId);
+        barcodes.add(barcode);
+        return barcode;
     }
 
     public boolean isRestaurantMenuManaged() {

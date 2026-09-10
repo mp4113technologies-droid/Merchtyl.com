@@ -92,6 +92,13 @@ public class GlobalExceptionHandler {
                 .body(response.getBody());
     }
 
+    @ExceptionHandler(PayloadTooLargeException.class)
+    ResponseEntity<ApiError> payloadTooLarge(PayloadTooLargeException exception, HttpServletRequest request) {
+        DomainMessage domain = domainMessage(exception.getMessage());
+        return error(HttpStatus.PAYLOAD_TOO_LARGE, domain == null ? "PAYLOAD_TOO_LARGE" : domain.code(),
+                domain == null ? "The uploaded file is too large." : domain.message(), request, List.of());
+    }
+
     @ExceptionHandler({ForbiddenOperationException.class, AccessDeniedException.class})
     ResponseEntity<ApiError> forbidden(RuntimeException exception, HttpServletRequest request) {
         log.warn("authorization_event event={} user={} tenant={} endpoint={} method={} exception_type={}",

@@ -500,8 +500,11 @@ public class RegisterSessionService {
         }
         validateCanClose(session, closingUser, authentication);
         requireVersion(session, request.version());
+        if (session.getStatus() == RegisterSessionStatus.CLOSED || session.getStatus() == RegisterSessionStatus.FORCE_CLOSED) {
+            throw new ConflictException("REGISTER_SESSION_ALREADY_RECONCILED");
+        }
         if (session.getStatus() != RegisterSessionStatus.CLOSING) {
-            throw new ConflictException("REGISTER_SESSION_NOT_CLOSING");
+            throw new ConflictException("REGISTER_RECONCILIATION_REQUIRED");
         }
         BigDecimal countedCash = normalizeCountedCash(request.countedCash());
         CashLedgerBreakdownResponse reconciliation = cashLedgerService.breakdown(session);
@@ -636,7 +639,7 @@ public class RegisterSessionService {
         try {
             return registerSessionRepository.saveAndFlush(session);
         } catch (ObjectOptimisticLockingFailureException | OptimisticLockException exception) {
-            throw new ConflictException("Register session was modified by another transaction");
+            throw new ConflictException("REGISTER_SESSION_STATE_CHANGED");
         }
     }
 
@@ -799,7 +802,7 @@ public class RegisterSessionService {
             throw new BadRequestException("version is required");
         }
         if (session.getVersion() != version) {
-            throw new ConflictException("Register session was modified by another transaction");
+            throw new ConflictException("REGISTER_SESSION_STATE_CHANGED");
         }
     }
 

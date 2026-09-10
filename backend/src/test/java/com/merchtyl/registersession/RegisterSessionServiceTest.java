@@ -484,7 +484,7 @@ class RegisterSessionServiceTest {
                 new RegisterSessionCloseRequest(new BigDecimal("130.00"), 9L),
                 authentication("ROLE_CASHIER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Register session was modified by another transaction");
+                .hasMessage("REGISTER_SESSION_STATE_CHANGED");
 
         verify(registerSessionRepository, never()).saveAndFlush(session);
     }
@@ -534,7 +534,7 @@ class RegisterSessionServiceTest {
         assertThatThrownBy(() -> service.close(session.getId(),
                 new RegisterSessionCloseRequest(new BigDecimal("130.00"), 0L), authentication("ROLE_CASHIER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("REGISTER_SESSION_NOT_CLOSING");
+                .hasMessage("REGISTER_RECONCILIATION_REQUIRED");
     }
 
     @Test

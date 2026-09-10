@@ -147,6 +147,7 @@ import type {
   UserStoreAssignment,
   UserRole
 } from './types';
+import type { InitialInventoryResult, InitialInventoryValidation } from './types';
 import { merchantSlugForRequest } from '../app/portalContext';
 import { API_BASE_URL } from './runtimeConfig';
 
@@ -1548,7 +1549,7 @@ export const resolveApiError = getApiErrorMessage;
 
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has('Content-Type')) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
   if (token) {
@@ -2692,6 +2693,10 @@ export function cancelSale(token: string, id: string) {
   }, token);
 }
 
+export function forceCloseDraftSale(token: string, id: string, body: { version: number; reasonCode: string; note?: string }) {
+  return request<Sale>(`/sales/${id}/force-close`, { method: 'POST', body: JSON.stringify(body) }, token);
+}
+
 export function recalculateSale(token: string, id: string) {
   return request<Sale>(`/sales/${id}/recalculate`, {
     method: 'POST'
@@ -3395,4 +3400,18 @@ export function updateProductSupplierStatus(token: string, id: string, payload: 
     method: 'PATCH',
     body: JSON.stringify(payload)
   }, token);
+}
+
+export function downloadInitialInventoryTemplate(token: string, storeId: string) {
+  return requestBlob(`/stores/${storeId}/inventory/initial-setup/template`, undefined, token);
+}
+
+export function validateInitialInventory(token: string, storeId: string, file: File) {
+  const body = new FormData();
+  body.append('file', file);
+  return request<InitialInventoryValidation>(`/stores/${storeId}/inventory/initial-setup/validate`, { method: 'POST', body }, token);
+}
+
+export function confirmInitialInventory(token: string, storeId: string, importId: string) {
+  return request<InitialInventoryResult>(`/stores/${storeId}/inventory/initial-setup/${importId}/confirm`, { method: 'POST' }, token);
 }

@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ProductBarcodeRepository extends JpaRepository<ProductBarcode, UUID> {
+    java.util.List<ProductBarcode> findAllByTenantId(UUID tenantId);
     boolean existsByBarcodeIgnoreCase(String barcode);
     boolean existsByTenantIdAndBarcodeIgnoreCase(UUID tenantId, String barcode);
     boolean existsByTenantIdAndBarcodeIgnoreCaseAndProductIdNot(UUID tenantId, String barcode, UUID productId);

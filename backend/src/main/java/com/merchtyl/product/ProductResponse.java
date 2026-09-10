@@ -30,7 +30,8 @@ public record ProductResponse(
         long version,
         Integer minimumAge,
         ProductAvailabilityScope availabilityScope,
-        Set<UUID> storeIds
+        Set<UUID> storeIds,
+        String productReference
 ) {
     static ProductResponse from(Product product) {
         return new ProductResponse(
@@ -54,13 +55,13 @@ public record ProductResponse(
                 product.getCapabilities(),
                 product.getCreatedAt(),
                 product.getUpdatedAt(),
-                product.getVersion(), product.getMinimumAge(), product.getAvailabilityScope(), Set.of());
+                product.getVersion(), product.getMinimumAge(), product.getAvailabilityScope(), Set.of(), product.getProductReference());
     }
 
     ProductResponse withPrice(BigDecimal effectivePrice) {
         return new ProductResponse(id, sku, name, description, sellableType, unitOfMeasureId, cost, effectivePrice,
                 categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId,
-                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, storeIds);
+                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, storeIds, productReference);
     }
 
     public ProductResponse(UUID id, String sku, String name, String description, SellableType sellableType,
@@ -71,12 +72,12 @@ public record ProductResponse(
                            Instant createdAt, Instant updatedAt, long version) {
         this(id, sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
                 inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants, barcodes,
-                capabilities, createdAt, updatedAt, version, null, ProductAvailabilityScope.SELECTED_STORES, Set.of());
+                capabilities, createdAt, updatedAt, version, null, ProductAvailabilityScope.SELECTED_STORES, Set.of(), null);
     }
 
     ProductResponse withAvailability(Set<UUID> assignedStoreIds) {
         return new ProductResponse(id, sku, name, description, sellableType, unitOfMeasureId, cost, price,
                 categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId,
-                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, assignedStoreIds);
+                variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, assignedStoreIds, productReference);
     }
 }

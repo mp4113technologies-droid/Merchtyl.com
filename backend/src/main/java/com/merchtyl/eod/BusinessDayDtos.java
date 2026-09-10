@@ -2,6 +2,9 @@ package com.merchtyl.eod;
 
 import com.merchtyl.sales.PaymentMethod;
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.merchtyl.cash.CashLedgerBreakdownResponse;
+import com.merchtyl.register.RegisterType;
+import com.merchtyl.registersession.RegisterSessionStatus;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
@@ -148,7 +151,34 @@ record BusinessDayOperationalStateResponse(
 record ClosingValidationResponse(
         UUID businessDayId,
         boolean closable,
-        List<ClosingBlockerResponse> blockers
+        List<ClosingBlockerResponse> blockers,
+        List<RegisterReconciliationResponse> registerSessions
+) {
+    ClosingValidationResponse(UUID businessDayId, boolean closable, List<ClosingBlockerResponse> blockers) {
+        this(businessDayId, closable, blockers, List.of());
+    }
+}
+
+@Schema(description = "Register-session reconciliation state scoped to this Business Day and Store.")
+record RegisterReconciliationResponse(
+        UUID registerSessionId,
+        UUID registerId,
+        String registerCode,
+        String registerName,
+        RegisterType registerType,
+        RegisterSessionStatus sessionStatus,
+        UUID openedByUserId,
+        String openedByName,
+        Instant openedAt,
+        BigDecimal openingCash,
+        BigDecimal expectedCash,
+        BigDecimal countedCash,
+        BigDecimal variance,
+        long version,
+        boolean reconciliationRequired,
+        boolean reconciliationComplete,
+        boolean canReconcile,
+        CashLedgerBreakdownResponse reconciliation
 ) {
 }
 

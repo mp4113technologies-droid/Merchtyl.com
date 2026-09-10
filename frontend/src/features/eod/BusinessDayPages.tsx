@@ -43,6 +43,9 @@ import * as React from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ApiClientError,
+  cancelSale,
+  forceCloseDraftSale,
+  getSale,
   closeBusinessDay,
   exportEndOfDayReportCsv,
   exportEndOfDayReportPdf,
@@ -60,8 +63,9 @@ import {
   reopenBusinessDay,
   startBusinessDayClosing
 } from '../../api/client';
-import type { BusinessDay, BusinessDayStatus, ClosingBlocker, EndOfDayClosingPreview, EndOfDayReport, Store, UserRole } from '../../api/types';
+import type { BusinessDay, BusinessDayStatus, ClosingBlocker, ClosingValidation, EndOfDayClosingPreview, EndOfDayReport, RegisterReconciliation, Store, UserRole } from '../../api/types';
 import { useSession } from '../../app/session';
+import { RegisterReconciliationDialog } from '../registersessions/RegisterReconciliation';
 import { resolveBusinessDayAccess } from './businessDayAccess';
 
 function canManageBusinessDay(roles: UserRole[]) {
@@ -91,12 +95,64 @@ function useBusinessDayAccess() {
   };
 }
 
+function RegisterReconciliationPanel({ validation, currencyCode, onCompleted, onCancelDraft, cancellingDraft }: {
+  validation?: ClosingValidation; currencyCode?: string; onCompleted: () => void | Promise<void>;
+  onCancelDraft?: (saleId: string) => void; cancellingDraft?: boolean;
+}) {
+  const { roles } = useBusinessDayAccess();
+  const [selected, setSelected] = React.useState<RegisterReconciliation | null>(null);
+  const [forceCloseSaleId, setForceCloseSaleId] = React.useState<string | null>(null);
+  const sessions = validation?.registerSessions ?? [];
+  const required = sessions.filter((session) => session.reconciliationRequired);
+  const registerCodes = new Set(['OPEN_REGISTER_SESSION', 'MISSING_COUNTED_CASH', 'MISSING_RECONCILIATION']);
+  const otherBlockers = (validation?.blockers ?? []).filter((blocker) => !registerCodes.has(blocker.code));
+  return <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
+    <Stack spacing={2}>
+      <Typography variant="h6">Register Reconciliation</Typography>
+      {sessions.length === 0 ? <Typography color="text.secondary">No register sessions are associated with this Business Day.</Typography> : null}
+      {sessions.length > 0 && required.length === 0 ? <Alert severity="success">All register sessions reconciled.</Alert> : null}
+      {otherBlockers.length > 0 ? <Box><Typography fontWeight={700} sx={{ mb: 1 }}>Business Day cannot close yet</Typography><BlockerList blockers={otherBlockers} onCancelDraft={onCancelDraft} cancellingDraft={cancellingDraft} onForceCloseDraft={canForceOrReopen(roles) ? setForceCloseSaleId : undefined} /></Box> : null}
+      {required.length > 0 ? <Alert severity="warning">{required.length} register{required.length === 1 ? '' : 's'} require{required.length === 1 ? 's' : ''} reconciliation before this Business Day can be closed.</Alert> : null}
+      {sessions.map((session) => <Paper key={session.registerSessionId} variant="outlined" sx={{ p: 2 }}><Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
+        <Box sx={{ flexGrow: 1 }}><Typography fontWeight={700}>{session.registerName} ({session.registerCode})</Typography><Typography variant="body2" color="text.secondary">{session.registerType.replace('_', ' ')} · {session.sessionStatus}</Typography>
+          <Typography variant="body2">Opened by {session.openedByName ?? 'Operator not recorded'} · {new Date(session.openedAt).toLocaleString()}</Typography>
+          <Typography variant="body2">Opening cash: {money(session.openingCash, currencyCode)} · Expected cash: {money(session.expectedCash, currencyCode)}</Typography>
+        </Box>
+        {session.reconciliationComplete ? <Chip color="success" label="Reconciled" /> : <Chip color="warning" label="Reconciliation Required" />}
+        {session.reconciliationRequired && session.canReconcile ? <Button variant="contained" onClick={() => setSelected(session)}>Complete Reconciliation</Button> : null}
+        {session.reconciliationRequired && !session.canReconcile ? <Typography variant="body2" color="text.secondary">You do not have permission to reconcile this session.</Typography> : null}
+      </Stack></Paper>)}
+    </Stack>
+    <RegisterReconciliationDialog open={Boolean(selected)} registerName={selected ? `${selected.registerName} (${selected.registerCode})` : ''} currencyCode={currencyCode}
+      session={selected ? { id: selected.registerSessionId, status: selected.sessionStatus, version: selected.version, openingCash: selected.openingCash, expectedCash: selected.expectedCash, countedCash: selected.countedCash, differenceCash: selected.variance, reconciliation: selected.reconciliation } : null}
+      onClose={() => setSelected(null)} onCompleted={onCompleted} />
+    <ForceCloseDraftDialog saleId={forceCloseSaleId} currencyCode={currencyCode} onClose={() => setForceCloseSaleId(null)} onCompleted={onCompleted} />
+  </Paper>;
+}
+
+function ForceCloseDraftDialog({ saleId, currencyCode, onClose, onCompleted }: { saleId: string | null; currencyCode?: string; onClose: () => void; onCompleted: () => void | Promise<void> }) {
+  const { getValidAccessToken } = useSession();
+  const [reasonCode, setReasonCode] = React.useState('ABANDONED_TRANSACTION');
+  const [note, setNote] = React.useState('');
+  const sale = useQuery({ queryKey: ['sale', saleId], queryFn: async () => getSale(await getValidAccessToken(), saleId!), enabled: Boolean(saleId) });
+  const forceClose = useMutation({ mutationFn: async () => forceCloseDraftSale(await getValidAccessToken(), saleId!, { version: sale.data!.version, reasonCode, note: note.trim() || undefined }), onSuccess: async () => { await onCompleted(); onClose(); } });
+  const invalid = !reasonCode || (reasonCode === 'OTHER' && !note.trim());
+  return <Dialog open={Boolean(saleId)} onClose={onClose} fullWidth maxWidth="sm"><DialogTitle>Force Close Draft Sale?</DialogTitle><DialogContent><Stack spacing={2} sx={{ mt: 1 }}>
+    {sale.data ? <><Typography>Sale: {sale.data.id.slice(0, 8).toUpperCase()}</Typography><Typography>Sale Total: {money(sale.data.totalAmount, currencyCode ?? sale.data.currencyCode)}</Typography><Typography>Recorded Payments: {money(sale.data.paidAmount, currencyCode ?? sale.data.currencyCode)}</Typography><Typography>Remaining Balance: {money(sale.data.balanceDue, currencyCode ?? sale.data.currencyCode)}</Typography></> : <CircularProgress size={24} />}
+    <Alert severity="warning">Recorded payment history will be preserved. No refund, void, or Register reconciliation change will occur.</Alert>
+    <TextField select label="Reason" value={reasonCode} onChange={(event) => setReasonCode(event.target.value)} required>{['ABANDONED_TRANSACTION','DUPLICATE_DRAFT','CHECKOUT_INTERRUPTED','INCORRECT_DRAFT','PAYMENT_HANDLED_EXTERNALLY','OTHER'].map((value) => <MenuItem key={value} value={value}>{value.replaceAll('_', ' ')}</MenuItem>)}</TextField>
+    <TextField label="Note" value={note} onChange={(event) => setNote(event.target.value)} required={reasonCode === 'OTHER'} multiline minRows={2} />
+    {forceClose.isError ? <Alert severity="error">{errorMessage(forceClose.error)}</Alert> : null}
+  </Stack></DialogContent><DialogActions><Button onClick={onClose}>Cancel</Button><Button color="error" variant="contained" disabled={!sale.data || invalid || forceClose.isPending} onClick={() => forceClose.mutate()}>Force Close Draft</Button></DialogActions></Dialog>;
+}
+
 function errorMessage(error: unknown) {
   if (error instanceof ApiClientError) {
     if (error.code === 'BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS') return 'Close all open registers before closing the business day.';
     if (error.code === 'BUSINESS_DAY_STATE_CHANGED' || error.code === 'RECORD_UPDATED_BY_ANOTHER_USER') return 'The business day changed. Refresh and try again.';
     if (error.code === 'VARIANCE_EXPLANATION_REQUIRED') return 'Please explain the cash variance before closing.';
     if (error.code === 'BUSINESS_DAY_RECONCILIATION_INCOMPLETE') return 'Complete register reconciliation before closing the business day.';
+    if (error.code === 'SALE_HAS_RECORDED_PAYMENTS') return 'This draft has recorded payments and cannot be cancelled. Open the sale to review its payments.';
   }
   return error instanceof Error ? error.message : 'Request failed';
 }
@@ -133,16 +189,20 @@ function StoreSelect({ stores, value, onChange }: { stores: Store[]; value: stri
   );
 }
 
-function BlockerList({ blockers }: { blockers: ClosingBlocker[] }) {
+function BlockerList({ blockers, onCancelDraft, cancellingDraft, onForceCloseDraft }: { blockers: ClosingBlocker[]; onCancelDraft?: (saleId: string) => void; cancellingDraft?: boolean; onForceCloseDraft?: (saleId: string) => void }) {
   if (blockers.length === 0) {
     return <Alert severity="success">No closing blockers detected.</Alert>;
   }
   return (
     <Alert severity="warning">
       <Stack component="ul" sx={{ m: 0, pl: 2 }}>
-        {blockers.map((blocker) => (
-          <Typography component="li" key={`${blocker.code}-${blocker.relatedId ?? blocker.message}`}>{blocker.message}</Typography>
-        ))}
+        {blockers.map((blocker) => <Box component="li" key={`${blocker.code}-${blocker.relatedId ?? blocker.message}`} sx={{ mb: 0.5 }}>
+              <Typography>{blocker.message}</Typography>
+          {blocker.code === 'UNFINALIZED_DRAFT_SALE' && blocker.relatedId && onCancelDraft ? <Button size="small" color="warning" disabled={cancellingDraft} onClick={() => onCancelDraft(blocker.relatedId!)}>Cancel Draft Sale</Button> : null}
+          {blocker.code === 'UNFINALIZED_PAID_DRAFT_SALE' && blocker.relatedId ? <Button size="small" component={Link} to={`/pos?saleId=${blocker.relatedId}`}>Review Paid Draft Sale</Button> : null}
+          {blocker.code === 'UNFINALIZED_PAID_DRAFT_SALE' && blocker.relatedId && onForceCloseDraft ? <Button size="small" color="error" onClick={() => onForceCloseDraft(blocker.relatedId!)}>Force Close Draft</Button> : null}
+          {blocker.code === 'UNFINALIZED_HELD_SALE' ? <Button size="small" component={Link} to="/pos/held-sales">Review Held Sales</Button> : null}
+        </Box>)}
       </Stack>
     </Alert>
   );
@@ -179,7 +239,7 @@ function downloadBlob(filename: string, blob: Blob) {
 export function BusinessDayPage() {
   const { roles, canView: allowed, canOpen, canClose, canReopen } = useBusinessDayAccess();
   const canForce = canForceOrReopen(roles);
-  const { getValidAccessToken } = useSession();
+  const { getValidAccessToken, currentUser } = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [storeId, setStoreId] = React.useState('');
@@ -205,10 +265,13 @@ export function BusinessDayPage() {
     enabled: allowed && Boolean(storeId)
   });
 
+  const reconciliationDay = operationalState.data?.currentBusinessDay
+    ?? (operationalState.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? operationalState.data?.previousBusinessDay : null);
+
   const validation = useQuery({
-    queryKey: ['business-day', 'validation', operationalState.data?.currentBusinessDay?.id],
-    queryFn: async () => getBusinessDayClosingValidation(await getValidAccessToken(), operationalState.data!.currentBusinessDay!.id),
-    enabled: allowed && canClose && Boolean(operationalState.data?.currentBusinessDay?.id) && operationalState.data?.currentBusinessDay?.status !== 'CLOSED'
+    queryKey: ['business-day', 'validation', reconciliationDay?.id],
+    queryFn: async () => getBusinessDayClosingValidation(await getValidAccessToken(), reconciliationDay!.id),
+    enabled: allowed && Boolean(reconciliationDay?.id) && reconciliationDay?.status !== 'CLOSED'
   });
 
   const open = useMutation({
@@ -257,6 +320,16 @@ export function BusinessDayPage() {
     }
   });
 
+  const cancelDraft = useMutation({
+    mutationFn: async (saleId: string) => cancelSale(await getValidAccessToken(), saleId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['business-day'] }),
+        queryClient.invalidateQueries({ queryKey: ['sales'] })
+      ]);
+    }
+  });
+
   if (!allowed) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -264,6 +337,14 @@ export function BusinessDayPage() {
   const day = operationalState.data?.currentBusinessDay ?? null;
   const previousDay = operationalState.data?.previousBusinessDay ?? null;
   const storeRows = stores.data?.content ?? [];
+  const selectedStore = storeRows.find((store) => store.id === storeId);
+  const refreshAfterReconciliation = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['business-day'] }),
+      queryClient.invalidateQueries({ queryKey: ['register-session'] }),
+      queryClient.invalidateQueries({ queryKey: ['register-sessions'] })
+    ]);
+  };
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 1180 }}>
@@ -286,6 +367,7 @@ export function BusinessDayPage() {
       {startClosing.isError ? <Alert severity="error">{errorMessage(startClosing.error)}</Alert> : null}
       {reopen.isError ? <Alert severity="error">{errorMessage(reopen.error)}</Alert> : null}
       {closePrevious.isError ? <Alert severity="error">{errorMessage(closePrevious.error)}</Alert> : null}
+      {cancelDraft.isError ? <Alert severity="error">{errorMessage(cancelDraft.error)}</Alert> : null}
 
       {!operationalState.isLoading && (operationalState.data?.state === 'NO_BUSINESS_DAY_TODAY' || operationalState.data?.state === 'HISTORICAL_CLOSED') ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
@@ -311,13 +393,17 @@ export function BusinessDayPage() {
             </Typography>
             {previousDay && canClose ? (
               <Button color="warning" variant="contained" sx={{ alignSelf: 'flex-start' }}
-                disabled={closePrevious.isPending} onClick={() => setClosePreviousOpen(true)}>
+                disabled={closePrevious.isPending || validation.data?.closable === false || (Boolean(reconciliationDay) && !validation.data && !validation.isError)} onClick={() => setClosePreviousOpen(true)}>
                 Close Previous Business Day
               </Button>
             ) : <Typography variant="body2">The previous business day is still open. Ask a Manager or Owner to close it before starting today's business day.</Typography>}
           </Stack>
         </Alert>
       ) : null}
+
+      {reconciliationDay && reconciliationDay.status !== 'CLOSED' ? <RegisterReconciliationPanel validation={validation.data} currencyCode={selectedStore?.currencyCode} onCompleted={refreshAfterReconciliation}
+        cancellingDraft={cancelDraft.isPending}
+        onCancelDraft={currentUser?.permissions?.includes('SALE_CREATE') ? (saleId) => window.confirm('Cancel this draft sale? This cannot be undone.') && cancelDraft.mutate(saleId) : undefined} /> : null}
 
       {day ? (
         <>
@@ -338,7 +424,7 @@ export function BusinessDayPage() {
                   : validation.isLoading ? <LoadingPanel label="Checking closing blockers" /> : <BlockerList blockers={validation.data?.blockers ?? []} />}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 {day.status !== 'CLOSED' && canClose ? <Button variant="contained" onClick={() => startClosing.mutate(day)} disabled={startClosing.isPending}>Start closing</Button> : null}
-                {day.status !== 'CLOSED' && canClose ? <Button component={Link} to={`/business-day/close?storeId=${day.storeId}`} variant="outlined">Close Business Day</Button> : null}
+                {day.status !== 'CLOSED' && canClose ? <Button component={Link} to={`/business-day/close?storeId=${day.storeId}`} variant="outlined" disabled={!validation.data?.closable}>Close Business Day</Button> : null}
                 {canForce ? (
                   <Button component={Link} to="/business-day/close?force=true" color="warning" disabled={day.status === 'CLOSED'}>
                     Force close
@@ -446,6 +532,16 @@ export function BusinessDayClosePage() {
     }
   });
 
+  const cancelDraft = useMutation({
+    mutationFn: async (saleId: string) => cancelSale(await getValidAccessToken(), saleId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['business-day'] }),
+        queryClient.invalidateQueries({ queryKey: ['sales'] })
+      ]);
+    }
+  });
+
   if (!allowed || (forceMode && !canForce)) {
     return <Navigate to="/unauthorized" replace />;
   }
@@ -453,6 +549,14 @@ export function BusinessDayClosePage() {
   const day = current.data;
   const blockers = validation.data?.blockers ?? [];
   const varianceExplanationRequired = preview.data?.varianceExplanationRequired ?? false;
+  const selectedStore = stores.data?.content.find((store) => store.id === storeId);
+  const refreshAfterReconciliation = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['business-day'] }),
+      queryClient.invalidateQueries({ queryKey: ['register-session'] }),
+      queryClient.invalidateQueries({ queryKey: ['register-sessions'] })
+    ]);
+  };
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 1180 }}>
@@ -464,6 +568,7 @@ export function BusinessDayClosePage() {
       {current.isError ? <Alert severity="error">{errorMessage(current.error)}</Alert> : null}
       {preview.isError ? <Alert severity="error">{errorMessage(preview.error)}</Alert> : null}
       {close.isError ? <Alert severity="error">{errorMessage(close.error)}</Alert> : null}
+      {cancelDraft.isError ? <Alert severity="error">{errorMessage(cancelDraft.error)}</Alert> : null}
       {!day && !current.isLoading ? <Alert severity="info">No active business day is available for this store.</Alert> : null}
       {day ? (
         <>
@@ -481,6 +586,9 @@ export function BusinessDayClosePage() {
               {preview.data ? <ClosingPreview preview={preview.data} /> : null}
             </Stack>
           </Paper>
+          <RegisterReconciliationPanel validation={validation.data} currencyCode={selectedStore?.currencyCode} onCompleted={refreshAfterReconciliation}
+            cancellingDraft={cancelDraft.isPending}
+            onCancelDraft={currentUser?.permissions?.includes('SALE_CREATE') ? (saleId) => window.confirm('Cancel this draft sale? This cannot be undone.') && cancelDraft.mutate(saleId) : undefined} />
           <Paper elevation={0} component="form" sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
             <Stack spacing={2}>
               {forceMode ? <TextField label="Force-close reason" value={forceReason} onChange={(event) => setForceReason(event.target.value)} required fullWidth multiline minRows={2} /> : null}

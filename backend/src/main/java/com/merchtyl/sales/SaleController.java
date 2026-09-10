@@ -128,6 +128,12 @@ public class SaleController {
         return saleService.cancel(id, authentication);
     }
 
+    @PostMapping("/{id}/force-close")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_FORCE_CLOSE)")
+    SaleResponse forceClose(@PathVariable UUID id, @Valid @RequestBody SaleForceCloseRequest request, Authentication authentication) {
+        return saleService.forceCloseDraft(id, request, authentication);
+    }
+
     @PostMapping("/{id}/recalculate")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
     SaleResponse recalculate(@PathVariable UUID id, Authentication authentication) {

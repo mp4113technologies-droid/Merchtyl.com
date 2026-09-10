@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, UUID>, JpaSpecificationExecutor<InventoryTransaction> {
+    boolean existsByStoreId(UUID storeId);
     @Override
     @EntityGraph(attributePaths = {"store", "product", "product.category"})
     List<InventoryTransaction> findAll(Specification<InventoryTransaction> specification, Sort sort);

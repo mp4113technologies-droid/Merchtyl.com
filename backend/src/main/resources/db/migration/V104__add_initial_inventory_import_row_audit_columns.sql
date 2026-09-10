@@ -1,0 +1,4 @@
+ALTER TABLE initial_inventory_import_rows
+    ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN version BIGINT NOT NULL DEFAULT 0;
