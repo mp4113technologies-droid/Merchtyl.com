@@ -20,10 +20,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     Optional<Product> findById(UUID id);
 
     Optional<Product> findByIdAndTenantId(UUID id, UUID tenantId);
+    @EntityGraph(attributePaths = {"variants", "barcodes", "category", "brand", "unitOfMeasure"})
+    java.util.List<Product> findAllByTenantId(UUID tenantId);
+    Optional<Product> findByTenantIdAndProductReferenceIgnoreCase(UUID tenantId, String productReference);
 
     boolean existsBySkuIgnoreCase(String sku);
     boolean existsByTenantIdAndSkuIgnoreCase(UUID tenantId, String sku);
     boolean existsByTenantIdAndSkuIgnoreCaseAndIdNot(UUID tenantId, String sku, UUID id);
+    boolean existsByTenantIdAndProductReferenceIgnoreCase(UUID tenantId, String productReference);
 
     boolean existsBySkuIgnoreCaseAndIdNot(String sku, UUID id);
 

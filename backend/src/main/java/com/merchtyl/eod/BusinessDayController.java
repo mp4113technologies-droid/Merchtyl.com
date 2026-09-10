@@ -113,8 +113,7 @@ public class BusinessDayController {
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).BUSINESS_DAY_VIEW)")
     @Operation(summary = "Validate closing readiness", description = "Requires BUSINESS_DAY_VIEW. Returns all closing blockers, not only the first blocker.")
     ClosingValidationResponse validation(@PathVariable UUID id, Authentication authentication) {
-        businessDayService.assertStoreAccess(businessDayService.get(id).storeId(), authentication);
-        return businessDayService.validateClosing(id);
+        return businessDayService.validateClosing(id, authentication);
     }
 
     @GetMapping("/{id}/preview")

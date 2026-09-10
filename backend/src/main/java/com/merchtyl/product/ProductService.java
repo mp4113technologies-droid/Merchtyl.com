@@ -56,6 +56,7 @@ public class ProductService {
     @Autowired private StoreAccessService storeAccessService;
     @Autowired private StoreProductRepository storeProductRepository;
     @Autowired private InventoryBalanceRepository inventoryBalanceRepository;
+    @Autowired private ProductReferenceGenerator productReferenceGenerator;
 
     public ProductService(
             ProductRepository productRepository,
@@ -107,6 +108,7 @@ public class ProductService {
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
         product.setAvailabilityScope(availabilityScope);
         product.assignTenant(tenantId);
+        product.assignProductReference(productReferenceGenerator == null ? "PRD-000001" : productReferenceGenerator.next(tenantId));
         Product saved = save(product);
         if (storeAccessService != null) requestedStoreIds.forEach(storeId -> {
             var store = storeAccessService.tenantStore(tenantId, storeId);
@@ -520,6 +522,7 @@ public class ProductService {
             if (query != null) query.distinct(true);
             return builder.or(
                     builder.like(builder.lower(root.get("name")), pattern),
+                    builder.like(builder.lower(root.get("productReference")), pattern),
                     builder.like(builder.lower(root.get("sku")), pattern),
                     builder.and(
                             builder.isTrue(variant.get("active")),

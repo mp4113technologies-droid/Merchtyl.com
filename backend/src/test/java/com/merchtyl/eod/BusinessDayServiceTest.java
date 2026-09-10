@@ -3,6 +3,7 @@ package com.merchtyl.eod;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.merchtyl.audit.AuditService;
 import com.merchtyl.cash.CashLedgerService;
+import com.merchtyl.cash.CashLedgerBreakdownResponse;
 import com.merchtyl.cash.CashMovementRepository;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
@@ -175,6 +177,7 @@ class BusinessDayServiceTest {
         when(session.getStatus()).thenReturn(RegisterSessionStatus.OPEN);
         when(session.getRegister()).thenReturn(register);
         when(register.getCode()).thenReturn("FRONT");
+        when(cashLedger.breakdown(session)).thenReturn(cashBreakdown("100.00"));
         when(registerSessions.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
                 .thenReturn(List.of(session));
 
@@ -187,6 +190,99 @@ class BusinessDayServiceTest {
 
         verify(storeAccess).requireStoreAccess(authentication, storeId);
         verify(storeAccess, never()).requireStoreManagement(authentication, storeId);
+    }
+
+    @Test
+    void closingValidationIdentifiesEveryRegisterAndReconciliationPermission() {
+        RegisterSession reconciled = session("A", RegisterSessionStatus.FORCE_CLOSED, "100.00", "100.00");
+        RegisterSession closing = session("B", RegisterSessionStatus.CLOSING, null, null);
+        RegisterSession open = session("C", RegisterSessionStatus.OPEN, null, null);
+        when(businessDays.findById(dayId)).thenReturn(Optional.of(day));
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(day.getTimezone()).thenReturn("UTC");
+        when(registerSessions.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(reconciled, closing, open));
+        when(authentication.getAuthorities()).thenReturn((java.util.Collection) List.of(
+                new SimpleGrantedAuthority("ROLE_MANAGER"),
+                new SimpleGrantedAuthority("REGISTER_SESSION_CLOSE")));
+
+        ClosingValidationResponse result = service.validateClosing(dayId, authentication);
+
+        assertThat(result.registerSessions()).extracting(RegisterReconciliationResponse::registerCode)
+                .containsExactly("A", "B", "C");
+        assertThat(result.registerSessions()).filteredOn(RegisterReconciliationResponse::reconciliationRequired)
+                .extracting(RegisterReconciliationResponse::registerCode).containsExactly("B", "C");
+        assertThat(result.registerSessions().get(0).reconciliationComplete()).isTrue();
+        assertThat(result.registerSessions()).filteredOn(RegisterReconciliationResponse::canReconcile)
+                .hasSize(3);
+        assertThat(result.closable()).isFalse();
+        verify(storeAccess).requireStoreAccess(authentication, storeId);
+    }
+
+    @Test
+    void reconciledRegistersDoNotHideDraftSaleClosingBlocker() {
+        RegisterSession reconciled = session("A", RegisterSessionStatus.FORCE_CLOSED, "100.00", "100.00");
+        com.merchtyl.sales.Sale draft = mock(com.merchtyl.sales.Sale.class);
+        UUID saleId = UUID.randomUUID();
+        when(draft.getId()).thenReturn(saleId);
+        when(draft.getStatus()).thenReturn(com.merchtyl.sales.SaleStatus.DRAFT);
+        when(businessDays.findById(dayId)).thenReturn(Optional.of(day));
+        when(day.getStatus()).thenReturn(BusinessDayStatus.REOPENED);
+        when(day.getTimezone()).thenReturn("UTC");
+        when(registerSessions.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(reconciled));
+        when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(draft), List.of());
+
+        ClosingValidationResponse result = service.validateClosing(dayId, authentication);
+
+        assertThat(result.registerSessions()).allMatch(RegisterReconciliationResponse::reconciliationComplete);
+        assertThat(result.closable()).isFalse();
+        assertThat(result.blockers()).extracting(ClosingBlockerResponse::code)
+                .containsExactly("UNFINALIZED_DRAFT_SALE");
+        assertThat(result.blockers().get(0).relatedId()).isEqualTo(saleId);
+    }
+
+    @Test
+    void paidDraftSaleUsesNonCancellableClosingBlocker() {
+        com.merchtyl.sales.Sale draft = mock(com.merchtyl.sales.Sale.class);
+        when(draft.getId()).thenReturn(UUID.randomUUID());
+        when(draft.getStatus()).thenReturn(com.merchtyl.sales.SaleStatus.DRAFT);
+        when(draft.getPayments()).thenReturn(List.of(mock(com.merchtyl.sales.Payment.class)));
+        when(businessDays.findById(dayId)).thenReturn(Optional.of(day));
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(day.getTimezone()).thenReturn("UTC");
+        when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(draft), List.of());
+
+        ClosingValidationResponse result = service.validateClosing(dayId, authentication);
+
+        assertThat(result.blockers()).extracting(ClosingBlockerResponse::code)
+                .containsExactly("UNFINALIZED_PAID_DRAFT_SALE");
+    }
+
+    private RegisterSession session(String code, RegisterSessionStatus status, String counted, String expectedAtClose) {
+        RegisterSession session = mock(RegisterSession.class);
+        Register register = mock(Register.class);
+        User opener = mock(User.class);
+        when(session.getId()).thenReturn(UUID.randomUUID());
+        when(session.getRegister()).thenReturn(register);
+        when(register.getId()).thenReturn(UUID.randomUUID());
+        when(register.getCode()).thenReturn(code);
+        when(register.getName()).thenReturn("Register " + code);
+        when(session.getStatus()).thenReturn(status);
+        when(session.getOpenedBy()).thenReturn(opener);
+        when(session.getOpeningCash()).thenReturn(new BigDecimal("50.00"));
+        when(session.getCountedCash()).thenReturn(counted == null ? null : new BigDecimal(counted));
+        when(session.getExpectedCashAtClose()).thenReturn(expectedAtClose == null ? null : new BigDecimal(expectedAtClose));
+        when(cashLedger.breakdown(session)).thenReturn(cashBreakdown("100.00"));
+        return session;
+    }
+
+    private static CashLedgerBreakdownResponse cashBreakdown(String expected) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(2);
+        return new CashLedgerBreakdownResponse(zero, zero, zero, zero, zero, zero, zero, zero,
+                zero, zero, zero, zero, new BigDecimal(expected), List.of());
     }
 
     @Test

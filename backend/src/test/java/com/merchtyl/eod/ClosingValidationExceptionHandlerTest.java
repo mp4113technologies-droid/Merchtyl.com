@@ -2,6 +2,7 @@ package com.merchtyl.eod;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import com.merchtyl.platform.web.RequestLoggingFilter;
 
 import java.util.List;
 import java.util.UUID;
@@ -21,12 +22,35 @@ class ClosingValidationExceptionHandlerTest {
     }
 
     @Test
-    void otherBlockersUseStableReconciliationConflictCode() {
+    void recordsBusinessFailureForRequestLogging() {
+        MockHttpServletRequest request = request();
+
+        handler.closingValidation(exception("OPEN_REGISTER_SESSION"), request);
+
+        assertThat(request.getAttribute(RequestLoggingFilter.ERROR_CODE_ATTRIBUTE))
+                .isEqualTo("BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS");
+        assertThat(request.getAttribute(RequestLoggingFilter.EXCEPTION_TYPE_ATTRIBUTE))
+                .isEqualTo("BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS");
+    }
+
+    @Test
+    void reconciliationBlockersUseStableReconciliationConflictCode() {
         var response = handler.closingValidation(exception("REGISTER_RECONCILIATION_INCOMPLETE"), request());
 
         assertThat(response.getStatusCode().value()).isEqualTo(409);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().code()).isEqualTo("BUSINESS_DAY_RECONCILIATION_INCOMPLETE");
+        assertThat(response.getBody().code()).isEqualTo("BUSINESS_DAY_HAS_UNRECONCILED_REGISTER_SESSIONS");
+    }
+
+    @Test
+    void draftSaleBlockerUsesStableUnfinalizedSalesConflictCode() {
+        var response = handler.closingValidation(exception("UNFINALIZED_DRAFT_SALE"), request());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo("BUSINESS_DAY_HAS_UNFINALIZED_SALES");
+        assertThat(response.getBody().violations()).extracting("code")
+                .containsExactly("UNFINALIZED_DRAFT_SALE");
     }
 
     private static ClosingValidationException exception(String code) {

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
-import type { AuthResponse, BusinessDay, ClosingValidation, CurrentUserResponse, EndOfDayClosingPreview, EndOfDayReport, Store, StoreListResponse, UserRole } from '../../api/types';
+import type { AuthResponse, BusinessDay, ClosingValidation, CurrentUserResponse, EndOfDayClosingPreview, EndOfDayReport, RegisterReconciliation, Store, StoreListResponse, UserRole } from '../../api/types';
 
 const storeId = '00000000-0000-0000-0000-000000001201';
 const dayId = '00000000-0000-0000-0000-000000001202';
@@ -87,7 +87,37 @@ function validation(): ClosingValidation {
   return {
     businessDayId: dayId,
     closable: false,
-    blockers: [{ code: 'OPEN_REGISTER_SESSION', message: 'Register session remains open: FRONT', relatedId: '00000000-0000-0000-0000-000000001205' }]
+    blockers: [{ code: 'OPEN_REGISTER_SESSION', message: 'Register session remains open: FRONT', relatedId: '00000000-0000-0000-0000-000000001205' }],
+    registerSessions: []
+  };
+}
+
+function reconciliation(registerCode: string, status: 'OPEN' | 'CLOSING' | 'CLOSED' = 'OPEN'): RegisterReconciliation {
+  const complete = status === 'CLOSED';
+  return {
+    registerSessionId: `00000000-0000-0000-0000-0000000012${registerCode.charCodeAt(0)}`,
+    registerId: `00000000-0000-0000-0000-0000000013${registerCode.charCodeAt(0)}`,
+    registerCode,
+    registerName: `Register ${registerCode}`,
+    registerType: registerCode === 'C' ? 'FOOD_SERVICE' : 'RETAIL',
+    sessionStatus: status,
+    openedByUserId: '00000000-0000-0000-0000-000000001204',
+    openedByName: 'Manager One',
+    openedAt: '2026-07-29T08:00:00Z',
+    openingCash: 50,
+    expectedCash: 125,
+    countedCash: complete ? 125 : null,
+    variance: complete ? 0 : null,
+    version: status === 'OPEN' ? 0 : status === 'CLOSING' ? 1 : 2,
+    reconciliationRequired: !complete,
+    reconciliationComplete: complete,
+    canReconcile: true,
+    reconciliation: {
+      openingCash: 50, retailCashReceived: 75, retailChange: 0, retailRefunds: 0,
+      lotteryCashSales: 0, lotteryPayouts: 0, payoutReversals: 0,
+      lotterySaleCancellations: 0, otherCashIn: 0, otherCashOut: 0,
+      totalIn: 75, totalOut: 0, expectedCash: 125, sourceBreakdown: []
+    }
   };
 }
 
@@ -254,6 +284,54 @@ describe('Business day pages', () => {
     expect(await screen.findByText('2026-07-29')).toBeInTheDocument();
     expect(await screen.findByText('Register session remains open: FRONT')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Close Business Day' })).toBeInTheDocument();
+  });
+
+  it('identifies multiple blocking registers and becomes closable after both use the shared reconciliation flow', async () => {
+    storeSession(['MANAGER']);
+    const states = new Map<string, 'OPEN' | 'CLOSING' | 'CLOSED'>([['A', 'CLOSED'], ['B', 'OPEN'], ['C', 'OPEN']]);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_CLOSE', 'REGISTER_SESSION_CLOSE']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({ storeId, currentBusinessDate: '2026-07-29', currentBusinessDay: businessDay(), previousBusinessDay: null, state: 'OPEN', availableAction: 'NONE' });
+      if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) {
+        const registerSessions = [...states].map(([code, status]) => reconciliation(code, status));
+        const required = registerSessions.filter((session) => session.reconciliationRequired);
+        return jsonResponse({ businessDayId: dayId, closable: required.length === 0, blockers: required.map((session) => ({ code: 'MISSING_RECONCILIATION', message: `Register reconciliation is missing for register: ${session.registerCode}`, relatedId: session.registerSessionId })), registerSessions });
+      }
+      for (const code of ['B', 'C']) {
+        const session = reconciliation(code, states.get(code)!);
+        if (url.pathname.endsWith(`/api/v1/register-sessions/${session.registerSessionId}/start-closing`) && init?.method === 'POST') {
+          states.set(code, 'CLOSING');
+          return jsonResponse({ ...session, id: session.registerSessionId, status: 'CLOSING', version: 1, differenceCash: null });
+        }
+        if (url.pathname.endsWith(`/api/v1/register-sessions/${session.registerSessionId}/close`) && init?.method === 'POST') {
+          states.set(code, 'CLOSED');
+          return jsonResponse({ ...session, id: session.registerSessionId, status: 'CLOSED', version: 2, countedCash: 125, differenceCash: 0 });
+        }
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByText('2 registers require reconciliation before this Business Day can be closed.')).toBeInTheDocument();
+    expect(screen.getByText('Register B (B)')).toBeInTheDocument();
+    expect(screen.getByText('Register C (C)')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Complete Reconciliation' })).toHaveLength(2);
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Complete Reconciliation' })[0]);
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start Closing' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Complete Reconciliation' }));
+    await waitFor(() => expect(screen.getByText('1 register requires reconciliation before this Business Day can be closed.')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Complete Reconciliation' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start Closing' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Complete Reconciliation' }));
+
+    expect(await screen.findByText('All register sessions reconciled.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Close Business Day' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/register-sessions/') && init?.method === 'POST')).toHaveLength(4);
   });
 
   it('switches Store business-day state and reopens the selected closed day', async () => {
@@ -425,6 +503,7 @@ describe('Business day pages', () => {
           state: 'HISTORICAL_CLOSED',
           availableAction: 'OPEN'
         });
+        if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/validation`)) return jsonResponse({ businessDayId: previous.id, closable: true, blockers: [], registerSessions: [] });
         if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') {
           previousOpen = false;
           return jsonResponse(report());
@@ -460,6 +539,7 @@ describe('Business day pages', () => {
         storeId, currentBusinessDate: '2026-09-02', currentBusinessDay: null, previousBusinessDay: previous,
         state: 'PREVIOUS_DAY_STILL_OPEN', availableAction: 'NONE'
       });
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/validation`)) return jsonResponse({ businessDayId: previous.id, closable: true, blockers: [], registerSessions: [] });
       if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') return jsonResponse({
         code: 'BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS',
         message: 'This business day cannot close while registers are open.', status: 409,
@@ -473,6 +553,117 @@ describe('Business day pages', () => {
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close Previous Business Day' }));
 
     expect(await screen.findByText('Close all open registers before closing the business day.')).toBeInTheDocument();
+  });
+
+  it('reconciles the exact previous-day session before enabling previous-day close', async () => {
+    storeSession(['MANAGER']);
+    const previous = businessDay({ businessDate: '2026-09-09', status: 'OPEN', version: 4 });
+    let sessionStatus: 'CLOSING' | 'CLOSED' = 'CLOSING';
+    const sessionId = reconciliation('B', 'CLOSING').registerSessionId;
+    let previousOpen = true;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN', 'BUSINESS_DAY_CLOSE', 'REGISTER_SESSION_CLOSE']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse(previousOpen ? { storeId, currentBusinessDate: '2026-09-10', currentBusinessDay: null, previousBusinessDay: previous, state: 'PREVIOUS_DAY_STILL_OPEN', availableAction: 'NONE' } : { storeId, currentBusinessDate: '2026-09-10', currentBusinessDay: null, previousBusinessDay: { ...previous, status: 'CLOSED' }, state: 'HISTORICAL_CLOSED', availableAction: 'OPEN' });
+      const session = reconciliation('B', sessionStatus);
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/validation`)) return jsonResponse({ businessDayId: previous.id, closable: sessionStatus === 'CLOSED', blockers: sessionStatus === 'CLOSED' ? [] : [{ code: 'MISSING_RECONCILIATION', message: 'Register reconciliation is missing for register: B', relatedId: session.registerSessionId }], registerSessions: [session] });
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${session.registerSessionId}/close`) && init?.method === 'POST') {
+        sessionStatus = 'CLOSED';
+        return jsonResponse({ ...session, id: session.registerSessionId, status: 'CLOSED', version: 2, countedCash: 125, differenceCash: 0 });
+      }
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') {
+        previousOpen = false;
+        return jsonResponse(report());
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByText('2026-09-09 must be closed before opening 2026-09-10.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeDisabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Complete Reconciliation' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Complete Reconciliation' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Close Previous Business Day' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close Previous Business Day' }));
+
+    expect(await screen.findByRole('button', { name: 'Start Business Day' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(`/register-sessions/${sessionId}/close`))).toBe(true);
+  });
+
+  it('explains a draft-sale blocker when FORCE_CLOSED and CLOSED sessions are reconciled, then enables older-day close after recovery', async () => {
+    storeSession(['TENANT_OWNER']);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const previous = businessDay({ businessDate: '2026-09-08', status: 'REOPENED', version: 2 });
+    const draftId = '7318a8ba-35d7-4ca7-b80b-b9927d7ba28f';
+    let draftExists = true;
+    let previousOpen = true;
+    const forceClosed = reconciliation('A', 'CLOSED');
+    forceClosed.sessionStatus = 'FORCE_CLOSED';
+    const closed = reconciliation('B', 'CLOSED');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_OPEN', 'BUSINESS_DAY_CLOSE', 'REGISTER_SESSION_CLOSE', 'SALE_CREATE']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse(previousOpen
+        ? { storeId, currentBusinessDate: '2026-09-10', currentBusinessDay: null, previousBusinessDay: previous, state: 'PREVIOUS_DAY_STILL_OPEN', availableAction: 'NONE' }
+        : { storeId, currentBusinessDate: '2026-09-10', currentBusinessDay: null, previousBusinessDay: { ...previous, status: 'CLOSED' }, state: 'HISTORICAL_CLOSED', availableAction: 'OPEN' });
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/validation`)) return jsonResponse({
+        businessDayId: previous.id, closable: !draftExists,
+        blockers: draftExists ? [{ code: 'UNFINALIZED_DRAFT_SALE', message: 'Sale remains in DRAFT state', relatedId: draftId }] : [],
+        registerSessions: [forceClosed, closed]
+      });
+      if (url.pathname.endsWith(`/api/v1/sales/${draftId}/cancel`) && init?.method === 'POST') {
+        draftExists = false;
+        return jsonResponse({ id: draftId, status: 'CANCELLED' });
+      }
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') {
+        previousOpen = false;
+        return jsonResponse(report());
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    expect(await screen.findByText('All register sessions reconciled.')).toBeInTheDocument();
+    expect(screen.getByText(/Sale remains in DRAFT state/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel Draft Sale' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeEnabled());
+    expect(screen.queryByText(/Sale remains in DRAFT state/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Close Previous Business Day' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close Previous Business Day' }));
+    expect(await screen.findByRole('button', { name: 'Start Business Day' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(`/sales/${draftId}/cancel`))).toBe(true);
+  });
+
+  it('routes a paid draft to review instead of offering an invalid cancellation', async () => {
+    storeSession(['TENANT_OWNER']);
+    const previous = businessDay({ businessDate: '2026-09-08', status: 'REOPENED' });
+    const paidDraftId = '69b8d0d4-9478-4c42-b810-30028b069019';
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_CLOSE', 'SALE_CREATE']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({ storeId, currentBusinessDate: '2026-09-10', currentBusinessDay: null, previousBusinessDay: previous, state: 'PREVIOUS_DAY_STILL_OPEN', availableAction: 'NONE' });
+      if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/validation`)) return jsonResponse({
+        businessDayId: previous.id, closable: false,
+        blockers: [{ code: 'UNFINALIZED_PAID_DRAFT_SALE', message: 'Draft sale has recorded payments and requires review', relatedId: paidDraftId }],
+        registerSessions: []
+      });
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day']} />);
+
+    const review = await screen.findByRole('link', { name: 'Review Paid Draft Sale' });
+    expect(review).toHaveAttribute('href', `/pos?saleId=${paidDraftId}`);
+    expect(screen.queryByRole('button', { name: 'Cancel Draft Sale' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeDisabled();
   });
 
   it('shows the previous-day blocker without a close action when close permission is absent', async () => {

@@ -37,6 +37,7 @@ import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import com.merchtyl.tax.IncludedPriceBehavior;
 import com.merchtyl.tax.TaxCalculationRequest;
@@ -93,6 +94,7 @@ class SaleServiceTest {
     private final FoodMenuItemRepository foodMenuItemRepository = mock(FoodMenuItemRepository.class);
     private final SaleAdjustmentRepository saleAdjustmentRepository = mock(SaleAdjustmentRepository.class);
     private final RegisterCapabilityService registerCapabilityService = mock(RegisterCapabilityService.class);
+    private final StoreAccessService storeAccessService = mock(StoreAccessService.class);
     private final DiscountDefinitionService discountDefinitionService = mock(DiscountDefinitionService.class);
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final TransactionOperations transactions = new TransactionOperations() {
@@ -146,6 +148,7 @@ class SaleServiceTest {
         ReflectionTestUtils.setField(service, "saleAdjustmentRepository", saleAdjustmentRepository);
         ReflectionTestUtils.setField(service, "discountDefinitionService", discountDefinitionService);
         ReflectionTestUtils.setField(service, "discountEngine", new DiscountEngine());
+        ReflectionTestUtils.setField(service, "storeAccessService", storeAccessService);
         when(store.getId()).thenReturn(STORE_ID);
         when(store.getTimezone()).thenReturn("America/Los_Angeles");
         when(store.getCurrencyCode()).thenReturn("USD");
@@ -414,6 +417,40 @@ class SaleServiceTest {
     }
 
     @Test
+    void paidDraftCancellationUsesStableConflictCode() {
+        Sale sale = payableSale();
+        sale.addPayment(mock(Payment.class));
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+
+        assertThatThrownBy(() -> service.cancel(sale.getId(), cashierAuth()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("SALE_HAS_RECORDED_PAYMENTS");
+    }
+
+    @Test
+    void managementForceClosePreservesPaymentAndRegisterState() {
+        Sale sale = payableSale();
+        Payment payment = mock(Payment.class);
+        when(payment.getAmount()).thenReturn(new BigDecimal("5.00"));
+        when(payment.getChangeDue()).thenReturn(BigDecimal.ZERO);
+        when(payment.getCreatedBy()).thenReturn(cashier);
+        sale.addPayment(payment);
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        RegisterSessionStatus originalStatus = registerSession.getStatus();
+
+        SaleResponse response = service.forceCloseDraft(sale.getId(),
+                new SaleForceCloseRequest(sale.getVersion(), "ABANDONED_TRANSACTION", "Customer left"), cashierAuth());
+
+        assertThat(response.status()).isEqualTo(SaleStatus.CANCELLED);
+        assertThat(response.payments()).hasSize(1);
+        assertThat(response.paidAmount()).isEqualByComparingTo("5.00");
+        assertThat(registerSession.getStatus()).isEqualTo(originalStatus);
+        verify(storeAccessService).requireStoreManagement(any(), org.mockito.ArgumentMatchers.eq(STORE_ID));
+        verify(auditService).record(org.mockito.ArgumentMatchers.argThat(command ->
+                command.action() == AuditAction.SALE_DRAFT_FORCE_CLOSED && command.reason().contains("ABANDONED_TRANSACTION")));
+    }
+
+    @Test
     void cannotAddItemToHeldSale() {
         Sale sale = draftSale();
         sale.hold(NOW);
@@ -583,7 +620,7 @@ class SaleServiceTest {
 
         assertThatThrownBy(() -> service.addItem(sale.getId(), addItemRequest(BigDecimal.ONE), cashierAuth()))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Sale payments are immutable; cart cannot be changed after payment is recorded");
+                .hasMessage("SALE_HAS_RECORDED_PAYMENTS");
     }
 
     @Test

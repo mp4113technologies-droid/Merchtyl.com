@@ -91,6 +91,11 @@ public class Sale extends BaseUuidEntity {
     @Column
     private Instant cancelledAt;
 
+    @Column(name = "force_closed_at") private Instant forceClosedAt;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "force_closed_by") private User forceClosedBy;
+    @Column(name = "force_close_reason_code", length = 48) private String forceCloseReasonCode;
+    @Column(name = "force_close_note", length = 500) private String forceCloseNote;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "completed_by", foreignKey = @ForeignKey(name = "fk_sales_completed_by"))
     private User completedBy;
@@ -176,6 +181,15 @@ public class Sale extends BaseUuidEntity {
     void cancel(Instant cancelledAt) {
         this.status = SaleStatus.CANCELLED;
         this.cancelledAt = cancelledAt;
+    }
+
+    void forceClose(User actor, Instant at, String reasonCode, String note) {
+        this.status = SaleStatus.CANCELLED;
+        this.cancelledAt = at;
+        this.forceClosedAt = at;
+        this.forceClosedBy = actor;
+        this.forceCloseReasonCode = reasonCode;
+        this.forceCloseNote = note;
     }
 
     void complete(User completedBy, Instant completedAt) {
@@ -269,6 +283,10 @@ public class Sale extends BaseUuidEntity {
     public Instant getCancelledAt() {
         return cancelledAt;
     }
+    public Instant getForceClosedAt() { return forceClosedAt; }
+    public User getForceClosedBy() { return forceClosedBy; }
+    public String getForceCloseReasonCode() { return forceCloseReasonCode; }
+    public String getForceCloseNote() { return forceCloseNote; }
 
     public User getCompletedBy() {
         return completedBy;

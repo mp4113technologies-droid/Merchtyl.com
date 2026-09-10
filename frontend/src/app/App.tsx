@@ -31,6 +31,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import {
   Alert,
   AppBar,
@@ -98,6 +99,7 @@ import { NewSupplierPage, SupplierDetailPage, SuppliersPage } from '../features/
 import { NewProductPage, ProductDetailPage, ProductsPage } from '../features/products/ProductPages';
 import { InventoryAdjustmentsPage, NewInventoryAdjustmentPage } from '../features/inventory/InventoryAdjustmentPages';
 import { InventoryReportingPage } from '../features/inventory/InventoryReportingPages';
+import { InitialInventorySetupPage } from '../features/inventory/InitialInventorySetupPage';
 import { NewStockCountPage, StockCountDetailPage, StockCountsPage } from '../features/inventory/StockCountPages';
 import { HeldSalesPage, PosCartPage } from '../features/pos/PosPages';
 import { FoodPosPage } from '../features/pos/FoodPosPage';
@@ -531,6 +533,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     ] },
     { id: 'inventory', label: 'Inventory', items: [
       { label: 'Inventory', to: '/inventory', icon: <AssignmentTurnedInOutlinedIcon />, visible: canViewInventory },
+      { label: 'Initial Inventory Setup', to: '/inventory/initial-setup', icon: <UploadFileIcon />, visible: canViewInventory && permissions.includes('INVENTORY_MANAGE') && permissions.includes('PRODUCT_CREATE') },
       { label: 'Stock Counts', to: '/inventory/counts', icon: <AssignmentTurnedInOutlinedIcon />, visible: canViewInventory },
       { label: 'Adjustments', to: '/inventory/adjustments', icon: <AssignmentTurnedInOutlinedIcon />, visible: canViewInventory }
     ] },
@@ -888,6 +891,7 @@ function AppRoutes() {
           <Route path="/products/new" element={<NewProductPage />} />
           <Route path="/products/:id" element={<ProductDetailPage />} />
           <Route path="/inventory" element={<InventoryReportingPage mode="current" />} />
+          <Route path="/inventory/initial-setup" element={<InitialInventorySetupPage />} />
           <Route path="/inventory/history" element={<InventoryReportingPage mode="history" />} />
           <Route path="/inventory/low-stock" element={<InventoryReportingPage mode="low-stock" />} />
           <Route path="/inventory/negative-stock" element={<InventoryReportingPage mode="negative-stock" />} />

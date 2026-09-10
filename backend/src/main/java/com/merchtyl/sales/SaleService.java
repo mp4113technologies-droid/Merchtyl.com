@@ -39,6 +39,7 @@ import com.merchtyl.register.RegisterCapabilityService;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.PermissionCode;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
 import com.merchtyl.tax.TaxEngine;
@@ -88,6 +89,8 @@ public class SaleService {
     private final Clock clock;
     @Autowired
     private SaleAdjustmentRepository saleAdjustmentRepository;
+    @Autowired
+    private StoreAccessService storeAccessService;
     @Autowired
     private StoreProductRepository storeProductRepository;
     @Autowired
@@ -488,6 +491,29 @@ public class SaleService {
     }
 
     @Transactional
+    public SaleResponse forceCloseDraft(UUID saleId, SaleForceCloseRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        Sale sale = findSaleForUpdate(saleId);
+        storeAccessService.requireStoreManagement(authentication, sale.getStore().getId());
+        if (sale.getVersion() != request.version()) throw new ConflictException("SALE_STATE_CHANGED");
+        if (sale.getStatus() != SaleStatus.DRAFT && sale.getStatus() != SaleStatus.HELD) {
+            throw new ConflictException("SALE_NOT_DRAFT");
+        }
+        String reasonCode = cleanOptional(request.reasonCode());
+        String note = cleanOptional(request.note());
+        if (reasonCode == null || ("OTHER".equals(reasonCode) && note == null)) {
+            throw new BadRequestException("SALE_FORCE_CLOSE_REASON_REQUIRED");
+        }
+        SaleResponse before = SaleResponse.from(sale);
+        sale.forceClose(actor, Instant.now(clock), reasonCode, note);
+        SaleResponse response = SaleResponse.from(save(sale));
+        auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.SALE_DRAFT_FORCE_CLOSED,
+                "SALE", sale.getId(), sale.getStore().getId(), sale.getRegister().getId(), before, response,
+                reasonCode + (note == null ? "" : ": " + note)));
+        return response;
+    }
+
+    @Transactional
     public SaleResponse recalculate(UUID saleId, Authentication authentication) {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
@@ -740,7 +766,7 @@ public class SaleService {
 
     private static void requireNoPayments(Sale sale) {
         if (!sale.getPayments().isEmpty()) {
-            throw new ConflictException("Sale payments are immutable; cart cannot be changed after payment is recorded");
+            throw new ConflictException("SALE_HAS_RECORDED_PAYMENTS");
         }
     }
 

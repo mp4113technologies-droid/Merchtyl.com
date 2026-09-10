@@ -20,6 +20,8 @@ public interface TaxCategoryRepository extends JpaRepository<TaxCategory, UUID>,
     Optional<TaxCategory> findById(UUID id);
 
     boolean existsByCodeIgnoreCase(String code);
+    Optional<TaxCategory> findByCodeIgnoreCase(String code);
+    Optional<TaxCategory> findByNameIgnoreCase(String name);
 
     boolean existsByCodeIgnoreCaseAndIdNot(String code, UUID id);
 }

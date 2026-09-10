@@ -51,6 +51,7 @@ import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
+import com.merchtyl.security.PermissionCode;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
 import jakarta.persistence.OptimisticLockException;
@@ -416,7 +417,15 @@ public class BusinessDayService {
     @Transactional(readOnly = true)
     public ClosingValidationResponse validateClosing(UUID id) {
         BusinessDay day = day(id);
-        return validate(day, false);
+        return validate(day, false, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ClosingValidationResponse validateClosing(UUID id, Authentication authentication) {
+        BusinessDay day = day(id);
+        User actor = currentUser(authentication);
+        requireStoreAccess(authentication, day.getStore().getId());
+        return validate(day, false, actor, authentication);
     }
 
     @Transactional(readOnly = true)
@@ -449,18 +458,35 @@ public class BusinessDayService {
                     .map(EndOfDayReportResponse::from)
                     .orElseThrow(() -> new ConflictException("Business day is closed but no report exists"));
         }
-        ClosingValidationResponse validation = validate(day, false);
+        ClosingValidationResponse validation = validate(day, false, actor, authentication);
         if (!validation.closable()) {
             long openRegisterCount = validation.blockers().stream()
                     .filter(blocker -> "OPEN_REGISTER_SESSION".equals(blocker.code()))
                     .count();
+            String failureCode = closingFailureCode(validation.blockers());
             log.warn("business_day_event event=BUSINESS_DAY_CLOSE_VALIDATION_FAILED tenant_id={} store_id={} business_day_id={} business_date={} actor_user_id={} current_version={} open_register_count={} failure_code={}",
                     actor.getTenantId(), day.getStore().getId(), day.getId(), day.getBusinessDate(), actor.getId(), day.getVersion(),
-                    openRegisterCount, openRegisterCount > 0 ? "BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS" : "BUSINESS_DAY_RECONCILIATION_INCOMPLETE");
+                    openRegisterCount, failureCode);
             audit(actor, AuditAction.BUSINESS_DAY_CLOSING_VALIDATION_FAILED, day, null, validation, null);
             throw new ClosingValidationException(validation);
         }
         return generateAndClose(day, actor, request.managerNotes(), request.varianceExplanation(), request.confirmationAccepted(), null);
+    }
+
+    private static String closingFailureCode(List<ClosingBlockerResponse> blockers) {
+        if (hasClosingBlocker(blockers, "OPEN_REGISTER_SESSION")) return "BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS";
+        if (hasClosingBlocker(blockers, "MISSING_COUNTED_CASH", "MISSING_RECONCILIATION", "REGISTER_RECONCILIATION_INCOMPLETE")) {
+            return "BUSINESS_DAY_HAS_UNRECONCILED_REGISTER_SESSIONS";
+        }
+        if (hasClosingBlocker(blockers, "UNFINALIZED_DRAFT_SALE", "UNFINALIZED_PAID_DRAFT_SALE", "UNFINALIZED_HELD_SALE")) {
+            return "BUSINESS_DAY_HAS_UNFINALIZED_SALES";
+        }
+        return "BUSINESS_DAY_CLOSING_BLOCKED";
+    }
+
+    private static boolean hasClosingBlocker(List<ClosingBlockerResponse> blockers, String... codes) {
+        return blockers.stream().anyMatch(blocker ->
+                java.util.Arrays.stream(codes).anyMatch(code -> code.equals(blocker.code())));
     }
 
     @Transactional
@@ -868,11 +894,16 @@ public class BusinessDayService {
     }
 
     private ClosingValidationResponse validate(BusinessDay day, boolean force) {
+        return validate(day, force, null, null);
+    }
+
+    private ClosingValidationResponse validate(BusinessDay day, boolean force, User actor, Authentication authentication) {
         List<ClosingBlockerResponse> blockers = new ArrayList<>();
         if (day.getStatus() != BusinessDayStatus.OPEN && day.getStatus() != BusinessDayStatus.CLOSING && day.getStatus() != BusinessDayStatus.REOPENED) {
             blockers.add(blocker("INVALID_STATUS", "Business day must be open or closing", day.getId()));
         }
-        for (RegisterSession session : registerSessions(day)) {
+        List<RegisterSession> sessions = registerSessions(day);
+        for (RegisterSession session : sessions) {
             if (session.getStatus() == RegisterSessionStatus.OPEN) {
                 blockers.add(blocker("OPEN_REGISTER_SESSION", "Register session remains open: " + session.getRegister().getCode(), session.getId()));
             }
@@ -884,7 +915,15 @@ public class BusinessDayService {
             }
         }
         List<Sale> unsettledSales = saleRepository.findAll(unfinalizedSaleSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("createdAt").and(Sort.by("id")));
-        unsettledSales.forEach(sale -> blockers.add(blocker("UNFINALIZED_SALE", "Sale remains in " + sale.getStatus() + " state", sale.getId())));
+        unsettledSales.forEach(sale -> {
+            String code = sale.getStatus() == SaleStatus.HELD
+                    ? "UNFINALIZED_HELD_SALE"
+                    : sale.getPayments().isEmpty() ? "UNFINALIZED_DRAFT_SALE" : "UNFINALIZED_PAID_DRAFT_SALE";
+            String message = "UNFINALIZED_PAID_DRAFT_SALE".equals(code)
+                    ? "Draft sale has recorded payments and requires review"
+                    : "Sale remains in " + sale.getStatus() + " state";
+            blockers.add(blocker(code, message, sale.getId()));
+        });
         List<Sale> postedSales = saleRepository.findAll(saleSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("completedAt").and(Sort.by("id")));
         postedSales.stream()
                 .filter(sale -> money(sale.getPayments().stream().map(Payment::getAmount).reduce(moneyZero(), BigDecimal::add)).compareTo(money(sale.getTotalAmount())) < 0)
@@ -898,9 +937,38 @@ public class BusinessDayService {
         List<LotterySettlement> pendingSettlements = lotterySettlementRepository.findAll(pendingSettlementSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("periodEnd").and(Sort.by("id")));
         pendingSettlements.forEach(settlement -> blockers.add(blocker("PENDING_LOTTERY_SETTLEMENT", "Settlement-blocking lottery operation remains pending", settlement.getId())));
         if (force) {
-            return new ClosingValidationResponse(day.getId(), true, blockers);
+            return new ClosingValidationResponse(day.getId(), true, blockers, reconciliationResponses(sessions, actor, authentication));
         }
-        return new ClosingValidationResponse(day.getId(), blockers.isEmpty(), blockers);
+        return new ClosingValidationResponse(day.getId(), blockers.isEmpty(), blockers, reconciliationResponses(sessions, actor, authentication));
+    }
+
+    private List<RegisterReconciliationResponse> reconciliationResponses(
+            List<RegisterSession> sessions, User actor, Authentication authentication) {
+        boolean hasClosePermission = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> PermissionCode.REGISTER_SESSION_CLOSE.name().equals(authority.getAuthority()));
+        boolean managementRole = hasAuthority(authentication, "ROLE_OWNER")
+                || hasAuthority(authentication, "ROLE_TENANT_OWNER")
+                || hasAuthority(authentication, "ROLE_MANAGER")
+                || hasAuthority(authentication, "ROLE_STORE_MANAGER");
+        return sessions.stream().map(session -> {
+            CashLedgerBreakdownResponse breakdown = cashLedgerService.breakdown(session);
+            boolean complete = session.getCountedCash() != null && session.getExpectedCashAtClose() != null;
+            boolean canReconcile = hasClosePermission && actor != null
+                    && (managementRole || session.getAssignedCashier().getId().equals(actor.getId()));
+            return new RegisterReconciliationResponse(
+                    session.getId(), session.getRegister().getId(), session.getRegister().getCode(),
+                    session.getRegister().getName(), session.getRegister().getType(), session.getStatus(),
+                    session.getOpenedBy() == null ? null : session.getOpenedBy().getId(),
+                    session.getOpenedBy() == null ? null : session.getOpenedBy().getDisplayName(),
+                    session.getOpenedAt(), session.getOpeningCash(), breakdown.expectedCash(),
+                    session.getCountedCash(), session.getDifferenceCash(), session.getVersion(),
+                    !complete, complete, canReconcile, breakdown);
+        }).toList();
+    }
+
+    private static boolean hasAuthority(Authentication authentication, String authority) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(granted -> authority.equals(granted.getAuthority()));
     }
 
     private RegisterValuesWithSession registerValues(RegisterSession session, CashLedgerBreakdownResponse breakdown, List<CashMovement> cashMovements) {

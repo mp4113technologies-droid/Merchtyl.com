@@ -452,6 +452,7 @@ export type ProductBarcode = {
 
 export type Product = {
   id: string;
+  productReference?: string;
   sku: string;
   name: string;
   description: string | null;
@@ -475,6 +476,42 @@ export type Product = {
   createdAt: string;
   updatedAt: string;
   version: number;
+};
+
+export type InitialInventoryRowPreview = {
+  rowNumber: number;
+  productReference: string | null;
+  productName: string;
+  variantName: string;
+  barcode: string | null;
+  sku: string;
+  sellingPrice: number;
+  openingQuantity: number;
+  actions: Array<'CREATE_PRODUCT' | 'REUSE_PRODUCT' | 'CREATE_VARIANT' | 'REUSE_VARIANT' | 'ASSIGN_PRODUCT_TO_STORE' | 'CREATE_OPENING_INVENTORY'>;
+  errors: string[];
+};
+
+export type InitialInventoryValidation = {
+  importId: string;
+  storeId: string;
+  totalVariantRows: number;
+  productGroups: number;
+  validRows: number;
+  warningRows: number;
+  errorRows: number;
+  canImport: boolean;
+  rows: InitialInventoryRowPreview[];
+};
+
+export type InitialInventoryResult = {
+  importId: string;
+  storeId: string;
+  productsCreated: number;
+  productsReused: number;
+  variantsCreated: number;
+  variantsReused: number;
+  storeAssignments: number;
+  openingInventory: number;
 };
 
 export type PageResponse<T> = {
@@ -535,6 +572,28 @@ export type ClosingValidation = {
   businessDayId: string;
   closable: boolean;
   blockers: ClosingBlocker[];
+  registerSessions: RegisterReconciliation[];
+};
+
+export type RegisterReconciliation = {
+  registerSessionId: string;
+  registerId: string;
+  registerCode: string;
+  registerName: string;
+  registerType: 'RETAIL' | 'FOOD_SERVICE';
+  sessionStatus: RegisterSessionStatus;
+  openedByUserId: string | null;
+  openedByName: string | null;
+  openedAt: string;
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number | null;
+  variance: number | null;
+  version: number;
+  reconciliationRequired: boolean;
+  reconciliationComplete: boolean;
+  canReconcile: boolean;
+  reconciliation: CashLedgerBreakdown;
 };
 
 export type EndOfDayRegisterSummary = {

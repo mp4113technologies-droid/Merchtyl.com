@@ -52,8 +52,9 @@ import {
   startRegisterSessionClosing
 } from '../../api/client';
 import { registerSessionKeys } from './registerSessionKeys';
+import { ReconciliationBreakdown } from './RegisterReconciliation';
 import { ApiClientError } from '../../api/client';
-import type { CashLedgerBreakdown, CashLedgerDirection, CashLedgerSourceType, CashMovement, CashMovementType, Device, Register, RegisterSession, Store, UserRole } from '../../api/types';
+import type { CashLedgerDirection, CashMovement, CashMovementType, Device, Register, RegisterSession, Store, UserRole } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { resolveBusinessDayAccess } from '../eod/businessDayAccess';
@@ -160,129 +161,6 @@ function movementLabel(value: CashMovementType) {
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function sourceLabel(value: CashLedgerSourceType) {
-  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function reconciliationFor(session: RegisterSession): CashLedgerBreakdown {
-  return session.reconciliation ?? {
-    openingCash: session.openingCash,
-    retailCashReceived: Math.max(0, session.expectedCash - session.openingCash),
-    retailChange: 0,
-    retailRefunds: 0,
-    lotteryCashSales: 0,
-    lotteryPayouts: 0,
-    payoutReversals: 0,
-    lotterySaleCancellations: 0,
-    otherCashIn: 0,
-    otherCashOut: 0,
-    totalIn: Math.max(0, session.expectedCash - session.openingCash),
-    totalOut: 0,
-    expectedCash: session.expectedCash,
-    sourceBreakdown: []
-  };
-}
-
-function ReconciliationBreakdown({ session, currencyCode = 'USD' }: { session: RegisterSession; currencyCode?: string }) {
-  const reconciliation = reconciliationFor(session);
-  const formulaRows = [
-    { label: 'Opening cash', sign: '+', amount: reconciliation.openingCash },
-    { label: 'Retail cash received', sign: '+', amount: reconciliation.retailCashReceived },
-    { label: 'Retail change', sign: '-', amount: reconciliation.retailChange },
-    { label: 'Retail refunds', sign: '-', amount: reconciliation.retailRefunds },
-    { label: 'Lottery cash sales', sign: '+', amount: reconciliation.lotteryCashSales },
-    { label: 'Lottery payouts', sign: '-', amount: reconciliation.lotteryPayouts },
-    { label: 'Payout reversals', sign: '+', amount: reconciliation.payoutReversals },
-    { label: 'Lottery sale cancellations', sign: '-', amount: reconciliation.lotterySaleCancellations },
-    { label: 'Other cash in', sign: '+', amount: reconciliation.otherCashIn },
-    { label: 'Other cash out', sign: '-', amount: reconciliation.otherCashOut }
-  ];
-  return (
-    <Stack spacing={2}>
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Typography variant="body2" color="text.secondary">Opening cash</Typography>
-          <Typography fontWeight={700}>{money(reconciliation.openingCash, currencyCode)}</Typography>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Typography variant="body2" color="text.secondary">Cash in</Typography>
-          <Typography fontWeight={700}>{money(reconciliation.totalIn, currencyCode)}</Typography>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Typography variant="body2" color="text.secondary">Cash out</Typography>
-          <Typography fontWeight={700}>{money(reconciliation.totalOut, currencyCode)}</Typography>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Typography variant="body2" color="text.secondary">Expected cash</Typography>
-          <Typography fontWeight={700}>{money(reconciliation.expectedCash, currencyCode)}</Typography>
-        </Grid>
-        {session.countedCash !== null ? (
-          <>
-            <Grid item xs={12} sm={6} md={3}>
-              <Typography variant="body2" color="text.secondary">Counted cash</Typography>
-              <Typography fontWeight={700}>{money(session.countedCash, currencyCode)}</Typography>
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <Typography variant="body2" color="text.secondary">Difference</Typography>
-              <Typography fontWeight={700} color={(session.differenceCash ?? 0) === 0 ? 'success.main' : 'warning.main'}>
-                {money(session.differenceCash ?? 0, currencyCode)}
-              </Typography>
-            </Grid>
-          </>
-        ) : null}
-      </Grid>
-      <Table size="small" aria-label="Register reconciliation formula">
-        <TableHead>
-          <TableRow>
-            <TableCell>Category</TableCell>
-            <TableCell align="center">Effect</TableCell>
-            <TableCell align="right">Amount</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {formulaRows.map((item) => (
-            <TableRow key={item.label}>
-              <TableCell>{item.label}</TableCell>
-              <TableCell align="center">{item.sign}</TableCell>
-              <TableCell align="right">{money(item.amount, currencyCode)}</TableCell>
-            </TableRow>
-          ))}
-          <TableRow>
-            <TableCell>
-              <Typography fontWeight={700}>Expected closing cash</Typography>
-            </TableCell>
-            <TableCell align="center">=</TableCell>
-            <TableCell align="right">
-              <Typography fontWeight={700}>{money(reconciliation.expectedCash, currencyCode)}</Typography>
-            </TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
-      {reconciliation.sourceBreakdown.length > 0 ? (
-        <Table size="small" aria-label="Reconciliation source breakdown">
-          <TableHead>
-            <TableRow>
-              <TableCell>Source</TableCell>
-              <TableCell>Direction</TableCell>
-              <TableCell align="right">Amount</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {reconciliation.sourceBreakdown.map((item) => (
-              <TableRow key={`${item.sourceType}-${item.direction}`}>
-                <TableCell>{sourceLabel(item.sourceType)}</TableCell>
-                <TableCell>{item.direction}</TableCell>
-                <TableCell align="right">{money(item.amount, currencyCode)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      ) : (
-        <Typography variant="body2" color="text.secondary">No cash activity after opening float.</Typography>
-      )}
-    </Stack>
-  );
-}
 
 function CurrentSessionSummary({
   session,

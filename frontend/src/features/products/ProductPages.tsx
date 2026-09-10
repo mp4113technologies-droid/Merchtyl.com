@@ -1227,6 +1227,7 @@ export function ProductDetailPage() {
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="h5" component="h1">{product.data.name}</Typography>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Typography color="text.secondary" sx={{ fontFamily: 'monospace' }}>{product.data.productReference}</Typography>
             <Typography color="text.secondary" sx={{ fontFamily: 'monospace' }}>{product.data.sku}</Typography>
             <Typography color="text.secondary">{product.data.sellableType.replaceAll('_', ' ')}</Typography>
             <ProductStatusChip active={product.data.active} />
