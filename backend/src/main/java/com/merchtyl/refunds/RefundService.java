@@ -331,6 +331,7 @@ public class RefundService {
     }
 
     private static boolean restoresInventory(ReturnItem item) {
+        if (item.getProduct() == null) return false;
         String capabilities = item.getOriginalProductCapabilities();
         if (capabilities != null && !capabilities.isBlank()) {
             Set<String> snapshotCapabilities = Set.of(capabilities.split(","));

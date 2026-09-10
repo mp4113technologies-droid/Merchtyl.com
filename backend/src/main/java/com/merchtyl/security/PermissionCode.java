@@ -45,6 +45,7 @@ public enum PermissionCode {
     SALE_CREATE,
     SALE_VIEW,
     POS_ACCESS,
+    POS_CUSTOM_ITEM,
     FOOD_POS_ACCESS,
     FOOD_ORDER_CREATE,
     FOOD_ORDER_VIEW,

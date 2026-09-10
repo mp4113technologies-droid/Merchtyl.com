@@ -31,7 +31,7 @@ public record ReturnItemResponse(
         return new ReturnItemResponse(
                 item.getId(),
                 item.getOriginalSaleItem().getId(),
-                item.getProduct().getId(),
+                item.getProduct() == null ? null : item.getProduct().getId(),
                 item.getLineNumber(),
                 item.getProductSku(),
                 item.getProductName(),

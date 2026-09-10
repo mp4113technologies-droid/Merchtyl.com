@@ -313,6 +313,12 @@ export type ProductUpdatePayload = ProductPayload & {
   version: number;
 };
 
+export type BulkVariantBarcodeResponse = {
+  variantId: string;
+  addedCount: number;
+  barcodes: ProductBarcodePayload[];
+};
+
 export type ProductStatusPayload = {
   active: boolean;
   version: number;
@@ -891,9 +897,13 @@ export type SaleCheckoutPayload = {
   registerSessionId: string;
   saleChannel?: string;
   items: Array<{
+    lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM';
     productId?: string;
     variantId?: string;
     foodMenuItemId?: string;
+    description?: string;
+    unitPrice?: number;
+    taxTreatment?: 'TAXABLE' | 'NON_TAXABLE';
     quantity: number;
     ageVerified?: boolean;
   }>;
@@ -1461,6 +1471,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   session_expired: 'Your session has expired. Please sign in again.',
   BARCODE_ALREADY_IN_USE: 'This barcode is already assigned to another product. Please enter a different barcode.',
   BARCODE_ALREADY_EXISTS: 'This barcode is already assigned to another product. Please enter a different barcode.',
+  BARCODE_ALREADY_ASSIGNED: 'This barcode belongs to another product or variant. No barcodes were added.',
+  BARCODE_DUPLICATE_IN_REQUEST: 'The barcode list contains a duplicate. No barcodes were added.',
+  BARCODE_BATCH_TOO_LARGE: 'Add no more than 500 barcodes at once.',
   SKU_ALREADY_IN_USE: 'This SKU is already being used by another product.',
   SKU_ALREADY_EXISTS: 'This SKU is already being used by another product.',
   STORE_CODE_ALREADY_EXISTS: 'A store with this code already exists. Please choose a different store code.',
@@ -1974,6 +1987,13 @@ export function updateProduct(token: string, id: string, payload: ProductUpdateP
   return request<Product>(`/products/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
+  }, token);
+}
+
+export function addVariantBarcodes(token: string, variantId: string, barcodes: string[]) {
+  return request<BulkVariantBarcodeResponse>(`/product-variants/${variantId}/barcodes/bulk`, {
+    method: 'POST',
+    body: JSON.stringify({ barcodes })
   }, token);
 }
 

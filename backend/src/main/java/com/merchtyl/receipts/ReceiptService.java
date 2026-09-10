@@ -183,7 +183,7 @@ public class ReceiptService {
     private ReceiptItemDto item(SaleItem item) {
         return new ReceiptItemDto(
                 item.getId(),
-                item.getProduct().getId(),
+                item.getProduct() == null ? null : item.getProduct().getId(),
                 item.getLineNumber(),
                 item.getProductSku(),
                 item.getProductName(),

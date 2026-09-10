@@ -199,6 +199,7 @@ public class ReturnService {
     }
 
     private static void requireReturnable(SaleItem saleItem) {
+        if (saleItem.isCustomItem()) return;
         String capabilities = saleItem.getCompletedProductCapabilities();
         if (capabilities != null && !capabilities.isBlank()) {
             Set<String> snapshotCapabilities = Set.of(capabilities.split(","));

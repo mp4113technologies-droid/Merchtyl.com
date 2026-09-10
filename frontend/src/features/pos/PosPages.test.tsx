@@ -522,6 +522,52 @@ describe('POS pages', () => {
     expect(document.body).toHaveStyle({ overflow: 'auto' });
   });
 
+  it('adds a permitted custom item and sends its explicit non-catalog checkout shape', async () => {
+    let checkoutBody: any;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['POS_CUSTOM_ITEM'] });
+      const common = commonApi(input);
+      if (common) return common;
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutBody = JSON.parse(String(init.body));
+        return jsonResponse(sale());
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Custom Item' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Item Name / Description' }), 'Grocery Item');
+    await userEvent.type(screen.getByRole('spinbutton', { name: 'Price (USD)' }), '7.99');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Tax Treatment' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Taxable' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
+    expect(await screen.findByText('Grocery Item')).toBeInTheDocument();
+    expect(screen.getAllByText('Custom Item').length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Custom Item' })).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Grocery Item' }));
+    const editDialog = screen.getByRole('dialog', { name: 'Edit Custom Item' });
+    const editPrice = within(editDialog).getByRole('spinbutton', { name: 'Price (USD)' });
+    await userEvent.clear(editPrice);
+    await userEvent.type(editPrice, '8.50');
+    await userEvent.click(within(editDialog).getByRole('combobox', { name: 'Tax Treatment' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Non-Taxable' }));
+    await userEvent.click(within(editDialog).getByRole('button', { name: 'Update Item' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Calculate Tax' }));
+    await waitFor(() => expect(checkoutBody).toBeDefined());
+    expect(checkoutBody.items[0]).toEqual({ lineType: 'CUSTOM_ITEM', description: 'Grocery Item', unitPrice: 8.5, quantity: 1, taxTreatment: 'NON_TAXABLE' });
+    expect(checkoutBody.items[0].productId).toBeUndefined();
+  });
+
+  it('does not expose Custom Item to a user without its permission', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => commonApi(input) ?? jsonResponse({}, 404));
+    render(<App initialEntries={['/pos']} />);
+    await screen.findByRole('heading', { name: 'Checkout' });
+    expect(screen.queryByRole('button', { name: 'Custom Item' })).not.toBeInTheDocument();
+  });
+
   it('keeps checkout controls visible while a long recovered cart stays in the internal cart scroller', async () => {
     const baseSale = sale('DRAFT');
     await saveDraftCartRecovery({

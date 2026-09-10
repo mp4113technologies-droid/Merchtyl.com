@@ -15,6 +15,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
   FormGroup,
   Grid,
@@ -42,6 +46,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   catalogueReferenceApi,
+  addVariantBarcodes,
   createProduct,
   getProduct,
   listProducts,
@@ -399,6 +404,7 @@ function ProductForm({
   onSubmit: (values: ProductFormValues) => void;
   stores: AssignedStore[];
 }) {
+  const { getValidAccessToken } = useSession();
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues
@@ -408,6 +414,8 @@ function ProductForm({
   const watchedVariants = useWatch({ control: form.control, name: 'variants' }) ?? [];
   const watchedBarcodes = useWatch({ control: form.control, name: 'barcodes' }) ?? [];
   const previousVariantSkus = React.useRef(new Map<string, string>());
+  const [scanVariantIndex, setScanVariantIndex] = React.useState<number | null>(null);
+  const bulkBarcodeMutation = useMutation({mutationFn:async({variantId,codes}:{variantId:string;codes:string[]})=>addVariantBarcodes(await getValidAccessToken(),variantId,codes)});
   const variantOptions = watchedVariants.reduce<Array<{ clientId: string; value: string; id?: string; sku: string; label: string }>>((options, variant, index) => {
     const sku = variant.sku.trim().toUpperCase();
     if (!sku || options.some((option) => option.sku === sku)) return options;
@@ -657,6 +665,7 @@ function ProductForm({
                 <Grid item xs={12}>
                   <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
                     <SwitchInput control={form.control} name={`variants.${index}.active`} label="Active" disabled={disabled} />
+                    {!disabled ? <Button type="button" variant="outlined" onClick={() => setScanVariantIndex(index)}>Scan Multiple Barcodes</Button> : null}
                     {!disabled ? (
                       <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => removeVariant(index)}>
                         Remove variant
@@ -669,6 +678,27 @@ function ProductForm({
           ))}
         </Stack>
       </Paper>
+
+      <BarcodeBatchDialog
+        open={scanVariantIndex !== null}
+        variantLabel={scanVariantIndex === null ? '' : `${watchedVariants[scanVariantIndex]?.name || 'Variant'} — ${watchedVariants[scanVariantIndex]?.sku || ''}`}
+        existing={scanVariantIndex === null ? [] : watchedBarcodes.filter((barcode) => {
+          const variant = watchedVariants[scanVariantIndex];
+          return barcode.variantId === variant?.id || barcode.variantSku?.trim().toUpperCase() === variant?.sku.trim().toUpperCase();
+        }).map((barcode) => barcode.barcode)}
+        onClose={() => setScanVariantIndex(null)}
+        saving={bulkBarcodeMutation.isPending}
+        saveError={bulkBarcodeMutation.error}
+        onAdd={async (codes) => {
+          if (scanVariantIndex === null) return;
+          const variant = watchedVariants[scanVariantIndex];
+          if (variant.id && uuidPattern.test(variant.id)) {
+            const result=await bulkBarcodeMutation.mutateAsync({variantId:variant.id,codes});
+            result.barcodes.filter(item=>codes.some(code=>code.toLowerCase()===item.barcode.toLowerCase())).forEach(item=>barcodes.append({id:item.id,barcode:item.barcode,variantId:item.variantId,variantSku:item.variantSku,primaryBarcode:item.primaryBarcode,active:item.active}));
+          } else codes.forEach((barcode, codeIndex) => barcodes.append({ barcode, variantId: variant.id, variantSku: variant.sku.trim().toUpperCase(), primaryBarcode: watchedBarcodes.length === 0 && codeIndex === 0, active: true }));
+          setScanVariantIndex(null);
+        }}
+      />
 
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
         <Stack spacing={{ xs: 1.5, lg: 2 }}>
@@ -770,6 +800,15 @@ function ProductForm({
       ) : null}
     </Stack>
   );
+}
+
+function BarcodeBatchDialog({open,variantLabel,existing,onClose,onAdd,saving,saveError}:{open:boolean;variantLabel:string;existing:string[];onClose:()=>void;onAdd:(codes:string[])=>Promise<void>|void;saving:boolean;saveError:unknown}) {
+  const [input,setInput]=React.useState('');const [codes,setCodes]=React.useState<string[]>([]);const [feedback,setFeedback]=React.useState<string>();const inputRef=React.useRef<HTMLInputElement>(null);
+  React.useEffect(()=>{if(open){setInput('');setCodes([]);setFeedback(undefined);window.setTimeout(()=>inputRef.current?.focus(),0);}},[open,variantLabel]);
+  const restoreFocus=()=>window.setTimeout(()=>inputRef.current?.focus(),0);
+  const add=()=>{const value=input.trim();if(!value){setFeedback('Enter or scan a barcode.');restoreFocus();return;}if(value.length>128||/[\u0000-\u001f\u007f]/.test(value)){setFeedback('Enter a valid barcode.');setInput('');restoreFocus();return;}if(existing.some(code=>code.trim().toLowerCase()===value.toLowerCase())){setFeedback('This barcode is already added to this variant.');setInput('');restoreFocus();return;}if(codes.some(code=>code.toLowerCase()===value.toLowerCase())){setFeedback('Barcode already scanned.');setInput('');restoreFocus();return;}if(codes.length>=500){setFeedback('A maximum of 500 barcodes can be added at once.');restoreFocus();return;}setCodes(current=>[...current,value]);setInput('');setFeedback(undefined);restoreFocus();};
+  const submit=async()=>{try{await onAdd(codes);}catch{restoreFocus();}};
+  return <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="barcode-batch-title"><DialogTitle id="barcode-batch-title">Add Barcodes — {variantLabel}</DialogTitle><DialogContent><Stack spacing={1.5} sx={{pt:1}}><Typography color="text.secondary">Scan each barcode. Nothing is sent until Add All.</Typography><TextField inputRef={inputRef} autoFocus label="Scan or enter barcode" value={input} onChange={event=>setInput(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();add();}}} fullWidth/><Typography fontWeight={700}>{codes.length} barcode{codes.length===1?'':'s'} scanned</Typography>{feedback?<Alert severity="warning">{feedback}</Alert>:null}{saveError?<Alert severity="error">{saveError instanceof Error?saveError.message:'No barcodes were added.'}</Alert>:null}<Stack spacing={.5} sx={{maxHeight:280,overflowY:'auto'}}>{codes.map((code,index)=><Stack key={code.toLowerCase()} direction="row" alignItems="center" spacing={1}><Typography sx={{fontFamily:'monospace',flexGrow:1}}>{index+1}. {code}</Typography><IconButton aria-label={`Remove ${code}`} onClick={()=>{setCodes(values=>values.filter(value=>value!==code));restoreFocus();}}><DeleteIcon/></IconButton></Stack>)}</Stack>{codes.length?<Button color="error" onClick={()=>{setCodes([]);restoreFocus();}} sx={{alignSelf:'flex-start'}}>Clear All</Button>:null}</Stack></DialogContent><DialogActions><Button onClick={onClose} disabled={saving}>Cancel</Button><Button variant="contained" disabled={!codes.length||saving} onClick={submit}>{saving?'Adding…':`Add All (${codes.length})`}</Button></DialogActions></Dialog>;
 }
 
 function TextInput({

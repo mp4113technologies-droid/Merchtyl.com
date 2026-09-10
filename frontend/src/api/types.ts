@@ -484,6 +484,7 @@ export type InitialInventoryRowPreview = {
   productName: string;
   variantName: string;
   barcode: string | null;
+  additionalBarcodes: string | null;
   sku: string;
   sellingPrice: number;
   openingQuantity: number;
@@ -1800,13 +1801,15 @@ export type Payment = {
 
 export type SaleItem = {
   id: string;
-  productId: string;
+  lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM';
+  productId: string | null;
   variantId?: string | null;
   lineNumber: number;
-  productSku: string;
+  productSku: string | null;
   productName: string;
   variantSku?: string | null;
   variantName?: string | null;
+  customItemTaxTreatment?: 'TAXABLE' | 'NON_TAXABLE' | null;
   quantity: number;
   unitPrice: number;
   discountAmount: number;
@@ -1884,9 +1887,9 @@ export type SaleListResponse = PageResponse<Sale>;
 export type ReturnItem = {
   id: string;
   originalSaleItemId: string;
-  productId: string;
+  productId: string | null;
   lineNumber: number;
-  productSku: string;
+  productSku: string | null;
   productName: string;
   quantity: number;
   reason: string;

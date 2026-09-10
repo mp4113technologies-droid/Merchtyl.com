@@ -43,6 +43,7 @@ import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
 import com.merchtyl.tax.TaxEngine;
+import com.merchtyl.tax.TaxCategoryRepository;
 import jakarta.persistence.OptimisticLockException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -105,6 +106,8 @@ public class SaleService {
     private DiscountDefinitionService discountDefinitionService;
     @Autowired
     private DiscountEngine discountEngine;
+    @Autowired
+    private TaxCategoryRepository taxCategoryRepository;
 
     @Autowired
     public SaleService(
@@ -191,6 +194,30 @@ public class SaleService {
 
         List<DiscountEngine.Line> discountLines=new java.util.ArrayList<>();
         for (SaleCheckoutItemRequest line : request.items()) {
+            if (!line.isValidShape()) throw new BadRequestException("INVALID_CHECKOUT_ITEM");
+            if (line.resolvedLineType() == SaleLineType.CUSTOM_ITEM) {
+                if (session.getRegister().getType() != RegisterType.RETAIL) {
+                    throw new BadRequestException("RETAIL_REGISTER_REQUIRED");
+                }
+                requireCustomItemPermission(authentication);
+                String description = cleanOptional(line.description());
+                if (description == null) throw new BadRequestException("CUSTOM_ITEM_DESCRIPTION_REQUIRED");
+                if (line.unitPrice() == null) throw new BadRequestException("CUSTOM_ITEM_PRICE_REQUIRED");
+                BigDecimal price = normalizeMoney(line.unitPrice(), "unitPrice");
+                if (price.signum() <= 0) throw new BadRequestException("CUSTOM_ITEM_PRICE_INVALID");
+                if (line.taxTreatment() == null) throw new BadRequestException("CUSTOM_ITEM_TAX_TREATMENT_REQUIRED");
+                String categoryCode = line.taxTreatment() == CustomItemTaxTreatment.TAXABLE ? "STANDARD" : "EXEMPT";
+                UUID categoryId = taxCategoryRepository.findByCodeIgnoreCase(categoryCode)
+                        .filter(category -> category.isActive())
+                        .orElseThrow(() -> new ConflictException("CUSTOM_ITEM_TAX_CATEGORY_NOT_CONFIGURED"))
+                        .getId();
+                SaleItem item = SaleItem.customItem(sale, description, normalizeQuantity(line.quantity()), price,
+                        line.taxTreatment(), categoryId);
+                sale.addItem(item);
+                discountLines.add(new DiscountEngine.Line(item.getId(), null, null, null, item.getQuantity(),
+                        money(price.multiply(item.getQuantity())), true));
+                continue;
+            }
             ResolvedCheckoutItem resolved = resolveCheckoutItem(session, sale, line);
             Product product = resolved.product();
             ProductVariant variant = resolved.variant();
@@ -549,7 +576,8 @@ public class SaleService {
             throw new ConflictException("Sale must have at least one item before completion");
         }
 
-        sale.getItems().forEach(item -> saleItemHandlerRegistry.validate(item.validationRequest()));
+        sale.getItems().stream().filter(item -> !item.isCustomItem())
+                .forEach(item -> saleItemHandlerRegistry.validate(item.validationRequest()));
         requireSufficientPayments(sale);
 
         Instant completedAt = Instant.now(clock);
@@ -636,14 +664,14 @@ public class SaleService {
         BigDecimal tax = moneyZero();
         BigDecimal total = moneyZero();
         for (SaleItem item : sale.getItems()) {
-            saleItemHandlerRegistry.validate(item.validationRequest());
+            if (!item.isCustomItem()) saleItemHandlerRegistry.validate(item.validationRequest());
             BigDecimal lineSubtotal = money(item.getUnitPrice().multiply(item.getQuantity()));
             TaxCalculationResponse taxResponse = taxEngine.calculate(new TaxCalculationRequest(
                     sale.getStore().getId(),
                     null,
                     null,
-                    item.getProduct().getId(),
-                    item.getProduct().getTaxCategoryId(),
+                    item.isCustomItem() ? null : item.getProduct().getId(),
+                    item.isCustomItem() ? item.getTaxCategorySnapshotId() : item.getProduct().getTaxCategoryId(),
                     false,
                     sale.getBusinessDate(),
                     sale.getSaleChannel(),
@@ -781,6 +809,7 @@ public class SaleService {
     }
 
     private void deductInventory(Sale sale, SaleItem item, Instant completedAt, Authentication authentication) {
+        if (item.isCustomItem()) return;
         Product product = item.getProduct();
         if (!product.isInventoryTrackingEnabled()) {
             return;
@@ -911,6 +940,12 @@ public class SaleService {
         return authentication != null
                 && authentication.getAuthorities().stream()
                 .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals(authority));
+    }
+
+    private static void requireCustomItemPermission(Authentication authentication) {
+        if (!hasAuthority(authentication, PermissionCode.POS_CUSTOM_ITEM.name())) {
+            throw new ForbiddenOperationException("CUSTOM_ITEM_NOT_ALLOWED");
+        }
     }
 
     private String responseBody(SaleResponse response) {
