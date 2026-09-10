@@ -26,6 +26,8 @@ import com.merchtyl.discount.DiscountDefinitionService;
 import com.merchtyl.discount.DiscountDefinition;
 import com.merchtyl.discount.DiscountEngine;
 import com.merchtyl.product.Product;
+import com.merchtyl.payments.CashRoundingResult;
+import com.merchtyl.payments.CashRoundingService;
 import com.merchtyl.product.ProductRepository;
 import com.merchtyl.product.ProductVariant;
 import com.merchtyl.product.ProductVariantRepository;
@@ -86,6 +88,7 @@ public class SaleService {
     private final ObjectMapper objectMapper;
     private final InventoryService inventoryService;
     private final CashLedgerService cashLedgerService;
+    private final CashRoundingService cashRoundingService;
     private final TransactionOperations transactions;
     private final Clock clock;
     @Autowired
@@ -152,6 +155,7 @@ public class SaleService {
         this.objectMapper = objectMapper;
         this.inventoryService = inventoryService;
         this.cashLedgerService = cashLedgerService;
+        this.cashRoundingService = new CashRoundingService();
         this.transactions = transactions;
         this.clock = clock;
     }
@@ -625,16 +629,24 @@ public class SaleService {
             throw new BadRequestException("method is required");
         }
         BigDecimal cashTendered = null;
+        BigDecimal cashRoundingAdjustment = moneyZero();
+        BigDecimal cashSettlementAmount = null;
         BigDecimal changeDue = moneyZero();
         if (method == PaymentMethod.CASH) {
             if (request.cashTendered() == null) {
                 throw new BadRequestException("cashTendered is required for cash payments");
             }
             cashTendered = normalizeMoney(request.cashTendered(), "cashTendered");
-            if (cashTendered.compareTo(amount) < 0) {
+            boolean finalSettlement = amount.compareTo(balanceDue) == 0;
+            CashRoundingResult rounding = finalSettlement
+                    ? cashRoundingService.round(amount, sale.getCurrencyCode())
+                    : cashRoundingService.round(amount, "");
+            cashRoundingAdjustment = rounding.adjustment();
+            cashSettlementAmount = rounding.roundedAmount();
+            if (cashTendered.compareTo(cashSettlementAmount) < 0) {
                 throw new BadRequestException("cashTendered must be greater than or equal to amount");
             }
-            changeDue = money(cashTendered.subtract(amount));
+            changeDue = money(cashTendered.subtract(cashSettlementAmount));
         } else if (request.cashTendered() != null) {
             throw new BadRequestException("cashTendered is only allowed for cash payments");
         }
@@ -648,6 +660,8 @@ public class SaleService {
                 sale.getCurrencyCode(),
                 cashTendered,
                 changeDue,
+                cashRoundingAdjustment,
+                cashSettlementAmount,
                 reference,
                 cleanOptional(request.notes()),
                 actor,
@@ -665,7 +679,6 @@ public class SaleService {
         BigDecimal total = moneyZero();
         for (SaleItem item : sale.getItems()) {
             if (!item.isCustomItem()) saleItemHandlerRegistry.validate(item.validationRequest());
-            BigDecimal lineSubtotal = money(item.getUnitPrice().multiply(item.getQuantity()));
             TaxCalculationResponse taxResponse = taxEngine.calculate(new TaxCalculationRequest(
                     sale.getStore().getId(),
                     null,
@@ -680,6 +693,7 @@ public class SaleService {
                     item.getDiscountAmount(),
                     sale.isPricesIncludeTax(),
                     sale.getCurrencyCode()), authentication);
+            BigDecimal lineSubtotal = money(taxResponse.netAmount().add(item.getDiscountAmount()));
             item.setCalculatedAmounts(lineSubtotal, taxResponse.taxAmount(), taxResponse.grossAmount());
             subtotal = subtotal.add(lineSubtotal);
             discount = discount.add(item.getDiscountAmount());
@@ -847,19 +861,10 @@ public class SaleService {
                     "Sale cash tender"));
             if (payment.getChangeDue().signum() > 0) {
                 cashLedgerService.append(new CashLedgerEntryCommand(
-                        sale.getStore(),
-                        sale.getRegister(),
-                        sale.getRegisterSession(),
-                        CashLedgerSourceType.SALE_CHANGE_GIVEN,
-                        payment.getId(),
-                        CashLedgerDirection.OUT,
-                        payment.getChangeDue(),
-                        sale.getCurrencyCode(),
-                        sale.getBusinessDate(),
-                        completedAt,
-                        actor,
-                        operationId(sale.getId(), "cash-change", payment.getId()),
-                        "Sale change given"));
+                        sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
+                        CashLedgerSourceType.SALE_CHANGE_GIVEN, payment.getId(), CashLedgerDirection.OUT,
+                        payment.getChangeDue(), sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
+                        operationId(sale.getId(), "cash-change", payment.getId()), "Sale change given"));
             }
         }
     }

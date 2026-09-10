@@ -36,6 +36,12 @@ public class Payment extends BaseUuidEntity {
     private BigDecimal cashTendered;
 
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashRoundingAdjustment;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashSettlementAmount;
+
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal changeDue;
 
     @Column(name = "manual_reference", updatable = false, length = 120)
@@ -65,11 +71,21 @@ public class Payment extends BaseUuidEntity {
             String notes,
             User createdBy,
             Instant completedAt) {
+        this(sale, method, amount, currencyCode, cashTendered, changeDue, BigDecimal.ZERO.setScale(2),
+                method == PaymentMethod.CASH ? amount : null, reference, notes, createdBy, completedAt);
+    }
+
+    Payment(
+            Sale sale, PaymentMethod method, BigDecimal amount, String currencyCode,
+            BigDecimal cashTendered, BigDecimal changeDue, BigDecimal cashRoundingAdjustment,
+            BigDecimal cashSettlementAmount, String reference, String notes, User createdBy, Instant completedAt) {
         this.sale = sale;
         this.method = method;
         this.amount = amount;
         this.currencyCode = currencyCode;
         this.cashTendered = cashTendered;
+        this.cashRoundingAdjustment = cashRoundingAdjustment;
+        this.cashSettlementAmount = cashSettlementAmount;
         this.changeDue = changeDue;
         this.reference = reference;
         this.notes = notes;
@@ -101,6 +117,10 @@ public class Payment extends BaseUuidEntity {
     public BigDecimal getChangeDue() {
         return changeDue;
     }
+
+    public BigDecimal getCashRoundingAdjustment() { return cashRoundingAdjustment; }
+
+    public BigDecimal getCashSettlementAmount() { return cashSettlementAmount; }
 
     public String getReference() {
         return reference;

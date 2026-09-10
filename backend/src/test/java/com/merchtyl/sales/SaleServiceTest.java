@@ -675,6 +675,29 @@ class SaleServiceTest {
     }
 
     @Test
+    void finalCadCashSettlementRoundsRemainingBalanceWithoutChangingAppliedAmount() {
+        when(store.getCurrencyCode()).thenReturn("CAD");
+        Sale sale = payableSale();
+        ReflectionTestUtils.setField(sale, "currencyCode", "CAD");
+        sale.getItems().getFirst().setCalculatedAmounts(new BigDecimal("30.03"), BigDecimal.ZERO.setScale(2), new BigDecimal("30.03"));
+        sale.setTotals(new BigDecimal("30.03"), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), new BigDecimal("30.03"));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("20.00"), null, null, null), cashierAuth());
+        SaleResponse result = service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("10.03"), new BigDecimal("20.00"), null, null), cashierAuth());
+
+        PaymentResponse cash = result.payments().getLast();
+        assertThat(cash.amount()).isEqualByComparingTo("10.03");
+        assertThat(cash.cashRoundingAdjustment()).isEqualByComparingTo("0.02");
+        assertThat(cash.cashSettlementAmount()).isEqualByComparingTo("10.05");
+        assertThat(cash.changeDue()).isEqualByComparingTo("9.95");
+        assertThat(result.paidAmount()).isEqualByComparingTo("30.03");
+        assertThat(result.balanceDue()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
     void zeroAndNegativePaymentsAreRejectedWithStableCode() {
         Sale sale = payableSale();
         when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));

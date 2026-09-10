@@ -496,10 +496,10 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <tr>
       <td>
         <strong>${escapeHtml(item.productName)}</strong><br>
-        ${receipt.tokenNumber ? '' : `<span class="muted">${escapeHtml(item.productSku)}</span>`}
+        <span class="muted">${formatQuantity(item.quantity)} × ${formatMoney(item.unitPrice, receipt.currencyCode)}</span>
       </td>
-      <td class="qty">${formatQuantity(item.quantity)}</td>
-      <td class="money">${formatMoney(item.lineTotal, receipt.currencyCode)}</td>
+      <td class="qty"></td>
+      <td class="money">${formatMoney(item.lineSubtotal, receipt.currencyCode)}</td>
     </tr>
     ${item.discountAmount > 0 ? `<tr><td colspan="3" class="muted">Discount ${formatMoney(item.discountAmount, receipt.currencyCode)}</td></tr>` : ''}
   `).join('');
@@ -514,7 +514,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
   const paymentRows = receipt.payments.map((payment) => `
     <div class="row">
       <span>${escapeHtml(payment.method.replaceAll('_', ' '))}</span>
-      <strong>${formatMoney(payment.amount, receipt.currencyCode)}</strong>
+      <strong>${formatMoney(payment.method === 'CASH' ? (payment.cashSettlementAmount ?? payment.amount) : payment.amount, receipt.currencyCode)}</strong>
     </div>
   `).join('');
 
@@ -546,6 +546,8 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="row"><span>${escapeHtml(receipt.discountName || 'Discount')}</span><strong>${receipt.discountAmount > 0 ? '-' : ''}${formatMoney(receipt.discountAmount, receipt.currencyCode)}</strong></div>
     ${taxRows}
     <div class="row total"><span>Total</span><strong>${formatMoney(receipt.totalAmount, receipt.currencyCode)}</strong></div>
+    ${(receipt.cashRoundingAdjustment ?? 0) !== 0 ? `<div class="row"><span>Cash rounding</span><strong>${formatSignedMoney(receipt.cashRoundingAdjustment ?? 0, receipt.currencyCode)}</strong></div>
+    <div class="row total"><span>Cash total</span><strong>${formatMoney(receipt.cashTotal ?? receipt.totalAmount, receipt.currencyCode)}</strong></div>` : ''}
     <div class="rule"></div>
     ${paymentRows}
     <div class="row"><span>Cash tendered</span><strong>${formatMoney(receipt.cashTendered, receipt.currencyCode)}</strong></div>
@@ -583,6 +585,11 @@ function escapeHtml(value: unknown) {
 
 function formatMoney(value: number, currencyCode: string) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode }).format(value);
+}
+
+function formatSignedMoney(value: number, currencyCode: string) {
+  const formatted = formatMoney(Math.abs(value), currencyCode);
+  return value < 0 ? `-${formatted}` : formatted;
 }
 
 function formatQuantity(value: number) {

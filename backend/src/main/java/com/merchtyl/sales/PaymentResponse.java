@@ -10,6 +10,8 @@ public record PaymentResponse(
         BigDecimal amount,
         String currencyCode,
         BigDecimal cashTendered,
+        BigDecimal cashRoundingAdjustment,
+        BigDecimal cashSettlementAmount,
         BigDecimal changeDue,
         String reference,
         String notes,
@@ -18,6 +20,14 @@ public record PaymentResponse(
         Instant createdAt,
         long version
 ) {
+    public PaymentResponse(UUID id, PaymentMethod method, BigDecimal amount, String currencyCode,
+            BigDecimal cashTendered, BigDecimal changeDue, String reference, String notes, UUID createdBy,
+            Instant completedAt, Instant createdAt, long version) {
+        this(id, method, amount, currencyCode, cashTendered, BigDecimal.ZERO.setScale(2),
+                method == PaymentMethod.CASH ? amount : null, changeDue, reference, notes, createdBy,
+                completedAt, createdAt, version);
+    }
+
     static PaymentResponse from(Payment payment) {
         return new PaymentResponse(
                 payment.getId(),
@@ -25,6 +35,8 @@ public record PaymentResponse(
                 payment.getAmount(),
                 payment.getCurrencyCode(),
                 payment.getCashTendered(),
+                payment.getCashRoundingAdjustment(),
+                payment.getCashSettlementAmount(),
                 payment.getChangeDue(),
                 payment.getReference(),
                 payment.getNotes(),

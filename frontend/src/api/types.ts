@@ -1790,6 +1790,8 @@ export type Payment = {
   amount: number;
   currencyCode: string;
   cashTendered: number | null;
+  cashRoundingAdjustment?: number;
+  cashSettlementAmount?: number | null;
   changeDue: number;
   reference: string | null;
   notes: string | null;
@@ -2012,7 +2014,7 @@ export type ReceiptItem = {
   id: string;
   productId: string;
   lineNumber: number;
-  productSku: string;
+  productSku?: string;
   productName: string;
   quantity: number;
   unitPrice: number;
@@ -2037,6 +2039,8 @@ export type ReceiptPayment = {
   method: PaymentMethod;
   amount: number;
   cashTendered: number | null;
+  cashRoundingAdjustment?: number;
+  cashSettlementAmount?: number | null;
   changeDue: number;
   reference: string | null;
   completedAt: string;
@@ -2060,6 +2064,8 @@ export type ReceiptDocument = {
   taxSummaries: ReceiptTaxSummary[];
   taxAmount: number;
   totalAmount: number;
+  cashRoundingAdjustment?: number;
+  cashTotal?: number;
   payments: ReceiptPayment[];
   cashTendered: number;
   changeDue: number;

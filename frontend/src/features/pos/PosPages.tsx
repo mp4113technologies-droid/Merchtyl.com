@@ -128,6 +128,11 @@ function roundedMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+function roundCashPayable(value: number, currencyCode: string) {
+  if (currencyCode.toUpperCase() !== 'CAD') return roundedMoney(value);
+  return Math.round((value * 100) / 5) * 5 / 100;
+}
+
 function completionKey() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -483,11 +488,14 @@ function PaymentSummary({ sale, method, currencyCode, cashReceived, appliedAmoun
   sale: Sale | null; method: PaymentMethod; currencyCode: string; cashReceived: number;
   appliedAmount: number; changeDue: number; balanceDue: number;
 }) {
+  const cashDue = method === 'CASH' ? roundCashPayable(balanceDue, currencyCode) : balanceDue;
+  const rounding = roundedMoney(cashDue - balanceDue);
   const remaining = roundedMoney(Math.max(0, balanceDue - appliedAmount));
   return <Paper variant="outlined" sx={{ p: 1.5, height: '100%', bgcolor: posTokens.colors.blueLight, borderColor: posTokens.colors.border }}><Stack spacing={1}>
     <Typography variant="subtitle1" fontWeight={800}>Payment summary</Typography>
     <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Total</Typography><Typography fontWeight={700}>{money(sale?.totalAmount ?? 0, currencyCode)}</Typography></Stack>
     <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Paid</Typography><Typography>{money(sale?.paidAmount ?? 0, currencyCode)}</Typography></Stack>
+    {method === 'CASH' && rounding !== 0 ? <><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Cash rounding</Typography><Typography>{money(rounding, currencyCode)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Cash due</Typography><Typography fontWeight={700}>{money(cashDue, currencyCode)}</Typography></Stack></> : null}
     <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">{method === 'CASH' ? 'Cash received' : 'This payment'}</Typography><Typography>{money(method === 'CASH' ? cashReceived : appliedAmount, currencyCode)}</Typography></Stack>
     {method === 'CASH' ? <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Cash applied</Typography><Typography>{money(appliedAmount, currencyCode)}</Typography></Stack> : null}
     <Divider />
@@ -511,6 +519,7 @@ export function PaymentDialog({
   const balanceDue = roundedMoney(Math.max(0, sale?.balanceDue ?? sale?.totalAmount ?? 0));
   const balanceDueCents = moneyToCents(balanceDue);
   const currencyCode = sale?.currencyCode ?? 'USD';
+  const cashDueCents = moneyToCents(roundCashPayable(balanceDue, currencyCode));
   const [method, setMethod] = React.useState<PaymentMethod>('CASH');
   const [amount, setAmount] = React.useState('');
   const [cashReceivedCents, setCashReceivedCents] = React.useState(0);
@@ -535,7 +544,7 @@ export function PaymentDialog({
     ? Math.min(cashReceivedCents, balanceDueCents) / 100
     : roundedMoney(parsedAmount);
   const changeDue = method === 'CASH'
-    ? Math.max(0, cashReceivedCents - balanceDueCents) / 100
+    ? Math.max(0, cashReceivedCents - cashDueCents) / 100
     : 0;
   const validation = (() => {
     if (!sale || sale.items.length === 0) {
@@ -605,7 +614,7 @@ export function PaymentDialog({
         <Grid container spacing={1}>{[['Subtotal', sale?.subtotalAmount ?? 0], ['Tax', sale?.estimatedTaxAmount ?? 0], ['Total', sale?.totalAmount ?? 0], ['Paid', sale?.paidAmount ?? 0], ['Remaining', balanceDue]].map(([label, value]) => <Grid item xs={label === 'Remaining' ? 4 : 2} key={String(label)}><Paper variant="outlined" sx={{ px: 1, py: .75 }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography fontWeight={700}>{money(Number(value), currencyCode)}</Typography></Paper></Grid>)}</Grid>
         {sale && sale.payments.length > 0 ? <Paper variant="outlined" sx={{ p: 1 }}><Typography variant="subtitle2">Payments recorded</Typography><Stack direction="row" spacing={2} useFlexGap flexWrap="wrap">{sale.payments.map(payment => <Stack key={payment.id} direction="row" spacing={1}><Typography color="text.secondary">{payment.method.replaceAll('_', ' ')}</Typography><Typography>{money(payment.amount, sale.currencyCode)}</Typography></Stack>)}</Stack></Paper> : null}
         <Box><Typography variant="subtitle2" gutterBottom>Payment method</Typography><Stack direction="row" spacing={.75} useFlexGap flexWrap="wrap">{paymentMethods.map(item => <Button key={item.value} aria-pressed={method === item.value} variant={method === item.value ? 'contained' : 'outlined'} disabled={busy} onClick={() => setMethod(item.value)} sx={{ minHeight: 44, minWidth: 92 }}>{item.label}</Button>)}</Stack></Box>
-        <Grid container spacing={1.25} alignItems="stretch"><Grid item xs={12} md={8}>{method === 'CASH' ? <CashPaymentPanel currencyCode={currencyCode} cashReceivedCents={cashReceivedCents} manualCashInput={manualCashInput} busy={busy} onManualInput={setCashFromInput} onKeypad={appendCashInput} onAdd={addDenomination} onExact={() => { setCashReceivedCents(balanceDueCents); setManualCashInput(centsToInput(balanceDueCents)); }} /> : <Paper variant="outlined" sx={{ p: 1.5 }}><Stack spacing={1.25}><TextField label="Payment amount" type="number" value={amount} disabled={busy} inputProps={{ min: .01, step: .01 }} onChange={event => setAmount(event.target.value)} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} /><TextField label="Reference" value={reference} disabled={busy} onChange={event => setReference(event.target.value)} /></Stack></Paper>}</Grid><Grid item xs={12} md={4}><PaymentSummary sale={sale} method={method} currencyCode={currencyCode} cashReceived={cashReceived} appliedAmount={appliedAmount} changeDue={changeDue} balanceDue={balanceDue} /></Grid></Grid>
+        <Grid container spacing={1.25} alignItems="stretch"><Grid item xs={12} md={8}>{method === 'CASH' ? <CashPaymentPanel currencyCode={currencyCode} cashReceivedCents={cashReceivedCents} manualCashInput={manualCashInput} busy={busy} onManualInput={setCashFromInput} onKeypad={appendCashInput} onAdd={addDenomination} onExact={() => { setCashReceivedCents(cashDueCents); setManualCashInput(centsToInput(cashDueCents)); }} /> : <Paper variant="outlined" sx={{ p: 1.5 }}><Stack spacing={1.25}><TextField label="Payment amount" type="number" value={amount} disabled={busy} inputProps={{ min: .01, step: .01 }} onChange={event => setAmount(event.target.value)} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} /><TextField label="Reference" value={reference} disabled={busy} onChange={event => setReference(event.target.value)} /></Stack></Paper>}</Grid><Grid item xs={12} md={4}><PaymentSummary sale={sale} method={method} currencyCode={currencyCode} cashReceived={cashReceived} appliedAmount={appliedAmount} changeDue={changeDue} balanceDue={balanceDue} /></Grid></Grid>
         <TextField label="Notes (optional)" placeholder="Add a note for this payment" value={notes} disabled={busy} onChange={event => setNotes(event.target.value)} size="small" />
         {validation ? <Alert severity="warning" sx={{ py: 0 }}>{validation}</Alert> : null}
       </Stack></DialogContent>
@@ -661,9 +670,9 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             <Stack direction="row" justifyContent="space-between" spacing={1}>
               <Box>
                 <Typography variant="body2" fontWeight={700}>{item.productName}</Typography>
-                <Typography variant="caption" color="text.secondary">{receipt.tokenNumber ? `${item.quantity}` : `${item.productSku} x ${item.quantity}`}</Typography>
+                <Typography variant="caption" color="text.secondary">{`${item.quantity} × ${money(item.unitPrice, receipt.currencyCode)}`}</Typography>
               </Box>
-              <Typography variant="body2">{money(item.lineTotal, receipt.currencyCode)}</Typography>
+              <Typography variant="body2">{money(item.lineSubtotal, receipt.currencyCode)}</Typography>
             </Stack>
             {item.discountAmount > 0 ? (
               <Typography variant="caption" color="text.secondary">Discount {money(item.discountAmount, receipt.currencyCode)}</Typography>
@@ -690,12 +699,13 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             <Typography fontWeight={700}>Total</Typography>
             <Typography fontWeight={700}>{money(receipt.totalAmount, receipt.currencyCode)}</Typography>
           </Stack>
+          {(receipt.cashRoundingAdjustment ?? 0) !== 0 ? <><Stack direction="row" justifyContent="space-between"><Typography variant="body2">Cash rounding</Typography><Typography variant="body2">{money(receipt.cashRoundingAdjustment ?? 0, receipt.currencyCode)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Cash total</Typography><Typography fontWeight={700}>{money(receipt.cashTotal ?? receipt.totalAmount, receipt.currencyCode)}</Typography></Stack></> : null}
         </Stack>
         <Divider />
         {receipt.payments.map((payment) => (
           <Stack direction="row" justifyContent="space-between" key={payment.id}>
             <Typography variant="body2">{payment.method.replaceAll('_', ' ')}</Typography>
-            <Typography variant="body2">{money(payment.amount, receipt.currencyCode)}</Typography>
+            <Typography variant="body2">{money(payment.method === 'CASH' ? (payment.cashSettlementAmount ?? payment.amount) : payment.amount, receipt.currencyCode)}</Typography>
           </Stack>
         ))}
         <Stack direction="row" justifyContent="space-between">
