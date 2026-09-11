@@ -93,6 +93,7 @@ import { cashDenominations, centsToInput, decimalInputToCents, moneyToCents } fr
 import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
 import { SecureTill } from './SecureTill';
 import { CustomerReceiptFooter, CustomerReceiptHeader } from './ReceiptBranding';
+import { PosQuickActions, posActionIcons, type PosQuickAction } from './PosQuickActions';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Request failed';
@@ -193,37 +194,6 @@ function IdentityStrip({
           <Typography variant="body2" color="text.secondary">{session.assignedCashierEmail}</Typography>
         </Grid>
       </Grid>
-    </Paper>
-  );
-}
-
-function CompactIdentitySummary({
-  session,
-  store,
-  register,
-  device
-}: {
-  session: RegisterSession;
-  store?: Store;
-  register?: Register;
-  device?: Device;
-}) {
-  const entries = [
-    ['Store', storeLabel(store)],
-    ['Register', registerLabel(register)],
-    ['Device', deviceLabel(device)],
-    ['Cashier', session.assignedCashierDisplayName]
-  ];
-  return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderColor: posTokens.colors.border, borderRadius: `${posTokens.radius.card}px`, bgcolor: posTokens.colors.card }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 1.5, rowGap: 0.75 }}>
-        {entries.map(([label, value]) => (
-          <Box key={label} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="primary.main" fontWeight={700}>{label}</Typography>
-            <Typography variant="body2" fontWeight={700} noWrap title={value}>{value}</Typography>
-          </Box>
-        ))}
-      </Box>
     </Paper>
   );
 }
@@ -853,12 +823,12 @@ function SuccessfulSaleScreen({
 
 type CustomItemInput = { description: string; price: number; quantity: number; taxTreatment: 'TAXABLE' | 'NON_TAXABLE' };
 
-function CustomItemDialog({ open, initialItem, initialDescription, currencyCode, onClose, onAdd }: { open: boolean; initialItem?: SaleItem; initialDescription: string; currencyCode: string; onClose: () => void; onAdd: (item: CustomItemInput) => void }) {
+function CustomItemDialog({ open, initialItem, initialDescription, initialTaxTreatment, currencyCode, onClose, onAdd }: { open: boolean; initialItem?: SaleItem; initialDescription: string; initialTaxTreatment?: CustomItemInput['taxTreatment']; currencyCode: string; onClose: () => void; onAdd: (item: CustomItemInput) => void }) {
   const [description, setDescription] = React.useState('');
   const [price, setPrice] = React.useState('');
   const [quantity, setQuantity] = React.useState('1');
   const [taxTreatment, setTaxTreatment] = React.useState<'' | CustomItemInput['taxTreatment']>('');
-  React.useEffect(() => { if (open) { setDescription(initialItem?.productName ?? initialDescription); setPrice(initialItem ? String(initialItem.unitPrice) : ''); setQuantity(initialItem ? String(initialItem.quantity) : '1'); setTaxTreatment(initialItem?.customItemTaxTreatment ?? ''); } }, [initialDescription, initialItem, open]);
+  React.useEffect(() => { if (open) { setDescription(initialItem?.productName ?? initialDescription); setPrice(initialItem ? String(initialItem.unitPrice) : ''); setQuantity(initialItem ? String(initialItem.quantity) : '1'); setTaxTreatment(initialItem?.customItemTaxTreatment ?? initialTaxTreatment ?? ''); } }, [initialDescription, initialItem, initialTaxTreatment, open]);
   const numericPrice = Number(price); const numericQuantity = Number(quantity);
   const valid = Boolean(description.trim() && numericPrice > 0 && numericQuantity > 0 && taxTreatment);
   return <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
@@ -888,6 +858,7 @@ export function PosCartPage() {
   const [productSearch, setProductSearch] = React.useState('');
   const [customItemOpen, setCustomItemOpen] = React.useState(false);
   const [customItemDescription, setCustomItemDescription] = React.useState('');
+  const [customItemTaxTreatment, setCustomItemTaxTreatment] = React.useState<CustomItemInput['taxTreatment'] | undefined>();
   const [editingCustomItem, setEditingCustomItem] = React.useState<SaleItem | undefined>();
   const [discount,setDiscount]=React.useState<OrderDiscount|null>(null);
   const [discountOpen,setDiscountOpen]=React.useState(false);
@@ -1006,6 +977,13 @@ export function PosCartPage() {
   const currencyCode = activeSale?.currencyCode ?? store?.currencyCode ?? 'USD';
   const provisionalSubtotal = cartItems.reduce((sum, item) => sum + item.unitPrice * item.quantity - item.discountAmount, 0);
 
+  function openCustomItem(taxTreatment?: CustomItemInput['taxTreatment'], description = '') {
+    setEditingCustomItem(undefined);
+    setCustomItemDescription(description);
+    setCustomItemTaxTreatment(taxTreatment);
+    setCustomItemOpen(true);
+  }
+
   function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
     cartRevisionRef.current += 1;
     setCartItems(update);
@@ -1039,6 +1017,7 @@ export function PosCartPage() {
       lineSubtotal: item.price * item.quantity, estimatedTaxAmount: 0, lineTotal: item.price * item.quantity, version: 0 };
     if (editingCustomItem) changeCart(items => items.map(candidate => candidate.id === editingCustomItem.id ? updated : candidate)); else addLocalItem(updated);
     setEditingCustomItem(undefined);
+    setCustomItemTaxTreatment(undefined);
     setCustomItemOpen(false);
   }
 
@@ -1344,6 +1323,22 @@ export function PosCartPage() {
   const pageError = current.error ?? saleQuery.error ?? barcodeError
     ?? (discount ? null : recalculateMutation.error) ?? holdMutation.error ?? cancelMutation.error
     ?? paymentMutation.error ?? completeMutation.error;
+  const permissions = currentUser?.permissions ?? [];
+  const lotteryEnabled = Boolean(store?.capabilities?.includes('LOTTERY'));
+  const quickActions: PosQuickAction[] = [
+    ...(permissions.includes('POS_CUSTOM_ITEM') ? [
+      { key: 'taxable-item', label: 'Taxable Item', icon: posActionIcons.taxable, disabled: cartLocked, onClick: () => openCustomItem('TAXABLE') },
+      { key: 'no-tax-item', label: 'No Tax Item', icon: posActionIcons.noTax, disabled: cartLocked, onClick: () => openCustomItem('NON_TAXABLE') }
+    ] : []),
+    ...(lotteryEnabled && permissions.includes('LOTTERY_SALE_RECORD') ? [{ key: 'lottery', label: 'Lottery', icon: posActionIcons.lottery, to: '/lottery/sale' }] : []),
+    ...(lotteryEnabled && permissions.includes('LOTTERY_PAYOUT_RECORD') ? [{ key: 'lottery-payout', label: 'Lottery Payout', icon: posActionIcons.payout, to: '/lottery/payout' }] : []),
+    ...(permissions.includes('POS_HOLD_SALE') ? [{ key: 'hold', label: 'Hold', icon: posActionIcons.hold, disabled: !activeSale || cartLocked, onClick: () => holdMutation.mutate() }] : []),
+    ...(permissions.includes('POS_RESUME_SALE') ? [{ key: 'recall', label: 'Recall', icon: posActionIcons.recall, to: '/pos/held-sales' }] : []),
+    ...(permissions.includes('POS_SALE_DISCOUNT') ? [{ key: 'discount', label: 'Discount', icon: posActionIcons.discount, disabled: !cartItems.length || busy, onClick: () => setDiscountOpen(true) }] : []),
+    ...(permissions.includes('POS_PRICE_CHECK') ? [{ key: 'price-check', label: 'Price Check', icon: posActionIcons.priceCheck, disabled: cartLocked, onClick: () => setSearchMode('PRODUCT') }] : []),
+    ...(permissions.includes('POS_CANCEL_DRAFT') ? [{ key: 'void', label: 'Void', icon: posActionIcons.void, tone: 'danger' as const, disabled: !activeSale || cartLocked, onClick: () => cancelMutation.mutate() }] : []),
+    ...(permissions.includes('RETURN_CREATE') ? [{ key: 'return', label: 'Return', icon: posActionIcons.return, to: '/returns/new' }] : [])
+  ];
 
   React.useEffect(() => {
     scannerRef.current = new KeyboardWedgeScanner({ ...scannerPreferences, duplicatePreventionMs: 0 });
@@ -1373,21 +1368,15 @@ export function PosCartPage() {
 
   return (
     <Stack data-testid="retail-checkout-shell" spacing={1} sx={{ height: activeSale?.status === 'COMPLETED' ? 'auto' : 'calc(100dvh - 88px)', minHeight: 0, minWidth: 0, overflow: activeSale?.status === 'COMPLETED' ? 'visible' : 'hidden', color: posTokens.colors.text }}>
-      <CustomItemDialog open={customItemOpen} initialItem={editingCustomItem} initialDescription={customItemDescription} currencyCode={currencyCode} onClose={() => { setCustomItemOpen(false); setEditingCustomItem(undefined); }} onAdd={addCustomItem} />
+      <CustomItemDialog open={customItemOpen} initialItem={editingCustomItem} initialDescription={customItemDescription} initialTaxTreatment={customItemTaxTreatment} currencyCode={currencyCode} onClose={() => { setCustomItemOpen(false); setEditingCustomItem(undefined); setCustomItemTaxTreatment(undefined); }} onAdd={addCustomItem} />
       <GlobalStyles styles={receiptPrintStyles} />
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ minHeight: 48, flexShrink: 0 }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h5" component="h1" sx={{ lineHeight: 1.1, color: posTokens.colors.navy, fontSize: { xs: 24, md: 28 } }}>Checkout</Typography>
-          <Typography variant="body2" color="text.secondary" noWrap>Scan, verify pricing and tax, then record payment.</Typography>
+          <Typography variant="h5" component="h1" aria-label="Checkout" sx={{ lineHeight: 1.1, color: posTokens.colors.navy, fontSize: { xs: 22, md: 26 } }}>Retail POS</Typography>
+          <Typography variant="body2" color="text.secondary" noWrap>{store ? `${store.name} · ${register?.name ?? 'Register'} · ${current.data?.status ?? 'Open'} · ${current.data?.assignedCashierDisplayName ?? ''}` : 'Loading Store and register context'}</Typography>
         </Box>
         <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
           {current.data ? <SecureTill session={current.data} storeName={store?.name} busy={busy} /> : null}
-          <Button size="small" component={Link} to="/pos/held-sales" variant="outlined" startIcon={<PlayCircleOutlineIcon />} sx={{ bgcolor: posTokens.colors.card }}>
-            Held sales
-          </Button>
-          <Button size="small" variant="outlined" startIcon={<PauseCircleOutlineIcon />} disabled={!activeSale || cartLocked} onClick={() => holdMutation.mutate()} sx={{ bgcolor: posTokens.colors.card }}>
-            Hold sale
-          </Button>
           <Button
             size="small"
             variant="contained"
@@ -1411,7 +1400,7 @@ export function PosCartPage() {
           {pageError ? <Alert severity="error" sx={{ py: 0 }}>{posErrorMessage(pageError)}</Alert> : null}
           {!pageError && inventoryWarning ? <Alert severity="warning" onClose={() => setInventoryWarning(null)} sx={{ py: 0 }}>{inventoryWarning}</Alert> : null}
           {!pageError && !inventoryWarning && draftRecovered && activeSale?.status === 'DRAFT' ? <Alert severity="success" onClose={() => setDraftRecovered(false)} sx={{ py: 0 }}>Draft cart recovered after refresh.</Alert> : null}
-          {!pageError && !inventoryWarning && !(draftRecovered && activeSale?.status === 'DRAFT') && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }} action={currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button onClick={() => { setCustomItemDescription(''); setEditingCustomItem(undefined); setCustomItemOpen(true); }}>Custom Item</Button> : undefined}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
+          {!pageError && !inventoryWarning && !(draftRecovered && activeSale?.status === 'DRAFT') && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }} action={currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button onClick={() => openCustomItem()}>Custom Item</Button> : undefined}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
         </Box>
       ) : null}
 
@@ -1435,6 +1424,8 @@ export function PosCartPage() {
             onNewSale={startNewSale}
           />
         ) : (
+        <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
+        <PosQuickActions actions={quickActions} />
         <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(320px, 0.95fr)', gap: { xs: 1, md: 1.5 }, flex: 1, minHeight: 0, minWidth: 0 }}>
           <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0 }}>
             <Paper variant="outlined" sx={{ p: 1, position: 'relative', zIndex: 2, flexShrink: 0, borderRadius: posTokens.radius.card }}>
@@ -1518,10 +1509,9 @@ export function PosCartPage() {
                 {searchMode === 'PRODUCT' && (productResults.isFetching || (submittedSearch && productResults.data)) ? (
                   <Paper elevation={2} sx={{ position: 'absolute', top: 'calc(100% - 2px)', left: 8, right: 8, maxHeight: 260, overflowY: 'auto', zIndex: 5, border: '1px solid', borderColor: 'divider' }}>
                     {productResults.isFetching ? <Box sx={{ p: 1.5 }}><CircularProgress size={22} aria-label="Searching products" /></Box> : null}
-                    {!productResults.isFetching && productResults.data ? <><ProductSearchResults products={productResults.data.content} currencyCode={currencyCode} disabled={cartLocked} onAdd={(product) => { addProduct(product); setProductSearch(''); setSubmittedSearch(''); setSearchMode('BARCODE'); }} /><Box sx={{ p: 1 }}><Button fullWidth variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked || !currentUser?.permissions?.includes('POS_CUSTOM_ITEM')} onClick={() => { setCustomItemDescription(productResults.data.content.length === 0 ? productSearch.trim() : ''); setCustomItemOpen(true); }}>{productResults.data.content.length === 0 && productSearch.trim() ? `Add “${productSearch.trim()}” as Custom Item` : 'Add Custom Item'}</Button></Box></> : null}
+                    {!productResults.isFetching && productResults.data ? <><ProductSearchResults products={productResults.data.content} currencyCode={currencyCode} disabled={cartLocked} onAdd={(product) => { addProduct(product); setProductSearch(''); setSubmittedSearch(''); setSearchMode('BARCODE'); }} /><Box sx={{ p: 1 }}><Button fullWidth variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked || !currentUser?.permissions?.includes('POS_CUSTOM_ITEM')} onClick={() => openCustomItem(undefined, productResults.data.content.length === 0 ? productSearch.trim() : '')}>{productResults.data.content.length === 0 && productSearch.trim() ? `Add “${productSearch.trim()}” as Custom Item` : 'Add Custom Item'}</Button></Box></> : null}
                   </Paper>
                 ) : null}
-                {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="text" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={{ alignSelf: 'flex-start' }} onClick={() => { setCustomItemDescription(''); setCustomItemOpen(true); }}>Custom Item</Button> : null}
               </Stack>
             </Paper>
 
@@ -1545,7 +1535,6 @@ export function PosCartPage() {
 
           <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <CompactIdentitySummary session={current.data} store={store} register={register} device={device} />
               <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discountPricingError ? null : discount} />
               <Paper variant="outlined" sx={{ p: 1.25, borderRadius: posTokens.radius.card }}>
                 <Stack spacing={0.75}>
@@ -1592,6 +1581,7 @@ export function PosCartPage() {
             </Stack>
           </Stack>
         </Box>
+        </Stack>
         )
       ) : null}
       <PaymentDialog

@@ -522,6 +522,32 @@ describe('POS pages', () => {
     expect(document.body).toHaveStyle({ overflow: 'auto' });
   });
 
+  it.each([
+    [1024, 768],
+    [1280, 800],
+    [1366, 768],
+    [1920, 1080]
+  ])('keeps quick actions, cart scrolling, totals, and Checkout in the fixed POS workspace at %ix%i', async (width, height) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+    window.dispatchEvent(new Event('resize'));
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['POS_CUSTOM_ITEM'] });
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+
+    const shell = await screen.findByTestId('retail-checkout-shell');
+    expect(shell).toHaveStyle({ height: 'calc(100dvh - 88px)', overflow: 'hidden' });
+    expect(await screen.findByRole('region', { name: 'Quick actions' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Taxable Item' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'No Tax Item' })).toBeVisible();
+    expect(screen.getByTestId('cart-scroll-region')).toHaveStyle({ overflowY: 'auto' });
+    expect(screen.getByRole('button', { name: 'Checkout' })).toBeVisible();
+  });
+
   it('adds a permitted custom item and sends its explicit non-catalog checkout shape', async () => {
     let checkoutBody: any;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
@@ -537,11 +563,10 @@ describe('POS pages', () => {
     });
 
     render(<App initialEntries={['/pos']} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Custom Item' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Taxable Item' }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Item Name / Description' }), 'Grocery Item');
     await userEvent.type(screen.getByRole('spinbutton', { name: 'Price (USD)' }), '7.99');
-    await userEvent.click(screen.getByRole('combobox', { name: 'Tax Treatment' }));
-    await userEvent.click(screen.getByRole('option', { name: 'Taxable' }));
+    expect(screen.getByRole('combobox', { name: 'Tax Treatment' })).toHaveTextContent('Taxable');
     await userEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
     expect(await screen.findByText('Grocery Item')).toBeInTheDocument();
     expect(screen.getAllByText('Custom Item').length).toBeGreaterThan(0);
@@ -561,11 +586,34 @@ describe('POS pages', () => {
     expect(checkoutBody.items[0].productId).toBeUndefined();
   });
 
-  it('does not expose Custom Item to a user without its permission', async () => {
+  it('does not expose Custom Item quick actions to a user without its permission', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => commonApi(input) ?? jsonResponse({}, 404));
     render(<App initialEntries={['/pos']} />);
     await screen.findByRole('heading', { name: 'Checkout' });
-    expect(screen.queryByRole('button', { name: 'Custom Item' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Taxable Item' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'No Tax Item' })).not.toBeInTheDocument();
+  });
+
+  it('shows only authorized quick actions and opens each Custom Item tax treatment directly', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(),
+        permissions: ['POS_CUSTOM_ITEM', 'POS_HOLD_SALE', 'POS_RESUME_SALE', 'POS_SALE_DISCOUNT', 'POS_PRICE_CHECK', 'POS_CANCEL_DRAFT', 'RETURN_CREATE', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+
+    expect(await screen.findByRole('region', { name: 'Quick actions' })).toBeInTheDocument();
+    for (const action of ['Taxable Item', 'No Tax Item', 'Lottery', 'Lottery Payout', 'Hold', 'Recall', 'Discount', 'Price Check', 'Void', 'Return']) {
+      expect(screen.getByRole(action === 'Lottery' || action === 'Lottery Payout' || action === 'Recall' || action === 'Return' ? 'link' : 'button', { name: action })).toBeInTheDocument();
+    }
+
+    await userEvent.click(screen.getByRole('button', { name: 'No Tax Item' }));
+    expect(screen.getByRole('combobox', { name: 'Tax Treatment' })).toHaveTextContent('Non-Taxable');
   });
 
   it('keeps checkout controls visible while a long recovered cart stays in the internal cart scroller', async () => {
