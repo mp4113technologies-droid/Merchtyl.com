@@ -38,7 +38,13 @@ public class InitialInventoryWorkbookService {
             writeReference(refs,0,"Categories",categories.findAll().stream().filter(Category::isActive).map(Category::getName).sorted().toList());
             writeReference(refs,1,"Brands",brands.findAll().stream().filter(Brand::isActive).map(Brand::getName).sorted().toList());
             writeReference(refs,2,"Units",units.findAll().stream().filter(UnitOfMeasure::isActive).map(UnitOfMeasure::getCode).sorted().toList());
-            writeReference(refs,3,"Tax Categories",taxes.findAll().stream().filter(TaxCategory::isActive).map(TaxCategory::getName).sorted().toList());
+            List<TaxCategory> visibleTaxes = taxes.findAll().stream().filter(TaxCategory::isActive)
+                    .filter(tax -> tax.getTenantId() == null || tax.getTenantId().equals(store.getTenantId()))
+                    .sorted(Comparator.comparing(TaxCategory::getName)).toList();
+            writeReference(refs,3,"Tax Categories",visibleTaxes.stream().map(TaxCategory::getCode).toList());
+            writeReference(refs,5,"Tax Category Name",visibleTaxes.stream().map(TaxCategory::getName).toList());
+            writeReference(refs,6,"Tax Category Type",visibleTaxes.stream().map(tax -> tax.getCategoryType().name()).toList());
+            writeReference(refs,7,"Tax Percentage",visibleTaxes.stream().map(tax -> tax.getPercentageRate() == null ? "system" : tax.getPercentageRate().stripTrailingZeros().toPlainString()).toList());
             writeReference(refs,4,"Suppliers",suppliers.findAll().stream().filter(Supplier::isActive).map(Supplier::getName).sorted().toList());
             addDropdown(setup,workbook,10,0);addDropdown(setup,workbook,11,1);addDropdown(setup,workbook,12,2);addDropdown(setup,workbook,13,3);addDropdown(setup,workbook,14,4);addListDropdown(setup,15,"YES,NO");addListDropdown(setup,16,"YES,NO");
             workbook.setSheetHidden(workbook.getSheetIndex(refs),true);workbook.write(out);return out.toByteArray();

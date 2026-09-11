@@ -118,6 +118,42 @@ class TaxCalculatorTest {
         assertThat(response.explanations()).anySatisfy(explanation -> assertThat(explanation).contains("Applied discount 10"));
     }
 
+    @Test
+    void calculatesMerchantCustomPercentageAfterDiscount() {
+        TaxCategory category = TaxCategory.customPercentage(UUID.randomUUID(), "PREPARED_FOOD", "Prepared Food Tax",
+                new BigDecimal("8.0000"), null, true);
+
+        TaxCalculationResponse response = calculator.calculate(
+                context(false, new BigDecimal("50.00"), new BigDecimal("2"), new BigDecimal("10.00")),
+                evaluation(List.of(), false, false, false, IncludedPriceBehavior.USE_RATE_SETTING, TaxRoundingStrategy.HALF_UP),
+                category);
+
+        assertThat(response.netAmount()).isEqualByComparingTo("90.00");
+        assertThat(response.taxAmount()).isEqualByComparingTo("7.20");
+        assertThat(response.grossAmount()).isEqualByComparingTo("97.20");
+        assertThat(response.components()).singleElement().satisfies(component -> {
+            assertThat(component.taxComponentName()).isEqualTo("Prepared Food Tax");
+            assertThat(component.percentageRate()).isEqualByComparingTo("8.0000");
+            assertThat(component.taxRateId()).isNull();
+        });
+    }
+
+    @Test
+    void extractsNetForTaxInclusiveCustomPercentageCategory() {
+        TaxCategory category = TaxCategory.customPercentage(UUID.randomUUID(), "PREPARED_FOOD", "Prepared Food Tax",
+                new BigDecimal("8.0000"), null, true);
+
+        TaxCalculationResponse response = calculator.calculate(
+                context(true, new BigDecimal("108.00")),
+                evaluation(List.of(), false, false, false, IncludedPriceBehavior.USE_RATE_SETTING, TaxRoundingStrategy.HALF_UP),
+                category);
+
+        assertThat(response.netAmount()).isEqualByComparingTo("100.00");
+        assertThat(response.taxAmount()).isEqualByComparingTo("8.00");
+        assertThat(response.grossAmount()).isEqualByComparingTo("108.00");
+        assertThat(response.components()).singleElement().satisfies(component -> assertThat(component.includedInPrice()).isTrue());
+    }
+
     private static TaxCalculationContext context(boolean pricesIncludeTax) {
         return context(pricesIncludeTax, new BigDecimal("100.00"));
     }

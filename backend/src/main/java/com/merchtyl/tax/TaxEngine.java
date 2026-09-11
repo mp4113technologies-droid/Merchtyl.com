@@ -76,8 +76,14 @@ public class TaxEngine {
         UUID productTaxCategoryId = request.productTaxCategoryId() != null
                 ? request.productTaxCategoryId()
                 : product == null ? null : product.getTaxCategoryId();
-        if (productTaxCategoryId != null && !taxCategoryRepository.existsById(productTaxCategoryId)) {
-            throw new NotFoundException("Tax category not found");
+        TaxCategory taxCategory = productTaxCategoryId == null ? null : taxCategoryRepository.findById(productTaxCategoryId).orElse(null);
+        if (productTaxCategoryId != null && taxCategory == null && !taxCategoryRepository.existsById(productTaxCategoryId)) {
+            throw new NotFoundException("TAX_CATEGORY_NOT_FOUND");
+        }
+        if (taxCategory != null && !taxCategory.isActive()) throw new BadRequestException("TAX_CATEGORY_INACTIVE");
+        UUID tenantId = store != null ? store.getTenantId() : product == null ? null : product.getTenantId();
+        if (taxCategory != null && taxCategory.getTenantId() != null && !taxCategory.getTenantId().equals(tenantId)) {
+            throw new NotFoundException("TAX_CATEGORY_NOT_FOUND");
         }
 
         UUID storeJurisdictionId = placeOfSupplyResolver.resolveStoreJurisdiction(store, request.storeJurisdictionId());
@@ -111,7 +117,9 @@ public class TaxEngine {
                 request.unitPrice(),
                 discountAmount,
                 pricesIncludeTax);
-        TaxCalculationResponse response = taxCalculator.calculate(context, evaluation);
+        TaxCalculationResponse response = taxCategory == null
+                ? taxCalculator.calculate(context, evaluation)
+                : taxCalculator.calculate(context, evaluation, taxCategory);
         TaxGeographySupport.audit(authentication, userRepository, auditService, AuditAction.TAX_CALCULATION_PERFORMED, "TAX_CALCULATION", null, request, response);
         return response;
     }

@@ -8,12 +8,16 @@ import com.merchtyl.product.ProductRepository;
 import com.merchtyl.product.ProductValues;
 import com.merchtyl.product.SellableType;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.User;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -76,6 +80,26 @@ class TaxGroupCategoryServiceTest {
         assertThat(response.code()).isEqualTo("EXEMPT");
         assertThat(response.treatment()).isEqualTo(TaxTreatment.EXEMPT);
         verify(auditService).record(any(CreateAuditRecordCommand.class));
+    }
+
+    @Test
+    void ownerCreatesTenantScopedCustomPercentageCategory() {
+        UUID tenantId = UUID.randomUUID();
+        User owner = new User("owner@example.com", "Owner", "hash");
+        owner.assignTenant(tenantId);
+        var authentication = new UsernamePasswordAuthenticationToken(owner.getEmail(), "n/a", List.of(
+                new SimpleGrantedAuthority("ROLE_OWNER"), new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT")));
+        when(userRepository.findByEmailIgnoreCase(owner.getEmail())).thenReturn(Optional.of(owner));
+        when(taxCategoryRepository.saveAndFlush(any(TaxCategory.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TaxCategoryResponse response = taxCategoryService.create(new TaxCategoryRequest(null, " prepared_food ",
+                " Prepared Food Tax ", TaxTreatment.STANDARD, null, true,
+                TaxCategoryType.CUSTOM_PERCENTAGE, new BigDecimal("8.00")), authentication);
+
+        assertThat(response.tenantId()).isEqualTo(tenantId);
+        assertThat(response.categoryType()).isEqualTo(TaxCategoryType.CUSTOM_PERCENTAGE);
+        assertThat(response.percentageRate()).isEqualByComparingTo("8.0000");
+        assertThat(response.systemManaged()).isFalse();
     }
 
     @Test

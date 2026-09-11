@@ -2,6 +2,7 @@ package com.merchtyl.tax;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 public record TaxCategoryResponse(
         UUID id,
@@ -13,8 +14,18 @@ public record TaxCategoryResponse(
         boolean active,
         Instant createdAt,
         Instant updatedAt,
-        long version
+        long version,
+        UUID tenantId,
+        TaxCategoryType categoryType,
+        BigDecimal percentageRate,
+        boolean systemManaged
 ) {
+    public TaxCategoryResponse(UUID id, UUID taxGroupId, String code, String name, TaxTreatment treatment,
+                               String description, boolean active, Instant createdAt, Instant updatedAt, long version) {
+        this(id, taxGroupId, code, name, treatment, description, active, createdAt, updatedAt, version,
+                null, TaxCategoryType.STANDARD, null, true);
+    }
+
     static TaxCategoryResponse from(TaxCategory category) {
         return new TaxCategoryResponse(
                 category.getId(),
@@ -26,6 +37,10 @@ public record TaxCategoryResponse(
                 category.isActive(),
                 category.getCreatedAt(),
                 category.getUpdatedAt(),
-                category.getVersion());
+                category.getVersion(),
+                category.getTenantId(),
+                category.getCategoryType(),
+                category.getPercentageRate(),
+                category.isSystemManaged());
     }
 }

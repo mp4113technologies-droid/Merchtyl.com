@@ -58,8 +58,9 @@ public class RefundItemTax extends BaseUuidEntity {
         this.returnItem = returnItem;
         this.originalSaleItem = returnItem.getOriginalSaleItem();
         this.productTaxCategoryId = returnItem.getOriginalProductTaxCategoryId();
-        this.taxComponentCode = "TAX";
-        this.taxComponentName = "Original sales tax";
+        boolean customCategory = "CUSTOM_PERCENTAGE".equals(originalSaleItem.getTaxCategoryTypeSnapshot());
+        this.taxComponentCode = customCategory ? originalSaleItem.getTaxCategoryCodeSnapshot() : "TAX";
+        this.taxComponentName = customCategory ? originalSaleItem.getTaxCategoryNameSnapshot() : "Original sales tax";
         this.taxableAmount = returnItem.getReturnSubtotalAmount();
         this.taxAmount = returnItem.getReturnTaxAmount();
         this.currencyCode = refund.getCurrencyCode();

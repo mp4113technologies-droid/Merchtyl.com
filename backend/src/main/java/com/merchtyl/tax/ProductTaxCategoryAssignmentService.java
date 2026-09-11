@@ -8,6 +8,7 @@ import com.merchtyl.common.PageResponse;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.common.BadRequestException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -43,6 +44,7 @@ public class ProductTaxCategoryAssignmentService {
     public ProductTaxCategoryAssignmentResponse create(ProductTaxCategoryAssignmentRequest request, Authentication authentication) {
         Product product = product(request.productId());
         TaxCategory category = taxCategoryService.find(request.taxCategoryId());
+        requireAssignable(product, category, authentication);
         if (assignmentRepository.existsByProduct(product)) {
             throw duplicate();
         }
@@ -73,6 +75,7 @@ public class ProductTaxCategoryAssignmentService {
         TaxGeographySupport.requireCurrentVersion(assignment.getVersion(), request.version(), "Product tax category assignment");
         Product product = product(request.productId());
         TaxCategory category = taxCategoryService.find(request.taxCategoryId());
+        requireAssignable(product, category, authentication);
         if (assignmentRepository.existsByProductAndIdNot(product, id)) {
             throw duplicate();
         }
@@ -103,6 +106,14 @@ public class ProductTaxCategoryAssignmentService {
 
     private Product product(UUID id) {
         return productRepository.findById(id).orElseThrow(() -> new NotFoundException("Product not found"));
+    }
+
+    private void requireAssignable(Product product, TaxCategory category, Authentication authentication) {
+        UUID actorTenant = authentication == null ? product.getTenantId() : userRepository.findByEmailIgnoreCase(authentication.getName())
+                .map(com.merchtyl.security.User::getTenantId).orElse(null);
+        if (actorTenant != null && !actorTenant.equals(product.getTenantId())) throw new NotFoundException("Product not found");
+        if (category.getTenantId() != null && !category.getTenantId().equals(product.getTenantId())) throw new NotFoundException("TAX_CATEGORY_NOT_FOUND");
+        if (!category.isActive()) throw new BadRequestException("TAX_CATEGORY_INACTIVE");
     }
 
     private ProductTaxCategoryAssignment save(ProductTaxCategoryAssignment assignment) {

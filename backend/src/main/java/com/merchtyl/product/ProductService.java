@@ -105,7 +105,7 @@ public class ProductService {
                 throw exception;
             }
         }
-        ProductValues values = values(request);
+        ProductValues values = values(request, tenantId);
         requireUniqueCodesForCreate(tenantId, values);
         Product product = new Product(values);
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
@@ -213,7 +213,7 @@ public class ProductService {
         if (storeAccessService != null) storeAccessService.requireProductManagementScope(authentication, requestedStoreIds);
         requireAllProductStoresManaged(product, authentication);
         requireCurrentVersion(product, request.version());
-        ProductValues values = values(request);
+        ProductValues values = values(request, tenantId);
         requireOwnedChildIds(product, values);
         requireUniqueCodesForUpdate(tenantId, id, values);
         ProductResponse before = ProductResponse.from(product);
@@ -241,8 +241,8 @@ public class ProductService {
         return after;
     }
 
-    private ProductValues values(ProductRequest request) {
-        requireActiveTaxCategory(request.taxCategoryId());
+    private ProductValues values(ProductRequest request, UUID tenantId) {
+        requireActiveTaxCategory(request.taxCategoryId(), tenantId);
         return new ProductValues(
                 normalizeSku(request.sku(), "sku"),
                 cleanRequired(request.name(), "name"),
@@ -263,8 +263,8 @@ public class ProductService {
                 capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
-    private ProductValues values(ProductUpdateRequest request) {
-        requireActiveTaxCategory(request.taxCategoryId());
+    private ProductValues values(ProductUpdateRequest request, UUID tenantId) {
+        requireActiveTaxCategory(request.taxCategoryId(), tenantId);
         return new ProductValues(
                 normalizeSku(request.sku(), "sku"),
                 cleanRequired(request.name(), "name"),
@@ -285,10 +285,11 @@ public class ProductService {
                 capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
-    private void requireActiveTaxCategory(UUID taxCategoryId) {
+    private void requireActiveTaxCategory(UUID taxCategoryId, UUID tenantId) {
         if (taxCategoryId == null) return;
         var category = taxCategoryRepository.findById(taxCategoryId)
                 .orElseThrow(() -> new BadRequestException("Invalid tax category"));
+        if (category.getTenantId() != null && !category.getTenantId().equals(tenantId)) throw new BadRequestException("Invalid tax category");
         if (!category.isActive()) throw new BadRequestException("Tax category is inactive");
     }
 

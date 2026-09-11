@@ -2358,6 +2358,10 @@ export type TaxCategory = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  tenantId?: string | null;
+  categoryType?: 'STANDARD' | 'CUSTOM_PERCENTAGE';
+  percentageRate?: number | null;
+  systemManaged?: boolean;
 };
 
 export type ProductTaxCategoryAssignment = {

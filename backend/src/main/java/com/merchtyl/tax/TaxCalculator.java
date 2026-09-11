@@ -33,6 +33,10 @@ public class TaxCalculator {
     }
 
     public TaxCalculationResponse calculate(TaxCalculationContext context, TaxRuleEvaluationResponse evaluation) {
+        return calculate(context, evaluation, null);
+    }
+
+    public TaxCalculationResponse calculate(TaxCalculationContext context, TaxRuleEvaluationResponse evaluation, TaxCategory category) {
         if (context.unitPrice().signum() < 0) {
             throw new BadRequestException("unitPrice must be zero or greater");
         }
@@ -46,6 +50,9 @@ public class TaxCalculator {
             throw new BadRequestException("discountAmount cannot exceed the line subtotal");
         }
 
+        if (category != null && category.getCategoryType() == TaxCategoryType.CUSTOM_PERCENTAGE) {
+            return calculateCustomPercentage(context, evaluation, category);
+        }
         List<TaxRate> rates = rates(context, evaluation);
         BigDecimal grossInput = roundingService.roundCurrency(context.lineAmount(), evaluation.roundingStrategy());
         BigDecimal netAmount = extractNetAmount(context.lineAmount(), rates, evaluation);
@@ -112,6 +119,39 @@ public class TaxCalculator {
                 components,
                 explanationService.summarize(context, evaluation, components, netAmount, taxAmount, grossAmount),
                 evaluation);
+    }
+
+    private TaxCalculationResponse calculateCustomPercentage(TaxCalculationContext context,
+                                                              TaxRuleEvaluationResponse evaluation,
+                                                              TaxCategory category) {
+        BigDecimal rate = category.getPercentageRate();
+        boolean included = switch (evaluation.includedPriceBehavior()) {
+            case FORCE_INCLUDED -> true;
+            case FORCE_ADDED -> false;
+            case USE_RATE_SETTING -> context.pricesIncludeTax();
+        };
+        BigDecimal lineAmount = context.lineAmount();
+        BigDecimal netAmount = included && !zeroTax(evaluation)
+                ? roundingService.divide(lineAmount, BigDecimal.ONE.add(rate.divide(ONE_HUNDRED)))
+                : lineAmount;
+        BigDecimal taxableAmount = roundingService.roundCurrency(netAmount, evaluation.roundingStrategy());
+        BigDecimal taxAmount = zeroTax(evaluation) ? BigDecimal.ZERO
+                : roundingService.roundCurrency(taxableAmount.multiply(rate).divide(ONE_HUNDRED), evaluation.roundingStrategy());
+        BigDecimal grossAmount = included
+                ? roundingService.roundCurrency(lineAmount, evaluation.roundingStrategy())
+                : roundingService.roundCurrency(netAmount.add(taxAmount), evaluation.roundingStrategy());
+        netAmount = roundingService.roundCurrency(netAmount, evaluation.roundingStrategy());
+        String explanation = category.getCode() + " used " + rate.stripTrailingZeros().toPlainString()
+                + "% on " + taxableAmount + ", " + (included ? "included" : "added") + ", producing " + taxAmount + ".";
+        List<TaxComponentCalculationResponse> components = List.of(new TaxComponentCalculationResponse(
+                category.getId(), category.getCode(), category.getName(), null, rate, taxableAmount, taxAmount,
+                included, false, 0, null, null, explanation));
+        return new TaxCalculationResponse(
+                context.storeId(), context.storeJurisdictionId(), context.supplyJurisdictionId(), context.productId(),
+                context.productTaxCategoryId(), context.transactionDate(), context.saleChannel(), context.currencyCode(),
+                context.quantity(), context.unitPrice(), context.discountAmount(), context.pricesIncludeTax(), netAmount,
+                taxAmount, grossAmount, evaluation.zeroRated(), evaluation.exempt(), evaluation.outOfScope(),
+                evaluation.includedPriceBehavior(), evaluation.roundingStrategy(), components, List.of(explanation), evaluation);
     }
 
     private List<TaxRate> rates(TaxCalculationContext context, TaxRuleEvaluationResponse evaluation) {

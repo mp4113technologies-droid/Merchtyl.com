@@ -145,9 +145,7 @@ public class ReceiptService {
                 .filter(item -> item.getEstimatedTaxAmount().signum() > 0)
                 .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
-        List<ReceiptTaxSummaryDto> taxSummaries = sale.getEstimatedTaxAmount().signum() == 0
-                ? List.of()
-                : List.of(new ReceiptTaxSummaryDto("TAX", "Sales tax", taxableAmount, sale.getEstimatedTaxAmount()));
+        List<ReceiptTaxSummaryDto> taxSummaries = receiptTaxSummaries(sale, taxableAmount);
 
         return new ReceiptDocumentDto(
                 BRAND_NAME,
@@ -193,6 +191,30 @@ public class ReceiptService {
                 changeDue,
                 sale.getFoodOrderToken(),
                 sale.getDiscountName());
+    }
+
+    private List<ReceiptTaxSummaryDto> receiptTaxSummaries(Sale sale, BigDecimal fallbackTaxableAmount) {
+        if (sale.getEstimatedTaxAmount().signum() == 0) return List.of();
+        var custom = sale.getItems().stream()
+                .filter(item -> item.getEstimatedTaxAmount().signum() != 0 && "CUSTOM_PERCENTAGE".equals(item.getTaxCategoryTypeSnapshot()))
+                .collect(java.util.stream.Collectors.groupingBy(
+                        item -> item.getTaxCategoryCodeSnapshot() + "\u0000" + item.getTaxCategoryNameSnapshot()
+                                + "\u0000" + item.getTaxRateSnapshot(),
+                        java.util.LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()));
+        BigDecimal customTax = custom.values().stream().flatMap(java.util.Collection::stream)
+                .map(SaleItem::getEstimatedTaxAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<ReceiptTaxSummaryDto> result = new java.util.ArrayList<>();
+        BigDecimal standardTax = money(sale.getEstimatedTaxAmount().subtract(customTax));
+        if (standardTax.signum() != 0) result.add(new ReceiptTaxSummaryDto("TAX", "Sales tax", fallbackTaxableAmount, standardTax));
+        custom.forEach((key, items) -> {
+            SaleItem first = items.getFirst();
+            BigDecimal base = money(items.stream().map(item -> item.getTaxableAmountSnapshot() == null ? BigDecimal.ZERO : item.getTaxableAmountSnapshot()).reduce(BigDecimal.ZERO, BigDecimal::add));
+            BigDecimal tax = money(items.stream().map(SaleItem::getEstimatedTaxAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
+            String label = first.getTaxCategoryNameSnapshot() + " " + first.getTaxRateSnapshot().stripTrailingZeros().toPlainString() + "%";
+            result.add(new ReceiptTaxSummaryDto(first.getTaxCategoryCodeSnapshot(), label, base, tax));
+        });
+        return List.copyOf(result);
     }
 
     private ReceiptItemDto item(SaleItem item) {

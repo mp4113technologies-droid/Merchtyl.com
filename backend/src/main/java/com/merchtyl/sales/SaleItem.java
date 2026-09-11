@@ -39,6 +39,21 @@ public class SaleItem extends BaseUuidEntity {
 
     private UUID taxCategorySnapshotId;
 
+    @Column(length = 64)
+    private String taxCategoryCodeSnapshot;
+
+    @Column(length = 180)
+    private String taxCategoryNameSnapshot;
+
+    @Column(length = 32)
+    private String taxCategoryTypeSnapshot;
+
+    @Column(precision = 9, scale = 4)
+    private BigDecimal taxRateSnapshot;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal taxableAmountSnapshot;
+
     private UUID categorySnapshotId;
 
     @Column(length = 180)
@@ -125,6 +140,7 @@ public class SaleItem extends BaseUuidEntity {
             String paymentMethodCode) {
         this.sale = sale;
         this.product = product;
+        this.taxCategorySnapshotId = product.getTaxCategoryId();
         this.variant = variant;
         this.variantSku = variant == null ? null : variant.getSku();
         this.variantName = variant == null ? null : variant.getName();
@@ -203,6 +219,14 @@ public class SaleItem extends BaseUuidEntity {
         this.lineTotal = lineTotal;
     }
 
+    void setTaxSnapshot(String code, String name, String type, BigDecimal rate, BigDecimal taxableAmount) {
+        this.taxCategoryCodeSnapshot = code;
+        this.taxCategoryNameSnapshot = name;
+        this.taxCategoryTypeSnapshot = type;
+        this.taxRateSnapshot = rate;
+        this.taxableAmountSnapshot = taxableAmount;
+    }
+
     void snapshotForCompletion() {
         if (isCustomItem()) {
             completedProductCost = BigDecimal.ZERO.setScale(4);
@@ -251,6 +275,11 @@ public class SaleItem extends BaseUuidEntity {
     public boolean isCustomItem() { return lineType == SaleLineType.CUSTOM_ITEM; }
     public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
     public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
+    public String getTaxCategoryCodeSnapshot() { return taxCategoryCodeSnapshot; }
+    public String getTaxCategoryNameSnapshot() { return taxCategoryNameSnapshot; }
+    public String getTaxCategoryTypeSnapshot() { return taxCategoryTypeSnapshot; }
+    public BigDecimal getTaxRateSnapshot() { return taxRateSnapshot; }
+    public BigDecimal getTaxableAmountSnapshot() { return taxableAmountSnapshot; }
     public UUID getCategorySnapshotId() { return categorySnapshotId; }
     public String getCategoryNameSnapshot() { return categoryNameSnapshot; }
 

@@ -1282,6 +1282,8 @@ export type TaxCategoryPayload = {
   treatment: TaxTreatment;
   description?: string;
   active: boolean;
+  categoryType?: 'STANDARD' | 'CUSTOM_PERCENTAGE';
+  percentageRate?: number;
 };
 
 export type TaxCategoryUpdatePayload = TaxCategoryPayload & {

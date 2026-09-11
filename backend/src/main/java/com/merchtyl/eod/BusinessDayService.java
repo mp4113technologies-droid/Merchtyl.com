@@ -1035,10 +1035,16 @@ public class BusinessDayService {
 
     private List<EndOfDayTaxValues> taxValues(List<Sale> sales, List<Refund> refunds) {
         Map<String, TaxAccumulator> taxes = new LinkedHashMap<>();
-        TaxAccumulator salesTax = taxes.computeIfAbsent("SALES_TAX", ignored -> new TaxAccumulator("SALES_TAX", "Posted sales tax"));
         sales.forEach(sale -> {
-            salesTax.taxableSales = salesTax.taxableSales.add(money(sale.getSubtotalAmount().subtract(sale.getDiscountAmount())));
-            salesTax.taxCollected = salesTax.taxCollected.add(money(sale.getEstimatedTaxAmount()));
+            sale.getItems().stream().filter(item -> item.getEstimatedTaxAmount().signum() != 0).forEach(item -> {
+                boolean custom = "CUSTOM_PERCENTAGE".equals(item.getTaxCategoryTypeSnapshot());
+                String code = custom ? item.getTaxCategoryCodeSnapshot() : "SALES_TAX";
+                String name = custom ? item.getTaxCategoryNameSnapshot() : "Posted sales tax";
+                TaxAccumulator total = taxes.computeIfAbsent(code, ignored -> new TaxAccumulator(code, name));
+                total.taxableSales = total.taxableSales.add(money(item.getTaxableAmountSnapshot() == null
+                        ? item.getLineSubtotal().subtract(item.getDiscountAmount()) : item.getTaxableAmountSnapshot()));
+                total.taxCollected = total.taxCollected.add(money(item.getEstimatedTaxAmount()));
+            });
         });
         refunds.forEach(refund -> refund.getItemTaxes().forEach(tax -> {
             TaxAccumulator accumulator = taxes.computeIfAbsent(tax.getTaxComponentCode(), ignored -> new TaxAccumulator(tax.getTaxComponentCode(), tax.getTaxComponentName()));

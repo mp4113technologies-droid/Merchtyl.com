@@ -120,9 +120,7 @@ public class ReturnItem extends BaseUuidEntity {
         this.originalProductCost = originalSaleItem.getCompletedProductCost();
         this.originalProductPrice = originalSaleItem.getCompletedProductPrice();
         this.originalProductCapabilities = originalSaleItem.getCompletedProductCapabilities();
-        this.originalProductTaxCategoryId = originalSaleItem.isCustomItem()
-                ? originalSaleItem.getTaxCategorySnapshotId()
-                : originalSaleItem.getProduct().getTaxCategoryId();
+        this.originalProductTaxCategoryId = originalSaleItem.getTaxCategorySnapshotId();
         this.returnSubtotalAmount = returnSubtotalAmount;
         this.returnTaxAmount = returnTaxAmount;
         this.returnTotalAmount = returnTotalAmount;

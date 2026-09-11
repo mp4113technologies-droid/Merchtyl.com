@@ -333,7 +333,12 @@ function optionalText(value?: string) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Request failed';
+  const message = error instanceof Error ? error.message : 'Request failed';
+  if (message.includes('TAX_CATEGORY_INACTIVE')) return 'The selected tax category is inactive. Choose an active category.';
+  if (message.includes('Tax category is inactive')) return 'The selected tax category is inactive. Choose an active category.';
+  if (message.includes('TAX_CATEGORY_NOT_FOUND')) return 'The selected tax category is unavailable for this merchant.';
+  if (message.includes('Invalid tax category')) return 'The selected tax category is unavailable for this merchant.';
+  return message;
 }
 
 function formatMoney(value: number) {
@@ -489,7 +494,9 @@ function ProductForm({
                     SelectProps={{ MenuProps: productSelectMenuProps }}
                   >
                     <MenuItem value="">Select Tax Category</MenuItem>
-                    {taxCategories.map((category) => <MenuItem key={category.id} value={category.id} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{category.name}</MenuItem>)}
+                    {taxCategories.map((category) => <MenuItem key={category.id} value={category.id} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                      {category.categoryType === 'CUSTOM_PERCENTAGE' ? `CUSTOM — ${category.name} — ${Number(category.percentageRate).toFixed(2)}%` : category.name}
+                    </MenuItem>)}
                   </TextField>
                 )}
               />

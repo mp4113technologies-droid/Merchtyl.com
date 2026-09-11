@@ -695,6 +695,13 @@ public class SaleService {
                     sale.getCurrencyCode()), authentication);
             BigDecimal lineSubtotal = money(taxResponse.netAmount().add(item.getDiscountAmount()));
             item.setCalculatedAmounts(lineSubtotal, taxResponse.taxAmount(), taxResponse.grossAmount());
+            var component = taxResponse.components().size() == 1 ? taxResponse.components().getFirst() : null;
+            item.setTaxSnapshot(
+                    component == null ? null : component.taxComponentCode(),
+                    component == null ? null : component.taxComponentName(),
+                    component == null || component.taxRateId() != null ? null : "CUSTOM_PERCENTAGE",
+                    component == null ? null : component.percentageRate(),
+                    component == null ? taxResponse.netAmount() : component.taxableAmount());
             subtotal = subtotal.add(lineSubtotal);
             discount = discount.add(item.getDiscountAmount());
             tax = tax.add(taxResponse.taxAmount());

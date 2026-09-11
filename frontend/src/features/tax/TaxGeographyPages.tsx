@@ -244,7 +244,13 @@ const taxCategorySchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(180, 'Name must be 180 characters or fewer'),
   treatment: z.enum(taxTreatments as [TaxTreatment, ...TaxTreatment[]]),
   description: z.string().max(1000, 'Description must be 1000 characters or fewer').optional(),
-  active: z.boolean()
+  active: z.boolean(),
+  categoryType: z.enum(['STANDARD', 'CUSTOM_PERCENTAGE']),
+  percentageRate: z.coerce.number().min(0, 'Percentage must be zero or greater').max(100, 'Percentage cannot exceed 100').optional()
+}).superRefine((values, context) => {
+  if (values.categoryType === 'CUSTOM_PERCENTAGE' && values.percentageRate === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['percentageRate'], message: 'Percentage is required' });
+  }
 });
 
 const productTaxCategoryAssignmentSchema = z.object({
@@ -320,7 +326,8 @@ function useTaxPermissions() {
   const roles = currentUser?.roles ?? session?.roles ?? [];
   return {
     canView: canViewTax(roles),
-    canManage: canViewTax(roles)
+    canManage: canViewTax(roles),
+    isOwner: roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER')
   };
 }
 
@@ -330,7 +337,12 @@ function optionalText(value?: string) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Request failed';
+  const message = error instanceof Error ? error.message : 'Request failed';
+  if (message.includes('CUSTOM_TAX_CATEGORY_OWNER_REQUIRED')) return 'Only a Merchant Owner can manage custom tax categories.';
+  if (message.includes('CUSTOM_TAX_CATEGORY_RATE_INVALID')) return 'Enter a percentage from 0 to 100.';
+  if (message.includes('Tax category code already exists')) return 'That tax category code is already in use.';
+  if (message.includes('SYSTEM_TAX_CATEGORY_PROTECTED')) return 'System tax categories cannot be changed by merchant users.';
+  return message;
 }
 
 function statusChip(active: boolean) {
@@ -1246,7 +1258,7 @@ function TaxTable<T extends { id: string; name: string; active: boolean }>({
 }: {
   rows: T[];
   columns: Array<{ label: string; value: (row: T) => React.ReactNode; strong?: boolean }>;
-  canManage: boolean;
+  canManage: boolean | ((row: T) => boolean);
   emptyLabel: string;
   onEdit: (row: T) => void;
   onStatus: (row: T) => void;
@@ -1261,13 +1273,15 @@ function TaxTable<T extends { id: string; name: string; active: boolean }>({
         </TableRow>
       </TableHead>
       <TableBody>
-        {rows.map((row) => (
+        {rows.map((row) => {
+          const rowCanManage = typeof canManage === 'function' ? canManage(row) : canManage;
+          return (
           <TableRow key={row.id} hover>
             {columns.map((column) => (
               <TableCell key={column.label} sx={column.strong ? { fontWeight: 700 } : undefined}>{column.value(row)}</TableCell>
             ))}
             <TableCell align="right">
-              {canManage ? (
+              {rowCanManage ? (
                 <>
                   <Tooltip title={`Edit ${row.name}`}>
                     <IconButton aria-label={`Edit ${row.name}`} onClick={() => onEdit(row)}>
@@ -1283,7 +1297,7 @@ function TaxTable<T extends { id: string; name: string; active: boolean }>({
               ) : null}
             </TableCell>
           </TableRow>
-        ))}
+        );})}
         {rows.length === 0 ? (
           <TableRow>
             <TableCell colSpan={columns.length + 1}>
@@ -2351,14 +2365,16 @@ export function TaxGroupComponentsPage() {
   );
 }
 
-function taxCategoryValues(category?: TaxCategory | null): TaxCategoryFormValues {
+function taxCategoryValues(category?: TaxCategory | null, initialType: 'STANDARD' | 'CUSTOM_PERCENTAGE' = 'CUSTOM_PERCENTAGE'): TaxCategoryFormValues {
   return {
     taxGroupId: category?.taxGroupId ?? '',
     code: category?.code ?? '',
     name: category?.name ?? '',
     treatment: category?.treatment ?? 'STANDARD',
     description: category?.description ?? '',
-    active: category?.active ?? true
+    active: category?.active ?? true,
+    categoryType: category?.categoryType ?? initialType,
+    percentageRate: category?.percentageRate ?? undefined
   };
 }
 
@@ -2369,13 +2385,16 @@ function cleanTaxCategory(values: TaxCategoryFormValues): TaxCategoryPayload {
     name: values.name.trim(),
     treatment: values.treatment,
     description: optionalText(values.description),
-    active: values.active
+    active: values.active,
+    categoryType: values.categoryType,
+    percentageRate: values.categoryType === 'CUSTOM_PERCENTAGE' ? values.percentageRate : undefined
   };
 }
 
-function TaxCategoryDialog({ open, category, groups, loading, error, onClose, onSubmit }: {
+function TaxCategoryDialog({ open, category, initialType, groups, loading, error, onClose, onSubmit }: {
   open: boolean;
   category: TaxCategory | null;
+  initialType: 'STANDARD' | 'CUSTOM_PERCENTAGE';
   groups: TaxGroup[];
   loading: boolean;
   error?: string;
@@ -2384,33 +2403,42 @@ function TaxCategoryDialog({ open, category, groups, loading, error, onClose, on
 }) {
   const form = useForm<TaxCategoryFormValues>({
     resolver: zodResolver(taxCategorySchema),
-    defaultValues: taxCategoryValues(category),
-    values: taxCategoryValues(category)
+    defaultValues: taxCategoryValues(category, initialType),
+    values: taxCategoryValues(category, initialType)
   });
+  const categoryType = form.watch('categoryType');
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{category ? 'Edit tax category' : 'New tax category'}</DialogTitle>
+      <DialogTitle>{category ? `Edit ${category.categoryType === 'CUSTOM_PERCENTAGE' ? 'custom ' : ''}tax category` : initialType === 'CUSTOM_PERCENTAGE' ? 'Add Custom Tax Category' : 'New tax category'}</DialogTitle>
       <DialogContent>
         <Stack component="form" id="tax-category-form" spacing={2} sx={{ pt: 1 }} onSubmit={form.handleSubmit(onSubmit)}>
           {error ? <Alert severity="error">{error}</Alert> : null}
-          <Controller name="taxGroupId" control={form.control} render={({ field, fieldState }) => (
+          {!category ? <Controller name="categoryType" control={form.control} render={({ field }) => (
+            <TextField {...field} select label="Category type" fullWidth>
+              <MenuItem value="CUSTOM_PERCENTAGE">Custom percentage</MenuItem>
+              <MenuItem value="STANDARD">Standard</MenuItem>
+            </TextField>
+          )} /> : null}
+          {categoryType === 'STANDARD' ? <Controller name="taxGroupId" control={form.control} render={({ field, fieldState }) => (
             <TextField {...field} value={field.value ?? ''} select label="Tax group" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
               <MenuItem value="">None</MenuItem>
               {groups.map((group) => <MenuItem key={group.id} value={group.id}>{group.code} - {group.name}</MenuItem>)}
             </TextField>
-          )} />
+          )} /> : null}
           <Controller name="code" control={form.control} render={({ field, fieldState }) => (
-            <TextField {...field} label="Code" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth />
+            <TextField {...field} label="Code" disabled={Boolean(category?.categoryType === 'CUSTOM_PERCENTAGE')} error={Boolean(fieldState.error)} helperText={fieldState.error?.message ?? (category?.categoryType === 'CUSTOM_PERCENTAGE' ? 'Code remains stable after creation.' : undefined)} fullWidth />
           )} />
           <Controller name="name" control={form.control} render={({ field, fieldState }) => (
             <TextField {...field} label="Name" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth />
           )} />
-          <Controller name="treatment" control={form.control} render={({ field, fieldState }) => (
+          {categoryType === 'STANDARD' ? <Controller name="treatment" control={form.control} render={({ field, fieldState }) => (
             <TextField {...field} select label="Treatment" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
               {taxTreatments.map((treatment) => <MenuItem key={treatment} value={treatment}>{displayEnum(treatment)}</MenuItem>)}
             </TextField>
-          )} />
+          )} /> : <Controller name="percentageRate" control={form.control} render={({ field, fieldState }) => (
+            <TextField {...field} value={field.value ?? ''} type="number" label="Percentage" InputProps={{ endAdornment: '%' }} inputProps={{ min: 0, max: 100, step: '0.01' }} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth />
+          )} />}
           <Controller name="description" control={form.control} render={({ field, fieldState }) => (
             <TextField {...field} value={field.value ?? ''} label="Description" multiline minRows={3} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth />
           )} />
@@ -2422,7 +2450,7 @@ function TaxCategoryDialog({ open, category, groups, loading, error, onClose, on
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button type="submit" form="tax-category-form" variant="contained" startIcon={<SaveIcon />} disabled={loading}>
-          {category ? 'Save changes' : 'Create category'}
+          {category ? 'Save changes' : initialType === 'CUSTOM_PERCENTAGE' ? 'Create' : 'Create category'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -2431,7 +2459,7 @@ function TaxCategoryDialog({ open, category, groups, loading, error, onClose, on
 
 export function TaxCategoriesPage() {
   const { getValidAccessToken } = useSession();
-  const { canView, canManage } = useTaxPermissions();
+  const { canView, canManage, isOwner } = useTaxPermissions();
   const queryClient = useQueryClient();
   const [filters, setFilters] = React.useState({ taxGroupId: '', code: '', name: '', treatment: '' as '' | TaxTreatment, active: '' as '' | 'true' | 'false' });
   const [appliedFilters, setAppliedFilters] = React.useState(filters);
@@ -2439,6 +2467,7 @@ export function TaxCategoriesPage() {
   const [size, setSize] = React.useState(10);
   const [editing, setEditing] = React.useState<TaxCategory | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [createType, setCreateType] = React.useState<'STANDARD' | 'CUSTOM_PERCENTAGE'>('CUSTOM_PERCENTAGE');
   const groupOptions = useTaxGroupOptions(canView);
 
   const params = React.useMemo<TaxCategorySearchParams>(() => ({
@@ -2523,7 +2552,10 @@ export function TaxCategoriesPage() {
       {statusMutation.isError ? <Alert severity="error">{errorMessage(statusMutation.error)}</Alert> : null}
       <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <ListHeader title="Tax category list" count={categories.data?.totalElements ?? 0} refreshLabel="Refresh tax categories" onRefresh={() => void categories.refetch()}>
-          {canManage ? <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditing(null); setDialogOpen(true); }}>New category</Button> : null}
+          {canManage ? <Stack direction="row" spacing={1}>
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={() => { setEditing(null); setCreateType('STANDARD'); setDialogOpen(true); }}>New category</Button>
+            {isOwner ? <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditing(null); setCreateType('CUSTOM_PERCENTAGE'); setDialogOpen(true); }}>Add Custom Tax Category</Button> : null}
+          </Stack> : null}
         </ListHeader>
         {categories.isLoading || groupOptions.isLoading ? <LoadingPanel label="Loading tax categories" /> : null}
         {categories.isError ? <Alert severity="error" sx={{ m: 2 }}>{errorMessage(categories.error)}</Alert> : null}
@@ -2535,11 +2567,13 @@ export function TaxCategoriesPage() {
               { label: 'Code', value: (category) => category.code, strong: true },
               { label: 'Name', value: (category) => category.name },
               { label: 'Treatment', value: (category) => displayEnum(category.treatment) },
+              { label: 'Type', value: (category) => category.categoryType === 'CUSTOM_PERCENTAGE' ? 'Custom percentage' : 'Standard' },
+              { label: 'Rate', value: (category) => category.percentageRate == null ? 'System' : `${category.percentageRate.toFixed(2)}%` },
               { label: 'Status', value: (category) => statusChip(category.active) }
             ]}
-            canManage={canManage}
+            canManage={(category) => canManage && (category.categoryType !== 'CUSTOM_PERCENTAGE' || (isOwner && !category.systemManaged))}
             emptyLabel="No tax categories found."
-            onEdit={(category) => { setEditing(category); setDialogOpen(true); }}
+            onEdit={(category) => { setEditing(category); setCreateType(category.categoryType ?? 'STANDARD'); setDialogOpen(true); }}
             onStatus={(category) => statusMutation.mutate(category)}
             statusPending={statusMutation.isPending}
           />
@@ -2549,7 +2583,7 @@ export function TaxCategoriesPage() {
           setPage(0);
         }} />
       </TableContainer>
-      <TaxCategoryDialog open={dialogOpen} category={editing} groups={groups} loading={saveMutation.isPending} error={saveMutation.isError ? errorMessage(saveMutation.error) : undefined} onClose={() => {
+      <TaxCategoryDialog open={dialogOpen} category={editing} initialType={createType} groups={groups} loading={saveMutation.isPending} error={saveMutation.isError ? errorMessage(saveMutation.error) : undefined} onClose={() => {
         if (!saveMutation.isPending) {
           setDialogOpen(false);
           setEditing(null);

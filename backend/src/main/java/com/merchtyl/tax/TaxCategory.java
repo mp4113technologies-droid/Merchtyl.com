@@ -13,8 +13,20 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "tax_categories", uniqueConstraints = @UniqueConstraint(name = "uq_tax_categories_code", columnNames = "code"))
+@Table(name = "tax_categories")
 public class TaxCategory extends BaseUuidEntity {
+    @Column(name = "tenant_id")
+    private java.util.UUID tenantId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category_type", nullable = false, length = 32)
+    private TaxCategoryType categoryType = TaxCategoryType.STANDARD;
+
+    @Column(name = "percentage_rate", precision = 9, scale = 4)
+    private java.math.BigDecimal percentageRate;
+
+    @Column(name = "system_managed", nullable = false)
+    private boolean systemManaged = true;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tax_group_id", foreignKey = @ForeignKey(name = "fk_tax_categories_group"))
     private TaxGroup taxGroup;
@@ -41,6 +53,16 @@ public class TaxCategory extends BaseUuidEntity {
     public TaxCategory(TaxGroup taxGroup, String code, String name, TaxTreatment treatment, String description, boolean active) {
         update(taxGroup, code, name, treatment, description, active);
         initializeIdAndTimestamps();
+    }
+
+    public static TaxCategory customPercentage(java.util.UUID tenantId, String code, String name,
+                                                java.math.BigDecimal percentageRate, String description, boolean active) {
+        TaxCategory category = new TaxCategory(null, code, name, TaxTreatment.STANDARD, description, active);
+        category.tenantId = tenantId;
+        category.categoryType = TaxCategoryType.CUSTOM_PERCENTAGE;
+        category.percentageRate = percentageRate;
+        category.systemManaged = false;
+        return category;
     }
 
     public void update(TaxGroup taxGroup, String code, String name, TaxTreatment treatment, String description, boolean active) {
@@ -78,5 +100,17 @@ public class TaxCategory extends BaseUuidEntity {
 
     public boolean isActive() {
         return active;
+    }
+
+    public java.util.UUID getTenantId() { return tenantId; }
+    public TaxCategoryType getCategoryType() { return categoryType; }
+    public java.math.BigDecimal getPercentageRate() { return percentageRate; }
+    public boolean isSystemManaged() { return systemManaged; }
+
+    public void updateCustom(String name, java.math.BigDecimal rate, String description, boolean active) {
+        this.name = name;
+        this.percentageRate = rate;
+        this.description = description;
+        this.active = active;
     }
 }
