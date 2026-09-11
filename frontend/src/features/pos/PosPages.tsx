@@ -690,6 +690,7 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             {item.discountAmount > 0 ? (
               <Typography variant="caption" color="text.secondary">Discount {money(item.discountAmount, receipt.currencyCode)}</Typography>
             ) : null}
+            {(item.foodMenuComponents?.length || item.foodMenuModifiers?.length) ? <Box sx={{pl:1}}>{(item.foodMenuComponents??[]).filter(value=>value.state==='REMOVED').map(value=><Typography key={`${value.componentId}-removed`} variant="caption" color="text.secondary" display="block">No {value.name}</Typography>)}{(item.foodMenuModifiers??[]).map(value=><Typography key={value} variant="caption" color="text.secondary" display="block">{value}</Typography>)}{(item.foodMenuComponents??[]).filter(value=>value.state==='EXTRA').map(value=><Typography key={`${value.componentId}-extra`} variant="caption" color="text.secondary" display="block">Extra {value.name}{value.priceAdjustment>0?` +${money(value.priceAdjustment,receipt.currencyCode)}`:''}</Typography>)}</Box>:null}
             {(item.depositTotal ?? 0) > 0 ? (
               <Box sx={{ ml: 1.5, mt: 0.25 }}>
                 <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="baseline">

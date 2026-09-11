@@ -479,6 +479,7 @@ export function receiptHtml(receipt: ReceiptDocument, widthMm = 80) {
     .deposit-label { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
     .deposit-amount { flex: 0 0 auto; white-space: nowrap; text-align: right; }
     .deposit-calculation { margin-top: .25mm; font-size: 10px; line-height: 1.2; }
+    .food-customization { padding: 0 0 .5mm 2mm; font-size: 10px; color: #444; }
     @media screen {
       body { background: #f4f4f5; padding: 16px; }
       .receipt { margin: 0 auto; background: #fff; box-shadow: 0 12px 36px rgba(15, 23, 42, .18); }
@@ -508,6 +509,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
       <td class="money">${formatMoney(item.lineSubtotal - (item.depositTotal ?? 0), receipt.currencyCode)}</td>
     </tr>
       ${item.discountAmount > 0 ? `<tr><td colspan="3" class="muted">${escapeHtml(item.promotionName || 'Discount')} -${formatMoney(item.discountAmount, receipt.currencyCode)}</td></tr>` : ''}
+      ${(item.foodMenuComponents?.length || item.foodMenuModifiers?.length) ? `<tr><td colspan="3" class="food-customization">${(item.foodMenuComponents??[]).filter(value=>value.state==='REMOVED').map(value=>`<div>No ${escapeHtml(value.name)}</div>`).join('')}${(item.foodMenuModifiers??[]).map(value=>`<div>${escapeHtml(value)}</div>`).join('')}${(item.foodMenuComponents??[]).filter(value=>value.state==='EXTRA').map(value=>`<div>Extra ${escapeHtml(value.name)}${value.priceAdjustment>0?` +${formatMoney(value.priceAdjustment,receipt.currencyCode)}`:''}</div>`).join('')}</td></tr>` : ''}
       ${(item.depositTotal ?? 0) > 0 ? `<tr><td colspan="3" class="deposit-cell"><div class="deposit-block"><div class="deposit-row"><span class="deposit-label">${escapeHtml(receiptDepositLabel(item.depositType))}</span><span class="deposit-amount">${formatMoney(item.depositTotal ?? 0, receipt.currencyCode)}</span></div>${(item.depositQuantity ?? item.quantity) > 1 ? `<div class="deposit-calculation muted">${formatQuantity(item.depositQuantity ?? item.quantity)} × ${formatMoney(item.depositUnitAmount ?? 0, receipt.currencyCode)}</div>` : ''}</div></td></tr>` : ''}
   `).join('');
 

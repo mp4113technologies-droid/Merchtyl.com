@@ -15,16 +15,18 @@ public record SaleCheckoutItemRequest(
         UUID foodMenuItemId,
         UUID foodMenuItemVariantId,
         java.util.List<UUID> foodMenuModifierOptionIds,
+        java.util.List<com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest> foodMenuComponentSelections,
+        @Size(max = 255) String preparationInstructions,
         @Size(max = 180) String description,
         BigDecimal unitPrice,
         CustomItemTaxTreatment taxTreatment,
         @NotNull @DecimalMin(value = "0.0001") BigDecimal quantity,
         Boolean ageVerified
 ) {
-    public SaleCheckoutItemRequest(SaleLineType lineType,UUID productId,UUID variantId,UUID foodMenuItemId,String description,BigDecimal unitPrice,CustomItemTaxTreatment taxTreatment,BigDecimal quantity,Boolean ageVerified){this(lineType,productId,variantId,foodMenuItemId,null,null,description,unitPrice,taxTreatment,quantity,ageVerified);}
+    public SaleCheckoutItemRequest(SaleLineType lineType,UUID productId,UUID variantId,UUID foodMenuItemId,String description,BigDecimal unitPrice,CustomItemTaxTreatment taxTreatment,BigDecimal quantity,Boolean ageVerified){this(lineType,productId,variantId,foodMenuItemId,null,null,null,null,description,unitPrice,taxTreatment,quantity,ageVerified);}
     public SaleCheckoutItemRequest(UUID productId, UUID variantId, UUID foodMenuItemId,
                                    BigDecimal quantity, Boolean ageVerified) {
-        this(SaleLineType.CATALOG_PRODUCT, productId, variantId, foodMenuItemId, null, null, null, null, null,
+        this(SaleLineType.CATALOG_PRODUCT, productId, variantId, foodMenuItemId, null, null, null, null, null, null, null,
                 quantity, ageVerified);
     }
 

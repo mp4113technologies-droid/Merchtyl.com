@@ -422,9 +422,12 @@ export type FoodMenuCategory = { id: string; storeId: string; name: string; disp
 export type FoodMenuItemVariant = { id: string; name: string; price: number; displayOrder: number; available: boolean };
 export type FoodMenuModifierOption = { id: string; name: string; priceAdjustment: number; displayOrder: number; available: boolean };
 export type FoodMenuModifierGroup = { id: string; name: string; minimumSelections: number; maximumSelections: number; displayOrder: number; options: FoodMenuModifierOption[] };
-export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; variants?: FoodMenuItemVariant[]; modifierGroups?: FoodMenuModifierGroup[]; version: number };
+export type FoodComponentSelectionState = 'REMOVED' | 'EXTRA';
+export type FoodMenuItemComponent = { id: string; name: string; includedByDefault: boolean; removable: boolean; allowExtra: boolean; extraPrice: number; displayOrder: number; active: boolean };
+export type FoodComponentSnapshot = { componentId: string; state: FoodComponentSelectionState; name: string; priceAdjustment: number };
+export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; variants?: FoodMenuItemVariant[]; modifierGroups?: FoodMenuModifierGroup[]; components?: FoodMenuItemComponent[]; version: number };
 export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
-export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string; variants?: Array<{name:string;price:number;displayOrder:number;available:boolean}>; modifierGroups?: Array<{name:string;minimumSelections:number;maximumSelections:number;displayOrder:number;options:Array<{name:string;priceAdjustment:number;displayOrder:number;available:boolean}>}> };
+export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string; variants?: Array<{name:string;price:number;displayOrder:number;available:boolean}>; modifierGroups?: Array<{name:string;minimumSelections:number;maximumSelections:number;displayOrder:number;options:Array<{name:string;priceAdjustment:number;displayOrder:number;available:boolean}>}>; components?: Array<{name:string;includedByDefault:boolean;removable:boolean;allowExtra:boolean;extraPrice:number;displayOrder:number;active:boolean}> };
 export type DiscountType = 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT' | 'MULTI_BUY_FIXED_PRICE';
 export type PromotionDomain = 'RETAIL' | 'FOOD_SERVICE';
 export type PromotionTargetType = 'PRODUCT' | 'PRODUCT_VARIANT' | 'PRODUCT_CATEGORY' | 'MENU_ITEM' | 'MENU_ITEM_VARIANT' | 'MENU_CATEGORY';
@@ -1862,6 +1865,7 @@ export type SaleItem = {
   foodMenuItemName?: string | null;
   foodMenuItemVariantName?: string | null;
   foodMenuModifiers?: string[];
+  foodMenuComponents?: FoodComponentSnapshot[];
   depositType?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER' | null;
   depositUnitAmount?: number | null;
   depositQuantity?: number;
@@ -2072,6 +2076,8 @@ export type ReceiptItem = {
   depositUnitAmount?: number | null;
   depositQuantity?: number;
   depositTotal?: number;
+  foodMenuComponents?: FoodComponentSnapshot[];
+  foodMenuModifiers?: string[];
 };
 
 export type ReceiptTaxSummary = {
@@ -2128,6 +2134,8 @@ export type KitchenTicketItem = {
   name: string;
   quantity: number;
   modifiers: string[];
+  removedComponents?: string[];
+  extraComponents?: string[];
   preparationInstructions: string | null;
 };
 

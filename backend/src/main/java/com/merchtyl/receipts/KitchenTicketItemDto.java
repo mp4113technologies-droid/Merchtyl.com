@@ -9,6 +9,8 @@ public record KitchenTicketItemDto(
         String name,
         BigDecimal quantity,
         List<String> modifiers,
+        List<String> removedComponents,
+        List<String> extraComponents,
         String preparationInstructions
 ) {
 }

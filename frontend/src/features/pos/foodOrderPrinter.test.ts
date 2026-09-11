@@ -14,7 +14,7 @@ function ticket(reprint = false): KitchenTicket {
     documentType: 'KITCHEN_TICKET', saleId: 'sale-1', tokenNumber: 'A104', storeName: 'Merchtyl Restaurant',
     registerName: 'Restaurant Register 1', cashierName: 'John', orderTime: '2026-09-02T00:42:00Z',
     orderType: 'TAKEOUT', tableNumber: null, orderNotes: 'Extra sauce\nNo peanuts', reprint,
-    items: [{ saleItemId: 'item-1', name: 'Monkey Fingers', quantity: 2, modifiers: ['+ Extra Cheese', '- No Onion'], preparationInstructions: 'Spicy' }]
+    items: [{ saleItemId: 'item-1', name: 'Monkey Fingers', quantity: 2, modifiers: ['+ Extra Cheese'], removedComponents: ['Onion','Tomato'], extraComponents: ['Pickles'], preparationInstructions: 'Spicy' }]
   };
 }
 
@@ -33,6 +33,9 @@ describe('food order printing', () => {
     expect(html).toContain('TOKEN A104');
     expect(html).toContain('2 x MONKEY FINGERS');
     expect(html).toContain('+ Extra Cheese');
+    expect(html).toContain('*** NO ONION ***');
+    expect(html).toContain('*** NO TOMATO ***');
+    expect(html).toContain('+ EXTRA PICKLES');
     expect(html).toContain('Extra sauce');
     expect(html).not.toMatch(/\$|Subtotal|Tax|Total|Payment|Tendered|Change/);
     expect(html).not.toContain(ticket().saleId);

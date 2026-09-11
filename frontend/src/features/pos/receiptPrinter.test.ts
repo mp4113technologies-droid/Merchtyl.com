@@ -206,6 +206,20 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('Powered by');
   });
 
+  it('renders snapshotted restaurant component changes subtly on the customer receipt', () => {
+    const document = receipt();
+    document.items[0].foodMenuComponents = [
+      { componentId: 'tomato-id', state: 'REMOVED', name: 'Tomato', priceAdjustment: 0 },
+      { componentId: 'pickle-id', state: 'EXTRA', name: 'Pickles', priceAdjustment: 0.5 }
+    ];
+    document.items[0].foodMenuModifiers = ['+ Bacon'];
+    const html = receiptHtml(document, 58);
+    expect(html).toContain('No Tomato');
+    expect(html).toContain('Extra Pickles');
+    expect(html).toContain('+ Bacon');
+    expect(html).not.toContain('tomato-id');
+  });
+
   it('removes Retail SKU and internal entity IDs from the customer receipt', () => {
     const document = receipt();
     document.saleId = 'sale-uuid-not-for-customer';

@@ -21,6 +21,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -138,8 +139,59 @@ class FoodMenuIntegrationTest {
     }
 
     @Test
+    void updatesExistingItemWithoutCollidingWithItsRetainedVariantNames() throws Exception {
+        String token = register("variant-update@foodmenu.test");
+        JsonNode store = createFoodStore(token, "VARIANTUPDATE");
+        JsonNode category = createCategory(token, store.get("id").asText(), "Pizza");
+        String item = mockMvc.perform(post("/api/v1/stores/{storeId}/food-menu/items", store.get("id").asText())
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                          {"categoryId":"%s","displayName":"Pizza","price":0,"displayOrder":1,"available":true,
+                           "variants":[{"name":"Small","price":10,"displayOrder":1,"available":true},{"name":"Large","price":18,"displayOrder":2,"available":true}]}
+                          """.formatted(category.get("id").asText())))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String itemId = objectMapper.readTree(item).get("id").asText();
+
+        mockMvc.perform(put("/api/v1/stores/{storeId}/food-menu/items/{itemId}", store.get("id").asText(), itemId)
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                          {"categoryId":"%s","displayName":"Pizza","price":0,"displayOrder":1,"available":true,
+                           "variants":[{"name":"Small","price":11,"displayOrder":1,"available":true},{"name":"Large","price":19,"displayOrder":2,"available":true}]}
+                          """.formatted(category.get("id").asText())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.variants.length()").value(2))
+                .andExpect(jsonPath("$.variants[0].name").value("Small"))
+                .andExpect(jsonPath("$.variants[0].price").value(11));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from food_menu_item_variants where menu_item_id = ?", Integer.class, UUID.fromString(itemId)))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void createsAndReadsIncludedComponentsInTheMenuAggregate() throws Exception {
+        String token = register("components@foodmenu.test");
+        JsonNode store = createFoodStore(token, "COMPONENTS");
+        JsonNode category = createCategory(token, store.get("id").asText(), "Burgers");
+        mockMvc.perform(post("/api/v1/stores/{storeId}/food-menu/items", store.get("id").asText())
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                          {"categoryId":"%s","displayName":"Burger","price":10,"displayOrder":1,"available":true,
+                           "components":[
+                             {"name":"Tomato","includedByDefault":true,"removable":true,"allowExtra":false,"extraPrice":0,"displayOrder":1,"active":true},
+                             {"name":"Pickles","includedByDefault":true,"removable":true,"allowExtra":true,"extraPrice":0.50,"displayOrder":2,"active":true}]}
+                          """.formatted(category.get("id").asText())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.components[0].name").value("Tomato"))
+                .andExpect(jsonPath("$.components[1].extraPrice").value(0.5));
+        mockMvc.perform(get("/api/v1/stores/{storeId}/food-menu/items", store.get("id").asText()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].components.length()").value(2));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from food_menu_item_components where menu_item_id=(select id from food_menu_items where display_name='Burger')",Integer.class)).isEqualTo(2);
+    }
+
+    @Test
     void madeToOrderMigrationIsApplied() {
-        assertThat(Integer.parseInt(flyway.info().current().getVersion().getVersion())).isGreaterThanOrEqualTo(91);
+        assertThat(Integer.parseInt(flyway.info().current().getVersion().getVersion())).isGreaterThanOrEqualTo(117);
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT count(*)
                   FROM information_schema.columns

@@ -220,7 +220,9 @@ public class ReceiptService {
                 item.getDepositType(),
                 item.getDepositUnitAmount(),
                 item.getDepositQuantity(),
-                item.getDepositTotal());
+                item.getDepositTotal(),
+                item.getMenuComponents(),
+                item.getMenuModifiers());
     }
 
     private ReceiptPaymentDto payment(Payment payment) {

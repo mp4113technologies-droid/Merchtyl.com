@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
 
@@ -42,5 +42,72 @@ describe('Food menu management',()=>{
     await userEvent.click(screen.getByRole('button',{name:'Add'}));
     expect(submitted).toEqual(expect.objectContaining({displayName:'Samosa',categoryId:'cat',price:2.49}));
     expect(submitted?.productId).toBeUndefined();
+  });
+
+  it('keeps stable focus and row identity while editing variants and modifiers', async () => {
+    const requests:string[]=[];
+    let saved:Record<string,unknown>|undefined;
+    vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),location.origin);requests.push(`${init?.method??'GET'} ${url.pathname}`);
+      if(url.pathname.endsWith('/auth/me'))return json({userId:'owner',email:'owner@test',displayName:'Owner',roles:['TENANT_OWNER'],permissions:['FOOD_ORDER_UPDATE']});
+      if(url.pathname.endsWith('/stores'))return json(page([{id:storeId,name:'Kitchen',code:'K',capabilities:['FOOD_SERVICE']}]));
+      if(url.pathname.endsWith('/food-menu/categories'))return json([{id:'cat',storeId,name:'Entrees',displayOrder:1,active:true}]);
+      if(url.pathname.endsWith('/food-menu/items')&&(!init?.method||init.method==='GET'))return json([{id:'item',storeId,categoryId:'cat',categoryName:'Entrees',productId:null,productName:null,displayName:'Monkey Fingers',description:null,price:8,inventoryTracked:false,madeToOrder:true,displayOrder:1,available:true,imageUrl:null,variants:[],modifierGroups:[],version:0}]);
+      if(url.pathname.endsWith('/food-menu/items/item')&&init?.method==='PUT'){saved=JSON.parse(String(init.body));return json({});}
+      if(url.pathname.endsWith('/products'))return json(page([]));
+      return json({},404);
+    });
+    render(<App initialEntries={['/food-menu']}/>);
+    await screen.findByText('Monkey Fingers');
+    await userEvent.click(screen.getByLabelText('Menu item'));
+    await userEvent.click(await screen.findByRole('option',{name:'Monkey Fingers'}));
+
+    for (const [name,price] of [['Small','10.99'],['Medium','14.99'],['Large','18.99']]) {
+      await userEvent.click(screen.getByRole('button',{name:'Add Variant'}));
+      const names=screen.getAllByLabelText('Variant name');
+      const prices=screen.getAllByLabelText('Variant price');
+      const nameInput=names[names.length-1];
+      await userEvent.type(nameInput,name);
+      expect(nameInput).toHaveValue(name);
+      expect(nameInput).toHaveFocus();
+      await userEvent.clear(prices[prices.length-1]);
+      await userEvent.type(prices[prices.length-1],price);
+      expect(prices[prices.length-1]).toHaveValue(Number(price));
+      expect(prices[prices.length-1]).toHaveFocus();
+    }
+
+    const mediumRow=screen.getAllByTestId(/variant-row-/)[1];
+    await userEvent.click(within(mediumRow).getByRole('button',{name:'Remove Variant'}));
+    expect(screen.getAllByLabelText('Variant name').map(input=>(input as HTMLInputElement).value)).toEqual(['Small','Large']);
+    expect(screen.getAllByLabelText('Variant price').map(input=>(input as HTMLInputElement).valueAsNumber)).toEqual([10.99,18.99]);
+
+    await userEvent.click(screen.getByRole('button',{name:'Add Modifier Group'}));
+    const groupName=screen.getByLabelText('Modifier group name');
+    await userEvent.type(groupName,'Seasoning');
+    expect(groupName).toHaveValue('Seasoning');
+    expect(groupName).toHaveFocus();
+    for (const optionName of ['Mild','Medium','Hot','Peri Peri']) {
+      await userEvent.click(screen.getByRole('button',{name:'Add Modifier'}));
+      const inputs=screen.getAllByLabelText('Modifier name');
+      const input=inputs[inputs.length-1];
+      await userEvent.type(input,optionName);
+      expect(input).toHaveValue(optionName);
+      expect(input).toHaveFocus();
+    }
+    const modifierPrices=screen.getAllByLabelText('Added price');
+    for (const [index,price] of ['0.25','0.50','0.75','1.00'].entries()) {
+      await userEvent.clear(modifierPrices[index]);
+      await userEvent.type(modifierPrices[index],price);
+      expect(modifierPrices[index]).toHaveValue(Number(price));
+      expect(modifierPrices[index]).toHaveFocus();
+    }
+    const mediumModifierRow=screen.getAllByTestId(/modifier-row-/)[1];
+    await userEvent.click(within(mediumModifierRow).getByRole('button',{name:'Remove Modifier'}));
+    expect(screen.getAllByLabelText('Modifier name').map(input=>(input as HTMLInputElement).value)).toEqual(['Mild','Hot','Peri Peri']);
+    expect(screen.getAllByLabelText('Added price').map(input=>(input as HTMLInputElement).valueAsNumber)).toEqual([0.25,0.75,1]);
+    expect(requests.some(request=>request.startsWith('PUT '))).toBe(false);
+    await userEvent.click(screen.getByRole('button',{name:'Save configuration'}));
+    await waitFor(()=>expect(saved).toBeDefined());
+    expect((saved?.variants as Array<{name:string}>).map(value=>value.name)).toEqual(['Small','Large']);
+    expect(((saved?.modifierGroups as Array<{name:string;options:Array<{name:string}>}>)[0]).options.map(value=>value.name)).toEqual(['Mild','Hot','Peri Peri']);
   });
 });

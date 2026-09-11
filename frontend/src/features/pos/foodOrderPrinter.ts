@@ -10,12 +10,14 @@ export function kitchenTicketHtml(ticket: KitchenTicket, widthMm = 80) {
     <section class="item">
       <strong>${quantity(item.quantity)} x ${escapeHtml(item.name).toUpperCase()}</strong>
       ${item.modifiers.map((modifier) => `<div class="modifier">${escapeHtml(modifier)}</div>`).join('')}
+      ${(item.removedComponents ?? []).map((component) => `<div class="component-removal">*** NO ${escapeHtml(component).toUpperCase()} ***</div>`).join('')}
+      ${(item.extraComponents ?? []).map((component) => `<div class="component-extra">+ EXTRA ${escapeHtml(component).toUpperCase()}</div>`).join('')}
       ${item.preparationInstructions ? `<div class="instruction">${escapeHtml(item.preparationInstructions)}</div>` : ''}
     </section>`).join('');
   return `<!doctype html><html><head><meta charset="utf-8"><title>Kitchen ${escapeHtml(ticket.tokenNumber)}</title><style>
     @page{size:${widthMm}mm auto;margin:0}*{box-sizing:border-box}body{margin:0;background:#fff;color:#000;font-family:ui-monospace,monospace;font-size:14px}
     main{width:${widthMm}mm;padding:4mm}.center{text-align:center}.token{font-size:28px;font-weight:900;margin:2mm 0}.reprint{font-size:20px;font-weight:900;border:2px solid #000;padding:2mm;margin-bottom:3mm}
-    .rule{border-top:2px dashed #000;margin:3mm 0}.meta{font-size:12px}.item{margin:3mm 0;font-size:18px}.modifier,.instruction{font-size:14px;margin-left:5mm}.instruction{font-weight:700}
+    .rule{border-top:2px dashed #000;margin:3mm 0}.meta{font-size:12px}.item{margin:3mm 0;font-size:18px}.modifier,.instruction,.component-removal,.component-extra{font-size:14px;margin-left:5mm}.instruction{font-weight:700}.component-removal{font-weight:900;font-size:16px;margin-top:1mm}.component-extra{font-weight:800}
     .notes{font-size:16px;font-weight:700;white-space:pre-wrap}@media screen{body{background:#eee;padding:16px}main{margin:auto;background:#fff}}
   </style></head><body><main>
     ${ticket.reprint ? '<div class="center reprint">*** REPRINT ***</div>' : ''}

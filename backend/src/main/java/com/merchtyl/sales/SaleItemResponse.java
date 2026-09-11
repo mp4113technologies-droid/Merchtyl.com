@@ -43,6 +43,7 @@ public record SaleItemResponse(
         String foodMenuItemName,
         String foodMenuItemVariantName,
         java.util.List<String> foodMenuModifiers,
+        java.util.List<FoodComponentSnapshot> foodMenuComponents,
         DepositType depositType,
         BigDecimal depositUnitAmount,
         BigDecimal depositQuantity,
@@ -58,7 +59,7 @@ public record SaleItemResponse(
         this(id, SaleLineType.CATALOG_PRODUCT, productId, null, lineNumber, productSku, productName, null, null, null, quantity, unitPrice,
                 discountAmount, null,null,null,null,null,null,null,null, completedProductCost, completedProductPrice, completedProductCapabilities,
                 priceOverride, ageVerified, serialNumber, externalReference, customerId, paymentMethodCode,
-                lineSubtotal, estimatedTaxAmount, lineTotal, null, null, null, null, java.util.List.of(),
+                lineSubtotal, estimatedTaxAmount, lineTotal, null, null, null, null, java.util.List.of(), java.util.List.of(),
                 null, null, BigDecimal.ZERO, BigDecimal.ZERO, version);
     }
 
@@ -96,6 +97,7 @@ public record SaleItemResponse(
                 item.getItemNameSnapshot(),
                 item.getMenuVariantNameSnapshot(),
                 item.getMenuModifiers(),
+                item.getMenuComponents(),
                 item.getDepositType(),
                 item.getDepositUnitAmount(),
                 item.getDepositQuantity(),

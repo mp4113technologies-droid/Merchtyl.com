@@ -24,7 +24,9 @@ public record ReceiptItemDto(
         DepositType depositType,
         BigDecimal depositUnitAmount,
         BigDecimal depositQuantity,
-        BigDecimal depositTotal
+        BigDecimal depositTotal,
+        java.util.List<com.merchtyl.sales.FoodComponentSnapshot> foodMenuComponents,
+        java.util.List<String> foodMenuModifiers
 ) {
     public ReceiptItemDto(UUID id, UUID productId, int lineNumber, String ignoredProductSku,
             String productName, BigDecimal quantity, BigDecimal unitPrice, BigDecimal completedProductCost,
@@ -32,6 +34,6 @@ public record ReceiptItemDto(
             BigDecimal lineSubtotal, BigDecimal taxAmount, BigDecimal lineTotal) {
         this(id, productId, lineNumber, productName, quantity, unitPrice, completedProductCost,
                 completedProductPrice, completedProductCapabilities, discountAmount, lineSubtotal, taxAmount, lineTotal,
-                null,null,null,null,null,BigDecimal.ZERO,BigDecimal.ZERO);
+                null,null,null,null,null,BigDecimal.ZERO,BigDecimal.ZERO,java.util.List.of(),java.util.List.of());
     }
 }

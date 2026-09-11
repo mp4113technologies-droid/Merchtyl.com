@@ -913,6 +913,8 @@ export type SaleCheckoutPayload = {
     foodMenuItemId?: string;
     foodMenuItemVariantId?: string;
     foodMenuModifierOptionIds?: string[];
+    foodMenuComponentSelections?: Array<{ componentId: string; state: 'REMOVED' | 'EXTRA' }>;
+    preparationInstructions?: string;
     description?: string;
     unitPrice?: number;
     taxTreatment?: 'TAXABLE' | 'NON_TAXABLE';

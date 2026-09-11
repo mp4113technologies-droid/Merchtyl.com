@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { checkoutSaleCart, completeSale, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, holdSale, listActiveStoreDiscounts, listFoodMenuCategories, listFoodMenuItems, listSales, listStores, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt, resumeSale } from '../../api/client';
-import type { FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
+import type { FoodComponentSelectionState, FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { posTokens } from '../../app/theme';
@@ -31,6 +31,8 @@ function completionKey() {
 }
 
 type FoodPrintStates = Record<FoodPrintDocument, { status: FoodPrintStatus; error?: string }>;
+type ComponentChoice = { componentId:string; state:FoodComponentSelectionState; name:string; priceAdjustment:number };
+type FoodCartLine = { key:string; item:FoodMenuItem; quantity:number; variantId?:string; variantName?:string; unitPrice:number; modifierOptionIds:string[]; modifierNames:string[]; componentChoices:ComponentChoice[]; preparationInstructions:string };
 
 function freshPrintStates(): FoodPrintStates {
   return {
@@ -44,10 +46,12 @@ export function FoodPosPage() {
   const { currentUser, getValidAccessToken } = useSession();
   const [categoryId, setCategoryId] = React.useState<string | null>(null);
   const [sale, setSale] = React.useState<Sale | null>(null);
-  const [cart, setCart] = React.useState<Array<{ key:string; item: FoodMenuItem; quantity: number; variantId?:string; variantName?:string; unitPrice:number; modifierOptionIds:string[]; modifierNames:string[] }>>([]);
+  const [cart, setCart] = React.useState<FoodCartLine[]>([]);
   const [configuring, setConfiguring] = React.useState<FoodMenuItem | null>(null);
   const [chosenVariant, setChosenVariant] = React.useState('');
   const [chosenModifiers, setChosenModifiers] = React.useState<string[]>([]);
+  const [chosenComponents, setChosenComponents] = React.useState<Record<string,FoodComponentSelectionState|undefined>>({});
+  const [preparationInstructions,setPreparationInstructions]=React.useState('');
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [discount, setDiscount] = React.useState<OrderDiscount | null>(null);
   const [discountOpen, setDiscountOpen] = React.useState(false);
@@ -75,7 +79,7 @@ export function FoodPosPage() {
       const raw = localStorage.getItem(`merchtyl.food-pos-state:${current.data.id}`);
       if (!raw) return;
       const saved = JSON.parse(raw) as { cart?: typeof cart; sale?: Sale | null; discount?: OrderDiscount | null };
-      if (Array.isArray(saved.cart)) setCart(saved.cart.map((line,index) => ({...line,key:line.key??`${line.item.id}:restored-${index}`,unitPrice:line.unitPrice??line.item.price,modifierOptionIds:line.modifierOptionIds??[],modifierNames:line.modifierNames??[]})));
+      if (Array.isArray(saved.cart)) setCart(saved.cart.map((line,index) => ({...line,key:line.key??`${line.item.id}:restored-${index}`,unitPrice:line.unitPrice??line.item.price,modifierOptionIds:line.modifierOptionIds??[],modifierNames:line.modifierNames??[],componentChoices:line.componentChoices??[],preparationInstructions:line.preparationInstructions??''})));
       if (saved.sale) setSale(saved.sale);
       if (saved.discount) setDiscount(saved.discount);
     } catch { /* A corrupt recovery snapshot must never prevent POS access. */ }
@@ -98,19 +102,20 @@ export function FoodPosPage() {
     setPaymentOpen(false);
   }
   function add(product: FoodMenuItem) {
-    if ((product.variants?.length ?? 0) > 0 || (product.modifierGroups?.length ?? 0) > 0) { setConfiguring(product); setChosenVariant(''); setChosenModifiers([]); return; }
+    if ((product.variants?.length ?? 0) > 0 || (product.modifierGroups?.length ?? 0) > 0 || (product.components?.some(value=>value.active) ?? false)) { setConfiguring(product); setChosenVariant(''); setChosenModifiers([]); setChosenComponents({}); setPreparationInstructions(''); return; }
     addConfigured(product);
   }
   function addConfigured(product: FoodMenuItem) {
     changeCart(lines => {
       const variant=product.variants?.find(value=>value.id===chosenVariant);
       const options=(product.modifierGroups??[]).flatMap(group=>group.options).filter(option=>chosenModifiers.includes(option.id));
-      const key=[product.id,variant?.id??'',...options.map(option=>option.id).sort()].join(':');
+      const componentChoices=(product.components??[]).filter(component=>component.active&&chosenComponents[component.id]).map(component=>({componentId:component.id,state:chosenComponents[component.id]!,name:component.name,priceAdjustment:chosenComponents[component.id]==='EXTRA'?component.extraPrice:0}));
+      const key=[product.id,variant?.id??'',...options.map(option=>option.id).sort(),...componentChoices.map(value=>`${value.componentId}-${value.state}`).sort(),preparationInstructions.trim()].join(':');
       setSelectedItemId(key);
       const existing = lines.find(line => line.key === key);
       return existing
         ? lines.map(line => line.key === key ? { ...line, quantity: line.quantity + 1 } : line)
-        : [...lines, { key,item: product, quantity: 1,variantId:variant?.id,variantName:variant?.name,unitPrice:(variant?.price??product.price)+options.reduce((sum,option)=>sum+option.priceAdjustment,0),modifierOptionIds:options.map(option=>option.id),modifierNames:options.map(option=>option.name) }];
+        : [...lines, { key,item: product, quantity: 1,variantId:variant?.id,variantName:variant?.name,unitPrice:(variant?.price??product.price)+options.reduce((sum,option)=>sum+option.priceAdjustment,0)+componentChoices.reduce((sum,value)=>sum+value.priceAdjustment,0),modifierOptionIds:options.map(option=>option.id),modifierNames:options.map(option=>option.name),componentChoices,preparationInstructions:preparationInstructions.trim() }];
     });
     setConfiguring(null);
   }
@@ -119,7 +124,7 @@ export function FoodPosPage() {
       return checkoutSaleCart(await getValidAccessToken(), {
         registerSessionId: current.data.id,
         saleChannel: 'POS',
-        items: cart.map(line => ({ foodMenuItemId: line.item.id, foodMenuItemVariantId:line.variantId,foodMenuModifierOptionIds:line.modifierOptionIds.length?line.modifierOptionIds:undefined, quantity: line.quantity })),
+        items: cart.map(line => ({ foodMenuItemId: line.item.id, foodMenuItemVariantId:line.variantId,foodMenuModifierOptionIds:line.modifierOptionIds.length?line.modifierOptionIds:undefined,foodMenuComponentSelections:line.componentChoices.length?line.componentChoices.map(({componentId,state})=>({componentId,state})):undefined,preparationInstructions:line.preparationInstructions||undefined, quantity: line.quantity })),
         discount: discount ? (discount.definitionId ? { discountDefinitionId: discount.definitionId } : { type: discount.type, value: discount.value, reason: discount.reason || undefined }) : undefined
       });
   }
@@ -152,10 +157,11 @@ export function FoodPosPage() {
         const modifierNames = (saleItem.foodMenuModifiers ?? []).map(name => name.replace(/^\+\s*/, ''));
         const modifierOptionIds = (item.modifierGroups ?? []).flatMap(group => group.options)
           .filter(option => modifierNames.includes(option.name)).map(option => option.id);
-        return { key: `${item.id}:${saleItem.foodMenuItemVariantId ?? ''}:${modifierOptionIds.sort().join(':')}:held-${index}`, item,
+        const componentChoices=(saleItem.foodMenuComponents??[]).map(value=>({...value}));
+        return { key: `${item.id}:${saleItem.foodMenuItemVariantId ?? ''}:${modifierOptionIds.sort().join(':')}:${componentChoices.map(value=>`${value.componentId}-${value.state}`).sort().join(':')}:held-${index}`, item,
           quantity: saleItem.quantity, variantId: saleItem.foodMenuItemVariantId ?? undefined,
           variantName: saleItem.foodMenuItemVariantName ?? undefined, unitPrice: saleItem.unitPrice,
-          modifierOptionIds, modifierNames };
+          modifierOptionIds, modifierNames,componentChoices,preparationInstructions:saleItem.externalReference??'' };
       }).filter((line): line is NonNullable<typeof line> => line !== null);
       setCart(restored);
       setSale(resumed);
@@ -257,11 +263,11 @@ export function FoodPosPage() {
           </Box>
 
           <Stack spacing={1} sx={{ minHeight: 0, overflowY: 'auto', p: 1.25 }}>
-            {cart.map(({ key, item, quantity, unitPrice, variantName, modifierNames }) => {
+            {cart.map(({ key, item, quantity, unitPrice, variantName, modifierNames,componentChoices,preparationInstructions }) => {
               const selected = selectedItemId === key;
               return <Paper key={key} component="article" variant="outlined" onClick={() => setSelectedItemId(key)} sx={{ p: 1.25, borderWidth: selected ? 2 : 1, borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? posTokens.colors.blueLight : '#fff', cursor: 'pointer' }}>
                 <Stack spacing={0.75}>
-                  <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start"><Box minWidth={0}><Typography fontWeight={800}>{item.displayName}</Typography>{variantName?<Typography variant="body2">{variantName}</Typography>:null}{modifierNames.map(name=><Typography key={name} variant="caption" display="block" color="text.secondary">+ {name}</Typography>)}</Box><Typography fontWeight={800} noWrap>{money(quantity * unitPrice, store?.currencyCode)}</Typography></Stack>
+                  <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start"><Box minWidth={0}><Typography fontWeight={800}>{item.displayName}</Typography>{variantName?<Typography variant="body2">{variantName}</Typography>:null}{componentChoices.filter(value=>value.state==='REMOVED').map(value=><Typography key={`${value.componentId}-removed`} variant="caption" display="block" color="error.main" fontWeight={800}>NO {value.name.toUpperCase()}</Typography>)}{modifierNames.map(name=><Typography key={name} variant="caption" display="block" color="text.secondary">+ {name}</Typography>)}{componentChoices.filter(value=>value.state==='EXTRA').map(value=><Typography key={`${value.componentId}-extra`} variant="caption" display="block" color="text.secondary">+ Extra {value.name}</Typography>)}{preparationInstructions?<Typography variant="caption" display="block" fontWeight={700}>Note: {preparationInstructions}</Typography>:null}</Box><Typography fontWeight={800} noWrap>{money(quantity * unitPrice, store?.currencyCode)}</Typography></Stack>
                   <Typography variant="body2" color="text.secondary">{quantity} × {money(unitPrice, store?.currencyCode)} = {money(quantity * unitPrice, store?.currencyCode)}</Typography>
                   <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                     <Stack direction="row" alignItems="center" spacing={0.5}>
@@ -336,7 +342,10 @@ export function FoodPosPage() {
         <DialogTitle>Customize {configuring?.displayName}</DialogTitle>
         <DialogContent><Stack spacing={2} sx={{pt:1}}>
           {(configuring?.variants?.length??0)>0?<Box><Typography fontWeight={800} mb={1}>Choose a variant</Typography><Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">{configuring?.variants?.filter(value=>value.available).map(value=><Button key={value.id} variant={chosenVariant===value.id?'contained':'outlined'} onClick={()=>setChosenVariant(value.id)} sx={{minHeight:52}}>{value.name} · {money(value.price,store?.currencyCode)}</Button>)}</Stack></Box>:null}
+          {(configuring?.components?.filter(value=>value.active&&value.includedByDefault).length??0)>0?<Box><Typography fontWeight={800}>Included</Typography><Stack spacing={1} mt={1}>{configuring?.components?.filter(value=>value.active&&value.includedByDefault).map(component=><Box key={component.id} sx={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:1}}><Typography>{component.name}</Typography>{component.allowExtra?<Stack direction="row" spacing={0.5}><Button size="small" variant={!chosenComponents[component.id]?'contained':'outlined'} onClick={()=>setChosenComponents(value=>({...value,[component.id]:undefined}))}>Normal</Button>{component.removable?<Button size="small" color="error" variant={chosenComponents[component.id]==='REMOVED'?'contained':'outlined'} onClick={()=>setChosenComponents(value=>({...value,[component.id]:'REMOVED'}))}>No</Button>:null}<Button size="small" variant={chosenComponents[component.id]==='EXTRA'?'contained':'outlined'} onClick={()=>setChosenComponents(value=>({...value,[component.id]:'EXTRA'}))}>Extra +{money(component.extraPrice,store?.currencyCode)}</Button></Stack>:<FormControlLabel control={<Checkbox checked={chosenComponents[component.id]!=='REMOVED'} disabled={!component.removable} onChange={(_,checked)=>setChosenComponents(value=>({...value,[component.id]:checked?undefined:'REMOVED'}))}/>} label={component.removable?'Included':'Always included'}/>}</Box>)}</Stack></Box>:null}
           {configuring?.modifierGroups?.map(group=><Box key={group.id}><Typography fontWeight={800}>{group.name}</Typography><Typography variant="caption" color="text.secondary">Choose {group.minimumSelections}–{group.maximumSelections}</Typography>{group.options.filter(option=>option.available).map(option=><FormControlLabel key={option.id} control={<Checkbox checked={chosenModifiers.includes(option.id)} onChange={(_,checked)=>setChosenModifiers(values=>checked?[...values,option.id]:values.filter(id=>id!==option.id))}/>} label={`${option.name}${option.priceAdjustment?` +${money(option.priceAdjustment,store?.currencyCode)}`:''}`}/>)}</Box>)}
+          <TextField label="Kitchen notes (optional)" value={preparationInstructions} onChange={event=>setPreparationInstructions(event.target.value)} inputProps={{maxLength:255}} multiline minRows={2}/>
+          {configuring?<Typography fontWeight={800}>Item total: {money((configuring.variants?.find(value=>value.id===chosenVariant)?.price??configuring.price)+(configuring.modifierGroups??[]).flatMap(group=>group.options).filter(option=>chosenModifiers.includes(option.id)).reduce((sum,option)=>sum+option.priceAdjustment,0)+(configuring.components??[]).filter(component=>chosenComponents[component.id]==='EXTRA').reduce((sum,component)=>sum+component.extraPrice,0),store?.currencyCode)}</Typography>:null}
         </Stack></DialogContent>
         <DialogActions><Button onClick={()=>setConfiguring(null)}>Cancel</Button><Button variant="contained" disabled={!configuring||Boolean(configuring.variants?.length&&!chosenVariant)||Boolean(configuring.modifierGroups?.some(group=>{const count=group.options.filter(option=>chosenModifiers.includes(option.id)).length;return count<group.minimumSelections||count>group.maximumSelections;}))} onClick={()=>configuring&&addConfigured(configuring)}>Add to Order</Button></DialogActions>
       </Dialog>

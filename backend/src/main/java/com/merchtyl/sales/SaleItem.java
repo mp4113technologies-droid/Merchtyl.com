@@ -85,6 +85,7 @@ public class SaleItem extends BaseUuidEntity {
     private UUID menuItemVariantId;
     @Column(length=180) private String itemNameSnapshot;
     @Column(name="menu_modifier_snapshot") private String menuModifierSnapshot;
+    @Column(name="menu_component_snapshot") private String menuComponentSnapshot;
     @Column(length=180) private String menuVariantNameSnapshot;
 
     @Column(nullable = false)
@@ -218,6 +219,7 @@ public class SaleItem extends BaseUuidEntity {
         this.menuVariantNameSnapshot=variantName; this.productName=variantName==null?itemName:itemName+" — "+variantName;
     }
     void snapshotFoodModifiers(java.util.List<String> modifiers){this.menuModifierSnapshot=modifiers==null||modifiers.isEmpty()?null:String.join("\n",modifiers);}
+    void snapshotFoodComponents(java.util.List<FoodComponentSnapshot> components){this.menuComponentSnapshot=FoodComponentSnapshot.encode(components);}
 
     private static BigDecimal money(BigDecimal value) { return value.setScale(2, java.math.RoundingMode.HALF_UP); }
 
@@ -349,6 +351,7 @@ public class SaleItem extends BaseUuidEntity {
     public UUID getMenuItemId(){return menuItemId;} public UUID getMenuItemVariantId(){return menuItemVariantId;}
     public String getItemNameSnapshot(){return itemNameSnapshot;} public String getMenuVariantNameSnapshot(){return menuVariantNameSnapshot;}
     public java.util.List<String> getMenuModifiers(){return menuModifierSnapshot==null?java.util.List.of():java.util.Arrays.asList(menuModifierSnapshot.split("\\n"));}
+    public java.util.List<FoodComponentSnapshot> getMenuComponents(){return FoodComponentSnapshot.decode(menuComponentSnapshot);}
 
     public boolean isPriceOverride() {
         return priceOverride;

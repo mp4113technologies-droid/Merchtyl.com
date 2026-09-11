@@ -62,6 +62,8 @@ public class KitchenTicketService {
                 item.getProductName(),
                 item.getQuantity(),
                 item.getMenuModifiers(),
+                item.getMenuComponents().stream().filter(value->value.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.REMOVED).map(com.merchtyl.sales.FoodComponentSnapshot::name).toList(),
+                item.getMenuComponents().stream().filter(value->value.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.EXTRA).map(com.merchtyl.sales.FoodComponentSnapshot::name).toList(),
                 item.getExternalReference());
     }
 }

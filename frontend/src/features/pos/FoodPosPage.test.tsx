@@ -49,7 +49,7 @@ describe('Food POS', () => {
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true, imageUrl: null, version: 0 }]);
-      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }, { id:'configured-item',storeId,displayName:'Build a Pizza',price:0,categoryId:'pizza',categoryName:'Pizza',displayOrder:2,available:true,variants:[{id:'small',name:'Small',price:10,displayOrder:1,available:true},{id:'large',name:'Large',price:18,displayOrder:2,available:true}],modifierGroups:[{id:'addons',name:'Add-ons',minimumSelections:0,maximumSelections:2,displayOrder:1,options:[{id:'cheese',name:'Cheese',priceAdjustment:1,displayOrder:1,available:true}]}],version:0 }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }, { id:'configured-item',storeId,displayName:'Build a Pizza',price:0,categoryId:'pizza',categoryName:'Pizza',displayOrder:2,available:true,variants:[{id:'small',name:'Small',price:10,displayOrder:1,available:true},{id:'large',name:'Large',price:18,displayOrder:2,available:true}],components:[{id:'tomato',name:'Tomato',includedByDefault:true,removable:true,allowExtra:false,extraPrice:0,displayOrder:1,active:true},{id:'pickles',name:'Pickles',includedByDefault:true,removable:true,allowExtra:true,extraPrice:.5,displayOrder:2,active:true}],modifierGroups:[{id:'addons',name:'Add-ons',minimumSelections:0,maximumSelections:2,displayOrder:1,options:[{id:'cheese',name:'Cheese',priceAdjustment:1,displayOrder:1,available:true}]}],version:0 }]);
       if (url.pathname.endsWith(`/stores/${storeId}/discounts`)) return response([{ id: 'staff-discount', name: 'Staff Discount', type: 'DISCOUNT_PERCENTAGE', value: 10, description: null, active: true, version: 0 }]);
       if (url.pathname.endsWith('/sales/checkout')) {
         const request = JSON.parse(String(init?.body));
@@ -74,11 +74,15 @@ describe('Food POS', () => {
     await userEvent.click(screen.getByText('Build a Pizza'));
     expect(await screen.findByRole('dialog', { name: 'Customize Build a Pizza' })).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /Small/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Included' }));
+    await userEvent.click(screen.getByRole('button', { name: /Extra \+/ }));
     await userEvent.click(screen.getByRole('checkbox', { name: /Cheese/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Add to Order' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getByText('Small')).toBeInTheDocument();
     expect(screen.getByText('+ Cheese')).toBeInTheDocument();
+    expect(screen.getByText('NO TOMATO')).toBeInTheDocument();
+    expect(screen.getByText('+ Extra Pickles')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await userEvent.click(await screen.findByText('Pepperoni Pizza'));
     expect((await screen.findAllByText(/12\.00/)).length).toBeGreaterThan(0);

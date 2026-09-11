@@ -231,8 +231,8 @@ public class SaleService {
             BigDecimal unitPrice = resolved.unitPrice();
             SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
                     normalizeMoney(unitPrice, "unitPrice"), moneyZero(), false,
-                    Boolean.TRUE.equals(line.ageVerified()), null, null, null, null);
-            if(resolved.menuItemId()!=null){item.snapshotFoodSource(resolved.menuItemId(),resolved.menuItemVariantId(),resolved.menuItemName(),resolved.menuVariantName());item.snapshotFoodModifiers(resolved.modifierNames());}
+                    Boolean.TRUE.equals(line.ageVerified()), null, cleanOptional(line.preparationInstructions()), null, null);
+            if(resolved.menuItemId()!=null){item.snapshotFoodSource(resolved.menuItemId(),resolved.menuItemVariantId(),resolved.menuItemName(),resolved.menuVariantName());item.snapshotFoodModifiers(resolved.modifierNames());item.snapshotFoodComponents(resolved.componentSnapshots());}
             saleItemHandlerRegistry.validate(item.validationRequest());
             sale.addItem(item);
             discountLines.add(new DiscountEngine.Line(item.getId(),product.getId(),resolved.sourceItemId(),resolved.categoryId(),item.getQuantity(),money(unitPrice.multiply(item.getQuantity())),product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
@@ -345,12 +345,18 @@ public class SaleService {
             var selectedOptions=menuItem.getModifierGroups().stream().flatMap(g->g.getOptions().stream()).filter(o->optionIds.contains(o.getId())&&o.isAvailable()).toList();
             if(selectedOptions.size()!=optionIds.size())throw new BadRequestException("INVALID_MENU_MODIFIER");
             for(var group:menuItem.getModifierGroups()){long count=selectedOptions.stream().filter(o->o.getGroup().getId().equals(group.getId())).count();if(count<group.getMinimumSelections()||count>group.getMaximumSelections())throw new BadRequestException("INVALID_MODIFIER_SELECTION");}
+            var componentRequests=line.foodMenuComponentSelections()==null?java.util.List.<com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest>of():line.foodMenuComponentSelections();
+            if(componentRequests.stream().map(com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest::componentId).distinct().count()!=componentRequests.size())throw new BadRequestException("DUPLICATE_MENU_COMPONENT");
+            var activeComponents=menuItem.getComponents().stream().filter(com.merchtyl.foodmenu.FoodMenuItemComponent::isActive).collect(java.util.stream.Collectors.toMap(com.merchtyl.platform.persistence.BaseUuidEntity::getId,java.util.function.Function.identity()));
+            var componentSnapshots=new java.util.ArrayList<FoodComponentSnapshot>();
+            for(var selection:componentRequests){var component=activeComponents.get(selection.componentId());if(component==null)throw new BadRequestException("INVALID_MENU_COMPONENT");if(selection.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.REMOVED&&(!component.isIncludedByDefault()||!component.isRemovable()))throw new BadRequestException("MENU_COMPONENT_NOT_REMOVABLE");if(selection.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.EXTRA&&!component.isAllowExtra())throw new BadRequestException("MENU_COMPONENT_EXTRA_NOT_ALLOWED");componentSnapshots.add(new FoodComponentSnapshot(component.getId(),selection.state(),component.getName(),selection.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.EXTRA?component.getExtraPrice():BigDecimal.ZERO));}
             BigDecimal foodPrice=foodVariant==null?menuItem.getPrice():foodVariant.getPrice();
             foodPrice=selectedOptions.stream().map(com.merchtyl.foodmenu.FoodMenuModifierOption::getPriceAdjustment).reduce(foodPrice,BigDecimal::add);
+            foodPrice=componentSnapshots.stream().map(FoodComponentSnapshot::priceAdjustment).reduce(foodPrice,BigDecimal::add);
             return new ResolvedCheckoutItem(product, null, foodPrice,menuItem.getId(),
                     menuItem.getCategory()==null?null:menuItem.getCategory().getId(),
                     product.getCategory()==null?null:product.getCategory().getId(),menuItem.getId(),
-                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName(),foodVariant==null?null:foodVariant.getId(),foodVariant==null?null:foodVariant.getName(),selectedOptions.stream().map(o->"+ "+o.getName()).toList());
+                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName(),foodVariant==null?null:foodVariant.getId(),foodVariant==null?null:foodVariant.getName(),selectedOptions.stream().map(o->"+ "+o.getName()).toList(),componentSnapshots);
         }
 
         if (line.productId() == null) {
@@ -363,11 +369,11 @@ public class SaleService {
         return new ResolvedCheckoutItem(storeProduct.product(), variant,
                 variant == null ? storeProduct.sellingPrice() : variant.getPrice(),null,
                 storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),
-                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),null,null,null,null,null,java.util.List.of());
+                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),null,null,null,null,null,java.util.List.of(),java.util.List.of());
     }
 
     private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice,UUID sourceItemId,
-                                        UUID categoryId, UUID productCategoryId, UUID menuItemId, UUID menuCategoryId, String menuItemName,UUID menuItemVariantId,String menuVariantName,java.util.List<String> modifierNames) {}
+                                        UUID categoryId, UUID productCategoryId, UUID menuItemId, UUID menuCategoryId, String menuItemName,UUID menuItemVariantId,String menuVariantName,java.util.List<String> modifierNames,java.util.List<FoodComponentSnapshot> componentSnapshots) {}
 
     @Transactional(readOnly = true)
     public SaleResponse get(UUID id) {
