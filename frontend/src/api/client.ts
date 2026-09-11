@@ -275,13 +275,12 @@ export type ProductVariantPayload = {
   cost: number;
   price: number;
   active: boolean;
+  barcodes: ProductVariantBarcodePayload[];
 };
 
-export type ProductBarcodePayload = {
+export type ProductVariantBarcodePayload = {
   id?: string;
   barcode: string;
-  variantId?: string;
-  variantSku?: string;
   primaryBarcode: boolean;
   active: boolean;
 };
@@ -302,7 +301,6 @@ export type ProductPayload = {
   imageUrl?: string;
   taxCategoryId?: string;
   variants: ProductVariantPayload[];
-  barcodes: ProductBarcodePayload[];
   capabilities: ProductCapability[];
   minimumAge?: number;
   storeIds?: string[];
@@ -311,12 +309,6 @@ export type ProductPayload = {
 
 export type ProductUpdatePayload = ProductPayload & {
   version: number;
-};
-
-export type BulkVariantBarcodeResponse = {
-  variantId: string;
-  addedCount: number;
-  barcodes: ProductBarcodePayload[];
 };
 
 export type ProductStatusPayload = {
@@ -1987,13 +1979,6 @@ export function updateProduct(token: string, id: string, payload: ProductUpdateP
   return request<Product>(`/products/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
-  }, token);
-}
-
-export function addVariantBarcodes(token: string, variantId: string, barcodes: string[]) {
-  return request<BulkVariantBarcodeResponse>(`/product-variants/${variantId}/barcodes/bulk`, {
-    method: 'POST',
-    body: JSON.stringify({ barcodes })
   }, token);
 }
 

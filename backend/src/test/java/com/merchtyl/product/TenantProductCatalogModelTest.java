@@ -43,6 +43,23 @@ class TenantProductCatalogModelTest {
         assertThat(product.getBarcodes().getFirst().getVariant().getId()).isEqualTo(variantId);
     }
 
+    @Test
+    void variantBarcodeReconciliationPreservesLegacyProductLevelBarcode() {
+        Product product = new Product(values(
+                List.of(new ProductVariantValues("COLA-LARGE", "Large", null, BigDecimal.ONE, new BigDecimal("2.49"), true)),
+                List.of(new ProductBarcodeValues("LEGACY-BASE", null, true, true))));
+        UUID variantId = product.getVariants().getFirst().getId();
+
+        product.update(values(
+                List.of(new ProductVariantValues(variantId, "COLA-LARGE", "Large", null, BigDecimal.ONE, new BigDecimal("2.49"), true)),
+                List.of(new ProductBarcodeValues("VARIANT-CODE", "COLA-LARGE", true, true))));
+
+        assertThat(product.getBarcodes()).extracting(ProductBarcode::getBarcode)
+                .containsExactlyInAnyOrder("LEGACY-BASE", "VARIANT-CODE");
+        assertThat(product.getBarcodes().stream().filter(barcode -> barcode.getBarcode().equals("LEGACY-BASE")).findFirst().orElseThrow().getVariant())
+                .isNull();
+    }
+
     private ProductValues values(List<ProductVariantValues> variants, List<ProductBarcodeValues> barcodes) {
         return new ProductValues("COLA", "Cola", null, SellableType.STANDARD_PRODUCT, null,
                 BigDecimal.ONE, new BigDecimal("2.49"), null, null, true, true, false,

@@ -14,11 +14,14 @@ import com.merchtyl.tax.TaxCategoryRepository;
 import com.merchtyl.tax.TaxCategory;
 import com.merchtyl.tax.TaxTreatment;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import jakarta.persistence.EntityManager;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -62,13 +65,20 @@ class ProductServiceTest {
     @Mock
     TaxCategoryRepository taxCategoryRepository;
 
+    @Mock
+    EntityManager entityManager;
+
     @InjectMocks
     ProductService productService;
+
+    @BeforeEach
+    void setUpPersistenceContext() {
+        ReflectionTestUtils.setField(productService, "entityManager", entityManager);
+    }
 
     @Test
     void createNormalizesSkuAndNestedCodes() {
         when(productRepository.existsBySkuIgnoreCase("COFFEE-12OZ")).thenReturn(false);
-        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductResponse response = productService.create(new ProductRequest(
                 " coffee-12oz ",
@@ -85,12 +95,17 @@ class ProductServiceTest {
                 false,
                 " https://cdn.example.test/coffee.png ",
                 null,
-                List.of(new ProductVariantRequest(" large ", " Large ", null, new BigDecimal("1.5000"), new BigDecimal("4.0000"), true)),
-                List.of(new ProductBarcodeRequest(" 012345678905 ", "large", true, true)),
+                List.of(
+                        new ProductVariantRequest(" large ", " Large ", null, new BigDecimal("1.5000"), new BigDecimal("4.0000"), true,
+                                List.of(new ProductVariantBarcodeRequest(" 012345678905 "), new ProductVariantBarcodeRequest("012345678906"))),
+                        new ProductVariantRequest("small", "Small", null, new BigDecimal("1.2500"), new BigDecimal("3.5000"), true,
+                                List.of(new ProductVariantBarcodeRequest("012345678907")))),
                 Set.of(ProductCapability.ALLOW_DISCOUNT)), null);
 
         ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
-        verify(productRepository).saveAndFlush(captor.capture());
+        verify(entityManager).persist(captor.capture());
+        verify(entityManager).flush();
+        verify(productRepository, never()).saveAndFlush(any(Product.class));
 
         assertThat(response.sku()).isEqualTo("COFFEE-12OZ");
         assertThat(response.name()).isEqualTo("House Coffee");
@@ -98,8 +113,11 @@ class ProductServiceTest {
         assertThat(response.cost()).isEqualByComparingTo("1.2500");
         assertThat(response.price()).isEqualByComparingTo("3.2500");
         assertThat(response.sellableType()).isEqualTo(SellableType.STANDARD_PRODUCT);
-        assertThat(response.variants()).extracting(ProductVariantResponse::sku).containsExactly("LARGE");
-        assertThat(response.barcodes()).extracting(ProductBarcodeResponse::barcode).containsExactly("012345678905");
+        assertThat(response.variants()).extracting(ProductVariantResponse::sku).containsExactly("LARGE", "SMALL");
+        assertThat(response.barcodes()).extracting(ProductBarcodeResponse::barcode)
+                .containsExactly("012345678905", "012345678906", "012345678907");
+        assertThat(response.barcodes()).extracting(ProductBarcodeResponse::variantSku)
+                .containsExactly("LARGE", "LARGE", "SMALL");
         assertThat(response.capabilities()).contains(ProductCapability.TRACK_INVENTORY, ProductCapability.ALLOW_DISCOUNT);
         assertThat(captor.getValue().getId()).isNotNull();
 
@@ -129,7 +147,6 @@ class ProductServiceTest {
                 null,
                 null,
                 List.of(),
-                List.of(),
                 Set.of()), null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessage("SKU already exists");
@@ -139,7 +156,7 @@ class ProductServiceTest {
     }
 
     @Test
-    void createRejectsBarcodeForUnknownVariantSku() {
+    void createRejectsBarcodeAssignedAcrossVariants() {
         assertThatThrownBy(() -> productService.create(new ProductRequest(
                 "coffee-12oz",
                 "House Coffee",
@@ -155,11 +172,14 @@ class ProductServiceTest {
                 false,
                 null,
                 null,
-                List.of(),
-                List.of(new ProductBarcodeRequest("012345678905", "missing", true, true)),
+                List.of(
+                        new ProductVariantRequest("small", "Small", null, BigDecimal.ONE, BigDecimal.TEN, true,
+                                List.of(new ProductVariantBarcodeRequest("012345678905"))),
+                        new ProductVariantRequest("large", "Large", null, BigDecimal.ONE, BigDecimal.TEN, true,
+                                List.of(new ProductVariantBarcodeRequest("012345678905")))),
                 Set.of()), null))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("variantSku");
+                .hasMessageContaining("Duplicate barcode");
 
         verify(productRepository, never()).saveAndFlush(any(Product.class));
         verify(auditService, never()).record(any());
@@ -209,12 +229,12 @@ class ProductServiceTest {
     private ProductRequest requestWithTaxCategory(UUID taxCategoryId) {
         return new ProductRequest("taxed-product", "Taxed Product", null, SellableType.STANDARD_PRODUCT, null,
                 BigDecimal.ONE, BigDecimal.TEN, null, null, true, false, false, null, taxCategoryId,
-                List.of(), List.of(), Set.of());
+                List.of(), Set.of());
     }
 
     private ProductRequest requestWithUnit(UUID unitId) {
         return new ProductRequest("unit-product", "Unit Product", null, SellableType.STANDARD_PRODUCT, unitId,
                 BigDecimal.ONE, BigDecimal.TEN, null, null, true, false, false, null, null,
-                List.of(), List.of(), Set.of());
+                List.of(), Set.of());
     }
 }
