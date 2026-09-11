@@ -39,6 +39,7 @@ import com.merchtyl.lottery.LotterySettlementStatus;
 import com.merchtyl.refunds.Refund;
 import com.merchtyl.refunds.RefundPayment;
 import com.merchtyl.refunds.RefundRepository;
+import com.merchtyl.register.RegisterType;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
@@ -659,6 +660,8 @@ public class BusinessDayService {
         generated.registers().forEach(values -> report.addRegisterSummary(new EndOfDayRegisterSummary(report, values.session(), values.values())));
         generated.payments().forEach(values -> report.addPaymentSummary(new EndOfDayPaymentSummary(report, values.method(), values.collected(), values.refunded(), values.net(), values.cashTendered(), values.changeGiven(), values.transactionCount(), values.splitPaymentCount())));
         generated.taxes().forEach(values -> report.addTaxSummary(new EndOfDayTaxSummary(report, values.componentCode(), values.componentName(), values.taxableSales(), values.exemptSales(), values.zeroRatedSales(), values.outOfScopeSales(), values.taxCollected(), values.taxRefunded(), values.roundingAdjustment())));
+        generated.categories().forEach(values -> report.addCategorySalesSummary(new EndOfDayCategorySalesSummary(
+                report, values.categoryId(), values.categoryName(), values.quantitySold(), values.netSales(), values.percentage())));
         EndOfDayLotteryValues lottery = generated.lottery();
         report.setLotterySummary(new EndOfDayLotterySummary(report, lottery.enabled(), lottery.lotterySales(), lottery.lotteryPayouts(), lottery.saleCancellations(), lottery.payoutReversals(), lottery.cashLotteryActivity(), lottery.nonCashLotteryActivity(), lottery.commissionEarned(), lottery.settlementAmount(), lottery.operatorReferrals(), lottery.pendingReferrals(), lottery.approvalCount(), lottery.rejectedPayouts(), lottery.operatorTotals(), lottery.registerTotals(), lottery.cashierTotals()));
         EndOfDayInventoryValues inventory = generated.inventory();
@@ -712,6 +715,7 @@ public class BusinessDayService {
                 generated.registers().stream().map(BusinessDayService::registerPreview).toList(),
                 generated.payments().stream().map(BusinessDayService::paymentPreview).toList(),
                 generated.taxes().stream().map(BusinessDayService::taxPreview).toList(),
+                generated.categories(),
                 lotteryPreview(generated.lottery()),
                 inventoryPreview(generated.inventory()),
                 generated.cashiers().stream().map(BusinessDayService::cashierPreview).toList(),
@@ -885,12 +889,13 @@ public class BusinessDayService {
 
         List<EndOfDayPaymentValues> paymentValues = paymentValues(sales, refunds);
         List<EndOfDayTaxValues> taxValues = taxValues(sales, refunds);
+        List<EndOfDayCategorySalesSummaryResponse> categoryValues = categorySalesValues(sales, refunds);
         EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, lotterySales, lotteryPayouts, cancellations, reversals, settlements);
         EndOfDayInventoryValues inventoryValues = inventoryValues(inventoryTransactions, balances);
         List<EndOfDayCashierValues> cashierValues = cashierValues(sales, refunds, lotterySales, lotteryPayouts);
         List<EndOfDayExceptionValues> exceptionValues = exceptionValues(day, sales, voidedSales, refunds, sessions, cashMovements, lotteryPayouts, reversals, variance);
-        Map<String, Object> snapshot = snapshotMap(day, totals, registerValues, paymentValues, taxValues, lotteryValues, inventoryValues, cashierValues, exceptionValues);
-        return new GeneratedReport(totals, registerValues, paymentValues, taxValues, lotteryValues, inventoryValues, cashierValues, exceptionValues, snapshot);
+        Map<String, Object> snapshot = snapshotMap(day, totals, registerValues, paymentValues, taxValues, categoryValues, lotteryValues, inventoryValues, cashierValues, exceptionValues);
+        return new GeneratedReport(totals, registerValues, paymentValues, taxValues, categoryValues, lotteryValues, inventoryValues, cashierValues, exceptionValues, snapshot);
     }
 
     private ClosingValidationResponse validate(BusinessDay day, boolean force) {
@@ -1042,6 +1047,59 @@ public class BusinessDayService {
         return taxes.values().stream()
                 .map(total -> new EndOfDayTaxValues(total.componentCode, total.componentName, money(total.taxableSales), moneyZero(), moneyZero(), moneyZero(), money(total.taxCollected), money(total.taxRefunded), moneyZero()))
                 .toList();
+    }
+
+    List<EndOfDayCategorySalesSummaryResponse> categorySalesValues(List<Sale> sales, List<Refund> refunds) {
+        Map<String, CategorySalesAccumulator> totals = new LinkedHashMap<>();
+        sales.stream()
+                .filter(sale -> sale.getRegister().getType() != RegisterType.FOOD_SERVICE)
+                .flatMap(sale -> sale.getItems().stream())
+                .forEach(item -> {
+                    CategorySalesAccumulator total = categoryTotal(totals, item);
+                    total.hadActivity = true;
+                    total.quantity = total.quantity.add(item.getQuantity());
+                    total.netSales = total.netSales.add(item.getLineSubtotal().subtract(item.getDiscountAmount()));
+                });
+        refunds.stream()
+                .filter(refund -> refund.getRegister().getType() != RegisterType.FOOD_SERVICE)
+                .flatMap(refund -> refund.getReturnRecord().getItems().stream())
+                .forEach(item -> {
+                    CategorySalesAccumulator total = categoryTotal(totals, item.getOriginalSaleItem());
+                    total.hadActivity = true;
+                    total.quantity = total.quantity.subtract(item.getQuantity());
+                    total.netSales = total.netSales.subtract(item.getReturnSubtotalAmount());
+                });
+
+        BigDecimal distributionTotal = totals.values().stream()
+                .map(total -> total.netSales)
+                .reduce(moneyZero(), BigDecimal::add);
+        return totals.values().stream()
+                .filter(total -> total.hadActivity)
+                .map(total -> new EndOfDayCategorySalesSummaryResponse(
+                        total.categoryId,
+                        total.categoryName,
+                        quantity(total.quantity),
+                        money(total.netSales),
+                        distributionTotal.signum() <= 0
+                                ? BigDecimal.ZERO.setScale(4)
+                                : total.netSales.multiply(BigDecimal.valueOf(100))
+                                        .divide(distributionTotal, 4, RoundingMode.HALF_UP)))
+                .sorted(Comparator.comparing(EndOfDayCategorySalesSummaryResponse::netSales).reversed()
+                        .thenComparing(EndOfDayCategorySalesSummaryResponse::categoryName))
+                .toList();
+    }
+
+    private static CategorySalesAccumulator categoryTotal(Map<String, CategorySalesAccumulator> totals, SaleItem item) {
+        if (item.isCustomItem()) {
+            return totals.computeIfAbsent("CUSTOM_ITEMS", ignored -> new CategorySalesAccumulator(null, "Custom Items"));
+        }
+        UUID categoryId = item.getCategorySnapshotId();
+        String categoryName = item.getCategoryNameSnapshot();
+        if (categoryId == null || categoryName == null || categoryName.isBlank()) {
+            return totals.computeIfAbsent("UNCATEGORIZED", ignored -> new CategorySalesAccumulator(null, "Uncategorized"));
+        }
+        return totals.computeIfAbsent("CATEGORY:" + categoryId,
+                ignored -> new CategorySalesAccumulator(categoryId, categoryName));
     }
 
     private EndOfDayLotteryValues lotteryValues(boolean enabled, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements) {
@@ -1266,7 +1324,7 @@ public class BusinessDayService {
         }
     }
 
-    private static Map<String, Object> snapshotMap(BusinessDay day, EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions) {
+    private static Map<String, Object> snapshotMap(BusinessDay day, EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, List<EndOfDayCategorySalesSummaryResponse> categories, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("businessDayId", day.getId());
         snapshot.put("storeId", day.getStore().getId());
@@ -1276,6 +1334,7 @@ public class BusinessDayService {
         snapshot.put("registers", registers.stream().map(RegisterValuesWithSession::values).toList());
         snapshot.put("payments", payments);
         snapshot.put("taxes", taxes);
+        snapshot.put("categorySalesDistribution", categories);
         snapshot.put("lottery", lottery);
         snapshot.put("inventory", inventory);
         snapshot.put("cashiers", cashiers);
@@ -1579,6 +1638,19 @@ public class BusinessDayService {
         }
     }
 
+    private static final class CategorySalesAccumulator {
+        private final UUID categoryId;
+        private final String categoryName;
+        private BigDecimal quantity = quantityZero();
+        private BigDecimal netSales = moneyZero();
+        private boolean hadActivity;
+
+        private CategorySalesAccumulator(UUID categoryId, String categoryName) {
+            this.categoryId = categoryId;
+            this.categoryName = categoryName;
+        }
+    }
+
     private static final class CashierAccumulator {
         private final User cashier;
         private BigDecimal grossSales = moneyZero();
@@ -1636,7 +1708,7 @@ public class BusinessDayService {
     private record EndOfDayExceptionValues(EndOfDayExceptionType type, long count, BigDecimal totalAmount, String details) {
     }
 
-    private record GeneratedReport(EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions, Map<String, Object> snapshot) {
+    private record GeneratedReport(EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, List<EndOfDayCategorySalesSummaryResponse> categories, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions, Map<String, Object> snapshot) {
     }
 
     private static String printableHtml(EndOfDayReportResponse report) {
@@ -1669,6 +1741,8 @@ public class BusinessDayService {
                 report.registers().stream().map(register -> List.of(register.registerCode(), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()), String.valueOf(register.openedAt()), String.valueOf(register.closedAt()), register.forceClosed() ? "Yes" : "No")).toList())));
         html.append(section("Taxes", table(List.of("Component", "Taxable", "Collected", "Refunded", "Net"),
                 report.taxes().stream().map(tax -> List.of(tax.componentCode(), fmt(tax.taxableSales()), fmt(tax.taxCollected()), fmt(tax.taxRefunded()), fmt(tax.netTaxCollected()))).toList())));
+        html.append(section("Retail Category Sales Distribution", table(List.of("Category", "Qty Sold", "Net Sales", "Share"),
+                report.categorySalesDistribution().stream().map(category -> List.of(category.categoryName(), fmtQuantity(category.quantitySold()), fmt(category.netSales()), fmtPercent(category.percentage()))).toList())));
         html.append(section("Cashiers", table(List.of("Cashier", "Transactions", "Net sales", "Refunds", "Cash handled", "Registers"),
                 report.cashiers().stream().map(cashier -> List.of(cashier.cashierName(), String.valueOf(cashier.transactionCount()), fmt(cashier.netSales()), fmt(cashier.refundTotal()), fmt(cashier.cashHandled()), cashier.registersUsed())).toList())));
         html.append(section("Exceptions", table(List.of("Type", "Count", "Amount", "Details"),
@@ -1723,6 +1797,8 @@ public class BusinessDayService {
                 report.registers().stream().map(register -> List.of(register.registerCode(), fmt(register.openingFloat()), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()), String.valueOf(register.forceClosed()), nullToEmpty(register.forceCloseReason()))).toList());
         appendCsvSection(csv, "taxes", List.of("componentCode", "componentName", "taxableSales", "taxCollected", "taxRefunded", "netTaxCollected"),
                 report.taxes().stream().map(tax -> List.of(tax.componentCode(), tax.componentName(), fmt(tax.taxableSales()), fmt(tax.taxCollected()), fmt(tax.taxRefunded()), fmt(tax.netTaxCollected()))).toList());
+        appendCsvSection(csv, "retailCategorySalesDistribution", List.of("categoryId", "category", "quantitySold", "netSales", "percentage"),
+                report.categorySalesDistribution().stream().map(category -> List.of(category.categoryId() == null ? "" : category.categoryId().toString(), category.categoryName(), fmtQuantity(category.quantitySold()), fmt(category.netSales()), category.percentage().toPlainString())).toList());
         if (report.lottery() != null) {
             appendCsvSection(csv, "lottery", List.of("metric", "value"), List.of(
                     List.of("enabled", String.valueOf(report.lottery().enabled())),
@@ -1763,6 +1839,8 @@ public class BusinessDayService {
         report.registers().forEach(register -> lines.add("  " + register.registerCode() + " expected " + fmt(register.expectedCash()) + " counted " + fmt(register.countedCash()) + " variance " + fmt(register.variance())));
         lines.add("Taxes");
         report.taxes().forEach(tax -> lines.add("  " + tax.componentCode() + " collected " + fmt(tax.taxCollected()) + " refunded " + fmt(tax.taxRefunded()) + " net " + fmt(tax.netTaxCollected())));
+        lines.add("Retail Category Sales Distribution");
+        report.categorySalesDistribution().forEach(category -> lines.add("  " + category.categoryName() + " qty " + fmtQuantity(category.quantitySold()) + " net " + fmt(category.netSales()) + " share " + fmtPercent(category.percentage())));
         if (report.lottery() != null) {
             lines.add("Lottery sales: " + fmt(report.lottery().lotterySales()) + " payouts: " + fmt(report.lottery().lotteryPayouts()) + " settlement: " + fmt(report.lottery().settlementAmount()));
         }
@@ -1873,6 +1951,14 @@ public class BusinessDayService {
 
     private static String fmt(BigDecimal value) {
         return value == null ? "" : value.stripTrailingZeros().toPlainString();
+    }
+
+    private static String fmtQuantity(BigDecimal value) {
+        return fmt(value);
+    }
+
+    private static String fmtPercent(BigDecimal value) {
+        return value == null ? "" : value.setScale(1, RoundingMode.HALF_UP).toPlainString() + "%";
     }
 
     private static String nullToEmpty(String value) {

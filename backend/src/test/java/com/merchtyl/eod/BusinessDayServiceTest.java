@@ -17,10 +17,15 @@ import com.merchtyl.lottery.LotterySaleRepository;
 import com.merchtyl.lottery.LotterySettlementRepository;
 import com.merchtyl.refunds.RefundRepository;
 import com.merchtyl.register.Register;
+import com.merchtyl.register.RegisterType;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.sales.SaleRepository;
+import com.merchtyl.sales.Sale;
+import com.merchtyl.sales.SaleItem;
+import com.merchtyl.refunds.Refund;
+import com.merchtyl.returns.ReturnItem;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
@@ -115,6 +120,94 @@ class BusinessDayServiceTest {
         lenient().when(store.getId()).thenReturn(storeId);
         lenient().when(store.getTimezone()).thenReturn("UTC");
         lenient().when(reports.existsByBusinessDay_Id(dayId)).thenReturn(true);
+    }
+
+    @Test
+    void categoryDistributionUsesSnapshotNetAmountsReturnsCustomItemsAndExcludesFoodRegisters() {
+        UUID beveragesId = UUID.randomUUID();
+        UUID snacksId = UUID.randomUUID();
+        SaleItem beverageOne = saleItem(beveragesId, "Beverages", "2.0000", "100.00", "10.00", false);
+        SaleItem beverageTwo = saleItem(beveragesId, "Beverages", "1.0000", "20.00", "0.00", false);
+        SaleItem snack = saleItem(snacksId, "Snacks", "1.0000", "50.00", "5.00", false);
+        SaleItem custom = saleItem(null, null, "1.0000", "15.00", "0.00", true);
+        SaleItem food = saleItem(null, null, "1.0000", "200.00", "0.00", false);
+
+        Sale retailSale = sale(RegisterType.RETAIL, beverageOne, beverageTwo, snack, custom);
+        Sale foodSale = sale(RegisterType.FOOD_SERVICE, food);
+        ReturnItem returnedBeverage = mock(ReturnItem.class);
+        when(returnedBeverage.getOriginalSaleItem()).thenReturn(beverageOne);
+        when(returnedBeverage.getQuantity()).thenReturn(new BigDecimal("0.5000"));
+        when(returnedBeverage.getReturnSubtotalAmount()).thenReturn(new BigDecimal("25.00"));
+        com.merchtyl.returns.Return returnRecord = mock(com.merchtyl.returns.Return.class);
+        when(returnRecord.getItems()).thenReturn(List.of(returnedBeverage));
+        Refund refund = mock(Refund.class);
+        Register refundRegister = mock(Register.class);
+        when(refundRegister.getType()).thenReturn(RegisterType.RETAIL);
+        when(refund.getRegister()).thenReturn(refundRegister);
+        when(refund.getReturnRecord()).thenReturn(returnRecord);
+
+        List<EndOfDayCategorySalesSummaryResponse> result = service.categorySalesValues(
+                List.of(retailSale, foodSale), List.of(refund));
+
+        assertThat(result).extracting(EndOfDayCategorySalesSummaryResponse::categoryName)
+                .containsExactly("Beverages", "Snacks", "Custom Items");
+        assertThat(result).extracting(EndOfDayCategorySalesSummaryResponse::netSales)
+                .containsExactly(new BigDecimal("85.00"), new BigDecimal("45.00"), new BigDecimal("15.00"));
+        assertThat(result).extracting(EndOfDayCategorySalesSummaryResponse::quantitySold)
+                .containsExactly(new BigDecimal("2.5000"), new BigDecimal("1.0000"), new BigDecimal("1.0000"));
+        assertThat(result).extracting(EndOfDayCategorySalesSummaryResponse::percentage)
+                .containsExactly(new BigDecimal("58.6207"), new BigDecimal("31.0345"), new BigDecimal("10.3448"));
+        assertThat(result).noneMatch(row -> row.categoryName().equals("Uncategorized"));
+        assertThat(result.stream().map(EndOfDayCategorySalesSummaryResponse::netSales)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("145.00");
+    }
+
+    @Test
+    void categoryDistributionKeepsUncategorizedAndZeroNetActivityWithoutDividingByZero() {
+        SaleItem uncategorized = saleItem(null, null, "1.0000", "12.00", "0.00", false);
+        Sale retailSale = sale(RegisterType.RETAIL, uncategorized);
+        ReturnItem returned = mock(ReturnItem.class);
+        when(returned.getOriginalSaleItem()).thenReturn(uncategorized);
+        when(returned.getQuantity()).thenReturn(new BigDecimal("1.0000"));
+        when(returned.getReturnSubtotalAmount()).thenReturn(new BigDecimal("12.00"));
+        com.merchtyl.returns.Return returnRecord = mock(com.merchtyl.returns.Return.class);
+        when(returnRecord.getItems()).thenReturn(List.of(returned));
+        Refund refund = mock(Refund.class);
+        Register register = mock(Register.class);
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(refund.getRegister()).thenReturn(register);
+        when(refund.getReturnRecord()).thenReturn(returnRecord);
+
+        List<EndOfDayCategorySalesSummaryResponse> result = service.categorySalesValues(
+                List.of(retailSale), List.of(refund));
+
+        assertThat(result).singleElement().satisfies(row -> {
+            assertThat(row.categoryName()).isEqualTo("Uncategorized");
+            assertThat(row.quantitySold()).isEqualByComparingTo("0.0000");
+            assertThat(row.netSales()).isEqualByComparingTo("0.00");
+            assertThat(row.percentage()).isEqualByComparingTo("0.0000");
+        });
+    }
+
+    private static Sale sale(RegisterType type, SaleItem... items) {
+        Sale sale = mock(Sale.class);
+        Register register = mock(Register.class);
+        when(register.getType()).thenReturn(type);
+        when(sale.getRegister()).thenReturn(register);
+        lenient().when(sale.getItems()).thenReturn(List.of(items));
+        return sale;
+    }
+
+    private static SaleItem saleItem(UUID categoryId, String categoryName, String quantity, String subtotal,
+                                     String discount, boolean custom) {
+        SaleItem item = mock(SaleItem.class);
+        lenient().when(item.isCustomItem()).thenReturn(custom);
+        lenient().when(item.getCategorySnapshotId()).thenReturn(categoryId);
+        lenient().when(item.getCategoryNameSnapshot()).thenReturn(categoryName);
+        lenient().when(item.getQuantity()).thenReturn(new BigDecimal(quantity));
+        lenient().when(item.getLineSubtotal()).thenReturn(new BigDecimal(subtotal));
+        lenient().when(item.getDiscountAmount()).thenReturn(new BigDecimal(discount));
+        return item;
     }
 
     @Test

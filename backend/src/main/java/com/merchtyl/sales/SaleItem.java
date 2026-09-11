@@ -39,6 +39,11 @@ public class SaleItem extends BaseUuidEntity {
 
     private UUID taxCategorySnapshotId;
 
+    private UUID categorySnapshotId;
+
+    @Column(length = 180)
+    private String categoryNameSnapshot;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "variant_id", foreignKey = @ForeignKey(name = "fk_sale_items_variant"))
     private ProductVariant variant;
@@ -211,6 +216,10 @@ public class SaleItem extends BaseUuidEntity {
                 .sorted(Comparator.comparing(Enum::name))
                 .map(Enum::name)
                 .collect(Collectors.joining(","));
+        if (product.getCategory() != null) {
+            this.categorySnapshotId = product.getCategory().getId();
+            this.categoryNameSnapshot = product.getCategory().getName();
+        }
     }
 
     SaleItemRequest validationRequest() {
@@ -242,6 +251,8 @@ public class SaleItem extends BaseUuidEntity {
     public boolean isCustomItem() { return lineType == SaleLineType.CUSTOM_ITEM; }
     public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
     public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
+    public UUID getCategorySnapshotId() { return categorySnapshotId; }
+    public String getCategoryNameSnapshot() { return categoryNameSnapshot; }
 
     public ProductVariant getVariant() { return variant; }
 
