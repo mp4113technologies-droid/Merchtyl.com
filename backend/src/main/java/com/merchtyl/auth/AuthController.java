@@ -49,8 +49,11 @@ public class AuthController {
     @PostMapping("/forgot-password")
     @Operation(summary = "Request a one-time password reset link")
     PasswordResetMessage forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
+                                        @RequestHeader(value = PasswordResetPortalContext.REALM_HEADER, required = false) String portalRealm,
+                                        @RequestHeader(value = MerchantPortalService.HEADER_NAME, required = false) String merchantSlug,
                                         jakarta.servlet.http.HttpServletRequest httpRequest) {
-        return passwordResetService.forgotPassword(request, httpRequest.getRemoteAddr());
+        return passwordResetService.forgotPassword(request, httpRequest.getRemoteAddr(),
+                PasswordResetPortalContext.of(portalRealm, merchantSlug));
     }
 
     @PostMapping("/reset-password")
@@ -60,8 +63,10 @@ public class AuthController {
     @ApiResponse(responseCode = "400", description = "INVALID_RESET_TOKEN, RESET_TOKEN_PURPOSE_INVALID, PASSWORD_CONFIRMATION_MISMATCH, or PASSWORD_POLICY_VIOLATION")
     @ApiResponse(responseCode = "409", description = "RESET_TOKEN_ALREADY_USED or RESET_TOKEN_REVOKED")
     @ApiResponse(responseCode = "410", description = "EXPIRED_RESET_TOKEN")
-    void resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        passwordResetService.reset(request);
+    void resetPassword(@Valid @RequestBody ResetPasswordRequest request,
+                       @RequestHeader(value = PasswordResetPortalContext.REALM_HEADER, required = false) String portalRealm,
+                       @RequestHeader(value = MerchantPortalService.HEADER_NAME, required = false) String merchantSlug) {
+        passwordResetService.reset(request, PasswordResetPortalContext.of(portalRealm, merchantSlug));
     }
 
     @GetMapping("/password-policy")

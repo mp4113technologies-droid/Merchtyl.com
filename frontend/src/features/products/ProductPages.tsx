@@ -112,6 +112,9 @@ const variantSchema = z.object({
   cost: z.coerce.number().min(0, 'Variant cost must be zero or greater'),
   price: z.coerce.number().min(0, 'Variant price must be zero or greater'),
   active: z.boolean(),
+  depositEnabled: z.boolean(),
+  depositType: z.enum(['BOTTLE', 'CAN', 'CASE', 'OTHER']).optional(),
+  depositAmount: z.coerce.number().optional(),
   barcodes: z.array(z.object({
     id: z.string().regex(uuidPattern).optional(),
     barcode: z.string().trim().min(1, 'Barcode is required').max(128, 'Barcode must be 128 characters or fewer'),
@@ -120,6 +123,12 @@ const variantSchema = z.object({
     reassignFromBarcodeId: z.string().regex(uuidPattern).optional()
     ,reassignFromVersion: z.number().int().min(0).optional()
   }))
+}).superRefine((variant, context) => {
+  if (!variant.depositEnabled) return;
+  if (!variant.depositType) context.addIssue({ code: 'custom', path: ['depositType'], message: 'Select a container type.' });
+  if (variant.depositAmount == null || !Number.isFinite(variant.depositAmount) || variant.depositAmount <= 0) {
+    context.addIssue({ code: 'custom', path: ['depositAmount'], message: 'Enter a valid deposit amount.' });
+  }
 });
 
 const productSchema = z.object({
@@ -178,7 +187,7 @@ const emptyProductForm: ProductFormValues = {
   decimalQuantityAllowed: false,
   imageUrl: '',
   taxCategoryId: '',
-  variants: [{ sku: '', name: '', description: '', cost: 0, price: 0, active: true, barcodes: [] }],
+  variants: [{ sku: '', name: '', description: '', cost: 0, price: 0, active: true, depositEnabled: false, depositType: undefined, depositAmount: undefined, barcodes: [] }],
   capabilities: ['TRACK_INVENTORY'],
   minimumAge: undefined
   ,availabilityScope:'ALL_STORES',storeIds:[]
@@ -259,6 +268,9 @@ function productFormValues(product: Product): ProductFormValues {
       cost: variant.cost,
       price: variant.price,
       active: variant.active,
+      depositEnabled: variant.depositEnabled ?? false,
+      depositType: variant.depositType ?? undefined,
+      depositAmount: variant.depositAmount ?? undefined,
       barcodes: (variant.barcodes ?? product.barcodes.filter((barcode) => barcode.variantId === variant.id)).map((barcode) => ({
         id: barcode.id,
         barcode: barcode.barcode,
@@ -307,6 +319,9 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
       cost: Number(variant.cost),
       price: Number(variant.price),
       active: variant.active,
+      depositEnabled: variant.depositEnabled,
+      depositType: variant.depositEnabled ? variant.depositType : undefined,
+      depositAmount: variant.depositEnabled ? Number(variant.depositAmount) : undefined,
       barcodes: variant.barcodes.map((barcode, barcodeIndex) => ({
         id: barcode.id,
         barcode: barcode.barcode.trim(),
@@ -565,7 +580,7 @@ function ProductForm({
                 type="button"
                 variant="outlined"
                 startIcon={<AddIcon />}
-                onClick={() => variants.append({ sku: '', name: '', description: '', cost: 0, price: 0, active: true, barcodes: [] })}
+                onClick={() => variants.append({ sku: '', name: '', description: '', cost: 0, price: 0, active: true, depositEnabled: false, depositType: undefined, depositAmount: undefined, barcodes: [] })}
               >
                 Add variant
               </Button>
@@ -592,6 +607,27 @@ function ProductForm({
                 </Grid>
                 <Grid item xs={12}>
                   <TextInput control={form.control} name={`variants.${index}.description`} label="Variant description" disabled={disabled} />
+                </Grid>
+                <Grid item xs={12}>
+                  <Stack spacing={1} sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+                    <Typography fontWeight={700}>Container Deposit</Typography>
+                    <SwitchInput control={form.control} name={`variants.${index}.depositEnabled`} label="Apply Deposit" disabled={disabled} />
+                    {watchedVariants[index]?.depositEnabled ? (
+                      <Grid container spacing={1.5}>
+                        <Grid item xs={12} sm={6}>
+                          <Controller name={`variants.${index}.depositType`} control={form.control} render={({ field, fieldState }) => (
+                            <TextField {...field} value={field.value ?? ''} select label="Container Type" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth>
+                              <MenuItem value="">Select container type</MenuItem>
+                              <MenuItem value="BOTTLE">Bottle</MenuItem><MenuItem value="CAN">Can</MenuItem><MenuItem value="CASE">Case</MenuItem><MenuItem value="OTHER">Other</MenuItem>
+                            </TextField>
+                          )} />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextInput control={form.control} name={`variants.${index}.depositAmount`} label="Deposit Price" type="number" disabled={disabled} />
+                        </Grid>
+                      </Grid>
+                    ) : null}
+                  </Stack>
                 </Grid>
                 <Grid item xs={12}>
                   <VariantBarcodeFields

@@ -6,6 +6,7 @@ import com.merchtyl.store.Store;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.*;
 
 @Entity
 @Table(name = "food_menu_items", uniqueConstraints = @UniqueConstraint(name = "uq_food_menu_items_store_product", columnNames = {"store_id", "product_id"}))
@@ -21,8 +22,11 @@ public class FoodMenuItem extends BaseUuidEntity {
     @Column(nullable=false) private boolean available;
     @Column(name="image_url", length=1000) private String imageUrl;
     @Column(name="linked_product", nullable=false) private boolean linkedProduct;
+    @OneToMany(mappedBy="menuItem",cascade=CascadeType.ALL,orphanRemoval=true) @OrderBy("displayOrder, name") private Set<FoodMenuItemVariant> variants=new LinkedHashSet<>();
+    @OneToMany(mappedBy="menuItem",cascade=CascadeType.ALL,orphanRemoval=true) @OrderBy("displayOrder, name") private Set<FoodMenuModifierGroup> modifierGroups=new LinkedHashSet<>();
     protected FoodMenuItem() {}
     FoodMenuItem(Store store, FoodMenuCategory category, Product product, boolean linkedProduct, String displayName, String description, BigDecimal price, int displayOrder, boolean available, String imageUrl) { this.store=store; this.tenantId=store.getTenantId(); this.product=product; this.linkedProduct=linkedProduct; update(category, displayName, description, price, displayOrder, available, imageUrl); }
     void update(FoodMenuCategory category, String displayName, String description, BigDecimal price, int displayOrder, boolean available, String imageUrl) { this.category=category; this.displayName=displayName.trim(); this.description=description == null || description.isBlank() ? null : description.trim(); this.price=price; this.displayOrder=displayOrder; this.available=available; this.imageUrl=imageUrl == null || imageUrl.isBlank() ? null : imageUrl.trim(); }
-    public Store getStore(){return store;} public UUID getTenantId(){return tenantId;} public FoodMenuCategory getCategory(){return category;} public Product getProduct(){return product;} public boolean isLinkedProduct(){return linkedProduct;} public String getDisplayName(){return displayName;} public String getDescription(){return description;} public BigDecimal getPrice(){return price;} public int getDisplayOrder(){return displayOrder;} public boolean isAvailable(){return available;} public String getImageUrl(){return imageUrl;}
+    void replaceSelections(List<FoodMenuDtos.VariantRequest> variantValues,List<FoodMenuDtos.ModifierGroupRequest> groupValues){variants.clear();variantValues.forEach(v->variants.add(new FoodMenuItemVariant(this,v.name(),v.price(),v.displayOrder(),v.available())));modifierGroups.clear();groupValues.forEach(g->{var value=new FoodMenuModifierGroup(this,g.name(),g.minimumSelections(),g.maximumSelections(),g.displayOrder());value.replaceOptions(g.options());modifierGroups.add(value);});}
+    public Store getStore(){return store;} public UUID getTenantId(){return tenantId;} public FoodMenuCategory getCategory(){return category;} public Product getProduct(){return product;} public boolean isLinkedProduct(){return linkedProduct;} public String getDisplayName(){return displayName;} public String getDescription(){return description;} public BigDecimal getPrice(){return price;} public int getDisplayOrder(){return displayOrder;} public boolean isAvailable(){return available;} public String getImageUrl(){return imageUrl;} public Set<FoodMenuItemVariant> getVariants(){return variants;} public Set<FoodMenuModifierGroup> getModifierGroups(){return modifierGroups;}
 }

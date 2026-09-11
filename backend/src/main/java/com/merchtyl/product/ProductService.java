@@ -244,6 +244,8 @@ public class ProductService {
         requireOwnedChildIds(product, values);
         requireUniqueCodesForUpdate(tenantId, id, values);
         ProductResponse before = ProductResponse.from(product);
+        Set<UUID> existingVariantIds = product.getVariants().stream().map(ProductVariant::getId).collect(Collectors.toSet());
+        Set<UUID> existingBarcodeIds = product.getBarcodes().stream().map(ProductBarcode::getId).collect(Collectors.toSet());
         Set<UUID> retainedVariantIds = values.variants().stream()
                 .map(ProductVariantValues::id)
                 .filter(java.util.Objects::nonNull)
@@ -254,9 +256,13 @@ public class ProductService {
         // ProductBarcode whose Variant has already been deleted by the database.
         if (entityManager != null) entityManager.flush();
         product.update(values);
+        persistNewChildren(product, existingVariantIds, existingBarcodeIds);
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
         product.setAvailabilityScope(availabilityScope);
-        Product saved=save(product);
+        // Product was loaded in this transaction and is already managed. Calling repository.save()
+        // would merge the aggregate; newly added children use application-assigned UUIDs and merge
+        // then treats them as detached rows, producing JpaObjectRetrievalFailureException.
+        Product saved = flushManaged(product);
         reconcileAvailability(saved, tenantId, availabilityScope, requestedStoreIds);
         ProductResponse after = response(saved,tenantId,null);
         auditBarcodeReassignments(authentication, saved, reassignments);
@@ -353,8 +359,10 @@ public class ProductService {
                                                                List<ProductVariantRequest> requests) {
         return nullSafe(requests).stream().map(request -> {
             String name = cleanRequired(request.name(), "variant name");
+            validateDeposit(request);
             return new ProductVariantValues(request.id(), skuGenerator.generate(tenantId, productName, name), name,
-                    optionalText(request.description()), request.cost(), request.price(), request.active());
+                    optionalText(request.description()), request.cost(), request.price(), request.active(),
+                    request.depositEnabled(), request.depositType(), request.depositAmount());
         }).toList();
     }
 
@@ -366,9 +374,18 @@ public class ProductService {
             String name = cleanRequired(request.name(), "variant name");
             ProductVariant current = request.id() == null ? null : existing.get(request.id());
             String sku = current == null ? skuGenerator.generate(tenantId, productName, name) : current.getSku();
+            validateDeposit(request);
             return new ProductVariantValues(request.id(), sku, name, optionalText(request.description()),
-                    request.cost(), request.price(), request.active());
+                    request.cost(), request.price(), request.active(), request.depositEnabled(), request.depositType(), request.depositAmount());
         }).toList();
+    }
+
+    private void validateDeposit(ProductVariantRequest request) {
+        if (!request.depositEnabled()) return;
+        if (request.depositType() == null) throw new BadRequestException("Select a container type.");
+        if (request.depositAmount() == null || request.depositAmount().signum() <= 0) {
+            throw new BadRequestException("Enter a valid deposit amount.");
+        }
     }
 
     private List<ProductBarcodeValues> barcodeValues(List<ProductVariantRequest> requests,
@@ -632,6 +649,31 @@ public class ProductService {
             }
             throw new ConflictException("Product unique value already exists");
         }
+    }
+
+    private Product flushManaged(Product product) {
+        if (entityManager == null) return save(product);
+        try {
+            entityManager.flush();
+            return product;
+        } catch (DataIntegrityViolationException exception) {
+            String detail = exception.getMostSpecificCause().getMessage();
+            if (detail != null && (detail.contains("uq_product_barcodes_tenant_barcode_lower")
+                    || detail.contains("product_barcodes_barcode_key"))) {
+                throw barcodeAlreadyAssigned();
+            }
+            throw new ConflictException("Product unique value already exists");
+        }
+    }
+
+    private void persistNewChildren(Product product, Set<UUID> existingVariantIds, Set<UUID> existingBarcodeIds) {
+        if (entityManager == null) return;
+        product.getVariants().stream()
+                .filter(variant -> !existingVariantIds.contains(variant.getId()))
+                .forEach(entityManager::persist);
+        product.getBarcodes().stream()
+                .filter(barcode -> !existingBarcodeIds.contains(barcode.getId()))
+                .forEach(entityManager::persist);
     }
 
     /** New aggregates have application-assigned UUIDs, so repository.save would merge them.

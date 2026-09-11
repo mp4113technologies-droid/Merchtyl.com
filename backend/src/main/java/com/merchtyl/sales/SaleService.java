@@ -232,12 +232,12 @@ public class SaleService {
             SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
                     normalizeMoney(unitPrice, "unitPrice"), moneyZero(), false,
                     Boolean.TRUE.equals(line.ageVerified()), null, null, null, null);
-            if(resolved.menuItemId()!=null)item.snapshotFoodSource(resolved.menuItemId(),null,resolved.menuItemName(),null);
+            if(resolved.menuItemId()!=null){item.snapshotFoodSource(resolved.menuItemId(),resolved.menuItemVariantId(),resolved.menuItemName(),resolved.menuVariantName());item.snapshotFoodModifiers(resolved.modifierNames());}
             saleItemHandlerRegistry.validate(item.validationRequest());
             sale.addItem(item);
             discountLines.add(new DiscountEngine.Line(item.getId(),product.getId(),resolved.sourceItemId(),resolved.categoryId(),item.getQuantity(),money(unitPrice.multiply(item.getQuantity())),product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
             promotionLines.add(new DiscountEngine.PromotionLine(item.getId(), product.getId(), variant==null?null:variant.getId(),
-                    resolved.productCategoryId(), resolved.menuItemId(), null, resolved.menuCategoryId(), item.getQuantity(), unitPrice,
+                    resolved.productCategoryId(), resolved.menuItemId(), resolved.menuItemVariantId(), resolved.menuCategoryId(), item.getQuantity(), unitPrice,
                     product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
         }
         ResolvedDiscount resolvedDiscount = resolveCheckoutDiscount(sale, request.discount());
@@ -339,10 +339,18 @@ public class SaleService {
             if (line.productId() != null && !line.productId().equals(product.getId())) {
                 throw new BadRequestException("INVALID_CHECKOUT_ITEM: product does not match food menu item");
             }
-            return new ResolvedCheckoutItem(product, null, menuItem.getPrice(),menuItem.getId(),
+            var foodVariant=line.foodMenuItemVariantId()==null?null:menuItem.getVariants().stream().filter(v->v.getId().equals(line.foodMenuItemVariantId())&&v.isAvailable()).findFirst().orElseThrow(()->new NotFoundException("MENU_ITEM_VARIANT_NOT_AVAILABLE"));
+            if(!menuItem.getVariants().isEmpty()&&foodVariant==null)throw new BadRequestException("MENU_ITEM_VARIANT_REQUIRED");
+            var optionIds=line.foodMenuModifierOptionIds()==null?java.util.Set.<UUID>of():new java.util.HashSet<>(line.foodMenuModifierOptionIds());
+            var selectedOptions=menuItem.getModifierGroups().stream().flatMap(g->g.getOptions().stream()).filter(o->optionIds.contains(o.getId())&&o.isAvailable()).toList();
+            if(selectedOptions.size()!=optionIds.size())throw new BadRequestException("INVALID_MENU_MODIFIER");
+            for(var group:menuItem.getModifierGroups()){long count=selectedOptions.stream().filter(o->o.getGroup().getId().equals(group.getId())).count();if(count<group.getMinimumSelections()||count>group.getMaximumSelections())throw new BadRequestException("INVALID_MODIFIER_SELECTION");}
+            BigDecimal foodPrice=foodVariant==null?menuItem.getPrice():foodVariant.getPrice();
+            foodPrice=selectedOptions.stream().map(com.merchtyl.foodmenu.FoodMenuModifierOption::getPriceAdjustment).reduce(foodPrice,BigDecimal::add);
+            return new ResolvedCheckoutItem(product, null, foodPrice,menuItem.getId(),
                     menuItem.getCategory()==null?null:menuItem.getCategory().getId(),
                     product.getCategory()==null?null:product.getCategory().getId(),menuItem.getId(),
-                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName());
+                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName(),foodVariant==null?null:foodVariant.getId(),foodVariant==null?null:foodVariant.getName(),selectedOptions.stream().map(o->"+ "+o.getName()).toList());
         }
 
         if (line.productId() == null) {
@@ -355,11 +363,11 @@ public class SaleService {
         return new ResolvedCheckoutItem(storeProduct.product(), variant,
                 variant == null ? storeProduct.sellingPrice() : variant.getPrice(),null,
                 storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),
-                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),null,null,null);
+                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),null,null,null,null,null,java.util.List.of());
     }
 
     private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice,UUID sourceItemId,
-                                        UUID categoryId, UUID productCategoryId, UUID menuItemId, UUID menuCategoryId, String menuItemName) {}
+                                        UUID categoryId, UUID productCategoryId, UUID menuItemId, UUID menuCategoryId, String menuItemName,UUID menuItemVariantId,String menuVariantName,java.util.List<String> modifierNames) {}
 
     @Transactional(readOnly = true)
     public SaleResponse get(UUID id) {
@@ -743,12 +751,14 @@ public class SaleService {
                     item.getDiscountAmount(),
                     sale.isPricesIncludeTax(),
                     sale.getCurrencyCode()), authentication);
+            item.applyVariantDeposit();
             BigDecimal lineSubtotal = money(taxResponse.netAmount().add(item.getDiscountAmount()));
-            item.setCalculatedAmounts(lineSubtotal, taxResponse.taxAmount(), taxResponse.grossAmount());
-            subtotal = subtotal.add(lineSubtotal);
+            BigDecimal depositTotal = item.getDepositTotal();
+            item.setCalculatedAmounts(lineSubtotal.add(depositTotal), taxResponse.taxAmount(), taxResponse.grossAmount().add(depositTotal));
+            subtotal = subtotal.add(lineSubtotal).add(depositTotal);
             discount = discount.add(item.getDiscountAmount());
             tax = tax.add(taxResponse.taxAmount());
-            total = total.add(taxResponse.grossAmount());
+            total = total.add(taxResponse.grossAmount()).add(depositTotal);
         }
         sale.setTotals(money(subtotal), money(discount), money(tax), money(total));
     }

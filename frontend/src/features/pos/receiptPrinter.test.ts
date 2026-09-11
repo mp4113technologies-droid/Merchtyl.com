@@ -138,6 +138,50 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).not.toContain('internal-definition-uuid');
   });
 
+  it('renders a friendly line-level and aggregate container deposit without double counting total', () => {
+    const document = receipt();
+    document.items[0] = {
+      ...document.items[0], productName: 'Mouse AOVIN — Mouse', quantity: 1, unitPrice: 20,
+      lineSubtotal: 21, taxAmount: 3, lineTotal: 24, depositType: 'BOTTLE',
+      depositUnitAmount: 1, depositQuantity: 1, depositTotal: 1
+    };
+    document.subtotalAmount = 20;
+    document.containerDepositTotal = 1;
+    document.taxAmount = 3;
+    document.totalAmount = 24;
+
+    const html = receiptHtml(document, 58);
+
+    expect(html).toContain('Bottle Deposit');
+    expect(html).not.toContain('1 × $1.00');
+    expect(html).toContain('class="deposit-amount">$1.00');
+    expect(html).toContain('<span>Container Deposits</span><strong>$1.00</strong>');
+    expect(html).toContain('<span>Subtotal</span><strong>$20.00</strong>');
+    expect(html).toContain('<span>Total</span><strong>$24.00</strong>');
+    expect(html).not.toContain('BOTTLE');
+  });
+
+  it('puts multi-quantity deposit calculation on its own indented thermal line', () => {
+    const document = receipt();
+    document.items[0] = { ...document.items[0], quantity: 3, unitPrice: 6, lineSubtotal: 18.3,
+      lineTotal: 18.3, depositType: 'CAN', depositUnitAmount: .1, depositQuantity: 3, depositTotal: .3 };
+    document.subtotalAmount = 18;
+    document.containerDepositTotal = .3;
+    document.totalAmount = 18.3;
+
+    const html = receiptHtml(document, 80);
+    expect(html).toContain('class="deposit-label">Can Deposit');
+    expect(html).toContain('class="deposit-amount">$0.30');
+    expect(html).toContain('class="deposit-calculation muted">3 × $0.10');
+    expect(html).toContain('.deposit-block { margin-left: 2mm; }');
+  });
+
+  it('omits deposit rows for a receipt without deposits', () => {
+    const html = receiptHtml(receipt(), 58);
+    expect(html).not.toContain('Container Deposits');
+    expect(html).not.toContain('Bottle Deposit');
+  });
+
   it('renders a restaurant customer receipt without Sale UUID or generated menu SKU', () => {
     const document = receipt();
     document.receiptNumber = '1024';

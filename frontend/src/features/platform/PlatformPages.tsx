@@ -1637,6 +1637,7 @@ export function PlatformLoginPage() {
           <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
           <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           <Button type="submit" variant="contained">Sign in</Button>
+          <Button component={Link} to="/forgot-password" variant="text">Forgot password?</Button>
         </Stack>
       </Paper>
     </Stack>

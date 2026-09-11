@@ -148,7 +148,7 @@ import type {
   UserRole
 } from './types';
 import type { InitialInventoryResult, InitialInventoryValidation } from './types';
-import { merchantSlugForRequest } from '../app/portalContext';
+import { merchantSlugForRequest, portalRealmForRequest } from '../app/portalContext';
 import { API_BASE_URL } from './runtimeConfig';
 
 type AuthRegisterPayload = {
@@ -275,6 +275,9 @@ export type ProductVariantPayload = {
   cost: number;
   price: number;
   active: boolean;
+  depositEnabled: boolean;
+  depositType?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER';
+  depositAmount?: number;
   barcodes: ProductVariantBarcodePayload[];
 };
 
@@ -908,6 +911,8 @@ export type SaleCheckoutPayload = {
     productId?: string;
     variantId?: string;
     foodMenuItemId?: string;
+    foodMenuItemVariantId?: string;
+    foodMenuModifierOptionIds?: string[];
     description?: string;
     unitPrice?: number;
     taxTreatment?: 'TAXABLE' | 'NON_TAXABLE';
@@ -1580,6 +1585,9 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   }
   const merchantSlug = merchantSlugForRequest();
   if (merchantSlug && !path.startsWith('/public/') && !path.startsWith('/platform/')) headers.set('X-Merchant-Slug', merchantSlug);
+  if (path === '/auth/forgot-password' || path === '/auth/reset-password') {
+    headers.set('X-Portal-Realm', portalRealmForRequest());
+  }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,

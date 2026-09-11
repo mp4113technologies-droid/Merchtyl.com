@@ -141,9 +141,12 @@ public class ReceiptService {
                 .map(Payment::getCashRoundingAdjustment)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal cashTotal = money(sale.getTotalAmount().add(cashRoundingAdjustment));
+        BigDecimal containerDepositTotal = money(sale.getItems().stream()
+                .map(SaleItem::getDepositTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal taxableAmount = money(sale.getItems().stream()
                 .filter(item -> item.getEstimatedTaxAmount().signum() > 0)
-                .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
+                .map(item -> item.getLineSubtotal().subtract(item.getDepositTotal()).subtract(item.getDiscountAmount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         List<ReceiptTaxSummaryDto> taxSummaries = sale.getEstimatedTaxAmount().signum() == 0
                 ? List.of()
@@ -178,7 +181,8 @@ public class ReceiptService {
                         .sorted(Comparator.comparingInt(SaleItem::getLineNumber))
                         .map(this::item)
                         .toList(),
-                sale.getSubtotalAmount(),
+                money(sale.getSubtotalAmount().subtract(containerDepositTotal)),
+                containerDepositTotal,
                 sale.getDiscountAmount(),
                 taxSummaries,
                 sale.getEstimatedTaxAmount(),
@@ -202,7 +206,7 @@ public class ReceiptService {
                 item.getLineNumber(),
                 item.getProductName(),
                 item.getQuantity(),
-                item.getLineSubtotal().divide(item.getQuantity(), 4, RoundingMode.HALF_UP),
+                item.getLineSubtotal().subtract(item.getDepositTotal()).divide(item.getQuantity(), 4, RoundingMode.HALF_UP),
                 item.getCompletedProductCost(),
                 item.getCompletedProductPrice(),
                 item.getCompletedProductCapabilities(),
@@ -212,7 +216,11 @@ public class ReceiptService {
                 item.getLineTotal(),
                 item.getPromotionId(),
                 item.getPromotionName(),
-                item.getPromotionDiscountAmount());
+                item.getPromotionDiscountAmount(),
+                item.getDepositType(),
+                item.getDepositUnitAmount(),
+                item.getDepositQuantity(),
+                item.getDepositTotal());
     }
 
     private ReceiptPaymentDto payment(Payment payment) {

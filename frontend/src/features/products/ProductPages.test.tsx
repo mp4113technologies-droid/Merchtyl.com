@@ -379,6 +379,10 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Cost')[1], '1.25');
     await userEvent.clear(screen.getAllByLabelText('Price')[1]);
     await userEvent.type(screen.getAllByLabelText('Price')[1], '3.25');
+    await userEvent.click(screen.getByLabelText('Apply Deposit'));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Container Type' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Bottle' }));
+    await userEvent.type(screen.getByLabelText('Deposit Price'), '0.10');
 
     const writesBeforeScanning = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT').length;
     const scanner = screen.getByRole('textbox', { name: 'Scan or enter barcode' });
@@ -408,6 +412,9 @@ describe('Product pages', () => {
         && body.variants[0].sku === undefined
         && body.variants[0].barcodes[0].barcode === '987654321098'
         && body.variants[0].barcodes[1].barcode === '987654321099'
+        && body.variants[0].depositEnabled === true
+        && body.variants[0].depositType === 'BOTTLE'
+        && body.variants[0].depositAmount === 0.1
         && body.barcodes === undefined
         && body.unitOfMeasureId === '00000000-0000-0000-0000-000000000803'
         && body.taxCategoryId === '00000000-0000-0000-0000-000000000901'

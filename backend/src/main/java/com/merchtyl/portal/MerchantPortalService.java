@@ -11,6 +11,8 @@ import java.text.Normalizer;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Service
 public class MerchantPortalService {
@@ -52,7 +54,24 @@ public class MerchantPortalService {
     public String portalUrl(String slug) {
         validate(slug);
         String scheme = "localhost".equals(properties.publicBaseDomain()) ? "http" : "https";
-        return scheme + "://" + slug + "." + properties.publicBaseDomain();
+        String port = "localhost".equals(properties.publicBaseDomain()) && properties.platformBaseUrl().contains(":")
+                ? properties.platformBaseUrl().substring(properties.platformBaseUrl().lastIndexOf(':')) : "";
+        return scheme + "://" + slug + "." + properties.publicBaseDomain() + port;
+    }
+
+    public String resetPasswordUrl(UUID tenantId, String rawToken) {
+        String slug = jdbcTemplate.queryForObject("select merchant_slug from tenants where id = ?", String.class, tenantId);
+        return portalUrl(slug) + "/reset-password?token=" + encode(rawToken);
+    }
+
+    public String platformResetPasswordUrl(String rawToken) {
+        String configured = properties.platformBaseUrl();
+        String scheme = configured.startsWith("localhost") || configured.startsWith("127.0.0.1") ? "http" : "https";
+        return scheme + "://" + configured + "/reset-password?token=" + encode(rawToken);
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     public PublicMerchantPortalResponse resolve(String slug) {

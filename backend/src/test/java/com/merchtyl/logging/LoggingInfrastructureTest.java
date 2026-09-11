@@ -121,6 +121,8 @@ class LoggingInfrastructureTest {
         assertThat(LogSanitizer.maskValue("cardNumber", "4111111111111111", true)).isEqualTo(LogSanitizer.MASK);
         assertThat(LogSanitizer.maskQueryString("email=a@example.test&cvv=123", true))
                 .isEqualTo("email=a@example.test&cvv=********");
+        assertThat(LogSanitizer.maskQueryString("token=raw-reset-token&next=login", true))
+                .isEqualTo("token=********&next=login");
         assertThat(LogSanitizer.maskSensitiveText("password=secret cardNumber=4111111111111111"))
                 .doesNotContain("secret")
                 .doesNotContain("4111111111111111");

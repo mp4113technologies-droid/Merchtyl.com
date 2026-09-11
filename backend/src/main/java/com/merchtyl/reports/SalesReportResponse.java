@@ -20,9 +20,19 @@ public record SalesReportResponse(
         BigDecimal refunds,
         BigDecimal taxes,
         BigDecimal payments,
+        BigDecimal containerDeposits,
+        BigDecimal refundedContainerDeposits,
         long saleCount,
         long refundCount,
         List<SalesReportPaymentBreakdown> paymentBreakdown,
         Instant generatedAt
 ) {
+    public SalesReportResponse(UUID storeId, UUID registerId, UUID cashierId, UUID categoryId, UUID productId,
+            LocalDate dateFrom, LocalDate dateTo, BigDecimal grossSales, BigDecimal netSales, BigDecimal discounts,
+            BigDecimal refunds, BigDecimal taxes, BigDecimal payments, long saleCount, long refundCount,
+            List<SalesReportPaymentBreakdown> paymentBreakdown, Instant generatedAt) {
+        this(storeId, registerId, cashierId, categoryId, productId, dateFrom, dateTo, grossSales, netSales,
+                discounts, refunds, taxes, payments, BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2),
+                saleCount, refundCount, paymentBreakdown, generatedAt);
+    }
 }

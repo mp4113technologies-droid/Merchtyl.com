@@ -197,7 +197,9 @@ function PortalBoundary({ children }: { children: React.ReactNode }) {
   const merchantPortal = context.type === 'MERCHANT' || (context.type === 'DEVELOPMENT' && Boolean(context.merchantSlug));
   if (context.type === 'PUBLIC') return <PublicComingSoonPage />;
   if (context.type === 'UNKNOWN') return <UnknownPortal />;
-  if (context.type === 'PLATFORM' && !location.pathname.startsWith('/platform') && location.pathname !== '/activate-platform-admin') {
+  const platformPublicAuthPath = ['/login', '/forgot-password', '/reset-password', '/activate-platform-admin']
+    .includes(location.pathname);
+  if (context.type === 'PLATFORM' && !location.pathname.startsWith('/platform') && !platformPublicAuthPath) {
     return <Navigate to="/platform" replace />;
   }
   if (merchantPortal) {

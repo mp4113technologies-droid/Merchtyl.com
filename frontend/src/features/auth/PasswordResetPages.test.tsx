@@ -3,10 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordResetPages';
+import { MerchantPortalProvider } from '../../app/MerchantPortalContext';
 
 function renderPage(node: React.ReactNode, entry: string) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>
-    <MemoryRouter initialEntries={[entry]}>{node}</MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}><MerchantPortalProvider hostname="localhost">{node}</MerchantPortalProvider></MemoryRouter>
   </QueryClientProvider>);
 }
 
@@ -14,11 +15,12 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('password reset pages', () => {
   it('shows the generic forgot-password success message', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ message: 'ok' }), { status: 200 }));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ message: 'ok' }), { status: 200 }));
     renderPage(<ForgotPasswordPage />, '/forgot-password');
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: 'owner@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
     expect(await screen.findByText('If an eligible account exists, password reset instructions have been sent.')).toBeInTheDocument();
+    expect(new Headers(fetchSpy.mock.calls[0]?.[1]?.headers).get('X-Portal-Realm')).toBe('DEVELOPMENT');
   });
 
   it('validates password confirmation before reset', async () => {
@@ -65,5 +67,20 @@ describe('password reset pages', () => {
     fireEvent.change(screen.getByLabelText(/Confirm Password/), { target: { value: 'ValidPassword1!' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update password' }));
     expect(await screen.findByText(/invalid or has expired/)).toBeInTheDocument();
+  });
+
+  it('shows a specific safe message when a token belongs to another portal', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).includes('password-policy')) return new Response(JSON.stringify({
+        minimumLength: 8, maximumLength: 20, requiresUppercase: true,
+        requiresLowercase: true, requiresNumber: true, requiresSpecialCharacter: true
+      }), { status: 200 });
+      return new Response(JSON.stringify({ code: 'RESET_TOKEN_PORTAL_MISMATCH', message: 'mismatch', violations: [] }), { status: 400 });
+    });
+    renderPage(<ResetPasswordPage />, '/reset-password?token=url-safe_token');
+    fireEvent.change(screen.getByLabelText(/New Password/), { target: { value: 'ValidPassword1!' } });
+    fireEvent.change(screen.getByLabelText(/Confirm Password/), { target: { value: 'ValidPassword1!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update password' }));
+    expect(await screen.findByText('This password reset link does not belong to this merchant portal.')).toBeInTheDocument();
   });
 });

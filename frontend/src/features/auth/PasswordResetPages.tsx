@@ -6,12 +6,14 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiClientError, forgotPassword, getPasswordPolicy, resetPassword } from '../../api/client';
 import { PASSWORD_POLICY_HELP, validPassword } from './passwordPolicy';
 import { MerchtylLogo } from '../../app/MerchtylLogo';
+import { useMerchantPortal } from '../../app/MerchantPortalContext';
 
 const genericMessage = 'If an eligible account exists, password reset instructions have been sent.';
 
 function ResetShell({ children, title }: { children: React.ReactNode; title: string }) {
+  const { merchant } = useMerchantPortal();
   return <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: { xs: 4, md: 8 } }}><Container maxWidth="sm"><Stack spacing={3}>
-    <Stack alignItems="center" spacing={1}><MerchtylLogo size="medium" /><Stack direction="row" alignItems="center" spacing={1}><LockResetIcon color="primary" /><Typography variant="h4" component="h1">{title}</Typography></Stack></Stack>
+    <Stack alignItems="center" spacing={1}><MerchtylLogo size="medium" />{merchant?.displayName ? <Typography variant="h6">{merchant.displayName}</Typography> : null}<Stack direction="row" alignItems="center" spacing={1}><LockResetIcon color="primary" /><Typography variant="h4" component="h1">{title}</Typography></Stack></Stack>
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>{children}</Paper>
   </Stack></Container></Box>;
 }
@@ -53,6 +55,7 @@ export function ResetPasswordPage() {
 
 function resetErrorMessage(error: Error) {
   if (!(error instanceof ApiClientError)) return 'Password reset failed. Please try again.';
+  if (error.code === 'RESET_TOKEN_PORTAL_MISMATCH') return 'This password reset link does not belong to this merchant portal.';
   if (['INVALID_RESET_TOKEN', 'EXPIRED_RESET_TOKEN', 'RESET_TOKEN_REVOKED', 'RESET_TOKEN_PURPOSE_INVALID'].includes(error.code ?? '')) {
     return 'This password reset link is invalid or has expired. Request a new password reset link.';
   }

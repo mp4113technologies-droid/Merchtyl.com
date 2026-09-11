@@ -10,9 +10,15 @@ public record ProductVariantValues(
         String description,
         BigDecimal cost,
         BigDecimal price,
-        boolean active
+        boolean active,
+        boolean depositEnabled,
+        DepositType depositType,
+        BigDecimal depositAmount
 ) {
+    public ProductVariantValues(UUID id, String sku, String name, String description, BigDecimal cost, BigDecimal price, boolean active) {
+        this(id, sku, name, description, cost, price, active, false, null, null);
+    }
     public ProductVariantValues(String sku, String name, String description, BigDecimal cost, BigDecimal price, boolean active) {
-        this(null, sku, name, description, cost, price, active);
+        this(null, sku, name, description, cost, price, active, false, null, null);
     }
 }

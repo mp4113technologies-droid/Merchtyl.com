@@ -22,6 +22,7 @@ public record ReceiptDocumentDto(
         String currencyCode,
         List<ReceiptItemDto> items,
         BigDecimal subtotalAmount,
+        BigDecimal containerDepositTotal,
         BigDecimal discountAmount,
         List<ReceiptTaxSummaryDto> taxSummaries,
         BigDecimal taxAmount,
@@ -42,7 +43,7 @@ public record ReceiptDocumentDto(
             BigDecimal taxAmount, BigDecimal totalAmount, List<ReceiptPaymentDto> payments,
             BigDecimal cashTendered, BigDecimal changeDue) {
         this(brandName, brandTagline, store, register, cashier, receiptNumber, saleId, saleNumber,
-                businessDate, completedAt, currencyCode, items, subtotalAmount, discountAmount, taxSummaries,
+                businessDate, completedAt, currencyCode, items, subtotalAmount, BigDecimal.ZERO.setScale(2), discountAmount, taxSummaries,
                 taxAmount, totalAmount, BigDecimal.ZERO.setScale(2), totalAmount, payments, cashTendered, changeDue, null, null);
     }
     public ReceiptDocumentDto(String brandName,String brandTagline,ReceiptStoreDto store,ReceiptRegisterDto register,
@@ -51,6 +52,6 @@ public record ReceiptDocumentDto(
             BigDecimal discountAmount,List<ReceiptTaxSummaryDto> taxSummaries,BigDecimal taxAmount,BigDecimal totalAmount,
             List<ReceiptPaymentDto> payments,BigDecimal cashTendered,BigDecimal changeDue,String tokenNumber) {
         this(brandName,brandTagline,store,register,cashier,receiptNumber,saleId,saleNumber,businessDate,completedAt,
-                currencyCode,items,subtotalAmount,discountAmount,taxSummaries,taxAmount,totalAmount,BigDecimal.ZERO.setScale(2),totalAmount,payments,cashTendered,changeDue,tokenNumber,null);
+                currencyCode,items,subtotalAmount,BigDecimal.ZERO.setScale(2),discountAmount,taxSummaries,taxAmount,totalAmount,BigDecimal.ZERO.setScale(2),totalAmount,payments,cashTendered,changeDue,tokenNumber,null);
     }
 }

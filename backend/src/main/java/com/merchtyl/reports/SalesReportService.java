@@ -71,7 +71,9 @@ public class SalesReportService {
             }
             BigDecimal includedTotal = moneyZero();
             for (SaleItem item : matchingItems) {
-                totals.grossSales = totals.grossSales.add(money(item.getLineSubtotal()));
+                BigDecimal itemDeposit = item.getDepositTotal() == null ? moneyZero() : item.getDepositTotal();
+                totals.grossSales = totals.grossSales.add(money(item.getLineSubtotal().subtract(itemDeposit)));
+                totals.containerDeposits = totals.containerDeposits.add(money(itemDeposit));
                 totals.discounts = totals.discounts.add(money(item.getDiscountAmount()));
                 totals.saleTax = totals.saleTax.add(money(item.getEstimatedTaxAmount()));
                 includedTotal = includedTotal.add(money(item.getLineTotal()));
@@ -96,7 +98,9 @@ public class SalesReportService {
             refundCount++;
             BigDecimal includedRefundTotal = moneyZero();
             for (ReturnItem item : matchingItems) {
-                totals.refundSubtotal = totals.refundSubtotal.add(money(item.getReturnSubtotalAmount()));
+                BigDecimal returnedDeposit = item.getReturnDepositTotal() == null ? moneyZero() : item.getReturnDepositTotal();
+                totals.refundSubtotal = totals.refundSubtotal.add(money(item.getReturnSubtotalAmount().subtract(returnedDeposit)));
+                totals.refundedContainerDeposits = totals.refundedContainerDeposits.add(money(returnedDeposit));
                 totals.refundTax = totals.refundTax.add(money(item.getReturnTaxAmount()));
                 includedRefundTotal = includedRefundTotal.add(money(item.getReturnTotalAmount()));
             }
@@ -107,7 +111,7 @@ public class SalesReportService {
             }
         }
 
-        BigDecimal refundsTotal = totals.refundSubtotal.add(totals.refundTax);
+        BigDecimal refundsTotal = totals.refundSubtotal.add(totals.refundedContainerDeposits).add(totals.refundTax);
         BigDecimal netSales = totals.grossSales
                 .subtract(totals.discounts)
                 .subtract(totals.refundSubtotal);
@@ -138,6 +142,8 @@ public class SalesReportService {
                 money(refundsTotal),
                 money(netTaxes),
                 money(netPayments),
+                money(totals.containerDeposits),
+                money(totals.refundedContainerDeposits),
                 sales.size(),
                 refundCount,
                 breakdown,
@@ -286,6 +292,8 @@ public class SalesReportService {
 
     private static final class Totals {
         private BigDecimal grossSales = moneyZero();
+        private BigDecimal containerDeposits = moneyZero();
+        private BigDecimal refundedContainerDeposits = moneyZero();
         private BigDecimal discounts = moneyZero();
         private BigDecimal saleTax = moneyZero();
         private BigDecimal refundSubtotal = moneyZero();

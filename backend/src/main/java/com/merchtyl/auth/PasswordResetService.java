@@ -11,6 +11,8 @@ import com.merchtyl.config.SecurityProperties;
 import com.merchtyl.email.EmailDeliveryResponse;
 import com.merchtyl.email.EmailDeliveryService;
 import com.merchtyl.platform.admin.PlatformUserRepository;
+import com.merchtyl.platform.admin.PlatformUserAccount;
+import com.merchtyl.portal.MerchantPortalService;
 import com.merchtyl.platform.web.CorrelationIdFilter;
 import com.merchtyl.security.RefreshTokenService;
 import com.merchtyl.security.User;
@@ -51,11 +53,13 @@ public class PasswordResetService {
     private final PlatformUserRepository platformUserRepository;
     private final SecurityProperties properties;
     private final PasswordPolicyService passwordPolicyService;
+    private final MerchantPortalService merchantPortalService;
 
     public PasswordResetService(JdbcTemplate jdbcTemplate, UserRepository userRepository, PasswordEncoder passwordEncoder,
                                 RefreshTokenService refreshTokenService, EmailDeliveryService emailDeliveryService,
                                 AuditService auditService, PlatformUserRepository platformUserRepository,
-                                SecurityProperties properties, PasswordPolicyService passwordPolicyService) {
+                                SecurityProperties properties, PasswordPolicyService passwordPolicyService,
+                                MerchantPortalService merchantPortalService) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -65,13 +69,24 @@ public class PasswordResetService {
         this.platformUserRepository = platformUserRepository;
         this.properties = properties;
         this.passwordPolicyService = passwordPolicyService;
+        this.merchantPortalService = merchantPortalService;
     }
 
     @Transactional
-    public PasswordResetMessage forgotPassword(ForgotPasswordRequest request, String requestIp) {
-        userRepository.findByEmailIgnoreCase(request.email().trim().toLowerCase())
+    public PasswordResetMessage forgotPassword(ForgotPasswordRequest request, String requestIp,
+                                               PasswordResetPortalContext portal) {
+        String email = request.email().trim().toLowerCase();
+        if (portal.platform()) {
+            platformUserRepository.findByEmail(email)
+                    .filter(PlatformUserAccount::enabled)
+                    .filter(user -> withinPlatformLimit(user.id(), properties.passwordReset().forgotMaxPerHour()))
+                    .ifPresent(user -> createAndSendPlatform(user, requestIp));
+            return new PasswordResetMessage(GENERIC_MESSAGE);
+        }
+        userRepository.findByEmailIgnoreCase(email)
                 .filter(this::eligible)
                 .filter(user -> !closedTenant(user.getTenantId()))
+                .filter(user -> portal.developmentWithoutSlug() || merchantPortalMatches(user.getTenantId(), portal))
                 .ifPresent(user -> {
                     if (!withinLimit(user.getId(), properties.passwordReset().forgotMaxPerHour())) {
                         log.warn("security_event event=PASSWORD_RESET_REQUESTED status=rate_limited user_id={} tenant_id={}", user.getId(), user.getTenantId());
@@ -79,6 +94,12 @@ public class PasswordResetService {
                     }
                     createAndSend(user, "SELF_SERVICE", null, null, requestIp);
                 });
+        if (portal.developmentWithoutSlug()) {
+            platformUserRepository.findByEmail(email)
+                    .filter(PlatformUserAccount::enabled)
+                    .filter(user -> withinPlatformLimit(user.id(), properties.passwordReset().forgotMaxPerHour()))
+                    .ifPresent(user -> createAndSendPlatform(user, requestIp));
+        }
         return new PasswordResetMessage(GENERIC_MESSAGE);
     }
 
@@ -100,7 +121,7 @@ public class PasswordResetService {
     }
 
     @Transactional
-    public void reset(ResetPasswordRequest request) {
+    public void reset(ResetPasswordRequest request, PasswordResetPortalContext portal) {
         log.info("security_event event=PASSWORD_RESET_VALIDATION_STARTED token_purpose=PASSWORD_RESET");
         if (!request.newPassword().equals(request.confirmPassword())) {
             log.warn("security_event event=PASSWORD_RESET_PASSWORD_REJECTED failure_code=PASSWORD_CONFIRMATION_MISMATCH");
@@ -115,7 +136,17 @@ public class PasswordResetService {
         Map<String, Object> token = jdbcTemplate.queryForList("""
                 select * from password_reset_tokens where token_hash = ?
                 """, hash(request.token())).stream().findFirst()
-                .orElseThrow(() -> rejected("INVALID_RESET_TOKEN", "Invalid password reset link"));
+                .orElse(null);
+        if (token == null) {
+            if (portal.platform() || portal.developmentWithoutSlug()) {
+                resetPlatform(request, portal);
+                return;
+            }
+            throw rejected("INVALID_RESET_TOKEN", "Invalid password reset link");
+        }
+        if (!merchantPortalMatches((UUID) token.get("tenant_id"), portal)) {
+            throw rejected("RESET_TOKEN_PORTAL_MISMATCH", "This password reset link does not belong to this merchant portal.");
+        }
         if (!"PASSWORD_RESET".equals(token.get("purpose"))) {
             throw rejected("RESET_TOKEN_PURPOSE_INVALID", "Invalid password reset link");
         }
@@ -194,8 +225,83 @@ public class PasswordResetService {
                 "PASSWORD_RESET_TOKEN", tokenId, null, null, null,
                 Map.of("tenantId", user.getTenantId(), "targetUserId", user.getId(), "expiresAt", expiresAt), reason));
         log.info("security_event event=PASSWORD_RESET_REQUESTED user_id={} tenant_id={} actor_user_id={}", user.getId(), user.getTenantId(), actorId);
-        return emailDeliveryService.sendPasswordReset(user.getTenantId(), user.getEmail(), user.getDisplayName(), rawToken,
+        String resetUrl = merchantPortalService.resetPasswordUrl(user.getTenantId(), rawToken);
+        return emailDeliveryService.sendPasswordReset(user.getTenantId(), user.getEmail(), user.getDisplayName(), resetUrl,
                 expiresAt, actorId, reason);
+    }
+
+    private void createAndSendPlatform(PlatformUserAccount user, String requestIp) {
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                update platform_password_reset_tokens set revoked_at=now(), version=version+1
+                where platform_user_id=? and used_at is null and revoked_at is null
+                """, user.id());
+        String rawToken = rawToken();
+        Instant expiresAt = now.plus(properties.passwordReset().tokenTtl());
+        jdbcTemplate.update("""
+                insert into platform_password_reset_tokens
+                    (id, platform_user_id, token_hash, expires_at, request_ip, correlation_id)
+                values (?, ?, ?, ?, ?, ?)
+                """, UUID.randomUUID(), user.id(), hash(rawToken), Timestamp.from(expiresAt), requestIp,
+                MDC.get(CorrelationIdFilter.MDC_KEY));
+        emailDeliveryService.sendPasswordReset(null, user.email(), user.displayName(),
+                merchantPortalService.platformResetPasswordUrl(rawToken), expiresAt, null, null);
+        log.info("security_event event=PASSWORD_RESET_REQUESTED realm=PLATFORM platform_user_id={}", user.id());
+    }
+
+    private void resetPlatform(ResetPasswordRequest request, PasswordResetPortalContext portal) {
+        if (!portal.platform() && !portal.developmentWithoutSlug()) throw rejected("INVALID_RESET_TOKEN", "Invalid password reset link");
+        Map<String, Object> token = jdbcTemplate.queryForList("""
+                select * from platform_password_reset_tokens where token_hash=?
+                """, hash(request.token())).stream().findFirst()
+                .orElseThrow(() -> rejected("INVALID_RESET_TOKEN", "Invalid password reset link"));
+        if (!"PASSWORD_RESET".equals(token.get("purpose"))) {
+            throw rejected("RESET_TOKEN_PURPOSE_INVALID", "Invalid password reset link");
+        }
+        if (token.get("used_at") != null) throw rejected("RESET_TOKEN_ALREADY_USED", "Password reset link has already been used");
+        if (token.get("revoked_at") != null) throw rejected("RESET_TOKEN_REVOKED", "Password reset link has been revoked");
+        if (!instant(token.get("expires_at")).isAfter(Instant.now())) {
+            throw rejected("EXPIRED_RESET_TOKEN", "Password reset link has expired");
+        }
+        UUID userId = (UUID) token.get("platform_user_id");
+        PlatformUserAccount user = platformUserRepository.findById(userId)
+                .filter(PlatformUserAccount::enabled)
+                .orElseThrow(() -> restriction("PASSWORD_RESET_NOT_ALLOWED", "Password reset is not allowed for this account"));
+        if (passwordEncoder.matches(request.newPassword(), user.passwordHash())) {
+            throw new PasswordPolicyException(List.of(new PasswordPolicyViolation("PASSWORD_MATCHES_CURRENT_PASSWORD", "Choose a password different from your current password.")));
+        }
+        int used = jdbcTemplate.update("""
+                update platform_password_reset_tokens set used_at=now(), version=version+1
+                where id=? and used_at is null and revoked_at is null and expires_at > now()
+                """, token.get("id"));
+        if (used != 1) throw rejected("INVALID_RESET_TOKEN", "Invalid password reset link");
+        jdbcTemplate.update("""
+                update platform_users set password_hash=?, password_change_required=false, locked=false,
+                    updated_at=now(), version=version+1 where id=?
+                """, passwordEncoder.encode(request.newPassword()), userId);
+        jdbcTemplate.update("""
+                update platform_password_reset_tokens set revoked_at=now(), version=version+1
+                where platform_user_id=? and id<>? and used_at is null and revoked_at is null
+                """, userId, token.get("id"));
+        log.info("security_event event=PASSWORD_RESET_COMPLETED realm=PLATFORM platform_user_id={}", userId);
+    }
+
+    private boolean withinPlatformLimit(UUID userId, int max) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from platform_password_reset_tokens
+                where platform_user_id=? and created_at >= now() - interval '1 hour'
+                """, Integer.class, userId);
+        return count == null || count < max;
+    }
+
+    private boolean merchantPortalMatches(UUID tenantId, PasswordResetPortalContext portal) {
+        if (portal.developmentWithoutSlug()) return true;
+        if (!portal.merchant()) return false;
+        try {
+            return tenantId.equals(merchantPortalService.tenantId(portal.merchantSlug()));
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private boolean withinLimit(UUID userId, int max) {

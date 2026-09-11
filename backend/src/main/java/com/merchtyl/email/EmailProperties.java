@@ -35,11 +35,6 @@ public record EmailProperties(
         return base + "/activate-owner?token=" + rawToken;
     }
 
-    public String passwordResetUrl(String rawToken) {
-        String base = frontendBaseUrl == null ? "" : frontendBaseUrl.replaceAll("/+$", "");
-        return base + "/reset-password?token=" + rawToken;
-    }
-
     public String platformAdminActivationUrl(String rawToken) {
         String base = frontendBaseUrl == null ? "" : frontendBaseUrl.replaceAll("/+$", "");
         return base + "/activate-platform-admin?token=" + rawToken;

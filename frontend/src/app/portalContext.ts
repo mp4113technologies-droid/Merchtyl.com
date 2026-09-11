@@ -36,6 +36,10 @@ export function merchantSlugForRequest(): string | undefined {
   return context.type === 'MERCHANT' || context.type === 'DEVELOPMENT' ? context.merchantSlug : undefined;
 }
 
+export function portalRealmForRequest(): PortalContext['type'] {
+  return currentPortalContext().type;
+}
+
 export function portalStorageScope(): string {
   const context = currentPortalContext();
   return context.type === 'MERCHANT' ? `merchant:${context.merchantSlug}` : context.type.toLowerCase();

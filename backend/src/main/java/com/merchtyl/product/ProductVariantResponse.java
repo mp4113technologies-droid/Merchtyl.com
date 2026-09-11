@@ -13,6 +13,9 @@ public record ProductVariantResponse(
         BigDecimal cost,
         BigDecimal price,
         boolean active,
+        boolean depositEnabled,
+        DepositType depositType,
+        BigDecimal depositAmount,
         List<ProductBarcodeResponse> barcodes,
         Instant createdAt,
         Instant updatedAt,
@@ -27,6 +30,9 @@ public record ProductVariantResponse(
                 variant.getCost(),
                 variant.getPrice(),
                 variant.isActive(),
+                variant.isDepositEnabled(),
+                variant.getDepositType(),
+                variant.getDepositAmount(),
                 variant.getProduct().getBarcodes().stream()
                         .filter(barcode -> barcode.getVariant() != null && variant.getId().equals(barcode.getVariant().getId()))
                         .map(ProductBarcodeResponse::from)

@@ -3,6 +3,7 @@ package com.merchtyl.sales;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductVariant;
+import com.merchtyl.product.DepositType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -83,6 +84,7 @@ public class SaleItem extends BaseUuidEntity {
     private UUID menuItemId;
     private UUID menuItemVariantId;
     @Column(length=180) private String itemNameSnapshot;
+    @Column(name="menu_modifier_snapshot") private String menuModifierSnapshot;
     @Column(length=180) private String menuVariantNameSnapshot;
 
     @Column(nullable = false)
@@ -110,6 +112,16 @@ public class SaleItem extends BaseUuidEntity {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal lineTotal;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private DepositType depositType;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal depositUnitAmount;
+    @Column(nullable = false, precision = 12, scale = 4)
+    private BigDecimal depositQuantity = BigDecimal.ZERO.setScale(4);
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal depositTotal = BigDecimal.ZERO.setScale(2);
 
     @Column(precision = 19, scale = 4)
     private BigDecimal completedProductCost;
@@ -205,6 +217,7 @@ public class SaleItem extends BaseUuidEntity {
         this.menuItemId=menuItemId; this.menuItemVariantId=menuItemVariantId; this.itemNameSnapshot=itemName;
         this.menuVariantNameSnapshot=variantName; this.productName=variantName==null?itemName:itemName+" — "+variantName;
     }
+    void snapshotFoodModifiers(java.util.List<String> modifiers){this.menuModifierSnapshot=modifiers==null||modifiers.isEmpty()?null:String.join("\n",modifiers);}
 
     private static BigDecimal money(BigDecimal value) { return value.setScale(2, java.math.RoundingMode.HALF_UP); }
 
@@ -233,6 +246,20 @@ public class SaleItem extends BaseUuidEntity {
         this.lineSubtotal = lineSubtotal;
         this.estimatedTaxAmount = estimatedTaxAmount;
         this.lineTotal = lineTotal;
+    }
+
+    void applyVariantDeposit() {
+        if (variant != null && variant.isDepositEnabled()) {
+            depositType = variant.getDepositType();
+            depositUnitAmount = variant.getDepositAmount();
+            depositQuantity = quantity;
+            depositTotal = money(depositUnitAmount.multiply(quantity));
+        } else {
+            depositType = null;
+            depositUnitAmount = null;
+            depositQuantity = BigDecimal.ZERO.setScale(4);
+            depositTotal = BigDecimal.ZERO.setScale(2);
+        }
     }
 
     void snapshotForCompletion() {
@@ -321,6 +348,7 @@ public class SaleItem extends BaseUuidEntity {
     public BigDecimal getPromotionDiscountAmount(){return promotionDiscountAmount;} public BigDecimal getPromotionFinalAmount(){return promotionFinalAmount;}
     public UUID getMenuItemId(){return menuItemId;} public UUID getMenuItemVariantId(){return menuItemVariantId;}
     public String getItemNameSnapshot(){return itemNameSnapshot;} public String getMenuVariantNameSnapshot(){return menuVariantNameSnapshot;}
+    public java.util.List<String> getMenuModifiers(){return menuModifierSnapshot==null?java.util.List.of():java.util.Arrays.asList(menuModifierSnapshot.split("\\n"));}
 
     public boolean isPriceOverride() {
         return priceOverride;
@@ -357,6 +385,11 @@ public class SaleItem extends BaseUuidEntity {
     public BigDecimal getLineTotal() {
         return lineTotal;
     }
+
+    public DepositType getDepositType() { return depositType; }
+    public BigDecimal getDepositUnitAmount() { return depositUnitAmount; }
+    public BigDecimal getDepositQuantity() { return depositQuantity == null ? BigDecimal.ZERO.setScale(4) : depositQuantity; }
+    public BigDecimal getDepositTotal() { return depositTotal == null ? BigDecimal.ZERO.setScale(2) : depositTotal; }
 
     public BigDecimal getCompletedProductCost() {
         return completedProductCost;

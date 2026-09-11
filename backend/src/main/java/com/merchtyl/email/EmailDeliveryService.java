@@ -302,9 +302,8 @@ public class EmailDeliveryService {
 
     @Transactional
     public EmailDeliveryResponse sendPasswordReset(UUID tenantId, String recipient, String displayName,
-                                                   String rawToken, Instant expiresAt, UUID actorId, String reason) {
+                                                   String resetUrl, Instant expiresAt, UUID actorId, String reason) {
         UUID deliveryId = createDelivery(tenantId, null, recipient, EmailTemplateCode.PASSWORD_RESET, actorId, reason, null);
-        String resetUrl = emailProperties.passwordResetUrl(rawToken);
         RenderedEmailTemplate rendered = templateRenderer.render(EmailTemplateCode.PASSWORD_RESET, Map.of(
                 "recipient", displayName == null || displayName.isBlank() ? recipient : displayName,
                 "resetUrl", resetUrl,

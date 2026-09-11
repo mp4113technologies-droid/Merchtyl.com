@@ -164,6 +164,40 @@ class ProductIntegrationTest {
     }
 
     @Test
+    void updateCanAddNewVariantWithDepositWithoutMergingItAsDetached() throws Exception {
+        String token = registerAndGetToken("owner-add-variant@products.test", "Owner");
+        JsonNode created = createProduct(token, "cola", "Cola", "111111111111", true);
+
+        String update = """
+                {
+                  "name":"Cola", "sellableType":"STANDARD_PRODUCT", "unitOfMeasureId":"%s",
+                  "cost":1.25, "price":3.25, "categoryId":"%s", "brandId":"%s", "active":true,
+                  "inventoryTrackingEnabled":true, "decimalQuantityAllowed":false, "taxCategoryId":"%s",
+                  "availabilityScope":"ALL_STORES", "storeIds":[], "capabilities":["TRACK_INVENTORY"],
+                  "version":%s,
+                  "variants":[
+                    {"id":"%s", "name":"Large", "cost":1.50, "price":4.00, "active":true,
+                     "depositEnabled":false, "barcodes":[{"id":"%s", "barcode":"111111111111", "primaryBarcode":true, "active":true}]},
+                    {"name":"Bottle", "cost":1.00, "price":3.00, "active":true,
+                     "depositEnabled":true, "depositType":"BOTTLE", "depositAmount":0.10,
+                     "barcodes":[{"barcode":"222222222222", "primaryBarcode":true, "active":true}]}
+                  ]
+                }
+                """.formatted(unit.getId(), category.getId(), brand.getId(), taxCategory.getId(),
+                created.get("version").asLong(), created.at("/variants/0/id").asText(), created.at("/barcodes/0/id").asText());
+
+        mockMvc.perform(put("/api/v1/products/{id}", created.get("id").asText())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(update))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.variants.length()").value(2))
+                .andExpect(jsonPath("$.variants[?(@.name == 'Bottle')].depositEnabled").value(true))
+                .andExpect(jsonPath("$.variants[?(@.name == 'Bottle')].depositType").value("BOTTLE"))
+                .andExpect(jsonPath("$.variants[?(@.name == 'Bottle')].depositAmount").value(0.1));
+    }
+
+    @Test
     void listSearchesByNameSkuAndBarcodeAndBarcodeLookupReturnsProduct() throws Exception {
         String token = registerAndGetToken("owner@products.test", "Owner");
         createProduct(token, "coffee-12oz", "House Coffee", "012345678905", true);

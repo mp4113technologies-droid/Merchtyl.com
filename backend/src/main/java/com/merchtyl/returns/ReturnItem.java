@@ -3,6 +3,9 @@ package com.merchtyl.returns;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
 import com.merchtyl.sales.SaleItem;
+import com.merchtyl.product.DepositType;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -83,6 +86,13 @@ public class ReturnItem extends BaseUuidEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal returnTotalAmount;
 
+    @Enumerated(EnumType.STRING) @Column(length = 16)
+    private DepositType originalDepositType;
+    @Column(precision = 19, scale = 4) private BigDecimal originalDepositUnitAmount;
+    @Column(nullable = false, precision = 12, scale = 4) private BigDecimal originalDepositQuantity;
+    @Column(nullable = false, precision = 12, scale = 2) private BigDecimal originalDepositTotal;
+    @Column(nullable = false, precision = 12, scale = 2) private BigDecimal returnDepositTotal;
+
     protected ReturnItem() {
     }
 
@@ -123,6 +133,11 @@ public class ReturnItem extends BaseUuidEntity {
         this.originalProductTaxCategoryId = originalSaleItem.isCustomItem()
                 ? originalSaleItem.getTaxCategorySnapshotId()
                 : originalSaleItem.getProduct().getTaxCategoryId();
+        this.originalDepositType = originalSaleItem.getDepositType();
+        this.originalDepositUnitAmount = originalSaleItem.getDepositUnitAmount();
+        this.originalDepositQuantity = originalSaleItem.getDepositQuantity();
+        this.originalDepositTotal = originalSaleItem.getDepositTotal();
+        this.returnDepositTotal = prorate(originalSaleItem.getDepositTotal(), originalSaleItem.getQuantity(), quantity);
         this.returnSubtotalAmount = returnSubtotalAmount;
         this.returnTaxAmount = returnTaxAmount;
         this.returnTotalAmount = returnTotalAmount;
@@ -216,6 +231,11 @@ public class ReturnItem extends BaseUuidEntity {
     public BigDecimal getReturnTotalAmount() {
         return returnTotalAmount;
     }
+    public DepositType getOriginalDepositType() { return originalDepositType; }
+    public BigDecimal getOriginalDepositUnitAmount() { return originalDepositUnitAmount; }
+    public BigDecimal getOriginalDepositQuantity() { return originalDepositQuantity == null ? BigDecimal.ZERO.setScale(4) : originalDepositQuantity; }
+    public BigDecimal getOriginalDepositTotal() { return originalDepositTotal == null ? BigDecimal.ZERO.setScale(2) : originalDepositTotal; }
+    public BigDecimal getReturnDepositTotal() { return returnDepositTotal == null ? BigDecimal.ZERO.setScale(2) : returnDepositTotal; }
 
     private static BigDecimal prorate(BigDecimal originalAmount, BigDecimal originalQuantity, BigDecimal returnQuantity) {
         return originalAmount

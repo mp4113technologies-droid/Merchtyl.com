@@ -18,14 +18,22 @@ public record ProductVariantRequest(
         @NotNull @DecimalMin("0.0000") BigDecimal cost,
         @NotNull @DecimalMin("0.0000") BigDecimal price,
         boolean active,
+        boolean depositEnabled,
+        DepositType depositType,
+        @DecimalMin(value = "0.0000", inclusive = false, message = "Enter a valid deposit amount.") BigDecimal depositAmount,
         @Valid List<ProductVariantBarcodeRequest> barcodes
 ) {
     public ProductVariantRequest(String sku, String name, String description, BigDecimal cost, BigDecimal price, boolean active) {
-        this(null, sku, name, description, cost, price, active, List.of());
+        this(null, sku, name, description, cost, price, active, false, null, null, List.of());
     }
 
     public ProductVariantRequest(String sku, String name, String description, BigDecimal cost, BigDecimal price,
                                  boolean active, List<ProductVariantBarcodeRequest> barcodes) {
-        this(null, sku, name, description, cost, price, active, barcodes);
+        this(null, sku, name, description, cost, price, active, false, null, null, barcodes);
+    }
+
+    public ProductVariantRequest(UUID id, String sku, String name, String description, BigDecimal cost,
+                                 BigDecimal price, boolean active, List<ProductVariantBarcodeRequest> barcodes) {
+        this(id, sku, name, description, cost, price, active, false, null, null, barcodes);
     }
 }

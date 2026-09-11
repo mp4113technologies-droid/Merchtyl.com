@@ -473,6 +473,12 @@ export function receiptHtml(receipt: ReceiptDocument, widthMm = 80) {
     th, td { padding: 1mm 0; vertical-align: top; }
     th { text-align: left; border-bottom: 1px solid #aaa; }
     td.qty, td.money, th.money { text-align: right; white-space: nowrap; }
+    .deposit-cell { padding: 0 0 1mm; }
+    .deposit-block { margin-left: 2mm; }
+    .deposit-row { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; }
+    .deposit-label { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+    .deposit-amount { flex: 0 0 auto; white-space: nowrap; text-align: right; }
+    .deposit-calculation { margin-top: .25mm; font-size: 10px; line-height: 1.2; }
     @media screen {
       body { background: #f4f4f5; padding: 16px; }
       .receipt { margin: 0 auto; background: #fff; box-shadow: 0 12px 36px rgba(15, 23, 42, .18); }
@@ -499,9 +505,10 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
         <span class="muted">${formatQuantity(item.quantity)} × ${formatMoney(item.unitPrice, receipt.currencyCode)}</span>
       </td>
       <td class="qty"></td>
-      <td class="money">${formatMoney(item.lineSubtotal, receipt.currencyCode)}</td>
+      <td class="money">${formatMoney(item.lineSubtotal - (item.depositTotal ?? 0), receipt.currencyCode)}</td>
     </tr>
       ${item.discountAmount > 0 ? `<tr><td colspan="3" class="muted">${escapeHtml(item.promotionName || 'Discount')} -${formatMoney(item.discountAmount, receipt.currencyCode)}</td></tr>` : ''}
+      ${(item.depositTotal ?? 0) > 0 ? `<tr><td colspan="3" class="deposit-cell"><div class="deposit-block"><div class="deposit-row"><span class="deposit-label">${escapeHtml(receiptDepositLabel(item.depositType))}</span><span class="deposit-amount">${formatMoney(item.depositTotal ?? 0, receipt.currencyCode)}</span></div>${(item.depositQuantity ?? item.quantity) > 1 ? `<div class="deposit-calculation muted">${formatQuantity(item.depositQuantity ?? item.quantity)} × ${formatMoney(item.depositUnitAmount ?? 0, receipt.currencyCode)}</div>` : ''}</div></td></tr>` : ''}
   `).join('');
 
   const taxRows = receipt.taxSummaries.map((tax) => `
@@ -544,6 +551,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="rule"></div>
     <div class="row"><span>Subtotal</span><strong>${formatMoney(receipt.subtotalAmount, receipt.currencyCode)}</strong></div>
     <div class="row"><span>${escapeHtml(receipt.discountName || 'Discount')}</span><strong>${receipt.discountAmount > 0 ? '-' : ''}${formatMoney(receipt.discountAmount, receipt.currencyCode)}</strong></div>
+    ${(receipt.containerDepositTotal ?? 0) > 0 ? `<div class="row"><span>Container Deposits</span><strong>${formatMoney(receipt.containerDepositTotal ?? 0, receipt.currencyCode)}</strong></div>` : ''}
     ${taxRows}
     <div class="row total"><span>Total</span><strong>${formatMoney(receipt.totalAmount, receipt.currencyCode)}</strong></div>
     ${(receipt.cashRoundingAdjustment ?? 0) !== 0 ? `<div class="row"><span>Cash rounding</span><strong>${formatSignedMoney(receipt.cashRoundingAdjustment ?? 0, receipt.currencyCode)}</strong></div>
@@ -560,6 +568,10 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
       <img class="brand-logo" src="${brandAssets.blackLogo}" alt="Merchtyl" onerror="this.remove()">
     </div>
   `;
+}
+
+function receiptDepositLabel(type?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER' | null) {
+  return type === 'BOTTLE' ? 'Bottle Deposit' : type === 'CAN' ? 'Can Deposit' : type === 'CASE' ? 'Case Deposit' : 'Container Deposit';
 }
 
 async function waitForPrintImages(document: Document, timeoutMs = 750) {

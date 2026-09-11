@@ -3,6 +3,8 @@ package com.merchtyl.product;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.JoinColumn;
@@ -39,6 +41,16 @@ public class ProductVariant extends BaseUuidEntity {
     @Column(nullable = false)
     private boolean active;
 
+    @Column(nullable = false)
+    private boolean depositEnabled;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private DepositType depositType;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal depositAmount;
+
     protected ProductVariant() {
     }
 
@@ -55,6 +67,9 @@ public class ProductVariant extends BaseUuidEntity {
         this.cost = values.cost();
         this.price = values.price();
         this.active = values.active();
+        this.depositEnabled = values.depositEnabled();
+        this.depositType = values.depositEnabled() ? values.depositType() : null;
+        this.depositAmount = values.depositEnabled() ? values.depositAmount() : null;
     }
 
     public Product getProduct() {
@@ -87,4 +102,8 @@ public class ProductVariant extends BaseUuidEntity {
     public boolean isActive() {
         return active;
     }
+
+    public boolean isDepositEnabled() { return depositEnabled; }
+    public DepositType getDepositType() { return depositType; }
+    public BigDecimal getDepositAmount() { return depositAmount; }
 }

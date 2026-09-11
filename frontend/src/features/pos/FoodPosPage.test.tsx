@@ -49,7 +49,7 @@ describe('Food POS', () => {
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true, imageUrl: null, version: 0 }]);
-      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }, { id:'configured-item',storeId,displayName:'Build a Pizza',price:0,categoryId:'pizza',categoryName:'Pizza',displayOrder:2,available:true,variants:[{id:'small',name:'Small',price:10,displayOrder:1,available:true},{id:'large',name:'Large',price:18,displayOrder:2,available:true}],modifierGroups:[{id:'addons',name:'Add-ons',minimumSelections:0,maximumSelections:2,displayOrder:1,options:[{id:'cheese',name:'Cheese',priceAdjustment:1,displayOrder:1,available:true}]}],version:0 }]);
       if (url.pathname.endsWith(`/stores/${storeId}/discounts`)) return response([{ id: 'staff-discount', name: 'Staff Discount', type: 'DISCOUNT_PERCENTAGE', value: 10, description: null, active: true, version: 0 }]);
       if (url.pathname.endsWith('/sales/checkout')) {
         const request = JSON.parse(String(init?.body));
@@ -65,7 +65,21 @@ describe('Food POS', () => {
 
     render(<App initialEntries={['/pos/food']} />);
     expect(await screen.findByText("Joe's Kitchen")).toBeInTheDocument();
+    expect(screen.getByTestId('restaurant-pos-shell')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Current order' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Restaurant menu' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Search menu' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Pizza' })).toBeInTheDocument();
+    expect(screen.getByText(/From CA\$10\.00/)).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Build a Pizza'));
+    expect(await screen.findByRole('dialog', { name: 'Customize Build a Pizza' })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /Small/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Cheese/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add to Order' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByText('Small')).toBeInTheDocument();
+    expect(screen.getByText('+ Cheese')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await userEvent.click(await screen.findByText('Pepperoni Pizza'));
     expect((await screen.findAllByText(/12\.00/)).length).toBeGreaterThan(0);
     expect(screen.getByText('At checkout')).toBeInTheDocument();
@@ -280,5 +294,37 @@ describe('Food POS', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
     await waitFor(() => expect(print).not.toHaveBeenCalled());
     expect(screen.queryByText('Order completed')).not.toBeInTheDocument();
+  });
+
+  it('holds and restores a restaurant order inside Restaurant POS', async () => {
+    const menuItem = { id: 'menu-item', storeId, productId, displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', available: true, modifierGroups: [] };
+    const draft = { ...sale(1), items: [{ ...sale(1).items[0], foodMenuItemId: 'menu-item', foodMenuItemName: 'Pepperoni Pizza', foodMenuModifiers: [] }] };
+    const held = { ...draft, status: 'HELD', heldAt: '2026-08-28T12:10:00Z' };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
+      if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
+      if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([menuItem]);
+      if (url.pathname.endsWith('/sales/checkout')) return response(draft, 201);
+      if (url.pathname.endsWith(`/sales/${saleId}/hold`) && init?.method === 'POST') return response(held);
+      if (url.pathname.endsWith(`/sales/${saleId}/resume`) && init?.method === 'POST') return response(draft);
+      if (url.pathname.endsWith('/sales') && url.searchParams.get('status') === 'HELD') return response(page([held]));
+      if (url.pathname.endsWith(`/stores/${storeId}/discounts`)) return response([]);
+      return response({}, 404);
+    });
+
+    render(<App initialEntries={['/pos/food']} />);
+    await userEvent.click(await screen.findByText('Pepperoni Pizza'));
+    await userEvent.click(screen.getByRole('button', { name: 'Hold' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Held Orders' });
+    expect(within(dialog).getByText(/1 items/)).toBeInTheDocument();
+    expect(screen.getByText('Tap a product tile to begin.')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Held Orders' })).not.toBeInTheDocument());
+    expect(screen.getAllByText('Pepperoni Pizza').length).toBeGreaterThan(1);
+    expect(screen.getByRole('button', { name: 'Checkout' })).toHaveTextContent(/CA\$13\.80/);
   });
 });

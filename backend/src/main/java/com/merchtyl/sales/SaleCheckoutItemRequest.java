@@ -13,15 +13,18 @@ public record SaleCheckoutItemRequest(
         UUID productId,
         UUID variantId,
         UUID foodMenuItemId,
+        UUID foodMenuItemVariantId,
+        java.util.List<UUID> foodMenuModifierOptionIds,
         @Size(max = 180) String description,
         BigDecimal unitPrice,
         CustomItemTaxTreatment taxTreatment,
         @NotNull @DecimalMin(value = "0.0001") BigDecimal quantity,
         Boolean ageVerified
 ) {
+    public SaleCheckoutItemRequest(SaleLineType lineType,UUID productId,UUID variantId,UUID foodMenuItemId,String description,BigDecimal unitPrice,CustomItemTaxTreatment taxTreatment,BigDecimal quantity,Boolean ageVerified){this(lineType,productId,variantId,foodMenuItemId,null,null,description,unitPrice,taxTreatment,quantity,ageVerified);}
     public SaleCheckoutItemRequest(UUID productId, UUID variantId, UUID foodMenuItemId,
                                    BigDecimal quantity, Boolean ageVerified) {
-        this(SaleLineType.CATALOG_PRODUCT, productId, variantId, foodMenuItemId, null, null, null,
+        this(SaleLineType.CATALOG_PRODUCT, productId, variantId, foodMenuItemId, null, null, null, null, null,
                 quantity, ageVerified);
     }
 
@@ -32,7 +35,7 @@ public record SaleCheckoutItemRequest(
     @AssertTrue(message = "INVALID_CHECKOUT_ITEM")
     public boolean isValidShape() {
         if (resolvedLineType() == SaleLineType.CUSTOM_ITEM) {
-            return productId == null && variantId == null && foodMenuItemId == null;
+            return productId == null && variantId == null && foodMenuItemId == null && foodMenuItemVariantId == null;
         }
         return productId != null || foodMenuItemId != null;
     }

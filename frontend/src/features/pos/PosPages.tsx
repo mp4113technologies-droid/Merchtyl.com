@@ -359,6 +359,13 @@ function CartLines({
               {item.lineType === 'CUSTOM_ITEM'
                 ? <Stack direction="row" spacing={0.5}><Chip size="small" label="Custom Item" variant="outlined" /><Typography variant="caption" color="text.secondary">{item.customItemTaxTreatment === 'TAXABLE' ? 'Taxable' : 'Non-Taxable'}</Typography></Stack>
                 : <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>{item.variantSku ?? item.productSku}</Typography>}
+              {(item.depositTotal ?? 0) > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {depositLabel(item.depositType)}: {item.quantity > 1
+                    ? `${item.depositQuantity ?? item.quantity} × ${money(item.depositUnitAmount ?? 0, currencyCode)} = ${money(item.depositTotal ?? 0, currencyCode)}`
+                    : money(item.depositTotal ?? 0, currencyCode)}
+                </Typography>
+              ) : null}
             </TableCell>
             <TableCell align="center">
               <Stack direction="row" spacing={0.25} justifyContent="center" alignItems="center">
@@ -427,7 +434,8 @@ function CartLines({
 }
 
 function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount, automaticPromotion }: { sale: Sale | null; currencyCode: string; provisionalSubtotal?: number; discount?: OrderDiscount | null; automaticPromotion?:ReturnType<typeof bestMultiBuyPromotion> }) {
-  const subtotal = sale?.subtotalAmount ?? provisionalSubtotal;
+  const depositTotal = sale?.items.reduce((sum, item) => sum + (item.depositTotal ?? 0), 0) ?? 0;
+  const subtotal = sale ? sale.subtotalAmount - depositTotal : provisionalSubtotal;
   const discountAmount = sale?.discountAmount ?? (discount ? Math.min(provisionalSubtotal,discount.type==='DISCOUNT_PERCENTAGE'?provisionalSubtotal*discount.value/100:discount.value):(automaticPromotion?.amount??0));
   const tax = sale?.estimatedTaxAmount ?? 0;
   const total = sale?.totalAmount ?? 0;
@@ -443,6 +451,7 @@ function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount, au
           <Typography color="text.secondary">{sale?.discountName ?? discount?.name ?? automaticPromotion?.definition.name ?? 'Discount'}</Typography>
           <Typography>{money(-discountAmount, currencyCode)}</Typography>
         </Stack>
+        {depositTotal > 0 ? <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Container deposits</Typography><Typography>{money(depositTotal, currencyCode)}</Typography></Stack> : null}
         <Stack direction="row" justifyContent="space-between">
           <Typography color="text.secondary">Estimated tax</Typography>
           <Typography>{sale ? money(tax, currencyCode) : 'At checkout'}</Typography>
@@ -676,10 +685,21 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
                 <Typography variant="body2" fontWeight={700}>{item.productName}</Typography>
                 <Typography variant="caption" color="text.secondary">{`${item.quantity} × ${money(item.unitPrice, receipt.currencyCode)}`}</Typography>
               </Box>
-              <Typography variant="body2">{money(item.lineSubtotal, receipt.currencyCode)}</Typography>
+              <Typography variant="body2">{money(item.lineSubtotal - (item.depositTotal ?? 0), receipt.currencyCode)}</Typography>
             </Stack>
             {item.discountAmount > 0 ? (
               <Typography variant="caption" color="text.secondary">Discount {money(item.discountAmount, receipt.currencyCode)}</Typography>
+            ) : null}
+            {(item.depositTotal ?? 0) > 0 ? (
+              <Box sx={{ ml: 1.5, mt: 0.25 }}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="baseline">
+                  <Typography variant="caption" fontWeight={500}>{depositLabel(item.depositType)}</Typography>
+                  <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>{money(item.depositTotal ?? 0, receipt.currencyCode)}</Typography>
+                </Stack>
+                {(item.depositQuantity ?? item.quantity) > 1 ? (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{`${item.depositQuantity ?? item.quantity} × ${money(item.depositUnitAmount ?? 0, receipt.currencyCode)}`}</Typography>
+                ) : null}
+              </Box>
             ) : null}
           </Box>
         ))}
@@ -693,6 +713,7 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             <Typography variant="body2">Discount</Typography>
             <Typography variant="body2">{money(-receipt.discountAmount, receipt.currencyCode)}</Typography>
           </Stack>
+          {(receipt.containerDepositTotal ?? 0) > 0 ? <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Container Deposits</Typography><Typography variant="body2">{money(receipt.containerDepositTotal ?? 0, receipt.currencyCode)}</Typography></Stack> : null}
           {receipt.taxSummaries.map((tax) => (
             <Stack direction="row" justifyContent="space-between" key={tax.componentCode}>
               <Typography variant="body2">{tax.componentName}</Typography>
@@ -725,6 +746,10 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
       </Stack>
     </Paper>
   );
+}
+
+function depositLabel(type?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER' | null) {
+  return type === 'BOTTLE' ? 'Bottle Deposit' : type === 'CAN' ? 'Can Deposit' : type === 'CASE' ? 'Case Deposit' : 'Container Deposit';
 }
 
 function SuccessfulSaleScreen({

@@ -2,6 +2,7 @@ package com.merchtyl.sales;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import com.merchtyl.product.DepositType;
 
 public record SaleItemResponse(
         UUID id,
@@ -37,6 +38,15 @@ public record SaleItemResponse(
         BigDecimal lineSubtotal,
         BigDecimal estimatedTaxAmount,
         BigDecimal lineTotal,
+        UUID foodMenuItemId,
+        UUID foodMenuItemVariantId,
+        String foodMenuItemName,
+        String foodMenuItemVariantName,
+        java.util.List<String> foodMenuModifiers,
+        DepositType depositType,
+        BigDecimal depositUnitAmount,
+        BigDecimal depositQuantity,
+        BigDecimal depositTotal,
         long version
 ) {
     public SaleItemResponse(UUID id, UUID productId, int lineNumber, String productSku, String productName,
@@ -48,7 +58,8 @@ public record SaleItemResponse(
         this(id, SaleLineType.CATALOG_PRODUCT, productId, null, lineNumber, productSku, productName, null, null, null, quantity, unitPrice,
                 discountAmount, null,null,null,null,null,null,null,null, completedProductCost, completedProductPrice, completedProductCapabilities,
                 priceOverride, ageVerified, serialNumber, externalReference, customerId, paymentMethodCode,
-                lineSubtotal, estimatedTaxAmount, lineTotal, version);
+                lineSubtotal, estimatedTaxAmount, lineTotal, null, null, null, null, java.util.List.of(),
+                null, null, BigDecimal.ZERO, BigDecimal.ZERO, version);
     }
 
     static SaleItemResponse from(SaleItem item) {
@@ -80,6 +91,15 @@ public record SaleItemResponse(
                 item.getLineSubtotal(),
                 item.getEstimatedTaxAmount(),
                 item.getLineTotal(),
+                item.getMenuItemId(),
+                item.getMenuItemVariantId(),
+                item.getItemNameSnapshot(),
+                item.getMenuVariantNameSnapshot(),
+                item.getMenuModifiers(),
+                item.getDepositType(),
+                item.getDepositUnitAmount(),
+                item.getDepositQuantity(),
+                item.getDepositTotal(),
                 item.getVersion());
     }
 }

@@ -419,9 +419,12 @@ export type ProductCapability =
   | 'NON_REFUNDABLE';
 
 export type FoodMenuCategory = { id: string; storeId: string; name: string; displayOrder: number; active: boolean; imageUrl: string | null; version: number };
-export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; version: number };
+export type FoodMenuItemVariant = { id: string; name: string; price: number; displayOrder: number; available: boolean };
+export type FoodMenuModifierOption = { id: string; name: string; priceAdjustment: number; displayOrder: number; available: boolean };
+export type FoodMenuModifierGroup = { id: string; name: string; minimumSelections: number; maximumSelections: number; displayOrder: number; options: FoodMenuModifierOption[] };
+export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; variants?: FoodMenuItemVariant[]; modifierGroups?: FoodMenuModifierGroup[]; version: number };
 export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
-export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string };
+export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string; variants?: Array<{name:string;price:number;displayOrder:number;available:boolean}>; modifierGroups?: Array<{name:string;minimumSelections:number;maximumSelections:number;displayOrder:number;options:Array<{name:string;priceAdjustment:number;displayOrder:number;available:boolean}>}> };
 export type DiscountType = 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT' | 'MULTI_BUY_FIXED_PRICE';
 export type PromotionDomain = 'RETAIL' | 'FOOD_SERVICE';
 export type PromotionTargetType = 'PRODUCT' | 'PRODUCT_VARIANT' | 'PRODUCT_CATEGORY' | 'MENU_ITEM' | 'MENU_ITEM_VARIANT' | 'MENU_CATEGORY';
@@ -437,6 +440,9 @@ export type ProductVariant = {
   cost: number;
   price: number;
   active: boolean;
+  depositEnabled?: boolean;
+  depositType?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER' | null;
+  depositAmount?: number | null;
   barcodes?: ProductBarcode[];
   createdAt: string;
   updatedAt: string;
@@ -1590,6 +1596,8 @@ export type SalesReport = {
   refunds: number;
   taxes: number;
   payments: number;
+  containerDeposits?: number;
+  refundedContainerDeposits?: number;
   saleCount: number;
   refundCount: number;
   paymentBreakdown: SalesReportPaymentBreakdown[];
@@ -1849,6 +1857,15 @@ export type SaleItem = {
   lineSubtotal: number;
   estimatedTaxAmount: number;
   lineTotal: number;
+  foodMenuItemId?: string | null;
+  foodMenuItemVariantId?: string | null;
+  foodMenuItemName?: string | null;
+  foodMenuItemVariantName?: string | null;
+  foodMenuModifiers?: string[];
+  depositType?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER' | null;
+  depositUnitAmount?: number | null;
+  depositQuantity?: number;
+  depositTotal?: number;
   version: number;
 };
 
@@ -1883,6 +1900,7 @@ export type Sale = {
   currencyCode: string;
   pricesIncludeTax: boolean;
   subtotalAmount: number;
+  containerDepositTotal?: number;
   discountAmount: number;
   discountDefinitionId?: string | null;
   discountName?: string | null;
@@ -2050,6 +2068,10 @@ export type ReceiptItem = {
   promotionId?: string | null;
   promotionName?: string | null;
   promotionDiscountAmount?: number | null;
+  depositType?: 'BOTTLE' | 'CAN' | 'CASE' | 'OTHER' | null;
+  depositUnitAmount?: number | null;
+  depositQuantity?: number;
+  depositTotal?: number;
 };
 
 export type ReceiptTaxSummary = {
@@ -2085,6 +2107,7 @@ export type ReceiptDocument = {
   currencyCode: string;
   items: ReceiptItem[];
   subtotalAmount: number;
+  containerDepositTotal?: number;
   discountAmount: number;
   taxSummaries: ReceiptTaxSummary[];
   taxAmount: number;

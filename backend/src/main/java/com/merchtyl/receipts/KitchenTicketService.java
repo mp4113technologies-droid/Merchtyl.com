@@ -61,7 +61,7 @@ public class KitchenTicketService {
                 item.getId(),
                 item.getProductName(),
                 item.getQuantity(),
-                List.of(),
+                item.getMenuModifiers(),
                 item.getExternalReference());
     }
 }

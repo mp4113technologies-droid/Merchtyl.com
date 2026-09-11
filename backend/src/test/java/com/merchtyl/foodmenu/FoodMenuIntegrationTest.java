@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -117,8 +118,28 @@ class FoodMenuIntegrationTest {
     }
 
     @Test
+    void createsAndReadsVariantsAndModifierGroupsInTheExistingMenuContract() throws Exception {
+        String token = register("configured-menu@foodmenu.test");
+        JsonNode store = createFoodStore(token, "CONFIGURED");
+        JsonNode category = createCategory(token, store.get("id").asText(), "Pizza");
+        mockMvc.perform(post("/api/v1/stores/{storeId}/food-menu/items", store.get("id").asText())
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                          {"categoryId":"%s","displayName":"Pizza","price":0,"displayOrder":1,"available":true,
+                           "variants":[{"name":"Small","price":10,"displayOrder":1,"available":true},{"name":"Large","price":18,"displayOrder":2,"available":true}],
+                           "modifierGroups":[{"name":"Add-ons","minimumSelections":0,"maximumSelections":2,"displayOrder":1,
+                             "options":[{"name":"Cheese","priceAdjustment":1,"displayOrder":1,"available":true},{"name":"Bacon","priceAdjustment":2,"displayOrder":2,"available":true}]}]}
+                          """.formatted(category.get("id").asText())))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.variants[0].name").value("Small"))
+                .andExpect(jsonPath("$.modifierGroups[0].options[1].name").value("Bacon"));
+        mockMvc.perform(get("/api/v1/stores/{storeId}/food-menu/items", store.get("id").asText()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].variants.length()").value(2))
+                .andExpect(jsonPath("$[0].modifierGroups[0].options.length()").value(2));
+    }
+
+    @Test
     void madeToOrderMigrationIsApplied() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("91");
+        assertThat(Integer.parseInt(flyway.info().current().getVersion().getVersion())).isGreaterThanOrEqualTo(91);
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT count(*)
                   FROM information_schema.columns
