@@ -283,6 +283,20 @@ export type ProductVariantBarcodePayload = {
   barcode: string;
   primaryBarcode: boolean;
   active: boolean;
+  reassignFromBarcodeId?: string;
+  reassignFromVersion?: number;
+};
+
+export type BarcodeOwnership = {
+  barcode: string;
+  assigned: boolean;
+  assignmentId?: string | null;
+  assignmentVersion?: number | null;
+  productId?: string | null;
+  productName?: string | null;
+  variantId?: string | null;
+  variantName?: string | null;
+  productActive: boolean;
 };
 
 export type ProductPayload = {
@@ -1468,6 +1482,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   BARCODE_ALREADY_ASSIGNED: 'This barcode belongs to another product or variant. No barcodes were added.',
   BARCODE_DUPLICATE_IN_REQUEST: 'The barcode list contains a duplicate. No barcodes were added.',
   BARCODE_BATCH_TOO_LARGE: 'Add no more than 500 barcodes at once.',
+  BARCODE_REASSIGN_NOT_ALLOWED: "You don't have permission to reassign barcodes.",
+  BARCODE_OWNERSHIP_CHANGED: 'This barcode assignment changed. Please try again.',
   SKU_ALREADY_IN_USE: 'This SKU is already being used by another product.',
   SKU_ALREADY_EXISTS: 'This SKU is already being used by another product.',
   STORE_CODE_ALREADY_EXISTS: 'A store with this code already exists. Please choose a different store code.',
@@ -1964,6 +1980,10 @@ export function listProducts(token: string, params: ProductSearchParams = {}) {
 
 export function lookupPosBarcode(token: string, barcode: string, storeId: string) {
   return request<PosBarcodeLookup>(`/products/barcodes/${encodeURIComponent(barcode)}${queryString({ storeId })}`, undefined, token);
+}
+
+export function lookupBarcodeOwnership(token: string, barcode: string) {
+  return request<BarcodeOwnership>(`/products/barcodes/${encodeURIComponent(barcode)}/ownership`, undefined, token);
 }
 
 export function getProduct(token: string, id: string) {

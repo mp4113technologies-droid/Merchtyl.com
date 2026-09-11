@@ -216,6 +216,10 @@ public class Product extends BaseUuidEntity {
                 && !retainedVariantIds.contains(barcode.getVariant().getId()));
     }
 
+    void removeBarcode(UUID barcodeId) {
+        barcodes.removeIf(barcode -> barcode.getId().equals(barcodeId));
+    }
+
     private Set<ProductVariant> reconcileVariants(List<ProductVariantValues> values) {
         Map<UUID, ProductVariant> existingById = new HashMap<>();
         variants.forEach(variant -> existingById.put(variant.getId(), variant));

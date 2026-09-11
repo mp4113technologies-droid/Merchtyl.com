@@ -16,6 +16,7 @@ import com.merchtyl.common.PageResponse;
 import com.merchtyl.security.User;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.PermissionCode;
 import com.merchtyl.inventory.InventoryBalanceRepository;
 import com.merchtyl.inventory.InventoryBalance;
 import com.merchtyl.tax.TaxCategoryRepository;
@@ -106,6 +107,8 @@ public class ProductService {
                 throw exception;
             }
         }
+        List<BarcodeReassignment> reassignments = prepareBarcodeReassignments(
+                request.variants(), tenantId, null, authentication);
         ProductValues values = values(request, tenantId);
         requireUniqueCodesForCreate(tenantId, values);
         Product product = new Product(values);
@@ -123,6 +126,7 @@ public class ProductService {
             ensureInventoryBalances(store,saved);
         });
         ProductResponse response = response(saved, tenantId, null);
+        auditBarcodeReassignments(authentication, saved, reassignments);
         audit(authentication, AuditAction.PRODUCT_CREATED, response.id(), null,
                 java.util.Map.of("product", response, "storeIds", requestedStoreIds));
         log.info("product_event event=PRODUCT_CREATED tenant_id={} store_ids={} product_id={} actor={}", tenantId, requestedStoreIds, response.id(), actorName(authentication));
@@ -209,6 +213,20 @@ public class ProductService {
         return response;
     }
 
+    @Transactional(readOnly = true)
+    public BarcodeOwnershipResponse barcodeOwnership(String barcode, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
+        String normalized = BarcodeNormalizer.normalize(barcode);
+        return productBarcodeRepository.findByTenantIdAndBarcodeIgnoreCase(tenantId, normalized)
+                .map(assignment -> new BarcodeOwnershipResponse(
+                        assignment.getBarcode(), true, assignment.getId(), assignment.getVersion(), assignment.getProduct().getId(),
+                        assignment.getProduct().getName(),
+                        assignment.getVariant() == null ? null : assignment.getVariant().getId(),
+                        assignment.getVariant() == null ? null : assignment.getVariant().getName(),
+                        assignment.getProduct().isActive()))
+                .orElseGet(() -> BarcodeOwnershipResponse.unassigned(normalized));
+    }
+
     @Transactional
     public ProductResponse update(UUID id, ProductUpdateRequest request, Authentication authentication) {
         UUID tenantId = currentTenantId(authentication);
@@ -220,6 +238,8 @@ public class ProductService {
         if (storeAccessService != null) storeAccessService.requireProductManagementScope(authentication, requestedStoreIds);
         requireAllProductStoresManaged(product, authentication);
         requireCurrentVersion(product, request.version());
+        List<BarcodeReassignment> reassignments = prepareBarcodeReassignments(
+                request.variants(), tenantId, product, authentication);
         ProductValues values = values(product, request, tenantId);
         requireOwnedChildIds(product, values);
         requireUniqueCodesForUpdate(tenantId, id, values);
@@ -239,6 +259,7 @@ public class ProductService {
         Product saved=save(product);
         reconcileAvailability(saved, tenantId, availabilityScope, requestedStoreIds);
         ProductResponse after = response(saved,tenantId,null);
+        auditBarcodeReassignments(authentication, saved, reassignments);
         audit(authentication, AuditAction.PRODUCT_UPDATED, id, before, after);
         log.info("product_event event=PRODUCT_UPDATED tenant_id={} product_id={} actor={}", tenantId, id, actorName(authentication));
         return after;
@@ -367,6 +388,76 @@ public class ProductService {
                 })
                 .toList();
     }
+
+    private List<BarcodeReassignment> prepareBarcodeReassignments(List<ProductVariantRequest> variants,
+                                                                   UUID tenantId,
+                                                                   Product destinationProduct,
+                                                                   Authentication authentication) {
+        List<RequestedBarcodeReassignment> requested = nullSafe(variants).stream()
+                .flatMap(variant -> nullSafe(variant.barcodes()).stream()
+                        .filter(barcode -> barcode.reassignFromBarcodeId() != null)
+                        .map(barcode -> new RequestedBarcodeReassignment(
+                                barcode.reassignFromBarcodeId(), barcode.reassignFromVersion(),
+                                BarcodeNormalizer.normalize(barcode.barcode()))))
+                .toList();
+        if (requested.isEmpty()) return List.of();
+        boolean permitted = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> PermissionCode.PRODUCT_BARCODE_MANAGE.name().equals(authority.getAuthority()));
+        if (!permitted) throw new com.merchtyl.common.ForbiddenOperationException("BARCODE_REASSIGN_NOT_ALLOWED");
+
+        Set<UUID> assignmentIds = new HashSet<>();
+        List<BarcodeReassignment> result = new java.util.ArrayList<>();
+        for (RequestedBarcodeReassignment intent : requested) {
+            if (!assignmentIds.add(intent.assignmentId())) {
+                throw new BadRequestException("BARCODE_DUPLICATE_IN_REQUEST");
+            }
+            ProductBarcode current = productBarcodeRepository
+                    .findOwnedByIdForUpdate(tenantId, intent.assignmentId())
+                    .orElseThrow(() -> new ConflictException("BARCODE_OWNERSHIP_CHANGED"));
+            if (!current.getBarcode().equalsIgnoreCase(intent.barcode()) || intent.version() == null
+                    || current.getVersion() != intent.version()) {
+                throw new ConflictException("BARCODE_OWNERSHIP_CHANGED");
+            }
+            Product sourceProduct = current.getProduct();
+            result.add(new BarcodeReassignment(current.getBarcode(), sourceProduct.getId(), sourceProduct.getName(),
+                    current.getVariant() == null ? null : current.getVariant().getId(),
+                    current.getVariant() == null ? null : current.getVariant().getName(), sourceProduct.isActive()));
+
+            // Moving within the Product being edited is reconciled by Product.update().
+            // Moving from another Product is explicitly flushed before the destination insert;
+            // the surrounding transaction restores it if any later validation/save fails.
+            if (destinationProduct == null || !sourceProduct.getId().equals(destinationProduct.getId())) {
+                sourceProduct.removeBarcode(current.getId());
+                productBarcodeRepository.delete(current);
+                productBarcodeRepository.flush();
+            }
+        }
+        return result;
+    }
+
+    private void auditBarcodeReassignments(Authentication authentication, Product destination,
+                                             List<BarcodeReassignment> reassignments) {
+        for (BarcodeReassignment moved : reassignments) {
+            ProductBarcode assigned = destination.getBarcodes().stream()
+                    .filter(barcode -> barcode.getBarcode().equalsIgnoreCase(moved.barcode()))
+                    .findFirst().orElseThrow(() -> new IllegalStateException("Reassigned barcode was not persisted"));
+            auditService.record(new CreateAuditRecordCommand(actorUserId(authentication), AuditAction.BARCODE_REASSIGNED,
+                    "PRODUCT_BARCODE", assigned.getId(), null, null,
+                    Map.of("barcode", moved.barcode(), "productId", moved.productId(), "productName", moved.productName(),
+                            "variantId", moved.variantId() == null ? "" : moved.variantId(),
+                            "variantName", moved.variantName() == null ? "" : moved.variantName(),
+                            "productActive", moved.productActive()),
+                    Map.of("barcode", assigned.getBarcode(), "productId", destination.getId(),
+                            "productName", destination.getName(),
+                            "variantId", assigned.getVariant() == null ? "" : assigned.getVariant().getId(),
+                            "variantName", assigned.getVariant() == null ? "" : assigned.getVariant().getName()),
+                    "Barcode reassigned"));
+        }
+    }
+
+    private record RequestedBarcodeReassignment(UUID assignmentId, Long version, String barcode) {}
+    private record BarcodeReassignment(String barcode, UUID productId, String productName, UUID variantId,
+                                       String variantName, boolean productActive) {}
 
     @Transactional
     public BulkVariantBarcodeResponse addVariantBarcodes(UUID variantId, BulkVariantBarcodeRequest request,

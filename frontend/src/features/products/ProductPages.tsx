@@ -51,11 +51,13 @@ import {
   listProducts,
   listAssignedStores,
   listTaxCategories,
+  lookupBarcodeOwnership,
   updateProduct,
   updateProductStatus,
   type ProductPayload,
   type ProductSearchParams,
   type ProductUpdatePayload
+  ,type BarcodeOwnership
 } from '../../api/client';
 import type { AssignedStore, CatalogueReference, Product, ProductCapability, SellableType, TaxCategory, UserRole } from '../../api/types';
 import { compactFilterBarSx } from '../../app/responsive';
@@ -114,7 +116,9 @@ const variantSchema = z.object({
     id: z.string().regex(uuidPattern).optional(),
     barcode: z.string().trim().min(1, 'Barcode is required').max(128, 'Barcode must be 128 characters or fewer'),
     primaryBarcode: z.boolean(),
-    active: z.boolean()
+    active: z.boolean(),
+    reassignFromBarcodeId: z.string().regex(uuidPattern).optional()
+    ,reassignFromVersion: z.number().int().min(0).optional()
   }))
 });
 
@@ -307,7 +311,9 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
         id: barcode.id,
         barcode: barcode.barcode.trim(),
         primaryBarcode: barcodeIndex === 0,
-        active: barcode.active
+        active: barcode.active,
+        reassignFromBarcodeId: barcode.reassignFromBarcodeId
+        ,reassignFromVersion: barcode.reassignFromVersion
       }))
     })),
     capabilities: Array.from(capabilities),
@@ -638,14 +644,48 @@ function VariantBarcodeFields({ control, index, variants, disabled }: {
   variants: ProductFormValues['variants'];
   disabled?: boolean;
 }) {
+  const { getValidAccessToken } = useSession();
   const name = `variants.${index}.barcodes` as const;
   const barcodes = useFieldArray({ control, name, keyName: 'fieldKey' });
   const watchedBarcodes = useWatch({ control, name }) ?? [];
   const [input, setInput] = React.useState('');
   const [feedback, setFeedback] = React.useState<string>();
   const [batchOpen, setBatchOpen] = React.useState(false);
+  const [pendingAssignments, setPendingAssignments] = React.useState<Array<{ barcode: string; owner: BarcodeOwnership }>>([]);
+  const [checking, setChecking] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const restoreFocus = () => window.setTimeout(() => inputRef.current?.focus(), 0);
+
+  const checkAndAdd = async (rawCodes: string[]) => {
+    const codes = rawCodes.map((code) => code.trim());
+    setChecking(true);
+    try {
+      const token = await getValidAccessToken();
+      const owners = await Promise.all(codes.map((code) => lookupBarcodeOwnership(token, code)));
+      const sameDestination = owners.find((owner) => owner.assigned
+        && owner.variantId === variants[index]?.id);
+      if (sameDestination) {
+        setFeedback(`Barcode ${sameDestination.barcode} is already assigned to this variant.`);
+        return;
+      }
+      const checked = codes.map((barcode, codeIndex) => ({ barcode, owner: owners[codeIndex] }));
+      if (checked.some((entry) => entry.owner.assigned)) {
+        setPendingAssignments(checked);
+        return;
+      }
+      codes.forEach((barcode, codeIndex) => barcodes.append({
+        barcode, primaryBarcode: watchedBarcodes.length === 0 && codeIndex === 0, active: true
+      }));
+      setBatchOpen(false);
+      setFeedback(undefined);
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setChecking(false);
+      setInput('');
+      restoreFocus();
+    }
+  };
 
   const addBarcode = () => {
     const barcode = input.trim();
@@ -660,8 +700,8 @@ function VariantBarcodeFields({ control, index, variants, disabled }: {
     } else if (watchedBarcodes.length >= 500) {
       setFeedback('A maximum of 500 barcodes can be added to a variant.');
     } else {
-      barcodes.append({ barcode, primaryBarcode: watchedBarcodes.length === 0, active: true });
-      setFeedback(undefined);
+      void checkAndAdd([barcode]);
+      return;
     }
     setInput('');
     restoreFocus();
@@ -691,7 +731,7 @@ function VariantBarcodeFields({ control, index, variants, disabled }: {
               autoComplete="off"
               inputProps={{ maxLength: 128, inputMode: 'text' }}
             />
-            <Button type="button" variant="outlined" startIcon={<AddIcon />} onClick={addBarcode} sx={{ minHeight: 56, whiteSpace: 'nowrap' }}>Add</Button>
+            <Button type="button" variant="outlined" startIcon={<AddIcon />} disabled={checking} onClick={addBarcode} sx={{ minHeight: 56, whiteSpace: 'nowrap' }}>{checking ? 'Checking' : 'Add'}</Button>
           </Stack>
           <Button type="button" variant="outlined" onClick={() => setBatchOpen(true)} sx={{ alignSelf: 'flex-start' }}>Scan Multiple Barcodes</Button>
         </Stack>
@@ -724,17 +764,39 @@ function VariantBarcodeFields({ control, index, variants, disabled }: {
         existing={watchedBarcodes.map((barcode) => barcode.barcode)}
         otherVariantBarcodes={variants.flatMap((variant, variantIndex) => variantIndex === index ? [] : variant.barcodes.map((barcode) => barcode.barcode))}
         onClose={() => setBatchOpen(false)}
-        onAdd={(codes) => {
-          codes.forEach((barcode, batchIndex) => barcodes.append({
-            barcode,
-            primaryBarcode: watchedBarcodes.length === 0 && batchIndex === 0,
-            active: true
-          }));
-          setFeedback(undefined);
-          setBatchOpen(false);
-          restoreFocus();
-        }}
+        onAdd={(codes) => void checkAndAdd(codes)}
       />
+      <Dialog open={pendingAssignments.length > 0} onClose={() => setPendingAssignments([])} fullWidth maxWidth="sm">
+        <DialogTitle>Reassign {pendingAssignments.length === 1 ? 'Barcode' : 'Barcodes'}?</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
+            {pendingAssignments.filter(({ owner }) => owner.assigned).map(({ barcode, owner }) => (
+              <Alert key={barcode} severity={owner.productActive ? 'warning' : 'info'}>
+                Barcode <strong>{barcode}</strong> is currently assigned to {owner.productName}
+                {owner.variantName ? ` — ${owner.variantName}` : ''} ({owner.productActive ? 'Active' : 'Inactive'}).
+                {owner.productActive ? ' Reassigning it will stop this barcode from identifying that active product.' : ''}
+              </Alert>
+            ))}
+            <Typography>Remove {pendingAssignments.length === 1 ? 'it' : 'them'} from the current assignment and assign {pendingAssignments.length === 1 ? 'it' : 'them'} to this variant when the Product is saved?</Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingAssignments([])}>Cancel</Button>
+          <Button variant="contained" color="warning" onClick={() => {
+            pendingAssignments.forEach(({ barcode, owner }, assignmentIndex) => barcodes.append({
+              barcode,
+              primaryBarcode: watchedBarcodes.length === 0 && assignmentIndex === 0,
+              active: true,
+              reassignFromBarcodeId: owner.assignmentId ?? undefined
+              ,reassignFromVersion: owner.assignmentVersion ?? undefined
+            }));
+            setPendingAssignments([]);
+            setBatchOpen(false);
+            setFeedback(undefined);
+            restoreFocus();
+          }}>Reassign {pendingAssignments.length === 1 ? 'Barcode' : 'Barcodes'}</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -1230,7 +1292,11 @@ export function ProductDetailPage() {
     },
     onSuccess: async (updated) => {
       queryClient.setQueryData(['product', updated.id], updated);
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['pos-products'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      ]);
     }
   });
 

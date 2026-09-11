@@ -23,6 +23,8 @@ final class DomainErrorCatalog {
             entry("BARCODE_ALREADY_ASSIGNED", "This barcode belongs to another product or variant. No barcodes were added."),
             entry("BARCODE_DUPLICATE_IN_REQUEST", "The barcode list contains a duplicate. No barcodes were added."),
             entry("BARCODE_BATCH_TOO_LARGE", "Add no more than 500 barcodes at once."),
+            entry("BARCODE_REASSIGN_NOT_ALLOWED", "You don't have permission to reassign barcodes."),
+            entry("BARCODE_OWNERSHIP_CHANGED", "This barcode assignment changed. Please try again."),
             entry("BARCODE_REQUIRED", "Enter or scan a barcode."),
             entry("BARCODE_INVALID", "Enter a valid barcode."),
             entry("SKU_ALREADY_IN_USE", "This SKU is already being used by another product."),

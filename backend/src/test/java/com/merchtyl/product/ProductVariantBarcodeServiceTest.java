@@ -13,6 +13,24 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ProductVariantBarcodeServiceTest {
+    @Test void ownershipIncludesInactiveProductAndVariantWithoutCrossTenantLookup() {
+        Fixture fixture = new Fixture();
+        fixture.product.setActive(false);
+        ProductBarcode barcode = fixture.product.addBarcode(fixture.variant,
+                new ProductBarcodeValues("123456789", fixture.variant.getSku(), true, true));
+        when(fixture.barcodes.findByTenantIdAndBarcodeIgnoreCase(fixture.tenantId, "123456789"))
+                .thenReturn(Optional.of(barcode));
+
+        BarcodeOwnershipResponse response = fixture.service.barcodeOwnership("123456789", null);
+
+        assertThat(response.assigned()).isTrue();
+        assertThat(response.productName()).isEqualTo("Coca Cola");
+        assertThat(response.variantName()).isEqualTo("500 mL");
+        assertThat(response.productActive()).isFalse();
+        verify(fixture.barcodes).findByTenantIdAndBarcodeIgnoreCase(fixture.tenantId, "123456789");
+        verify(fixture.barcodes, never()).findByBarcodeIgnoreCase(any());
+    }
+
     @Test void addsWholeNormalizedBatchWithOneOwnershipQueryAndKeepsSku() {
         Fixture fixture=new Fixture();String sku=fixture.variant.getSku();
         when(fixture.barcodes.findOwnedInBulk(fixture.tenantId,Set.of("00123","00456"))).thenReturn(List.of());

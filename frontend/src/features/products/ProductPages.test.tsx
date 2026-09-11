@@ -154,6 +154,10 @@ function storeSession(roles: UserRole[] = ['OWNER']) {
 }
 
 function mockReferenceEndpoints(url: URL) {
+  if (url.pathname.includes('/api/v1/products/barcodes/') && url.pathname.endsWith('/ownership')) {
+    const parts = url.pathname.split('/');
+    return jsonResponse({ barcode: decodeURIComponent(parts[parts.length - 2]), assigned: false, productActive: false });
+  }
   if (url.pathname.endsWith('/api/v1/tax/categories')) {
     const category: TaxCategory = {
       id: '00000000-0000-0000-0000-000000000901', taxGroupId: null, code: 'STANDARD', name: 'Standard Tax',
@@ -484,6 +488,35 @@ describe('Product pages', () => {
     expect(within(card).getAllByTestId('variant-barcode-chip')).toHaveLength(3);
     expect(within(card).getByText('001234567890')).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT')).toHaveLength(0);
+  });
+
+  it('shows inactive ownership and records reassignment only after confirmation', async () => {
+    storeSession(['OWNER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/123456789/ownership')) return jsonResponse({
+        barcode: '123456789', assigned: true,
+        assignmentId: '00000000-0000-0000-0000-000000009901', assignmentVersion: 4,
+        productId: '00000000-0000-0000-0000-000000009902', productName: 'Pepsi',
+        variantId: '00000000-0000-0000-0000-000000009903', variantName: '500 mL', productActive: false
+      });
+      const referenceResponse = mockReferenceEndpoints(url);
+      return referenceResponse ?? apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    const scanner = await screen.findByRole('textbox', { name: 'Scan or enter barcode' });
+    await userEvent.type(scanner, '123456789{enter}');
+    const dialog = await screen.findByRole('dialog', { name: 'Reassign Barcode?' });
+    expect(within(dialog).getByText(/Pepsi — 500 mL \(Inactive\)/)).toBeVisible();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('variant-barcode-chip')).not.toBeInTheDocument();
+
+    await userEvent.type(scanner, '123456789{enter}');
+    await userEvent.click(await screen.findByRole('button', { name: 'Reassign Barcode' }));
+    expect(await screen.findByTestId('variant-barcode-chip')).toHaveTextContent('123456789');
   });
 
   it('reconciles an existing variant barcode list in the aggregate update', async () => {

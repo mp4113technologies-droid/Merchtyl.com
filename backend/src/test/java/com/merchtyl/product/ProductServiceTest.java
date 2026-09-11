@@ -9,6 +9,7 @@ import com.merchtyl.catalogue.UnitOfMeasureRepository;
 import com.merchtyl.catalogue.UnitOfMeasure;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
+import com.merchtyl.common.ForbiddenOperationException;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.tax.TaxCategoryRepository;
 import com.merchtyl.tax.TaxCategory;
@@ -244,6 +245,21 @@ class ProductServiceTest {
         assertThatThrownBy(() -> productService.create(requestWithUnit(unitId), null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Unit of measure is inactive");
+    }
+
+    @Test
+    void createRejectsBarcodeReassignmentWithoutBarcodeManagePermissionBeforeWriting() {
+        ProductRequest request = new ProductRequest(null, "Cola", null, SellableType.STANDARD_PRODUCT, null,
+                BigDecimal.ONE, BigDecimal.TEN, null, null, true, false, false, null, null,
+                List.of(new ProductVariantRequest(null, null, "500 mL", null, BigDecimal.ONE, BigDecimal.TEN, true,
+                        List.of(new ProductVariantBarcodeRequest(null, "123456789", true, true,
+                                UUID.randomUUID(), 2L)))), Set.of());
+
+        assertThatThrownBy(() -> productService.create(request, null))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("BARCODE_REASSIGN_NOT_ALLOWED");
+        verify(productBarcodeRepository, never()).delete(any());
+        verify(entityManager, never()).persist(any());
     }
 
     private ProductRequest requestWithTaxCategory(UUID taxCategoryId) {

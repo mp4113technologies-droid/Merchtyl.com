@@ -72,6 +72,12 @@ public class ProductController {
         return productService.lookupBarcode(barcode, storeId, authentication);
     }
 
+    @GetMapping("/barcodes/{barcode}/ownership")
+    @PreAuthorize("@authorizationService.hasAnyPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_CREATE, T(com.merchtyl.security.PermissionCode).PRODUCT_UPDATE, T(com.merchtyl.security.PermissionCode).PRODUCT_BARCODE_MANAGE)")
+    BarcodeOwnershipResponse barcodeOwnership(@PathVariable String barcode, Authentication authentication) {
+        return productService.barcodeOwnership(barcode, authentication);
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_VIEW)")
     ProductResponse get(@PathVariable UUID id, Authentication authentication) {
