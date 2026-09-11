@@ -46,7 +46,6 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   catalogueReferenceApi,
-  addVariantBarcodes,
   createProduct,
   getProduct,
   listProducts,
@@ -112,16 +111,13 @@ const variantSchema = z.object({
   description: z.string().max(1000, 'Variant description must be 1000 characters or fewer').optional(),
   cost: z.coerce.number().min(0, 'Variant cost must be zero or greater'),
   price: z.coerce.number().min(0, 'Variant price must be zero or greater'),
-  active: z.boolean()
-});
-
-const barcodeSchema = z.object({
-  id: z.string().regex(uuidPattern).optional(),
-  barcode: z.string().trim().min(1, 'Barcode is required').max(128, 'Barcode must be 128 characters or fewer'),
-  variantId: z.string().optional(),
-  variantSku: z.string().max(64, 'Variant SKU must be 64 characters or fewer').optional(),
-  primaryBarcode: z.boolean(),
-  active: z.boolean()
+  active: z.boolean(),
+  barcodes: z.array(z.object({
+    id: z.string().regex(uuidPattern).optional(),
+    barcode: z.string().trim().min(1, 'Barcode is required').max(128, 'Barcode must be 128 characters or fewer'),
+    primaryBarcode: z.boolean(),
+    active: z.boolean()
+  }))
 });
 
 const productSchema = z.object({
@@ -143,7 +139,6 @@ const productSchema = z.object({
     .min(1, 'Select a tax category')
     .regex(uuidPattern, 'Select a valid tax category'),
   variants: z.array(variantSchema),
-  barcodes: z.array(barcodeSchema),
   capabilities: z.array(z.enum(productCapabilities)),
   minimumAge: z.number().int().min(1, 'Minimum age must be at least 1').max(99, 'Minimum age must be 99 or less').optional()
   ,availabilityScope:z.enum(['ALL_STORES','SELECTED_STORES']),
@@ -161,19 +156,15 @@ const productSchema = z.object({
     }
     skus.add(normalized);
   });
-  const variantSkus = new Set(values.variants.map((variant) => variant.sku.trim().toUpperCase()));
   const barcodes = new Set<string>();
-  values.barcodes.forEach((barcode, index) => {
-    const normalized = barcode.barcode.trim().toUpperCase();
-    if (barcodes.has(normalized)) {
-      context.addIssue({ code: 'custom', path: ['barcodes', index, 'barcode'], message: 'Barcodes must be unique' });
-    }
+  values.variants.forEach((variant, variantIndex) => variant.barcodes.forEach((barcode, barcodeIndex) => {
+    const normalized = barcode.barcode.trim().toLowerCase();
+    if (barcodes.has(normalized)) context.addIssue({
+      code: 'custom', path: ['variants', variantIndex, 'barcodes', barcodeIndex, 'barcode'],
+      message: 'This barcode is already assigned to another variant in this product.'
+    });
     barcodes.add(normalized);
-    const variantSku = barcode.variantSku?.trim().toUpperCase();
-    if (variantSku && !variantSkus.has(variantSku)) {
-      context.addIssue({ code: 'custom', path: ['barcodes', index, 'variantSku'], message: 'Choose an existing variant SKU' });
-    }
-  });
+  }));
 });
 
 type ProductFormValues = z.infer<typeof productSchema>;
@@ -195,7 +186,6 @@ const emptyProductForm: ProductFormValues = {
   imageUrl: '',
   taxCategoryId: '',
   variants: [],
-  barcodes: [],
   capabilities: ['TRACK_INVENTORY'],
   minimumAge: undefined
   ,availabilityScope:'ALL_STORES',storeIds:[]
@@ -275,15 +265,13 @@ function productFormValues(product: Product): ProductFormValues {
       description: variant.description ?? '',
       cost: variant.cost,
       price: variant.price,
-      active: variant.active
-    })),
-    barcodes: product.barcodes.map((barcode) => ({
-      id: barcode.id,
-      barcode: barcode.barcode,
-      variantId: barcode.variantId ?? undefined,
-      variantSku: barcode.variantSku ?? '',
-      primaryBarcode: barcode.primaryBarcode,
-      active: barcode.active
+      active: variant.active,
+      barcodes: (variant.barcodes ?? product.barcodes.filter((barcode) => barcode.variantId === variant.id)).map((barcode) => ({
+        id: barcode.id,
+        barcode: barcode.barcode,
+        primaryBarcode: barcode.primaryBarcode,
+        active: barcode.active
+      }))
     })),
     capabilities: product.capabilities,
     minimumAge: product.minimumAge ?? undefined
@@ -325,15 +313,13 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
       description: optionalText(variant.description),
       cost: Number(variant.cost),
       price: Number(variant.price),
-      active: variant.active
-    })),
-    barcodes: values.barcodes.map((barcode) => ({
-      id: barcode.id,
-      barcode: barcode.barcode.trim(),
-      variantId: barcode.variantId && uuidPattern.test(barcode.variantId) ? barcode.variantId : undefined,
-      variantSku: optionalText(barcode.variantSku)?.toUpperCase(),
-      primaryBarcode: barcode.primaryBarcode,
-      active: barcode.active
+      active: variant.active,
+      barcodes: variant.barcodes.map((barcode, barcodeIndex) => ({
+        id: barcode.id,
+        barcode: barcode.barcode.trim(),
+        primaryBarcode: barcodeIndex === 0,
+        active: barcode.active
+      }))
     })),
     capabilities: Array.from(capabilities),
     minimumAge: capabilities.has('REQUIRE_AGE_VERIFICATION') ? values.minimumAge : undefined
@@ -404,65 +390,12 @@ function ProductForm({
   onSubmit: (values: ProductFormValues) => void;
   stores: AssignedStore[];
 }) {
-  const { getValidAccessToken } = useSession();
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues
   });
   const variants = useFieldArray({ control: form.control, name: 'variants', keyName: 'fieldKey' });
-  const barcodes = useFieldArray({ control: form.control, name: 'barcodes', keyName: 'fieldKey' });
   const watchedVariants = useWatch({ control: form.control, name: 'variants' }) ?? [];
-  const watchedBarcodes = useWatch({ control: form.control, name: 'barcodes' }) ?? [];
-  const previousVariantSkus = React.useRef(new Map<string, string>());
-  const [scanVariantIndex, setScanVariantIndex] = React.useState<number | null>(null);
-  const bulkBarcodeMutation = useMutation({mutationFn:async({variantId,codes}:{variantId:string;codes:string[]})=>addVariantBarcodes(await getValidAccessToken(),variantId,codes)});
-  const variantOptions = watchedVariants.reduce<Array<{ clientId: string; value: string; id?: string; sku: string; label: string }>>((options, variant, index) => {
-    const sku = variant.sku.trim().toUpperCase();
-    if (!sku || options.some((option) => option.sku === sku)) return options;
-    const name = variant.name.trim();
-    const clientId = variants.fields[index]?.fieldKey ?? `variant-${index}`;
-    options.push({ clientId, value: variant.id ?? sku, id: variant.id, sku, label: name ? `${name} — ${sku}` : sku });
-    return options;
-  }, []);
-
-  React.useEffect(() => {
-    const nextSkus = new Map<string, string>();
-    watchedVariants.forEach((variant, index) => {
-      const clientId = variants.fields[index]?.fieldKey;
-      if (!clientId) return;
-      const nextSku = variant.sku.trim().toUpperCase();
-      const previousSku = previousVariantSkus.current.get(clientId);
-      nextSkus.set(clientId, nextSku);
-      if (previousSku && nextSku && previousSku !== nextSku) {
-        watchedBarcodes.forEach((barcode, barcodeIndex) => {
-          if (!barcode.variantId && barcode.variantSku?.trim().toUpperCase() === previousSku) {
-            form.setValue(`barcodes.${barcodeIndex}.variantSku`, nextSku, { shouldDirty: true, shouldValidate: true });
-            form.setValue(`barcodes.${barcodeIndex}.variantId`, nextSku, { shouldDirty: true });
-          } else if (barcode.variantId === previousSku) {
-            form.setValue(`barcodes.${barcodeIndex}.variantSku`, nextSku, { shouldDirty: true, shouldValidate: true });
-            form.setValue(`barcodes.${barcodeIndex}.variantId`, nextSku, { shouldDirty: true });
-          }
-        });
-      }
-    });
-    previousVariantSkus.current = nextSkus;
-  }, [form, variants.fields, watchedBarcodes, watchedVariants]);
-
-  const removeVariant = (index: number) => {
-    const variant = watchedVariants[index];
-    if (!variant) return;
-    const sku = variant.sku.trim().toUpperCase();
-    const linkedBarcodeIndexes = watchedBarcodes
-      .map((barcode, barcodeIndex) => barcode.variantId === variant.id || (!barcode.variantId && barcode.variantSku?.trim().toUpperCase() === sku) ? barcodeIndex : -1)
-      .filter((barcodeIndex) => barcodeIndex >= 0);
-    if (linkedBarcodeIndexes.length > 0) {
-      const label = variant.name.trim() || sku;
-      const confirmed = window.confirm(`Variant ${label} has ${linkedBarcodeIndexes.length} barcode assigned. Removing this variant will also remove its barcode assignment.`);
-      if (!confirmed) return;
-      linkedBarcodeIndexes.reverse().forEach((barcodeIndex) => barcodes.remove(barcodeIndex));
-    }
-    variants.remove(index);
-  };
 
   return (
     <Stack
@@ -637,7 +570,7 @@ function ProductForm({
                 type="button"
                 variant="outlined"
                 startIcon={<AddIcon />}
-                onClick={() => variants.append({ sku: '', name: '', description: '', cost: 0, price: 0, active: true })}
+                onClick={() => variants.append({ sku: '', name: '', description: '', cost: 0, price: 0, active: true, barcodes: [] })}
               >
                 Add variant
               </Button>
@@ -663,114 +596,19 @@ function ProductForm({
                   <TextInput control={form.control} name={`variants.${index}.description`} label="Variant description" disabled={disabled} />
                 </Grid>
                 <Grid item xs={12}>
-                  <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                    <SwitchInput control={form.control} name={`variants.${index}.active`} label="Active" disabled={disabled} />
-                    {!disabled ? <Button type="button" variant="outlined" onClick={() => setScanVariantIndex(index)}>Scan Multiple Barcodes</Button> : null}
-                    {!disabled ? (
-                      <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => removeVariant(index)}>
-                        Remove variant
-                      </Button>
-                    ) : null}
-                  </Stack>
-                </Grid>
-              </Grid>
-            </Paper>
-          ))}
-        </Stack>
-      </Paper>
-
-      <BarcodeBatchDialog
-        open={scanVariantIndex !== null}
-        variantLabel={scanVariantIndex === null ? '' : `${watchedVariants[scanVariantIndex]?.name || 'Variant'} — ${watchedVariants[scanVariantIndex]?.sku || ''}`}
-        existing={scanVariantIndex === null ? [] : watchedBarcodes.filter((barcode) => {
-          const variant = watchedVariants[scanVariantIndex];
-          return barcode.variantId === variant?.id || barcode.variantSku?.trim().toUpperCase() === variant?.sku.trim().toUpperCase();
-        }).map((barcode) => barcode.barcode)}
-        onClose={() => setScanVariantIndex(null)}
-        saving={bulkBarcodeMutation.isPending}
-        saveError={bulkBarcodeMutation.error}
-        onAdd={async (codes) => {
-          if (scanVariantIndex === null) return;
-          const variant = watchedVariants[scanVariantIndex];
-          if (variant.id && uuidPattern.test(variant.id)) {
-            const result=await bulkBarcodeMutation.mutateAsync({variantId:variant.id,codes});
-            result.barcodes.filter(item=>codes.some(code=>code.toLowerCase()===item.barcode.toLowerCase())).forEach(item=>barcodes.append({id:item.id,barcode:item.barcode,variantId:item.variantId,variantSku:item.variantSku,primaryBarcode:item.primaryBarcode,active:item.active}));
-          } else codes.forEach((barcode, codeIndex) => barcodes.append({ barcode, variantId: variant.id, variantSku: variant.sku.trim().toUpperCase(), primaryBarcode: watchedBarcodes.length === 0 && codeIndex === 0, active: true }));
-          setScanVariantIndex(null);
-        }}
-      />
-
-      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, lg: 3 }, minWidth: 0 }}>
-        <Stack spacing={{ xs: 1.5, lg: 2 }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
-            <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>Barcodes</Typography>
-            {!disabled ? (
-              <Button
-                type="button"
-                variant="outlined"
-                startIcon={<AddIcon />}
-                onClick={() => barcodes.append({ barcode: '', variantId: undefined, variantSku: '', primaryBarcode: barcodes.fields.length === 0, active: true })}
-              >
-                Add barcode
-              </Button>
-            ) : null}
-          </Stack>
-          {barcodes.fields.length === 0 ? <Typography color="text.secondary">No barcodes configured.</Typography> : null}
-          {barcodes.fields.map((barcode, index) => (
-            <Paper key={barcode.fieldKey} data-testid="product-barcode-card" elevation={0} sx={{ width: '100%', maxWidth: '100%', minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
-              <Grid container spacing={{ xs: 1.5, lg: 2 }} alignItems="flex-start">
-                <Grid item xs={12} md={6} xl={5}>
-                  <TextInput control={form.control} name={`barcodes.${index}.barcode`} label="Barcode" disabled={disabled} />
-                </Grid>
-                <Grid item xs={12} md={6} xl={4} sx={{ minWidth: 0 }}>
-                  <Controller
-                    name={`barcodes.${index}.variantId`}
+                  <VariantBarcodeFields
                     control={form.control}
-                    render={({ field, fieldState }) => (
-                      <TextField
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={(event) => {
-                          const selected = String(event.target.value);
-                          const option = variantOptions.find((variant) => variant.value === selected);
-                          field.onChange(option?.value ?? undefined);
-                          form.setValue(`barcodes.${index}.variantSku`, option?.sku ?? '', { shouldDirty: true, shouldValidate: true });
-                        }}
-                        select
-                        label="Assign To Variant"
-                        disabled={disabled}
-                        error={Boolean(fieldState.error)}
-                        helperText={fieldState.error?.message}
-                        fullWidth
-                        SelectProps={{
-                          displayEmpty: true,
-                          MenuProps: productSelectMenuProps,
-                          renderValue: (value) => (
-                            <Box component="span" sx={{ display: 'block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {value === '' ? 'Base Variant' : variantOptions.find((variant) => variant.value === value)?.label ?? 'Select variant'}
-                            </Box>
-                          )
-                        }}
-                      >
-                        <MenuItem value="">Base Variant</MenuItem>
-                        {variantOptions.map((variant) => <MenuItem key={variant.clientId} value={variant.value} sx={{ maxWidth: '100%', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{variant.label}</MenuItem>)}
-                      </TextField>
-                    )}
+                    index={index}
+                    variants={watchedVariants}
+                    disabled={disabled}
                   />
                 </Grid>
-                <Grid item xs={12} xl={3}>
-                  <Stack spacing={1}>
-                    <SwitchInput control={form.control} name={`barcodes.${index}.primaryBarcode`} label="Primary" disabled={disabled} />
-                    <SwitchInput control={form.control} name={`barcodes.${index}.active`} label="Active" disabled={disabled} />
+                <Grid item xs={12}>
+                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" useFlexGap flexWrap="wrap">
+                    <SwitchInput control={form.control} name={`variants.${index}.active`} label="Active" disabled={disabled} />
+                    {!disabled ? <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => variants.remove(index)}>Remove variant</Button> : null}
                   </Stack>
                 </Grid>
-                {!disabled ? (
-                  <Grid item xs={12}>
-                    <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => barcodes.remove(index)}>
-                      Remove barcode
-                    </Button>
-                  </Grid>
-                ) : null}
               </Grid>
             </Paper>
           ))}
@@ -802,13 +640,203 @@ function ProductForm({
   );
 }
 
-function BarcodeBatchDialog({open,variantLabel,existing,onClose,onAdd,saving,saveError}:{open:boolean;variantLabel:string;existing:string[];onClose:()=>void;onAdd:(codes:string[])=>Promise<void>|void;saving:boolean;saveError:unknown}) {
-  const [input,setInput]=React.useState('');const [codes,setCodes]=React.useState<string[]>([]);const [feedback,setFeedback]=React.useState<string>();const inputRef=React.useRef<HTMLInputElement>(null);
-  React.useEffect(()=>{if(open){setInput('');setCodes([]);setFeedback(undefined);window.setTimeout(()=>inputRef.current?.focus(),0);}},[open,variantLabel]);
-  const restoreFocus=()=>window.setTimeout(()=>inputRef.current?.focus(),0);
-  const add=()=>{const value=input.trim();if(!value){setFeedback('Enter or scan a barcode.');restoreFocus();return;}if(value.length>128||/[\u0000-\u001f\u007f]/.test(value)){setFeedback('Enter a valid barcode.');setInput('');restoreFocus();return;}if(existing.some(code=>code.trim().toLowerCase()===value.toLowerCase())){setFeedback('This barcode is already added to this variant.');setInput('');restoreFocus();return;}if(codes.some(code=>code.toLowerCase()===value.toLowerCase())){setFeedback('Barcode already scanned.');setInput('');restoreFocus();return;}if(codes.length>=500){setFeedback('A maximum of 500 barcodes can be added at once.');restoreFocus();return;}setCodes(current=>[...current,value]);setInput('');setFeedback(undefined);restoreFocus();};
-  const submit=async()=>{try{await onAdd(codes);}catch{restoreFocus();}};
-  return <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="barcode-batch-title"><DialogTitle id="barcode-batch-title">Add Barcodes — {variantLabel}</DialogTitle><DialogContent><Stack spacing={1.5} sx={{pt:1}}><Typography color="text.secondary">Scan each barcode. Nothing is sent until Add All.</Typography><TextField inputRef={inputRef} autoFocus label="Scan or enter barcode" value={input} onChange={event=>setInput(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();add();}}} fullWidth/><Typography fontWeight={700}>{codes.length} barcode{codes.length===1?'':'s'} scanned</Typography>{feedback?<Alert severity="warning">{feedback}</Alert>:null}{saveError?<Alert severity="error">{saveError instanceof Error?saveError.message:'No barcodes were added.'}</Alert>:null}<Stack spacing={.5} sx={{maxHeight:280,overflowY:'auto'}}>{codes.map((code,index)=><Stack key={code.toLowerCase()} direction="row" alignItems="center" spacing={1}><Typography sx={{fontFamily:'monospace',flexGrow:1}}>{index+1}. {code}</Typography><IconButton aria-label={`Remove ${code}`} onClick={()=>{setCodes(values=>values.filter(value=>value!==code));restoreFocus();}}><DeleteIcon/></IconButton></Stack>)}</Stack>{codes.length?<Button color="error" onClick={()=>{setCodes([]);restoreFocus();}} sx={{alignSelf:'flex-start'}}>Clear All</Button>:null}</Stack></DialogContent><DialogActions><Button onClick={onClose} disabled={saving}>Cancel</Button><Button variant="contained" disabled={!codes.length||saving} onClick={submit}>{saving?'Adding…':`Add All (${codes.length})`}</Button></DialogActions></Dialog>;
+function VariantBarcodeFields({ control, index, variants, disabled }: {
+  control: Control<ProductFormValues>;
+  index: number;
+  variants: ProductFormValues['variants'];
+  disabled?: boolean;
+}) {
+  const name = `variants.${index}.barcodes` as const;
+  const barcodes = useFieldArray({ control, name, keyName: 'fieldKey' });
+  const watchedBarcodes = useWatch({ control, name }) ?? [];
+  const [input, setInput] = React.useState('');
+  const [feedback, setFeedback] = React.useState<string>();
+  const [batchOpen, setBatchOpen] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const restoreFocus = () => window.setTimeout(() => inputRef.current?.focus(), 0);
+
+  const addBarcode = () => {
+    const barcode = input.trim();
+    const key = barcode.toLowerCase();
+    if (!barcode || barcode.length > 128 || /[\u0000-\u001f\u007f]/.test(barcode)) {
+      setFeedback(barcode ? 'Enter a valid barcode.' : 'Enter or scan a barcode.');
+    } else if (watchedBarcodes.some((candidate) => candidate.barcode.trim().toLowerCase() === key)) {
+      setFeedback('Barcode already added.');
+    } else if (variants.some((variant, variantIndex) => variantIndex !== index
+      && variant.barcodes.some((candidate) => candidate.barcode.trim().toLowerCase() === key))) {
+      setFeedback('This barcode is already assigned to another variant in this product.');
+    } else if (watchedBarcodes.length >= 500) {
+      setFeedback('A maximum of 500 barcodes can be added to a variant.');
+    } else {
+      barcodes.append({ barcode, primaryBarcode: watchedBarcodes.length === 0, active: true });
+      setFeedback(undefined);
+    }
+    setInput('');
+    restoreFocus();
+  };
+
+  return (
+    <Stack spacing={1.25} sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+      <Box>
+        <Typography fontWeight={700}>Barcodes ({watchedBarcodes.length})</Typography>
+        <Typography variant="body2" color="text.secondary">Scan continuously or enter a barcode. Barcodes are saved with this variant when the product is saved.</Typography>
+      </Box>
+      {!disabled ? (
+        <Stack spacing={1}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
+            <TextField
+              inputRef={inputRef}
+              label="Scan or enter barcode"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addBarcode();
+                }
+              }}
+              fullWidth
+              autoComplete="off"
+              inputProps={{ maxLength: 128, inputMode: 'text' }}
+            />
+            <Button type="button" variant="outlined" startIcon={<AddIcon />} onClick={addBarcode} sx={{ minHeight: 56, whiteSpace: 'nowrap' }}>Add</Button>
+          </Stack>
+          <Button type="button" variant="outlined" onClick={() => setBatchOpen(true)} sx={{ alignSelf: 'flex-start' }}>Scan Multiple Barcodes</Button>
+        </Stack>
+      ) : null}
+      {feedback ? <Alert severity="warning" sx={{ py: 0 }}>{feedback}</Alert> : null}
+      {watchedBarcodes.length ? (
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ maxHeight: 168, overflowY: 'auto', alignContent: 'flex-start', pr: 0.5 }}>
+          {barcodes.fields.map((field, barcodeIndex) => {
+            const barcode = watchedBarcodes[barcodeIndex]?.barcode ?? '';
+            return (
+              <Chip
+                key={field.fieldKey}
+                data-testid="variant-barcode-chip"
+                label={barcode}
+                sx={{ maxWidth: '100%', fontFamily: 'monospace' }}
+                onDelete={disabled ? undefined : () => {
+                  barcodes.remove(barcodeIndex);
+                  setFeedback(undefined);
+                  restoreFocus();
+                }}
+                deleteIcon={disabled ? undefined : <DeleteIcon />}
+              />
+            );
+          })}
+        </Stack>
+      ) : <Typography variant="body2" color="text.secondary">No barcodes added.</Typography>}
+      <VariantBarcodeBatchDialog
+        open={batchOpen}
+        variantLabel={variants[index]?.name.trim() || `Variant ${index + 1}`}
+        existing={watchedBarcodes.map((barcode) => barcode.barcode)}
+        otherVariantBarcodes={variants.flatMap((variant, variantIndex) => variantIndex === index ? [] : variant.barcodes.map((barcode) => barcode.barcode))}
+        onClose={() => setBatchOpen(false)}
+        onAdd={(codes) => {
+          codes.forEach((barcode, batchIndex) => barcodes.append({
+            barcode,
+            primaryBarcode: watchedBarcodes.length === 0 && batchIndex === 0,
+            active: true
+          }));
+          setFeedback(undefined);
+          setBatchOpen(false);
+          restoreFocus();
+        }}
+      />
+    </Stack>
+  );
+}
+
+function VariantBarcodeBatchDialog({ open, variantLabel, existing, otherVariantBarcodes, onClose, onAdd }: {
+  open: boolean;
+  variantLabel: string;
+  existing: string[];
+  otherVariantBarcodes: string[];
+  onClose: () => void;
+  onAdd: (codes: string[]) => void;
+}) {
+  const [input, setInput] = React.useState('');
+  const [codes, setCodes] = React.useState<string[]>([]);
+  const [feedback, setFeedback] = React.useState<string>();
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const titleId = React.useId();
+  const restoreFocus = () => window.setTimeout(() => inputRef.current?.focus(), 0);
+
+  React.useEffect(() => {
+    if (open) {
+      setInput('');
+      setCodes([]);
+      setFeedback(undefined);
+      restoreFocus();
+    }
+  }, [open]);
+
+  const add = () => {
+    const barcode = input.trim();
+    const key = barcode.toLowerCase();
+    if (!barcode || barcode.length > 128 || /[\u0000-\u001f\u007f]/.test(barcode)) {
+      setFeedback(barcode ? 'Enter a valid barcode.' : 'Enter or scan a barcode.');
+    } else if (existing.some((candidate) => candidate.trim().toLowerCase() === key)) {
+      setFeedback('Barcode is already added to this variant.');
+    } else if (otherVariantBarcodes.some((candidate) => candidate.trim().toLowerCase() === key)) {
+      setFeedback('This barcode is already assigned to another variant in this product.');
+    } else if (codes.some((candidate) => candidate.toLowerCase() === key)) {
+      setFeedback('Barcode already scanned.');
+    } else if (codes.length >= 500) {
+      setFeedback('A maximum of 500 barcodes can be scanned at once.');
+    } else {
+      setCodes((current) => [...current, barcode]);
+      setFeedback(undefined);
+    }
+    setInput('');
+    restoreFocus();
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby={titleId}>
+      <DialogTitle id={titleId}>Add Barcodes — {variantLabel}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={1.5} sx={{ pt: 1 }}>
+          <Typography color="text.secondary">Scan each barcode. Nothing is saved until Add All.</Typography>
+          <TextField
+            inputRef={inputRef}
+            autoFocus
+            label="Scan or enter barcode"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                add();
+              }
+            }}
+            fullWidth
+            autoComplete="off"
+            inputProps={{ maxLength: 128, inputMode: 'text' }}
+          />
+          <Typography fontWeight={700}>{codes.length} barcode{codes.length === 1 ? '' : 's'} scanned</Typography>
+          {feedback ? <Alert severity="warning" sx={{ py: 0 }}>{feedback}</Alert> : null}
+          <Stack spacing={0.5} sx={{ maxHeight: 240, overflowY: 'auto' }}>
+            {codes.map((code, codeIndex) => (
+              <Stack key={code.toLowerCase()} direction="row" alignItems="center" spacing={1} data-testid="batch-barcode-row">
+                <Typography sx={{ fontFamily: 'monospace', flexGrow: 1 }}>{codeIndex + 1}. {code}</Typography>
+                <IconButton aria-label={`Remove ${code}`} onClick={() => {
+                  setCodes((current) => current.filter((candidate) => candidate !== code));
+                  setFeedback(undefined);
+                  restoreFocus();
+                }}><DeleteIcon /></IconButton>
+              </Stack>
+            ))}
+          </Stack>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={codes.length === 0} onClick={() => onAdd(codes)}>Add All ({codes.length})</Button>
+      </DialogActions>
+    </Dialog>
+  );
 }
 
 function TextInput({

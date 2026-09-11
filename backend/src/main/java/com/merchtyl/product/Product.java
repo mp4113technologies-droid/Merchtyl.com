@@ -267,7 +267,9 @@ public class Product extends BaseUuidEntity {
             }
             retained.add(barcode);
         }
-        barcodes.removeIf(barcode -> !retained.contains(barcode));
+        // Legacy product-level barcodes have no Variant and are not represented by the
+        // variant-owned request contract. Preserve them until they are migrated explicitly.
+        barcodes.removeIf(barcode -> barcode.getVariant() != null && !retained.contains(barcode));
     }
 
     private void replaceCapabilities(Set<ProductCapability> capabilities) {

@@ -29,6 +29,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import java.util.HashSet;
 import java.util.List;
@@ -57,6 +59,7 @@ public class ProductService {
     @Autowired private StoreProductRepository storeProductRepository;
     @Autowired private InventoryBalanceRepository inventoryBalanceRepository;
     @Autowired private ProductReferenceGenerator productReferenceGenerator;
+    @PersistenceContext private EntityManager entityManager;
 
     public ProductService(
             ProductRepository productRepository,
@@ -109,7 +112,7 @@ public class ProductService {
         product.setAvailabilityScope(availabilityScope);
         product.assignTenant(tenantId);
         product.assignProductReference(productReferenceGenerator == null ? "PRD-000001" : productReferenceGenerator.next(tenantId));
-        Product saved = save(product);
+        Product saved = persistNew(product);
         if (storeAccessService != null) requestedStoreIds.forEach(storeId -> {
             var store = storeAccessService.tenantStore(tenantId, storeId);
             StoreProduct mapping = new StoreProduct(tenantId, store, saved);
@@ -256,7 +259,7 @@ public class ProductService {
                 optionalText(request.imageUrl()),
                 request.taxCategoryId(),
                 variantValues(request.variants()),
-                barcodeValues(request.barcodes()),
+                barcodeValues(request.variants()),
                 capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
@@ -278,7 +281,7 @@ public class ProductService {
                 optionalText(request.imageUrl()),
                 request.taxCategoryId(),
                 variantValues(request.variants()),
-                barcodeValues(request.barcodes()),
+                barcodeValues(request.variants()),
                 capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
@@ -318,15 +321,15 @@ public class ProductService {
                 .toList();
     }
 
-    private List<ProductBarcodeValues> barcodeValues(List<ProductBarcodeRequest> requests) {
-        return nullSafe(requests).stream()
-                .map(request -> new ProductBarcodeValues(
-                        request.id(),
-                        BarcodeNormalizer.normalize(request.barcode()),
-                        request.variantId(),
-                        normalizeOptionalSku(request.variantSku(), "barcode variantSku"),
-                        request.primaryBarcode(),
-                        request.active()))
+    private List<ProductBarcodeValues> barcodeValues(List<ProductVariantRequest> variants) {
+        return nullSafe(variants).stream()
+                .flatMap(variant -> nullSafe(variant.barcodes()).stream().map(barcode -> new ProductBarcodeValues(
+                        barcode.id(),
+                        BarcodeNormalizer.normalize(barcode.barcode()),
+                        variant.id(),
+                        normalizeSku(variant.sku(), "barcode variantSku"),
+                        barcode.primaryBarcode(),
+                        barcode.active())))
                 .toList();
     }
 
@@ -495,6 +498,27 @@ public class ProductService {
     private Product save(Product product) {
         try {
             return productRepository.saveAndFlush(product);
+        } catch (DataIntegrityViolationException exception) {
+            String detail = exception.getMostSpecificCause().getMessage();
+            if (detail != null && (detail.contains("uq_product_barcodes_tenant_barcode_lower")
+                    || detail.contains("product_barcodes_barcode_key"))) {
+                throw barcodeAlreadyAssigned();
+            }
+            throw new ConflictException("Product unique value already exists");
+        }
+    }
+
+    /** New aggregates have application-assigned UUIDs, so repository.save would merge them.
+     * Persist explicitly to ensure new Variant and Barcode children are inserted in FK order. */
+    private Product persistNew(Product product) {
+        if (entityManager == null) {
+            // Keeps isolated unit/service usage functional outside a JPA application context.
+            return save(product);
+        }
+        try {
+            entityManager.persist(product);
+            entityManager.flush();
+            return product;
         } catch (DataIntegrityViolationException exception) {
             String detail = exception.getMostSpecificCause().getMessage();
             if (detail != null && (detail.contains("uq_product_barcodes_tenant_barcode_lower")

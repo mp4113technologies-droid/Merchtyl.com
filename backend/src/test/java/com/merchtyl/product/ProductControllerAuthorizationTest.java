@@ -65,15 +65,14 @@ class ProductControllerAuthorizationTest {
                   "name": "Large",
                   "cost": 1.50,
                   "price": 4.00,
-                  "active": true
-                }
-              ],
-              "barcodes": [
-                {
-                  "barcode": "012345678905",
-                  "variantSku": "COFFEE-LARGE",
-                  "primaryBarcode": true,
-                  "active": true
+                  "active": true,
+                  "barcodes": [
+                    {
+                      "barcode": "012345678905",
+                      "primaryBarcode": true,
+                      "active": true
+                    }
+                  ]
                 }
               ]
             }

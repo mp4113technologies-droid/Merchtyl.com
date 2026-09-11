@@ -138,6 +138,7 @@ class ProductIntegrationTest {
                 .andExpect(jsonPath("$.inventoryTrackingEnabled").value(true))
                 .andExpect(jsonPath("$.decimalQuantityAllowed").value(false))
                 .andExpect(jsonPath("$.variants[0].sku").value("COFFEE-LARGE"))
+                .andExpect(jsonPath("$.variants[0].barcodes[0].barcode").value("012345678905"))
                 .andExpect(jsonPath("$.barcodes[0].barcode").value("012345678905"))
                 .andExpect(jsonPath("$.version").value(0))
                 .andReturn()
@@ -417,15 +418,14 @@ class ProductIntegrationTest {
                       "description": "Large size",
                       "cost": 1.5000,
                       "price": 4.0000,
-                      "active": true
-                    }
-                  ],
-                  "barcodes": [
-                    {
-                      "barcode": "%s",
-                      "variantSku": "%s-large",
-                      "primaryBarcode": true,
-                      "active": true
+                      "active": true,
+                      "barcodes": [
+                        {
+                          "barcode": "%s",
+                          "primaryBarcode": true,
+                          "active": true
+                        }
+                      ]
                     }
                   ]
                 }
@@ -439,8 +439,7 @@ class ProductIntegrationTest {
                 sku,
                 taxCategory.getId(),
                 sku,
-                barcode,
-                sku);
+                barcode);
     }
 
     private String updateJson(String sku, String name, String barcode, long version, boolean active) {

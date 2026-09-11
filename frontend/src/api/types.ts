@@ -433,6 +433,7 @@ export type ProductVariant = {
   cost: number;
   price: number;
   active: boolean;
+  barcodes?: ProductBarcode[];
   createdAt: string;
   updatedAt: string;
   version: number;

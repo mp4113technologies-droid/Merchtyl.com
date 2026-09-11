@@ -334,8 +334,10 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Price')[0], '2.75');
     await userEvent.click(screen.getByLabelText('ALLOW DISCOUNT'));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add variant' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Add variant' }));
     expect(screen.getByTestId('product-variant-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(screen.queryByText('Enter or scan a barcode.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Scan Multiple Barcodes' })).toBeVisible();
     await userEvent.type(screen.getByLabelText('Variant SKU'), 'tea-large');
     await userEvent.type(screen.getByLabelText('Variant name'), 'Large');
     await userEvent.clear(screen.getAllByLabelText('Cost')[1]);
@@ -344,18 +346,16 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Price')[1], '3.25');
 
     const writesBeforeScanning = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT').length;
-    await userEvent.click(screen.getByRole('button', { name: 'Scan Multiple Barcodes' }));
     const scanner = screen.getByRole('textbox', { name: 'Scan or enter barcode' });
     await userEvent.type(scanner, '987654321098{enter}');
     await userEvent.type(scanner, '987654321099{enter}');
     await userEvent.type(scanner, '987654321098{enter}');
-    expect(screen.getByText('Barcode already scanned.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add All (2)' })).toBeEnabled();
+    expect(screen.getByText('Barcode already added.')).toBeInTheDocument();
+    expect(scanner).toHaveFocus();
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT')).toHaveLength(writesBeforeScanning);
-    await userEvent.click(screen.getByRole('button', { name: 'Add All (2)' }));
-    expect(await screen.findAllByTestId('product-barcode-card')).toHaveLength(2);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(screen.getAllByTestId('product-barcode-card')[0]).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(await screen.findAllByTestId('variant-barcode-chip')).toHaveLength(2);
+    expect(screen.queryByRole('heading', { name: 'Barcodes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Assign To Variant' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create product' })).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
 
@@ -368,9 +368,9 @@ describe('Product pages', () => {
       const body = JSON.parse(String(init.body));
       return body.sku === 'TEA-12OZ'
         && body.variants[0].sku === 'TEA-LARGE'
-        && body.barcodes[0].barcode === '987654321098'
-        && body.barcodes[0].variantSku === 'TEA-LARGE'
-        && body.barcodes[1].barcode === '987654321099'
+        && body.variants[0].barcodes[0].barcode === '987654321098'
+        && body.variants[0].barcodes[1].barcode === '987654321099'
+        && body.barcodes === undefined
         && body.unitOfMeasureId === '00000000-0000-0000-0000-000000000803'
         && body.taxCategoryId === '00000000-0000-0000-0000-000000000901'
         && body.taxCategoryId !== 'Standard Tax'
@@ -380,21 +380,53 @@ describe('Product pages', () => {
     })).toBe(true);
   });
 
-  it('selects and persists the real base variant without losing the controlled value', async () => {
+  it('keeps batch scans temporary, discards them on cancel, and merges them locally on Add All', async () => {
+    storeSession(['OWNER']);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      const referenceResponse = mockReferenceEndpoints(url);
+      if (referenceResponse) return referenceResponse;
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add variant' }));
+    const card = screen.getByTestId('product-variant-card');
+    const inlineScanner = within(card).getByRole('textbox', { name: 'Scan or enter barcode' });
+    await userEvent.type(inlineScanner, '001234567890{enter}');
+
+    await userEvent.click(within(card).getByRole('button', { name: 'Scan Multiple Barcodes' }));
+    let dialog = screen.getByRole('dialog', { name: 'Add Barcodes — Variant 1' });
+    let batchScanner = within(dialog).getByRole('textbox', { name: 'Scan or enter barcode' });
+    expect(batchScanner).toHaveFocus();
+    await userEvent.type(batchScanner, '111{enter}222{enter}333{enter}');
+    expect(within(dialog).getAllByTestId('batch-barcode-row')).toHaveLength(3);
+    expect(within(card).getAllByTestId('variant-barcode-chip')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT')).toHaveLength(0);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(within(card).getAllByTestId('variant-barcode-chip')).toHaveLength(1);
+
+    await userEvent.type(within(card).getByLabelText('Variant name'), 'Green');
+    await userEvent.click(within(card).getByRole('button', { name: 'Scan Multiple Barcodes' }));
+    dialog = screen.getByRole('dialog', { name: 'Add Barcodes — Green' });
+    batchScanner = within(dialog).getByRole('textbox', { name: 'Scan or enter barcode' });
+    await userEvent.type(batchScanner, '222{enter}333{enter}222{enter}');
+    expect(within(dialog).getByText('Barcode already scanned.')).toBeInTheDocument();
+    expect(batchScanner).toHaveFocus();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add All (2)' }));
+    expect(within(card).getAllByTestId('variant-barcode-chip')).toHaveLength(3);
+    expect(within(card).getByText('001234567890')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT')).toHaveLength(0);
+  });
+
+  it('reconciles an existing variant barcode list in the aggregate update', async () => {
     storeSession(['OWNER']);
     const baseBarcodeProduct = product({
       taxCategoryId: '00000000-0000-0000-0000-000000000901',
-      barcodes: [{
-        id: '00000000-0000-0000-0000-000000001203',
-        barcode: '123456789012',
-        variantId: null,
-        variantSku: null,
-        primaryBarcode: true,
-        active: true,
-        createdAt: '2026-07-22T12:00:00Z',
-        updatedAt: '2026-07-22T12:00:00Z',
-        version: 0
-      }]
     });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
@@ -410,34 +442,57 @@ describe('Product pages', () => {
 
     render(<App initialEntries={[`/products/${baseBarcodeProduct.id}`]} />);
 
-    const assignment = await screen.findByRole('combobox', { name: 'Assign To Variant' });
+    const scanner = await screen.findByRole('textbox', { name: 'Scan or enter barcode' });
     expect(await screen.findByTestId('product-form')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
     expect(screen.getByTestId('product-variant-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
-    expect(screen.getByTestId('product-barcode-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
+    expect(screen.getByTestId('variant-barcode-chip')).toHaveTextContent('012345678905');
     expect(screen.getByTestId('product-action-bar')).toHaveStyle({ position: 'sticky', bottom: '0' });
-    expect(assignment).toHaveTextContent('Base Variant');
-    await userEvent.click(assignment);
-    await userEvent.click(await screen.findByRole('option', { name: 'Large — COFFEE-LARGE' }));
-    expect(assignment).toHaveTextContent('Large — COFFEE-LARGE');
-    await userEvent.click(assignment);
-    await userEvent.click(await screen.findByRole('option', { name: 'Base Variant' }));
-    expect(assignment).toHaveTextContent('Base Variant');
+    await userEvent.click(within(screen.getByTestId('variant-barcode-chip')).getByTestId('DeleteIcon'));
+    await userEvent.type(scanner, '123456789012{enter}');
+    await userEvent.type(scanner, '123456789013{enter}');
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
       if (!String(input).includes(`/products/${baseBarcodeProduct.id}`) || init?.method !== 'PUT') return false;
       const body = JSON.parse(String(init.body));
       return body.variants[0].id === baseBarcodeProduct.variants[0].id
-        && body.barcodes[0].id === baseBarcodeProduct.barcodes[0].id
-        && body.barcodes[0].variantId == null
-        && body.barcodes[0].variantSku == null;
+        && body.variants[0].barcodes.map((item: { barcode: string }) => item.barcode).join(',') === '123456789012,123456789013'
+        && body.barcodes === undefined;
     })).toBe(true));
   });
 
-  it('sends one bulk request after scanning multiple aliases for an existing variant', async () => {
-    storeSession(['OWNER']);const current=product({taxCategoryId:'00000000-0000-0000-0000-000000000901'});let bulkBody:any;
-    const fetchMock=vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),window.location.origin);if(url.pathname.endsWith('/api/v1/auth/me'))return jsonResponse(currentUser(['OWNER']));const reference=mockReferenceEndpoints(url);if(reference)return reference;if(url.pathname.endsWith(`/api/v1/product-variants/${current.variants[0].id}/barcodes/bulk`)&&init?.method==='POST'){bulkBody=JSON.parse(String(init.body));return jsonResponse({variantId:current.variants[0].id,addedCount:3,barcodes:bulkBody.barcodes.map((barcode:string,index:number)=>({id:`00000000-0000-0000-0000-00000000900${index}`,barcode,variantId:current.variants[0].id,variantSku:current.variants[0].sku,primaryBarcode:false,active:true}))});}if(url.pathname.endsWith(`/api/v1/products/${current.id}`))return jsonResponse(current);return apiError('Unexpected request');});
-    render(<App initialEntries={[`/products/${current.id}`]}/>);await screen.findByRole('heading',{name:current.name});await userEvent.click(screen.getByRole('button',{name:'Scan Multiple Barcodes'}));const scanner=screen.getByRole('textbox',{name:'Scan or enter barcode'});for(const code of ['00001','00002','00003'])await userEvent.type(scanner,`${code}{enter}`);expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(0);await userEvent.click(screen.getByRole('button',{name:'Add All (3)'}));await waitFor(()=>expect(bulkBody).toEqual({barcodes:['00001','00002','00003']}));expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(1);
+  it('rejects a batch barcode owned by another variant and preserves scanner focus', async () => {
+    storeSession(['OWNER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      const referenceResponse = mockReferenceEndpoints(url);
+      if (referenceResponse) return referenceResponse;
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add variant' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add variant' }));
+    const cards = screen.getAllByTestId('product-variant-card');
+    const firstScanner = within(cards[0]).getByRole('textbox', { name: 'Scan or enter barcode' });
+    await userEvent.type(firstScanner, '0012345678905{enter}');
+    await userEvent.click(within(cards[1]).getByRole('button', { name: 'Scan Multiple Barcodes' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add Barcodes — Variant 2' });
+    const batchScanner = within(dialog).getByRole('textbox', { name: 'Scan or enter barcode' });
+    await userEvent.type(batchScanner, '0012345678905{enter}');
+
+    expect(screen.getAllByTestId('variant-barcode-chip')).toHaveLength(1);
+    expect(screen.getByText('This barcode is already assigned to another variant in this product.')).toBeInTheDocument();
+    expect(batchScanner).toHaveFocus();
+  });
+
+  it('collects ten scans locally and sends one product update only when saved', async () => {
+    storeSession(['OWNER']);const current=product({taxCategoryId:'00000000-0000-0000-0000-000000000901'});let updateBody:any;
+    const fetchMock=vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),window.location.origin);if(url.pathname.endsWith('/api/v1/auth/me'))return jsonResponse(currentUser(['OWNER']));const reference=mockReferenceEndpoints(url);if(reference)return reference;if(url.pathname.endsWith(`/api/v1/products/${current.id}`)&&init?.method==='PUT'){updateBody=JSON.parse(String(init.body));return jsonResponse({...current,version:1});}if(url.pathname.endsWith(`/api/v1/products/${current.id}`))return jsonResponse(current);return apiError('Unexpected request');});
+    render(<App initialEntries={[`/products/${current.id}`]}/>);await screen.findByRole('heading',{name:current.name});const scanner=screen.getByRole('textbox',{name:'Scan or enter barcode'});for(let index=1;index<=10;index+=1)await userEvent.type(scanner,`000${index.toString().padStart(2,'0')}{enter}`);expect(screen.getAllByTestId('variant-barcode-chip')).toHaveLength(11);expect(scanner).toHaveFocus();expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST'||init?.method==='PUT')).toHaveLength(0);await userEvent.click(screen.getByRole('button',{name:'Save changes'}));await waitFor(()=>expect(updateBody.variants[0].barcodes).toHaveLength(11));expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='PUT')).toHaveLength(1);expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(0);
   });
 
   it('validates, edits, and deactivates a product', async () => {
