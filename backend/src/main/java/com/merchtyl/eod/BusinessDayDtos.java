@@ -232,6 +232,7 @@ record EndOfDayClosingPreviewResponse(
         List<EndOfDayRegisterSummaryResponse> registers,
         List<EndOfDayPaymentSummaryResponse> payments,
         List<EndOfDayTaxSummaryResponse> taxes,
+        List<EndOfDayCategorySalesSummaryResponse> categorySalesDistribution,
         EndOfDayLotterySummaryResponse lottery,
         EndOfDayInventorySummaryResponse inventory,
         List<EndOfDayCashierSummaryResponse> cashiers,
@@ -304,6 +305,7 @@ record EndOfDayReportResponse(
         List<EndOfDayRegisterSummaryResponse> registers,
         List<EndOfDayPaymentSummaryResponse> payments,
         List<EndOfDayTaxSummaryResponse> taxes,
+        List<EndOfDayCategorySalesSummaryResponse> categorySalesDistribution,
         EndOfDayLotterySummaryResponse lottery,
         EndOfDayInventorySummaryResponse inventory,
         List<EndOfDayCashierSummaryResponse> cashiers,
@@ -347,6 +349,7 @@ record EndOfDayReportResponse(
                 report.getRegisterSummaries().stream().map(EndOfDayRegisterSummaryResponse::from).toList(),
                 report.getPaymentSummaries().stream().map(EndOfDayPaymentSummaryResponse::from).toList(),
                 report.getTaxSummaries().stream().map(EndOfDayTaxSummaryResponse::from).toList(),
+                report.getCategorySalesSummaries().stream().map(EndOfDayCategorySalesSummaryResponse::from).toList(),
                 report.getLotterySummary() == null ? null : EndOfDayLotterySummaryResponse.from(report.getLotterySummary()),
                 report.getInventorySummary() == null ? null : EndOfDayInventorySummaryResponse.from(report.getInventorySummary()),
                 report.getCashierSummaries().stream().map(EndOfDayCashierSummaryResponse::from).toList(),
@@ -358,6 +361,23 @@ record EndOfDayReportResponse(
 
     private static String display(com.merchtyl.security.User user) {
         return user.getDisplayName() == null || user.getDisplayName().isBlank() ? user.getEmail() : user.getDisplayName();
+    }
+}
+
+record EndOfDayCategorySalesSummaryResponse(
+        UUID categoryId,
+        String categoryName,
+        BigDecimal quantitySold,
+        BigDecimal netSales,
+        BigDecimal percentage
+) {
+    static EndOfDayCategorySalesSummaryResponse from(EndOfDayCategorySalesSummary summary) {
+        return new EndOfDayCategorySalesSummaryResponse(
+                summary.getCategoryId(),
+                summary.getCategoryName(),
+                summary.getQuantitySold(),
+                summary.getNetSales(),
+                summary.getPercentage());
     }
 }
 

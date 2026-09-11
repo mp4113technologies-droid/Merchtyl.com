@@ -655,6 +655,14 @@ export type EndOfDayTaxSummary = {
   netTaxCollected: number;
 };
 
+export type EndOfDayCategorySalesSummary = {
+  categoryId: string | null;
+  categoryName: string;
+  quantitySold: number;
+  netSales: number;
+  percentage: number;
+};
+
 export type EndOfDayLotterySummary = {
   enabled: boolean;
   lotterySales: number;
@@ -757,6 +765,7 @@ export type EndOfDayReport = {
   registers: EndOfDayRegisterSummary[];
   payments: EndOfDayPaymentSummary[];
   taxes: EndOfDayTaxSummary[];
+  categorySalesDistribution: EndOfDayCategorySalesSummary[];
   lottery: EndOfDayLotterySummary | null;
   inventory: EndOfDayInventorySummary | null;
   cashiers: EndOfDayCashierSummary[];

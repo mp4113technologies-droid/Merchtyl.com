@@ -118,6 +118,10 @@ public class EndOfDayReport extends BaseUuidEntity {
     @OrderBy("componentCode ASC")
     private final List<EndOfDayTaxSummary> taxSummaries = new ArrayList<>();
 
+    @OneToMany(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = false)
+    @OrderBy("netSales DESC, categoryName ASC")
+    private final List<EndOfDayCategorySalesSummary> categorySalesSummaries = new ArrayList<>();
+
     @OneToOne(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = false)
     private EndOfDayLotterySummary lotterySummary;
 
@@ -185,6 +189,10 @@ public class EndOfDayReport extends BaseUuidEntity {
         taxSummaries.add(summary);
     }
 
+    public void addCategorySalesSummary(EndOfDayCategorySalesSummary summary) {
+        categorySalesSummaries.add(summary);
+    }
+
     public void setLotterySummary(EndOfDayLotterySummary lotterySummary) {
         this.lotterySummary = lotterySummary;
     }
@@ -239,6 +247,10 @@ public class EndOfDayReport extends BaseUuidEntity {
 
     public BigDecimal getNetSales() {
         return netSales;
+    }
+
+    public List<EndOfDayCategorySalesSummary> getCategorySalesSummaries() {
+        return Collections.unmodifiableList(categorySalesSummaries);
     }
 
     public BigDecimal getDiscountTotal() {

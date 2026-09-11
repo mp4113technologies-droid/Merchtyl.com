@@ -186,6 +186,10 @@ function report(): EndOfDayReport {
     }],
     payments: [{ paymentMethod: 'CASH', collected: 100, refunded: 10, net: 90, cashTendered: 120, changeGiven: 20, transactionCount: 2, splitPaymentCount: 0 }],
     taxes: [{ componentCode: 'SALES_TAX', componentName: 'Sales tax', taxableSales: 95, exemptSales: 0, zeroRatedSales: 0, outOfScopeSales: 0, taxCollected: 6, taxRefunded: 0, roundingAdjustment: 0, netTaxCollected: 6 }],
+    categorySalesDistribution: [
+      { categoryId: '00000000-0000-0000-0000-000000001301', categoryName: 'Beverages', quantitySold: 3, netSales: 60, percentage: 75 },
+      { categoryId: null, categoryName: 'Custom Items', quantitySold: 1, netSales: 20, percentage: 25 }
+    ],
     lottery: null,
     inventory: null,
     cashiers: [{ cashierId: '00000000-0000-0000-0000-000000001204', cashierName: 'Manager One', transactionCount: 2, grossSales: 100, netSales: 80, refundTotal: 10, voidCount: 0, discountTotal: 5, priceOverrideCount: 0, cashHandled: 90, lotterySales: 0, lotteryPayouts: 0, averageTransactionValue: 40, firstActivityAt: '2026-07-29T10:00:00Z', lastActivityAt: '2026-07-29T20:00:00Z', registersUsed: 'FRONT' }],
@@ -228,6 +232,7 @@ function closingPreview(): EndOfDayClosingPreview {
     registers: finalReport.registers,
     payments: finalReport.payments,
     taxes: finalReport.taxes,
+    categorySalesDistribution: finalReport.categorySalesDistribution,
     lottery: finalReport.lottery,
     inventory: finalReport.inventory,
     cashiers: finalReport.cashiers,
@@ -701,6 +706,11 @@ describe('Business day pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Merchtyl End-of-Day Report' })).toBeInTheDocument();
     expect(await screen.findByText('MAIN-2026-07-29-R1 - Main Store - 2026-07-29')).toBeInTheDocument();
+    expect(screen.getByText('Retail Category Sales Distribution')).toBeInTheDocument();
+    expect(screen.getByText('Beverages')).toBeInTheDocument();
+    expect(screen.getByText('Custom Items')).toBeInTheDocument();
+    expect(screen.getByText('75.0%')).toBeInTheDocument();
+    expect(screen.getByText('100.0%')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'CSV' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/api/v1/end-of-day-reports/${reportId}/export/csv`), expect.any(Object)));
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();

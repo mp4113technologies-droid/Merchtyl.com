@@ -165,6 +165,25 @@ function money(value: number | null | undefined, currencyCode = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode }).format(Number(value ?? 0));
 }
 
+function quantity(value: number) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value);
+}
+
+function categoryRows(report: Pick<EndOfDayReport, 'categorySalesDistribution' | 'currencyCode'>) {
+  const rows = report.categorySalesDistribution.map((row) => [
+    row.categoryName,
+    quantity(row.quantitySold),
+    money(row.netSales, report.currencyCode),
+    `${row.percentage.toFixed(1)}%`
+  ]);
+  if (rows.length > 0) {
+    const totalQuantity = report.categorySalesDistribution.reduce((total, row) => total + row.quantitySold, 0);
+    const totalSales = report.categorySalesDistribution.reduce((total, row) => total + row.netSales, 0);
+    rows.push(['TOTAL', quantity(totalQuantity), money(totalSales, report.currencyCode), totalSales > 0 ? '100.0%' : '—']);
+  }
+  return rows;
+}
+
 function statusColor(status: BusinessDayStatus): 'success' | 'warning' | 'default' | 'info' {
   if (status === 'CLOSED') return 'success';
   if (status === 'CLOSING') return 'warning';
@@ -700,6 +719,7 @@ function ClosingPreview({ preview }: { preview: EndOfDayClosingPreview }) {
       <ReportTable title="Register reconciliation preview" rows={<SimpleTable headers={['Register', 'Expected', 'Counted', 'Variance']} rows={preview.registers.map((row) => [row.registerCode, money(row.expectedCash, preview.currencyCode), money(row.countedCash, preview.currencyCode), money(row.variance, preview.currencyCode)])} />} />
       <ReportTable title="Payment preview" rows={<SimpleTable headers={['Method', 'Collected', 'Refunded', 'Net']} rows={preview.payments.map((row) => [row.paymentMethod, money(row.collected, preview.currencyCode), money(row.refunded, preview.currencyCode), money(row.net, preview.currencyCode)])} />} />
       <ReportTable title="Tax preview" rows={<SimpleTable headers={['Component', 'Taxable', 'Collected', 'Refunded', 'Net']} rows={preview.taxes.map((row) => [row.componentCode, money(row.taxableSales, preview.currencyCode), money(row.taxCollected, preview.currencyCode), money(row.taxRefunded, preview.currencyCode), money(row.netTaxCollected, preview.currencyCode)])} />} />
+      <ReportTable title="Retail Category Sales Distribution" rows={<SimpleTable headers={['Category', 'Qty Sold', 'Net Sales', 'Share']} rows={categoryRows(preview)} emptyMessage="No retail merchandise sales." />} />
       <ReportTable title="Cashier preview" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Cash handled']} rows={preview.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, preview.currencyCode), money(row.cashHandled, preview.currencyCode)])} />} />
       <ReportTable title="Exception preview" rows={<SimpleTable headers={['Type', 'Count', 'Amount']} rows={preview.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, preview.currencyCode)])} />} />
     </Stack>
@@ -844,6 +864,7 @@ export function EndOfDayReportDetailPage() {
       <ReportTable title="Payments" rows={<SimpleTable headers={['Method', 'Collected', 'Refunded', 'Net']} rows={data.payments.map((row) => [row.paymentMethod, money(row.collected, data.currencyCode), money(row.refunded, data.currencyCode), money(row.net, data.currencyCode)])} />} />
       <ReportTable title="Registers" rows={<SimpleTable headers={['Register', 'Expected', 'Counted', 'Variance', 'Force close']} rows={data.registers.map((row) => [row.registerCode, money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode), row.forceClosed ? 'Yes' : 'No'])} />} />
       <ReportTable title="Taxes" rows={<SimpleTable headers={['Component', 'Taxable', 'Collected', 'Refunded', 'Net']} rows={data.taxes.map((row) => [row.componentCode, money(row.taxableSales, data.currencyCode), money(row.taxCollected, data.currencyCode), money(row.taxRefunded, data.currencyCode), money(row.netTaxCollected, data.currencyCode)])} />} />
+      <ReportTable title="Retail Category Sales Distribution" rows={<SimpleTable headers={['Category', 'Qty Sold', 'Net Sales', 'Share']} rows={categoryRows(data)} emptyMessage="No retail merchandise sales." />} />
       <ReportTable title="Cashiers" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Refunds', 'Cash handled']} rows={data.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, data.currencyCode), money(row.refundTotal, data.currencyCode), money(row.cashHandled, data.currencyCode)])} />} />
       <ReportTable title="Exceptions" rows={<SimpleTable headers={['Type', 'Count', 'Amount', 'Details']} rows={data.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, data.currencyCode), row.details ?? ''])} />} />
       {canReopen ? (
@@ -861,13 +882,14 @@ export function EndOfDayReportDetailPage() {
   );
 }
 
-function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+function SimpleTable({ headers, rows, emptyMessage }: { headers: string[]; rows: string[][]; emptyMessage?: string }) {
   return (
     <TableContainer>
       <Table size="small">
         <TableHead><TableRow>{headers.map((header) => <TableCell key={header}>{header}</TableCell>)}</TableRow></TableHead>
         <TableBody>
           {rows.map((row, index) => <TableRow key={index}>{row.map((cell, cellIndex) => <TableCell key={cellIndex}>{cell}</TableCell>)}</TableRow>)}
+          {rows.length === 0 && emptyMessage ? <TableRow><TableCell colSpan={headers.length}>{emptyMessage}</TableCell></TableRow> : null}
         </TableBody>
       </Table>
     </TableContainer>
