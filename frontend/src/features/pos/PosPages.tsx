@@ -507,12 +507,14 @@ export function PaymentDialog({
   open,
   sale,
   busy,
+  error,
   onClose,
   onSubmit
 }: {
   open: boolean;
   sale: Sale | null;
   busy: boolean;
+  error?: unknown;
   onClose: () => void;
   onSubmit: (payment: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => void;
 }) {
@@ -611,6 +613,7 @@ export function PaymentDialog({
     <Box component="form" onSubmit={submit} sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <DialogTitle aria-label="Take payment" sx={{ py: 1.25 }}>💵 Take payment<Typography component="div" variant="body2" color="text.secondary">Collect payment for this sale</Typography></DialogTitle>
       <DialogContent dividers sx={{ py: 1.25 }}><Stack spacing={1.25}>
+        {error ? <Alert severity="error" sx={{ py: 0 }}>{posErrorMessage(error)}</Alert> : null}
         <Grid container spacing={1}>{[['Subtotal', sale?.subtotalAmount ?? 0], ['Tax', sale?.estimatedTaxAmount ?? 0], ['Total', sale?.totalAmount ?? 0], ['Paid', sale?.paidAmount ?? 0], ['Remaining', balanceDue]].map(([label, value]) => <Grid item xs={label === 'Remaining' ? 4 : 2} key={String(label)}><Paper variant="outlined" sx={{ px: 1, py: .75 }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography fontWeight={700}>{money(Number(value), currencyCode)}</Typography></Paper></Grid>)}</Grid>
         {sale && sale.payments.length > 0 ? <Paper variant="outlined" sx={{ p: 1 }}><Typography variant="subtitle2">Payments recorded</Typography><Stack direction="row" spacing={2} useFlexGap flexWrap="wrap">{sale.payments.map(payment => <Stack key={payment.id} direction="row" spacing={1}><Typography color="text.secondary">{payment.method.replaceAll('_', ' ')}</Typography><Typography>{money(payment.amount, sale.currencyCode)}</Typography></Stack>)}</Stack></Paper> : null}
         <Box><Typography variant="subtitle2" gutterBottom>Payment method</Typography><Stack direction="row" spacing={.75} useFlexGap flexWrap="wrap">{paymentMethods.map(item => <Button key={item.value} aria-pressed={method === item.value} variant={method === item.value ? 'contained' : 'outlined'} disabled={busy} onClick={() => setMethod(item.value)} sx={{ minHeight: 44, minWidth: 92 }}>{item.label}</Button>)}</Stack></Box>
@@ -1343,7 +1346,7 @@ export function PosCartPage() {
     : null;
   const pageError = current.error ?? saleQuery.error ?? barcodeError
     ?? (discount ? null : recalculateMutation.error) ?? holdMutation.error ?? cancelMutation.error
-    ?? paymentMutation.error ?? completeMutation.error;
+    ?? (paymentDialogOpen ? null : paymentMutation.error) ?? completeMutation.error;
 
   React.useEffect(() => {
     scannerRef.current = new KeyboardWedgeScanner({ ...scannerPreferences, duplicatePreventionMs: 0 });
@@ -1598,7 +1601,8 @@ export function PosCartPage() {
         open={paymentDialogOpen}
         sale={activeSale}
         busy={paymentMutation.isPending}
-        onClose={() => setPaymentDialogOpen(false)}
+        error={paymentMutation.error}
+        onClose={() => { paymentMutation.reset(); setPaymentDialogOpen(false); }}
         onSubmit={(payment) => paymentMutation.mutate(payment)}
       />
       <DiscountDialog open={discountOpen} initial={discount} currencyCode={currencyCode} onClose={()=>setDiscountOpen(false)} onApply={value=>{setDiscount(value);setDiscountOpen(false);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}/>
