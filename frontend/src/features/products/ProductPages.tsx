@@ -42,7 +42,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type Control, type FieldPath } from 'react-hook-form';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   catalogueReferenceApi,
@@ -67,7 +67,6 @@ type ProductFilterForm = {
   barcode: string;
   categoryId: string;
   brandId: string;
-  active: '' | 'true' | 'false';
 };
 
 const sellableTypes = [
@@ -930,18 +929,20 @@ export function ProductsPage() {
   const { getValidAccessToken } = useSession();
   const { canView, canCreate, canDeactivate } = useProductPermissions();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const successMessage = (location.state as { successMessage?: string } | null)?.successMessage;
   const references = useReferenceOptions(canView);
   const [filters, setFilters] = React.useState<ProductFilterForm>({
     name: '',
     sku: '',
     barcode: '',
     categoryId: '',
-    brandId: '',
-    active: ''
+    brandId: ''
   });
   const [appliedFilters, setAppliedFilters] = React.useState<ProductFilterForm>(filters);
   const [page, setPage] = React.useState(0);
   const [size, setSize] = React.useState(10);
+  const [includeInactive, setIncludeInactive] = React.useState(false);
 
   const categoryMap = React.useMemo(() => new Map((references.categories.data?.content ?? []).map((item) => [item.id, item])), [references.categories.data?.content]);
   const brandMap = React.useMemo(() => new Map((references.brands.data?.content ?? []).map((item) => [item.id, item])), [references.brands.data?.content]);
@@ -952,10 +953,10 @@ export function ProductsPage() {
     barcode: optionalText(appliedFilters.barcode),
     categoryId: optionalText(appliedFilters.categoryId),
     brandId: optionalText(appliedFilters.brandId),
-    active: appliedFilters.active === '' ? '' : appliedFilters.active === 'true',
+    includeInactive,
     page,
     size
-  }), [appliedFilters, page, size]);
+  }), [appliedFilters, includeInactive, page, size]);
 
   const products = useQuery({
     queryKey: ['products', params],
@@ -981,6 +982,7 @@ export function ProductsPage() {
 
   return (
     <Stack spacing={3} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
+      {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="h5" component="h1">Products</Typography>
@@ -1021,17 +1023,10 @@ export function ProductsPage() {
             <MenuItem value="">All brands</MenuItem>
             {(references.brands.data?.content ?? []).map((brand) => <MenuItem key={brand.id} value={brand.id}>{referenceLabel(brand)}</MenuItem>)}
           </TextField>
-          <TextField
-            select
-            label="Status"
-            value={filters.active}
-            onChange={(event) => setFilters((value) => ({ ...value, active: event.target.value as ProductFilterForm['active'] }))}
-            fullWidth
-          >
-            <MenuItem value="">Any</MenuItem>
-            <MenuItem value="true">Active</MenuItem>
-            <MenuItem value="false">Inactive</MenuItem>
-          </TextField>
+          <FormControlLabel
+            control={<Checkbox checked={includeInactive} onChange={(_, checked) => { setIncludeInactive(checked); setPage(0); }} />}
+            label="Show inactive products"
+          />
           <Button type="submit" variant="outlined" startIcon={<SearchIcon />}>
             Search
           </Button>
@@ -1149,13 +1144,13 @@ export function NewProductPage() {
   });
   const mutation = useMutation({
     mutationFn: async (values: ProductFormValues) => createProduct(await getValidAccessToken(), cleanPayload(values)),
-    onSuccess: async (product) => {
+    onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['products'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
         queryClient.invalidateQueries({ queryKey: ['pos-products'] })
       ]);
-      navigate(`/products/${product.id}`);
+      navigate('/products', { state: { successMessage: 'Product created successfully.' } });
     }
   });
 

@@ -12,6 +12,7 @@ public record ProductSearchRequest(
         UUID brandId,
         UUID unitOfMeasureId,
         Boolean active,
+        boolean includeInactive,
         UUID storeId,
         int page,
         int size

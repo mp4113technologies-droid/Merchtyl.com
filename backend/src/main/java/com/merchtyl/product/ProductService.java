@@ -140,12 +140,12 @@ public class ProductService {
         }
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
+        Boolean activeFilter = request.active() != null ? request.active() : request.includeInactive() ? null : Boolean.TRUE;
         var page = productRepository.findAll(
-                specification(request).and(equalUuid("tenantId", tenantId))
+                specification(request, activeFilter).and(equalUuid("tenantId", tenantId))
                         .and(storeAvailability(tenantId, request.storeId()))
                         .and(storeAvailabilityIn(tenantId, visibleStoreIds)),
-                PageRequest.of(pageNumber, pageSize,
-                        Sort.by(Sort.Direction.ASC, "name").and(Sort.by(Sort.Direction.ASC, "id"))));
+                PageRequest.of(pageNumber, pageSize, productListSort()));
         return new PageResponse<>(
                 page.getContent().stream().map(product -> response(product, tenantId, request.storeId())).toList(),
                 page.getNumber(),
@@ -154,6 +154,12 @@ public class ProductService {
                 page.getTotalPages(),
                 page.isFirst(),
                 page.isLast());
+    }
+
+    static Sort productListSort() {
+        return Sort.by(Sort.Direction.DESC, "active")
+                .and(Sort.by(Sort.Direction.ASC, "name"))
+                .and(Sort.by(Sort.Direction.ASC, "id"));
     }
 
     @Transactional(readOnly = true)
@@ -586,7 +592,7 @@ public class ProductService {
                 .map(mapping -> response.withPrice(mapping.getSellingPrice())).orElse(response);
     }
 
-    private Specification<Product> specification(ProductSearchRequest request) {
+    private Specification<Product> specification(ProductSearchRequest request, Boolean activeFilter) {
         return Specification
                 .where(posQuickSearch(request.query()))
                 .and(containsString("name", request.name()))
@@ -595,7 +601,7 @@ public class ProductService {
                 .and(equalReference("category", request.categoryId()))
                 .and(equalReference("brand", request.brandId()))
                 .and(equalReference("unitOfMeasure", request.unitOfMeasureId()))
-                .and(equalBoolean("active", request.active()))
+                .and(equalBoolean("active", activeFilter))
                 .and(equalBoolean("restaurantMenuManaged", false))
                 .and(barcodeEquals(request.barcode()));
     }

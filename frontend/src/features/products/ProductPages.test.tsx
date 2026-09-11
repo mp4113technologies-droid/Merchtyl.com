@@ -240,6 +240,37 @@ describe('Product pages', () => {
     });
   });
 
+  it('defaults to active products and includes inactive products active-first when toggled', async () => {
+    storeSession(['OWNER']);
+    const active = product({ id: '00000000-0000-0000-0000-000000001211', name: 'Active Cola', active: true });
+    const inactive = product({ id: '00000000-0000-0000-0000-000000001212', name: 'Old Cola', active: false });
+    const requested: URL[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      const reference = mockReferenceEndpoints(url);
+      if (reference) return reference;
+      if (url.pathname.endsWith('/api/v1/products')) {
+        requested.push(url);
+        return jsonResponse(pageResponse(url.searchParams.get('includeInactive') === 'true'
+          ? [active, inactive] : [active]));
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products']} />);
+    expect(await screen.findByText('Active Cola')).toBeVisible();
+    expect(screen.queryByText('Old Cola')).not.toBeInTheDocument();
+    expect(requested.some((url) => url.searchParams.get('includeInactive') === 'false')).toBe(true);
+
+    await userEvent.click(screen.getByLabelText('Show inactive products'));
+    expect(await screen.findByText('Old Cola')).toBeVisible();
+    const names = screen.getAllByRole('row').slice(1).map((row) => row.textContent ?? '');
+    expect(names[0]).toContain('Active Cola');
+    expect(names[1]).toContain('Old Cola');
+    expect(requested.some((url) => url.searchParams.get('includeInactive') === 'true')).toBe(true);
+  });
+
   it('hides mutating actions from cashier users', async () => {
     storeSession(['CASHIER']);
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
@@ -305,8 +336,8 @@ describe('Product pages', () => {
       if (url.pathname.endsWith('/api/v1/products') && init?.method === 'POST') {
         return jsonResponse(created, 201);
       }
-      if (url.pathname.endsWith(`/api/v1/products/${created.id}`)) {
-        return jsonResponse(created);
+      if (url.pathname.endsWith('/api/v1/products')) {
+        return jsonResponse(pageResponse([created]));
       }
       return apiError('Unexpected request');
     });
@@ -359,7 +390,10 @@ describe('Product pages', () => {
     expect(screen.getByRole('button', { name: 'Create product' })).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
 
-    expect(await screen.findByRole('heading', { name: 'Iced Tea' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Products' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'New product' })).not.toBeInTheDocument();
+    expect(screen.getByText('Product created successfully.')).toBeVisible();
+    expect(await screen.findByText('Iced Tea')).toBeVisible();
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const url = new URL(String(input), window.location.origin);
       if (!url.pathname.endsWith('/api/v1/products') || init?.method !== 'POST') {
@@ -378,6 +412,35 @@ describe('Product pages', () => {
         && body.storeIds[0] === '00000000-0000-0000-0000-000000000701'
         && body.capabilities.includes('ALLOW_DISCOUNT');
     })).toBe(true);
+  });
+
+  it('keeps the entered product on the create page when creation fails', async () => {
+    storeSession(['OWNER']);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      const referenceResponse = mockReferenceEndpoints(url);
+      if (referenceResponse) return referenceResponse;
+      if (url.pathname.endsWith('/api/v1/products') && init?.method === 'POST') {
+        return apiError('A product with this name already exists.', 409, 'REQUEST_CONFLICT');
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    await userEvent.type(await screen.findByLabelText('Name'), 'Duplicate Tea');
+    await userEvent.type(screen.getByLabelText('Variant name'), 'Base');
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Tax Category' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Standard Tax' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
+    expect(await screen.findByText("We couldn't complete this action because the information conflicts with the current state. Refresh and try again.")).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'New product' })).toBeVisible();
+    expect(screen.getByLabelText('Name')).toHaveValue('Duplicate Tea');
+    expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument();
   });
 
   it('keeps batch scans temporary, discards them on cancel, and merges them locally on Add All', async () => {

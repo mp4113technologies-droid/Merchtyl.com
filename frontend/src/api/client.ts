@@ -326,6 +326,7 @@ export type ProductSearchParams = {
   brandId?: string;
   unitOfMeasureId?: string;
   active?: boolean | '';
+  includeInactive?: boolean;
   storeId?: string;
   page?: number;
   size?: number;

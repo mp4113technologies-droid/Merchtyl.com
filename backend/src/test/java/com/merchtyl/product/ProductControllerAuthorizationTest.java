@@ -160,6 +160,20 @@ class ProductControllerAuthorizationTest {
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray());
+
+        verify(productService).search(argThat(request -> !request.includeInactive() && request.active() == null), any());
+    }
+
+    @Test
+    void productViewerCanIncludeInactiveProductsExplicitly() throws Exception {
+        when(productService.search(any(), any())).thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true, true));
+
+        mockMvc.perform(get("/api/v1/products")
+                        .param("includeInactive", "true")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                .andExpect(status().isOk());
+
+        verify(productService).search(argThat(ProductSearchRequest::includeInactive), any());
     }
 
     @Test

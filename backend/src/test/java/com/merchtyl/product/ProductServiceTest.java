@@ -139,6 +139,15 @@ class ProductServiceTest {
     }
 
     @Test
+    void productListSortsActiveFirstBeforeNameAndStableIdPagination() {
+        var orders = ProductService.productListSort().toList();
+        assertThat(orders).extracting(org.springframework.data.domain.Sort.Order::getProperty)
+                .containsExactly("active", "name", "id");
+        assertThat(orders.getFirst().getDirection()).isEqualTo(org.springframework.data.domain.Sort.Direction.DESC);
+        assertThat(orders.get(1).getDirection()).isEqualTo(org.springframework.data.domain.Sort.Direction.ASC);
+    }
+
+    @Test
     void createRejectsDuplicateSku() {
         when(productRepository.existsBySkuIgnoreCase("HOUSE-COFFEE-001")).thenReturn(true);
 

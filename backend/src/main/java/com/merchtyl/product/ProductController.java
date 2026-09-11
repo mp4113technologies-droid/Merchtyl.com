@@ -46,6 +46,7 @@ public class ProductController {
             @RequestParam(required = false) UUID brandId,
             @RequestParam(required = false) UUID unitOfMeasureId,
             @RequestParam(required = false) Boolean active,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(required = false) UUID storeId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, Authentication authentication) {
@@ -59,6 +60,7 @@ public class ProductController {
                 brandId,
                 unitOfMeasureId,
                 active,
+                includeInactive,
                 storeId,
                 page,
                 size), authentication);
