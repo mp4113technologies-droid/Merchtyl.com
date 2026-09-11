@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public record ProductUpdateRequest(
-        @NotBlank @Size(max = 64) String sku,
+        @Size(max = 64) String sku,
         @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String description,
         @NotNull SellableType sellableType,

@@ -21,7 +21,7 @@ public class ProductVariant extends BaseUuidEntity {
     @JoinColumn(name = "product_id", nullable = false, foreignKey = @ForeignKey(name = "fk_product_variants_product"))
     private Product product;
 
-    @Column(nullable = false, length = 64)
+    @Column(nullable = false, length = 64, updatable = false)
     private String sku;
 
     @Column(nullable = false, length = 180)
@@ -49,7 +49,7 @@ public class ProductVariant extends BaseUuidEntity {
     }
 
     void update(ProductVariantValues values) {
-        this.sku = values.sku();
+        if (this.sku == null) this.sku = values.sku();
         this.name = values.name();
         this.description = values.description();
         this.cost = values.cost();

@@ -8,6 +8,7 @@ import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -32,6 +33,9 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
     private final CatalogueReferenceAuditActions auditActions;
     private final String entityType;
     private final String entityLabel;
+    private final TenantCatalogueReferenceRepository<T> tenantRepository;
+    private final StoreAccessService storeAccessService;
+    private final MerchantIdentifierGenerator identifierGenerator;
 
     protected CatalogueReferenceService(
             JpaRepository<T, UUID> repository,
@@ -42,7 +46,10 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
             CatalogueReferenceFactory<T> factory,
             CatalogueReferenceAuditActions auditActions,
             String entityType,
-            String entityLabel) {
+            String entityLabel,
+            TenantCatalogueReferenceRepository<T> tenantRepository,
+            StoreAccessService storeAccessService,
+            MerchantIdentifierGenerator identifierGenerator) {
         this.repository = repository;
         this.specificationExecutor = specificationExecutor;
         this.referenceRepository = referenceRepository;
@@ -52,25 +59,33 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
         this.auditActions = auditActions;
         this.entityType = entityType;
         this.entityLabel = entityLabel;
+        this.tenantRepository = tenantRepository;
+        this.storeAccessService = storeAccessService;
+        this.identifierGenerator = identifierGenerator;
     }
 
     @Transactional
     public CatalogueReferenceResponse create(CatalogueReferenceRequest request, Authentication authentication) {
-        CatalogueReferenceValues values = values(request);
-        if (referenceRepository.existsByCodeIgnoreCase(values.code())) {
+        UUID tenantId = tenantId(authentication);
+        String code = tenantRepository == null ? normalizeCode(request.code())
+                : identifierGenerator.nextCatalogueCode(tenantId, entityType);
+        CatalogueReferenceValues values = values(request, code);
+        if (codeExists(tenantId, values.code())) {
             throw duplicateCode();
         }
-        CatalogueReferenceResponse response = CatalogueReferenceResponse.from(save(factory.create(values)));
+        T created = factory.create(values);
+        if (created instanceof TenantCatalogueReference tenantReference) tenantReference.assignTenant(tenantId);
+        CatalogueReferenceResponse response = CatalogueReferenceResponse.from(save(created));
         audit(authentication, auditActions.created(), response.id(), null, response);
         return response;
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<CatalogueReferenceResponse> search(CatalogueReferenceSearchRequest request) {
+    public PageResponse<CatalogueReferenceResponse> search(CatalogueReferenceSearchRequest request, Authentication authentication) {
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var page = specificationExecutor.findAll(
-                specification(request),
+                specification(request).and(tenantSpecification(tenantId(authentication))),
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.ASC, "name").and(Sort.by(Sort.Direction.ASC, "id"))));
         return new PageResponse<>(
@@ -84,16 +99,18 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
     }
 
     @Transactional(readOnly = true)
-    public CatalogueReferenceResponse get(UUID id) {
-        return CatalogueReferenceResponse.from(find(id));
+    public CatalogueReferenceResponse get(UUID id, Authentication authentication) {
+        return CatalogueReferenceResponse.from(find(id, tenantId(authentication)));
     }
 
     @Transactional
     public CatalogueReferenceResponse update(UUID id, CatalogueReferenceUpdateRequest request, Authentication authentication) {
-        T reference = find(id);
+        UUID tenantId = tenantId(authentication);
+        T reference = find(id, tenantId);
         requireCurrentVersion(reference, request.version());
-        CatalogueReferenceValues values = values(request);
-        if (referenceRepository.existsByCodeIgnoreCaseAndIdNot(values.code(), id)) {
+        String code = tenantRepository == null ? normalizeCode(request.code()) : reference.getCode();
+        CatalogueReferenceValues values = values(request, code);
+        if (codeExistsExcluding(tenantId, values.code(), id)) {
             throw duplicateCode();
         }
         CatalogueReferenceResponse before = CatalogueReferenceResponse.from(reference);
@@ -105,7 +122,7 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
 
     @Transactional
     public CatalogueReferenceResponse updateStatus(UUID id, CatalogueReferenceStatusRequest request, Authentication authentication) {
-        T reference = find(id);
+        T reference = find(id, tenantId(authentication));
         requireCurrentVersion(reference, request.version());
         CatalogueReferenceResponse before = CatalogueReferenceResponse.from(reference);
         reference.setActive(request.active());
@@ -122,22 +139,25 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
         }
     }
 
-    private T find(UUID id) {
+    private T find(UUID id, UUID tenantId) {
         return repository.findById(id)
+                .filter(reference -> tenantRepository == null
+                        || reference instanceof TenantCatalogueReference tenantReference
+                        && tenantId.equals(tenantReference.getTenantId()))
                 .orElseThrow(() -> new NotFoundException(entityLabel + " not found"));
     }
 
-    private CatalogueReferenceValues values(CatalogueReferenceRequest request) {
+    private CatalogueReferenceValues values(CatalogueReferenceRequest request, String code) {
         return new CatalogueReferenceValues(
-                normalizeCode(request.code()),
+                code,
                 cleanRequired(request.name(), "name"),
                 optionalText(request.description()),
                 request.active());
     }
 
-    private CatalogueReferenceValues values(CatalogueReferenceUpdateRequest request) {
+    private CatalogueReferenceValues values(CatalogueReferenceUpdateRequest request, String code) {
         return new CatalogueReferenceValues(
-                normalizeCode(request.code()),
+                code,
                 cleanRequired(request.name(), "name"),
                 optionalText(request.description()),
                 request.active());
@@ -148,6 +168,25 @@ public abstract class CatalogueReferenceService<T extends CatalogueReference> {
                 .where(CatalogueReferenceService.<T>equalString("code", normalizeCodeFilter(request.code())))
                 .and(containsString("name", request.name()))
                 .and(equalBoolean("active", request.active()));
+    }
+
+    private Specification<T> tenantSpecification(UUID tenantId) {
+        if (tenantRepository == null) return null;
+        return (root, query, builder) -> builder.equal(root.get("tenantId"), tenantId);
+    }
+
+    private UUID tenantId(Authentication authentication) {
+        return tenantRepository == null ? null : storeAccessService.currentTenantId(authentication);
+    }
+
+    private boolean codeExists(UUID tenantId, String code) {
+        return tenantRepository == null ? referenceRepository.existsByCodeIgnoreCase(code)
+                : tenantRepository.existsByTenantIdAndCodeIgnoreCase(tenantId, code);
+    }
+
+    private boolean codeExistsExcluding(UUID tenantId, String code, UUID id) {
+        return tenantRepository == null ? referenceRepository.existsByCodeIgnoreCaseAndIdNot(code, id)
+                : tenantRepository.existsByTenantIdAndCodeIgnoreCaseAndIdNot(tenantId, code, id);
     }
 
     private void requireCurrentVersion(CatalogueReference reference, Long requestedVersion) {

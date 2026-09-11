@@ -30,7 +30,6 @@ public abstract class CatalogueReference extends BaseUuidEntity {
     }
 
     public void update(CatalogueReferenceValues values) {
-        this.code = values.code();
         this.name = values.name();
         this.description = values.description();
         this.active = values.active();
@@ -42,6 +41,10 @@ public abstract class CatalogueReference extends BaseUuidEntity {
 
     public String getCode() {
         return code;
+    }
+
+    protected void updateCode(String code) {
+        this.code = code;
     }
 
     public String getName() {

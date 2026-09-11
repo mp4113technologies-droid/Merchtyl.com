@@ -90,9 +90,9 @@ class CatalogueReferenceControllerAuthorizationTest {
 
     @Test
     void productViewerCanListAllReferenceTypes() throws Exception {
-        when(categoryService.search(any())).thenReturn(page());
-        when(brandService.search(any())).thenReturn(page());
-        when(unitOfMeasureService.search(any())).thenReturn(page());
+        when(categoryService.search(any(), any())).thenReturn(page());
+        when(brandService.search(any(), any())).thenReturn(page());
+        when(unitOfMeasureService.search(any(), any())).thenReturn(page());
 
         mockMvc.perform(get("/api/v1/categories")
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))

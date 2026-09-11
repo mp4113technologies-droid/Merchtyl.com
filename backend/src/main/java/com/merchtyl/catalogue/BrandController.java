@@ -41,14 +41,15 @@ public class BrandController {
             @RequestParam(required = false) String name,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return service.search(new CatalogueReferenceSearchRequest(code, name, active, page, size));
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return service.search(new CatalogueReferenceSearchRequest(code, name, active, page, size), authentication);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionC ode).PRODUCT_VIEW)")
-    CatalogueReferenceResponse get(@PathVariable UUID id) {
-        return service.get(id);
+    CatalogueReferenceResponse get(@PathVariable UUID id, Authentication authentication) {
+        return service.get(id, authentication);
     }
 
     @PutMapping("/{id}")

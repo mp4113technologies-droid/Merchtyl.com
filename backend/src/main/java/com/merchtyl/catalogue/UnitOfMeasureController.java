@@ -42,13 +42,13 @@ public class UnitOfMeasureController {
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return service.search(new CatalogueReferenceSearchRequest(code, name, active, page, size));
+        return service.search(new CatalogueReferenceSearchRequest(code, name, active, page, size), null);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_VIEW)")
     CatalogueReferenceResponse get(@PathVariable UUID id) {
-        return service.get(id);
+        return service.get(id, null);
     }
 
     @PutMapping("/{id}")

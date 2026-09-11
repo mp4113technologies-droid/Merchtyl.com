@@ -105,8 +105,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 const variantSchema = z.object({
   id: z.string().regex(uuidPattern).optional(),
-  sku: z.string().trim().min(1, 'Variant SKU is required').max(64, 'Variant SKU must be 64 characters or fewer')
-    .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
+  sku: z.string().max(64).optional(),
   name: z.string().trim().min(1, 'Variant name is required').max(180, 'Variant name must be 180 characters or fewer'),
   description: z.string().max(1000, 'Variant description must be 1000 characters or fewer').optional(),
   cost: z.coerce.number().min(0, 'Variant cost must be zero or greater'),
@@ -121,8 +120,7 @@ const variantSchema = z.object({
 });
 
 const productSchema = z.object({
-  sku: z.string().trim().min(1, 'SKU is required').max(64, 'SKU must be 64 characters or fewer')
-    .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
+  sku: z.string().max(64).optional(),
   name: z.string().trim().min(1, 'Name is required').max(180, 'Name must be 180 characters or fewer'),
   description: z.string().max(1000, 'Description must be 1000 characters or fewer').optional(),
   sellableType: z.enum(sellableTypes),
@@ -148,14 +146,6 @@ const productSchema = z.object({
   if (values.capabilities.includes('REQUIRE_AGE_VERIFICATION') && values.minimumAge == null) {
     context.addIssue({ code: 'custom', path: ['minimumAge'], message: 'Enter the required minimum age' });
   }
-  const skus = new Set<string>();
-  [values.sku, ...values.variants.map((variant) => variant.sku)].forEach((sku) => {
-    const normalized = sku.trim().toUpperCase();
-    if (skus.has(normalized)) {
-      context.addIssue({ code: 'custom', path: ['sku'], message: 'Product and variant SKUs must be unique' });
-    }
-    skus.add(normalized);
-  });
   const barcodes = new Set<string>();
   values.variants.forEach((variant, variantIndex) => variant.barcodes.forEach((barcode, barcodeIndex) => {
     const normalized = barcode.barcode.trim().toLowerCase();
@@ -185,7 +175,7 @@ const emptyProductForm: ProductFormValues = {
   decimalQuantityAllowed: false,
   imageUrl: '',
   taxCategoryId: '',
-  variants: [],
+  variants: [{ sku: '', name: '', description: '', cost: 0, price: 0, active: true, barcodes: [] }],
   capabilities: ['TRACK_INVENTORY'],
   minimumAge: undefined
   ,availabilityScope:'ALL_STORES',storeIds:[]
@@ -292,7 +282,7 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
     capabilities.delete('ALLOW_DECIMAL_QUANTITY');
   }
   return {
-    sku: values.sku.trim().toUpperCase(),
+    sku: optionalText(values.sku)?.toUpperCase(),
     name: values.name.trim(),
     description: optionalText(values.description),
     sellableType: values.sellableType,
@@ -308,7 +298,7 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
     taxCategoryId: optionalText(values.taxCategoryId),
     variants: values.variants.map((variant) => ({
       id: variant.id,
-      sku: variant.sku.trim().toUpperCase(),
+      sku: optionalText(variant.sku)?.toUpperCase(),
       name: variant.name.trim(),
       description: optionalText(variant.description),
       cost: Number(variant.cost),
@@ -429,7 +419,7 @@ function ProductForm({
           <Typography variant="h6" component="h2">Product details</Typography>
           <Grid container spacing={{ xs: 1.5, lg: 2 }}>
             <Grid item xs={12} md={4}>
-              <TextInput control={form.control} name="sku" label="SKU" disabled={disabled} />
+              <TextField label="SKU" value={defaultValues.sku || 'Auto-generated when product is created'} disabled fullWidth helperText={defaultValues.sku ? 'SKU is immutable' : undefined} />
             </Grid>
             <Grid item xs={12} md={8}>
               <TextInput control={form.control} name="name" label="Name" disabled={disabled} />
@@ -580,8 +570,11 @@ function ProductForm({
           {variants.fields.map((variant, index) => (
             <Paper key={variant.fieldKey} data-testid="product-variant-card" elevation={0} sx={{ width: '100%', maxWidth: '100%', minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 1.5, sm: 2 } }}>
               <Grid container spacing={{ xs: 1.5, lg: 2 }} alignItems="flex-start">
+                <Grid item xs={12}>
+                  <Typography fontWeight={700}>{index === 0 ? 'Base Variant' : `Variant ${index + 1}`}</Typography>
+                </Grid>
                 <Grid item xs={12} md={6} xl={3}>
-                  <TextInput control={form.control} name={`variants.${index}.sku`} label="Variant SKU" disabled={disabled} />
+                  <TextField label="Variant SKU" value={variant.sku || 'Auto-generated when created'} disabled fullWidth helperText={variant.sku ? 'SKU is immutable' : undefined} />
                 </Grid>
                 <Grid item xs={12} md={6} xl={5}>
                   <TextInput control={form.control} name={`variants.${index}.name`} label="Variant name" disabled={disabled} />
@@ -606,7 +599,7 @@ function ProductForm({
                 <Grid item xs={12}>
                   <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" useFlexGap flexWrap="wrap">
                     <SwitchInput control={form.control} name={`variants.${index}.active`} label="Active" disabled={disabled} />
-                    {!disabled ? <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => variants.remove(index)}>Remove variant</Button> : null}
+                    {!disabled && index > 0 ? <Button type="button" color="error" startIcon={<DeleteIcon />} onClick={() => variants.remove(index)}>Remove variant</Button> : null}
                   </Stack>
                 </Grid>
               </Grid>

@@ -59,6 +59,7 @@ public class ProductService {
     @Autowired private StoreProductRepository storeProductRepository;
     @Autowired private InventoryBalanceRepository inventoryBalanceRepository;
     @Autowired private ProductReferenceGenerator productReferenceGenerator;
+    @Autowired private SkuGenerator skuGenerator;
     @PersistenceContext private EntityManager entityManager;
 
     public ProductService(
@@ -105,7 +106,7 @@ public class ProductService {
                 throw exception;
             }
         }
-        ProductValues values = values(request);
+        ProductValues values = values(request, tenantId);
         requireUniqueCodesForCreate(tenantId, values);
         Product product = new Product(values);
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
@@ -213,10 +214,19 @@ public class ProductService {
         if (storeAccessService != null) storeAccessService.requireProductManagementScope(authentication, requestedStoreIds);
         requireAllProductStoresManaged(product, authentication);
         requireCurrentVersion(product, request.version());
-        ProductValues values = values(request);
+        ProductValues values = values(product, request, tenantId);
         requireOwnedChildIds(product, values);
         requireUniqueCodesForUpdate(tenantId, id, values);
         ProductResponse before = ProductResponse.from(product);
+        Set<UUID> retainedVariantIds = values.variants().stream()
+                .map(ProductVariantValues::id)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        product.removeBarcodesOwnedByVariantsExcept(retainedVariantIds);
+        // ProductVariant has database-level ON DELETE CASCADE barcodes. Flush the
+        // explicit barcode orphans first so Hibernate never retains a managed
+        // ProductBarcode whose Variant has already been deleted by the database.
+        if (entityManager != null) entityManager.flush();
         product.update(values);
         product.setMinimumAge(validatedMinimumAge(request.capabilities(), request.minimumAge()));
         product.setAvailabilityScope(availabilityScope);
@@ -241,47 +251,51 @@ public class ProductService {
         return after;
     }
 
-    private ProductValues values(ProductRequest request) {
+    private ProductValues values(ProductRequest request, UUID tenantId) {
         requireActiveTaxCategory(request.taxCategoryId());
+        String productName = cleanRequired(request.name(), "name");
+        List<ProductVariantValues> variants = generatedVariantValues(tenantId, productName, request.variants());
         return new ProductValues(
-                normalizeSku(request.sku(), "sku"),
-                cleanRequired(request.name(), "name"),
+                skuGenerator.generate(tenantId, productName, null),
+                productName,
                 optionalText(request.description()),
                 request.sellableType(),
                 findActiveUnit(request.unitOfMeasureId()),
                 request.cost(),
                 request.price(),
-                findOptional(request.categoryId(), categoryRepository::findById, "Category not found"),
-                findOptional(request.brandId(), brandRepository::findById, "Brand not found"),
+                findOptional(request.categoryId(), id -> categoryRepository.findByIdAndTenantId(id, tenantId), "Category not found"),
+                findOptional(request.brandId(), id -> brandRepository.findByIdAndTenantId(id, tenantId), "Brand not found"),
                 request.active(),
                 request.inventoryTrackingEnabled(),
                 request.decimalQuantityAllowed(),
                 optionalText(request.imageUrl()),
                 request.taxCategoryId(),
-                variantValues(request.variants()),
-                barcodeValues(request.variants()),
+                variants,
+                barcodeValues(request.variants(), variants),
                 capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
-    private ProductValues values(ProductUpdateRequest request) {
+    private ProductValues values(Product product, ProductUpdateRequest request, UUID tenantId) {
         requireActiveTaxCategory(request.taxCategoryId());
+        String productName = cleanRequired(request.name(), "name");
+        List<ProductVariantValues> variants = updateVariantValues(product, tenantId, productName, request.variants());
         return new ProductValues(
-                normalizeSku(request.sku(), "sku"),
-                cleanRequired(request.name(), "name"),
+                product.getSku(),
+                productName,
                 optionalText(request.description()),
                 request.sellableType(),
                 findActiveUnit(request.unitOfMeasureId()),
                 request.cost(),
                 request.price(),
-                findOptional(request.categoryId(), categoryRepository::findById, "Category not found"),
-                findOptional(request.brandId(), brandRepository::findById, "Brand not found"),
+                findOptional(request.categoryId(), id -> categoryRepository.findByIdAndTenantId(id, tenantId), "Category not found"),
+                findOptional(request.brandId(), id -> brandRepository.findByIdAndTenantId(id, tenantId), "Brand not found"),
                 request.active(),
                 request.inventoryTrackingEnabled(),
                 request.decimalQuantityAllowed(),
                 optionalText(request.imageUrl()),
                 request.taxCategoryId(),
-                variantValues(request.variants()),
-                barcodeValues(request.variants()),
+                variants,
+                barcodeValues(request.variants(), variants),
                 capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
@@ -308,28 +322,43 @@ public class ProductService {
         return unit;
     }
 
-    private List<ProductVariantValues> variantValues(List<ProductVariantRequest> requests) {
-        return nullSafe(requests).stream()
-                .map(request -> new ProductVariantValues(
-                        request.id(),
-                        normalizeSku(request.sku(), "variant sku"),
-                        cleanRequired(request.name(), "variant name"),
-                        optionalText(request.description()),
-                        request.cost(),
-                        request.price(),
-                        request.active()))
-                .toList();
+    private List<ProductVariantValues> generatedVariantValues(UUID tenantId, String productName,
+                                                               List<ProductVariantRequest> requests) {
+        return nullSafe(requests).stream().map(request -> {
+            String name = cleanRequired(request.name(), "variant name");
+            return new ProductVariantValues(request.id(), skuGenerator.generate(tenantId, productName, name), name,
+                    optionalText(request.description()), request.cost(), request.price(), request.active());
+        }).toList();
     }
 
-    private List<ProductBarcodeValues> barcodeValues(List<ProductVariantRequest> variants) {
-        return nullSafe(variants).stream()
-                .flatMap(variant -> nullSafe(variant.barcodes()).stream().map(barcode -> new ProductBarcodeValues(
+    private List<ProductVariantValues> updateVariantValues(Product product, UUID tenantId, String productName,
+                                                            List<ProductVariantRequest> requests) {
+        Map<UUID, ProductVariant> existing = product.getVariants().stream()
+                .collect(Collectors.toMap(ProductVariant::getId, Function.identity()));
+        return nullSafe(requests).stream().map(request -> {
+            String name = cleanRequired(request.name(), "variant name");
+            ProductVariant current = request.id() == null ? null : existing.get(request.id());
+            String sku = current == null ? skuGenerator.generate(tenantId, productName, name) : current.getSku();
+            return new ProductVariantValues(request.id(), sku, name, optionalText(request.description()),
+                    request.cost(), request.price(), request.active());
+        }).toList();
+    }
+
+    private List<ProductBarcodeValues> barcodeValues(List<ProductVariantRequest> requests,
+                                                      List<ProductVariantValues> generatedVariants) {
+        List<ProductVariantRequest> safeRequests = nullSafe(requests);
+        java.util.stream.IntStream indexes = java.util.stream.IntStream.range(0, safeRequests.size());
+        return indexes.boxed().flatMap(index -> {
+                    ProductVariantRequest variant = safeRequests.get(index);
+                    ProductVariantValues generated = generatedVariants.get(index);
+                    return nullSafe(variant.barcodes()).stream().map(barcode -> new ProductBarcodeValues(
                         barcode.id(),
                         BarcodeNormalizer.normalize(barcode.barcode()),
                         variant.id(),
-                        normalizeSku(variant.sku(), "barcode variantSku"),
+                        generated.sku(),
                         barcode.primaryBarcode(),
-                        barcode.active())))
+                        barcode.active()));
+                })
                 .toList();
     }
 

@@ -56,6 +56,7 @@ type ReferenceConfig = {
   subtitle: string;
   singular: string;
   newLabel: string;
+  autoGenerateCode?: boolean;
 };
 
 const configs: Record<ReferenceKind, ReferenceConfig> = {
@@ -64,14 +65,16 @@ const configs: Record<ReferenceKind, ReferenceConfig> = {
     title: 'Categories',
     subtitle: 'Product category codes and names.',
     singular: 'category',
-    newLabel: 'New category'
+    newLabel: 'New category',
+    autoGenerateCode: true
   },
   brands: {
     kind: 'brands',
     title: 'Brands',
     subtitle: 'Product brand codes and names.',
     singular: 'brand',
-    newLabel: 'New brand'
+    newLabel: 'New brand',
+    autoGenerateCode: true
   },
   units: {
     kind: 'units',
@@ -83,8 +86,7 @@ const configs: Record<ReferenceKind, ReferenceConfig> = {
 };
 
 const referenceSchema = z.object({
-  code: z.string().trim().min(1, 'Code is required').max(64, 'Code must be 64 characters or fewer')
-    .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
+  code: z.string().trim().max(64, 'Code must be 64 characters or fewer'),
   name: z.string().trim().min(1, 'Name is required').max(180, 'Name must be 180 characters or fewer'),
   description: z.string().max(1000, 'Description must be 1000 characters or fewer').optional(),
   active: z.boolean()
@@ -129,7 +131,7 @@ function optionalText(value?: string) {
 
 function cleanPayload(values: ReferenceFormValues): CatalogueReferencePayload {
   return {
-    code: values.code.trim().toUpperCase(),
+    code: optionalText(values.code)?.toUpperCase(),
     name: values.name.trim(),
     description: optionalText(values.description),
     active: values.active
@@ -194,13 +196,11 @@ function ReferenceDialog({
       <DialogContent>
         <Stack component="form" id={`${config.kind}-form`} spacing={2} sx={{ pt: 1 }} onSubmit={form.handleSubmit(onSubmit)}>
           {error ? <Alert severity="error">{error}</Alert> : null}
-          <Controller
-            name="code"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <TextField {...field} label="Code" error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth />
-            )}
-          />
+          {config.autoGenerateCode ? (
+            <TextField label="Code" value={reference?.code ?? 'Auto-generated when created'} disabled fullWidth helperText={reference ? 'Code is immutable' : undefined} />
+          ) : <Controller name="code" control={form.control} render={({ field, fieldState }) => (
+            <TextField {...field} label="Code" required error={Boolean(fieldState.error) || !field.value.trim()} helperText={fieldState.error?.message} fullWidth />
+          )} />}
           <Controller
             name="name"
             control={form.control}

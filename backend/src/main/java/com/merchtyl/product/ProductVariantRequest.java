@@ -12,7 +12,7 @@ import java.util.UUID;
 
 public record ProductVariantRequest(
         UUID id,
-        @NotBlank @Size(max = 64) String sku,
+        @Size(max = 64) String sku,
         @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String description,
         @NotNull @DecimalMin("0.0000") BigDecimal cost,

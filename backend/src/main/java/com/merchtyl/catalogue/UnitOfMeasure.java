@@ -15,4 +15,10 @@ public class UnitOfMeasure extends CatalogueReference {
     public UnitOfMeasure(String code, String name, String description, boolean active) {
         super(code, name, description, active);
     }
+
+    @Override
+    public void update(CatalogueReferenceValues values) {
+        super.update(values);
+        updateCode(values.code());
+    }
 }

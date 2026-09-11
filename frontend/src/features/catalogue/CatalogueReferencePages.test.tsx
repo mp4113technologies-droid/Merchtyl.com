@@ -99,7 +99,7 @@ describe('Catalogue reference pages', () => {
       if (url.pathname.endsWith('/api/v1/categories') && init?.method === 'POST') {
         current = reference({
           id: '00000000-0000-0000-0000-000000000802',
-          code: 'DAIRY',
+          code: 'SSCAT001',
           name: 'Dairy',
           description: 'Cold dairy items'
         });
@@ -130,11 +130,11 @@ describe('Catalogue reference pages', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'New category' }));
     const dialog = await screen.findByRole('dialog', { name: 'New category' });
-    await userEvent.type(within(dialog).getByLabelText('Code'), 'dairy');
+    expect(within(dialog).getByDisplayValue('Auto-generated when created')).toBeDisabled();
     await userEvent.type(within(dialog).getByLabelText('Name'), 'Dairy');
     await userEvent.type(within(dialog).getByLabelText('Description'), 'Cold dairy items');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
-    expect(await screen.findByText('DAIRY')).toBeInTheDocument();
+    expect(await screen.findByText('SSCAT001')).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'New category' })).not.toBeInTheDocument();
     });

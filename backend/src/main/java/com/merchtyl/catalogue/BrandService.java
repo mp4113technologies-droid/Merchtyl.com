@@ -3,11 +3,13 @@ package com.merchtyl.catalogue;
 import com.merchtyl.audit.AuditAction;
 import com.merchtyl.audit.AuditService;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import org.springframework.stereotype.Service;
 
 @Service
 public class BrandService extends CatalogueReferenceService<Brand> {
-    public BrandService(BrandRepository repository, UserRepository userRepository, AuditService auditService) {
+    public BrandService(BrandRepository repository, UserRepository userRepository, AuditService auditService,
+                        StoreAccessService storeAccessService, MerchantIdentifierGenerator identifierGenerator) {
         super(
                 repository,
                 repository,
@@ -20,6 +22,9 @@ public class BrandService extends CatalogueReferenceService<Brand> {
                         AuditAction.BRAND_UPDATED,
                         AuditAction.BRAND_STATUS_CHANGED),
                 "BRAND",
-                "Brand");
+                "Brand",
+                repository,
+                storeAccessService,
+                identifierGenerator);
     }
 }

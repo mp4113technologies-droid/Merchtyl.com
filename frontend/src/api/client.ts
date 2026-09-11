@@ -269,7 +269,7 @@ type RefreshPayload = {
 
 export type ProductVariantPayload = {
   id?: string;
-  sku: string;
+  sku?: string;
   name: string;
   description?: string;
   cost: number;
@@ -286,7 +286,7 @@ export type ProductVariantBarcodePayload = {
 };
 
 export type ProductPayload = {
-  sku: string;
+  sku?: string;
   name: string;
   description?: string;
   sellableType: string;
@@ -1039,7 +1039,7 @@ export type UserStoreAssignmentPayload = {
 };
 
 export type CatalogueReferencePayload = {
-  code: string;
+  code?: string;
   name: string;
   description?: string;
   active: boolean;

@@ -326,7 +326,7 @@ describe('Product pages', () => {
     await userEvent.click(await screen.findByRole('combobox', { name: 'Tax Category' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Standard Tax' }));
     expect(screen.queryByText('00000000-0000-0000-0000-000000000901')).not.toBeInTheDocument();
-    await userEvent.type(await screen.findByLabelText('SKU'), 'tea-12oz');
+    expect(await screen.findByDisplayValue('Auto-generated when product is created')).toBeDisabled();
     await userEvent.type(screen.getByLabelText('Name'), 'Iced Tea');
     await userEvent.clear(screen.getAllByLabelText('Cost')[0]);
     await userEvent.type(screen.getAllByLabelText('Cost')[0], '1.10');
@@ -334,11 +334,11 @@ describe('Product pages', () => {
     await userEvent.type(screen.getAllByLabelText('Price')[0], '2.75');
     await userEvent.click(screen.getByLabelText('ALLOW DISCOUNT'));
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Add variant' }));
+    expect(await screen.findByText('Base Variant')).toBeVisible();
     expect(screen.getByTestId('product-variant-card')).toHaveStyle({ width: '100%', maxWidth: '100%', minWidth: '0' });
     expect(screen.queryByText('Enter or scan a barcode.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Scan Multiple Barcodes' })).toBeVisible();
-    await userEvent.type(screen.getByLabelText('Variant SKU'), 'tea-large');
+    expect(screen.getByDisplayValue('Auto-generated when created')).toBeDisabled();
     await userEvent.type(screen.getByLabelText('Variant name'), 'Large');
     await userEvent.clear(screen.getAllByLabelText('Cost')[1]);
     await userEvent.type(screen.getAllByLabelText('Cost')[1], '1.25');
@@ -366,8 +366,8 @@ describe('Product pages', () => {
         return false;
       }
       const body = JSON.parse(String(init.body));
-      return body.sku === 'TEA-12OZ'
-        && body.variants[0].sku === 'TEA-LARGE'
+      return body.sku === undefined
+        && body.variants[0].sku === undefined
         && body.variants[0].barcodes[0].barcode === '987654321098'
         && body.variants[0].barcodes[1].barcode === '987654321099'
         && body.barcodes === undefined
@@ -393,7 +393,7 @@ describe('Product pages', () => {
 
     render(<App initialEntries={['/products/new']} />);
     await screen.findByRole('heading', { name: 'New product' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Add variant' }));
+    expect(await screen.findByText('Base Variant')).toBeVisible();
     const card = screen.getByTestId('product-variant-card');
     const inlineScanner = within(card).getByRole('textbox', { name: 'Scan or enter barcode' });
     await userEvent.type(inlineScanner, '001234567890{enter}');
@@ -475,7 +475,6 @@ describe('Product pages', () => {
     render(<App initialEntries={['/products/new']} />);
     await screen.findByRole('heading', { name: 'New product' });
     await userEvent.click(await screen.findByRole('button', { name: 'Add variant' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Add variant' }));
     const cards = screen.getAllByTestId('product-variant-card');
     const firstScanner = within(cards[0]).getByRole('textbox', { name: 'Scan or enter barcode' });
     await userEvent.type(firstScanner, '0012345678905{enter}');
@@ -493,6 +492,25 @@ describe('Product pages', () => {
     storeSession(['OWNER']);const current=product({taxCategoryId:'00000000-0000-0000-0000-000000000901'});let updateBody:any;
     const fetchMock=vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),window.location.origin);if(url.pathname.endsWith('/api/v1/auth/me'))return jsonResponse(currentUser(['OWNER']));const reference=mockReferenceEndpoints(url);if(reference)return reference;if(url.pathname.endsWith(`/api/v1/products/${current.id}`)&&init?.method==='PUT'){updateBody=JSON.parse(String(init.body));return jsonResponse({...current,version:1});}if(url.pathname.endsWith(`/api/v1/products/${current.id}`))return jsonResponse(current);return apiError('Unexpected request');});
     render(<App initialEntries={[`/products/${current.id}`]}/>);await screen.findByRole('heading',{name:current.name});const scanner=screen.getByRole('textbox',{name:'Scan or enter barcode'});for(let index=1;index<=10;index+=1)await userEvent.type(scanner,`000${index.toString().padStart(2,'0')}{enter}`);expect(screen.getAllByTestId('variant-barcode-chip')).toHaveLength(11);expect(scanner).toHaveFocus();expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST'||init?.method==='PUT')).toHaveLength(0);await userEvent.click(screen.getByRole('button',{name:'Save changes'}));await waitFor(()=>expect(updateBody.variants[0].barcodes).toHaveLength(11));expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='PUT')).toHaveLength(1);expect(fetchMock.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(0);
+  });
+
+  it('keeps Add Variant enabled and supports at least five variant cards', async () => {
+    storeSession(['OWNER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      const reference = mockReferenceEndpoints(url);
+      return reference ?? apiError('Unexpected request');
+    });
+    render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    const add = await screen.findByRole('button', { name: 'Add variant' });
+    for (let index = 0; index < 4; index += 1) await userEvent.click(add);
+    expect(screen.getAllByTestId('product-variant-card')).toHaveLength(5);
+    expect(screen.getByText('Base Variant')).toBeVisible();
+    expect(screen.getByText('Variant 5')).toBeVisible();
+    expect(add).toBeEnabled();
   });
 
   it('validates, edits, and deactivates a product', async () => {

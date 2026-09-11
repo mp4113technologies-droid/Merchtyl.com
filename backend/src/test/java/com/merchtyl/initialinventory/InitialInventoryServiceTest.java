@@ -36,12 +36,16 @@ class InitialInventoryServiceTest {
         when(products.findAllByTenantId(tenantId)).thenReturn(List.of());when(variants.findAllByTenantId(tenantId)).thenReturn(List.of());when(barcodes.findAllByTenantId(tenantId)).thenReturn(List.of());when(transactions.existsByStoreId(storeId)).thenReturn(false);when(imports.existsByTenantIdAndStoreIdAndStatus(any(),any(),any())).thenReturn(false);
         TaxCategory standard=mock(TaxCategory.class);when(standard.isActive()).thenReturn(true);when(standard.getName()).thenReturn("Standard");when(standard.getCode()).thenReturn("STANDARD");when(taxes.findAll()).thenReturn(List.of(standard));when(categories.findAll()).thenReturn(List.of());when(brands.findAll()).thenReturn(List.of());when(units.findAll()).thenReturn(List.of());when(suppliers.findAll()).thenReturn(List.of());
         InitialInventoryWorkbookService workbookService=new InitialInventoryWorkbookService(categories,brands,units,taxes,suppliers);
-        InitialInventoryService service=new InitialInventoryService(workbookService,imports,access,stores,products,variants,barcodes,storeProducts,balances,transactions,categories,brands,units,taxes,suppliers,productSuppliers,references,new SkuGenerator(),new ObjectMapper());
+        SkuGenerator skuGenerator=mock(SkuGenerator.class);when(skuGenerator.generate(eq(tenantId),eq("Coca Cola"),anyString())).thenAnswer(invocation->"COCA-COLA-"+invocation.<String>getArgument(2).toUpperCase().replace(" ","")+"-001");
+        when(skuGenerator.preserveProvided("merchant-500ml")).thenReturn("merchant-500ml");
+        InitialInventoryService service=new InitialInventoryService(workbookService,imports,access,stores,products,variants,barcodes,storeProducts,balances,transactions,categories,brands,units,taxes,suppliers,productSuppliers,references,skuGenerator,new ObjectMapper());
 
         var response=service.validate(storeId,"opening.xlsx",workbook(),auth);
 
         assertThat(response.productGroups()).isEqualTo(1);assertThat(response.totalVariantRows()).isEqualTo(3);assertThat(response.validRows()).isEqualTo(3);assertThat(response.canImport()).isTrue();
-        assertThat(response.rows()).extracting(InitialInventoryDtos.RowPreview::sku).containsExactly("COC355ML","COC500ML","COC2L");
+        assertThat(response.rows()).extracting(InitialInventoryDtos.RowPreview::sku).containsExactly("COCA-COLA-355ML-001","merchant-500ml","COCA-COLA-2L-001");
+        verify(skuGenerator, times(2)).generate(eq(tenantId), eq("Coca Cola"), anyString());
+        verify(skuGenerator).preserveProvided("merchant-500ml");
         verify(imports).save(any(InitialInventoryImport.class));verify(products,never()).save(any());verify(products,never()).saveAndFlush(any());verify(variants,never()).save(any());verify(storeProducts,never()).save(any());verify(balances,never()).save(any());verify(transactions,never()).save(any());
     }
 
@@ -50,7 +54,7 @@ class InitialInventoryServiceTest {
             var setup=workbook.createSheet("Inventory Setup");var refs=workbook.createSheet("Reference Data");
             String[] headers={"Product Reference","Product Name *","Variant Name *","Barcode","Additional Barcodes","SKU","Selling Price *","Cost Price","Opening Quantity *","Low Stock Level","Category","Brand","Unit","Tax Category *","Supplier","Age Restricted","Active"};
             var header=setup.createRow(0);for(int i=0;i<headers.length;i++)header.createCell(i).setCellValue(headers[i]);
-            add(setup,1,"355 ml","B1",1.99,24);add(setup,2,"500 ml","B2",2.79,18);add(setup,3,"2 L","B3",4.49,8);
+            add(setup,1,"355 ml","B1",1.99,24);add(setup,2,"500 ml","B2",2.79,18);setup.getRow(2).createCell(5).setCellValue("merchant-500ml");add(setup,3,"2 L","B3",4.49,8);
             refs.createRow(0).createCell(24).setCellValue("templateVersion");refs.createRow(1).createCell(24).setCellValue(2);workbook.write(out);return out.toByteArray();
         }
     }

@@ -6,17 +6,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SkuGeneratorTest {
-    private final SkuGenerator generator=new SkuGenerator();
+    private final SkuGenerator generator=new SkuGenerator(org.mockito.Mockito.mock(com.merchtyl.catalogue.MerchantIdentifierGenerator.class), org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
     @Test void generatesShortReadableVariantSkus(){
-        assertThat(generator.base("Coca Cola","500 ml")).isEqualTo("COC500ML");
-        assertThat(generator.base("Coca Cola","2 L")).isEqualTo("COC2L");
-        assertThat(generator.base("Pepsi","500 ml")).isEqualTo("PEP500ML");
-        assertThat(generator.base("Lays","BBQ 66g")).isEqualTo("LAYBBQ66G");
+        assertThat(generator.base("Coca Cola","500 ml")).isEqualTo("COCA-COLA-500ML");
+        assertThat(generator.base("Coca Cola","2 L")).isEqualTo("COCA-COLA-2L");
+        assertThat(generator.base("Pepsi","500 ml")).isEqualTo("PEPSI-500ML");
+        assertThat(generator.base("Lay's","BBQ 66g")).isEqualTo("LAYS-BBQ-66G");
     }
     @Test void normalizesMerchantSkuAndUsesReadableCollisionSuffix(){
-        assertThat(generator.normalizeProvided(" 01-cöké ")).isEqualTo("01-COKE");
-        Set<String> used=Set.of("COC500ML","COC500ML-2");
-        assertThat(generator.unique("Coca Cola","500 ml",used::contains)).isEqualTo("COC500ML-3");
+        assertThat(generator.preserveProvided(" 01-cöké ")).isEqualTo("01-cöké");
+        Set<String> used=Set.of("COCA-COLA-500ML-001","COCA-COLA-500ML-002");
+        assertThat(generator.unique("Coca Cola","500 ml",used::contains)).isEqualTo("COCA-COLA-500ML-003");
     }
     @Test void productReferenceIsStableAndCannotBeReassigned(){
         Product product=org.mockito.Mockito.mock(Product.class,org.mockito.Mockito.CALLS_REAL_METHODS);

@@ -20,6 +20,9 @@ public class UnitOfMeasureService extends CatalogueReferenceService<UnitOfMeasur
                         AuditAction.UNIT_UPDATED,
                         AuditAction.UNIT_STATUS_CHANGED),
                 "UNIT_OF_MEASURE",
-                "Unit of measure");
+                "Unit of measure",
+                null,
+                null,
+                null);
     }
 }

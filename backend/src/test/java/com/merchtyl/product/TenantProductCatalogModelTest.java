@@ -44,6 +44,25 @@ class TenantProductCatalogModelTest {
     }
 
     @Test
+    void renameAndIncomingSkuChangesKeepProductAndVariantSkusImmutable() {
+        Product product = new Product(values(
+                List.of(new ProductVariantValues("COLA-500ML-001", "500 mL", null,
+                        BigDecimal.ONE, new BigDecimal("2.49"), true)), List.of()));
+        UUID variantId = product.getVariants().getFirst().getId();
+
+        product.update(new ProductValues("RENAMED-PRODUCT-999", "Coca-Cola Classic", null,
+                SellableType.STANDARD_PRODUCT, null, BigDecimal.ONE, new BigDecimal("2.79"), null, null,
+                true, true, false, null, null,
+                List.of(new ProductVariantValues(variantId, "RENAMED-VARIANT-999", "Bottle", null,
+                        BigDecimal.ONE, new BigDecimal("2.79"), true)), List.of(), Set.of()));
+
+        assertThat(product.getSku()).isEqualTo("COLA");
+        assertThat(product.getVariants().getFirst().getSku()).isEqualTo("COLA-500ML-001");
+        assertThat(product.getName()).isEqualTo("Coca-Cola Classic");
+        assertThat(product.getVariants().getFirst().getName()).isEqualTo("Bottle");
+    }
+
+    @Test
     void variantBarcodeReconciliationPreservesLegacyProductLevelBarcode() {
         Product product = new Product(values(
                 List.of(new ProductVariantValues("COLA-LARGE", "Large", null, BigDecimal.ONE, new BigDecimal("2.49"), true)),
@@ -58,6 +77,22 @@ class TenantProductCatalogModelTest {
                 .containsExactlyInAnyOrder("LEGACY-BASE", "VARIANT-CODE");
         assertThat(product.getBarcodes().stream().filter(barcode -> barcode.getBarcode().equals("LEGACY-BASE")).findFirst().orElseThrow().getVariant())
                 .isNull();
+    }
+
+    @Test
+    void removingVariantPrunesItsManagedBarcodesBeforeVariantDeletion() {
+        Product product = new Product(values(
+                List.of(
+                        new ProductVariantValues("COLA-BASE", "Base", null, BigDecimal.ONE, new BigDecimal("2.49"), true),
+                        new ProductVariantValues("COLA-LARGE", "Large", null, BigDecimal.ONE, new BigDecimal("3.49"), true)),
+                List.of(
+                        new ProductBarcodeValues("111", "COLA-BASE", true, true),
+                        new ProductBarcodeValues("222", "COLA-LARGE", true, true))));
+        ProductVariant retained = product.getVariants().getFirst();
+
+        product.removeBarcodesOwnedByVariantsExcept(Set.of(retained.getId()));
+
+        assertThat(product.getBarcodes()).extracting(ProductBarcode::getBarcode).containsExactly("111");
     }
 
     private ProductValues values(List<ProductVariantValues> variants, List<ProductBarcodeValues> barcodes) {

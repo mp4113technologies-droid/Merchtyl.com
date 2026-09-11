@@ -38,7 +38,7 @@ public class Product extends BaseUuidEntity {
     @Column(name = "product_reference", nullable = false, length = 32, updatable = false)
     private String productReference;
 
-    @Column(nullable = false, length = 64)
+    @Column(nullable = false, length = 64, updatable = false)
     private String sku;
 
     @Column(nullable = false, length = 180)
@@ -114,7 +114,7 @@ public class Product extends BaseUuidEntity {
     }
 
     public void update(ProductValues values) {
-        this.sku = values.sku();
+        if (this.sku == null) this.sku = values.sku();
         this.name = values.name();
         this.description = values.description();
         this.sellableType = values.sellableType();
@@ -209,6 +209,11 @@ public class Product extends BaseUuidEntity {
         Set<ProductVariant> retainedVariants = reconcileVariants(variantValues);
         reconcileBarcodes(barcodeValues);
         variants.removeIf(variant -> !retainedVariants.contains(variant));
+    }
+
+    void removeBarcodesOwnedByVariantsExcept(Set<UUID> retainedVariantIds) {
+        barcodes.removeIf(barcode -> barcode.getVariant() != null
+                && !retainedVariantIds.contains(barcode.getVariant().getId()));
     }
 
     private Set<ProductVariant> reconcileVariants(List<ProductVariantValues> values) {

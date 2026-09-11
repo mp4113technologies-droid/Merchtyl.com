@@ -68,17 +68,28 @@ class ProductServiceTest {
     @Mock
     EntityManager entityManager;
 
+    @Mock
+    SkuGenerator skuGenerator;
+
     @InjectMocks
     ProductService productService;
 
     @BeforeEach
     void setUpPersistenceContext() {
         ReflectionTestUtils.setField(productService, "entityManager", entityManager);
+        ReflectionTestUtils.setField(productService, "skuGenerator", skuGenerator);
+        org.mockito.Mockito.lenient().when(skuGenerator.generate(any(), any(String.class), org.mockito.ArgumentMatchers.nullable(String.class)))
+                .thenAnswer(invocation -> {
+                    String name = invocation.getArgument(1);
+                    String variant = invocation.getArgument(2);
+                    return name.trim().toUpperCase().replace(' ', '-')
+                            + (variant == null ? "" : "-" + variant.trim().toUpperCase().replace(' ', '-')) + "-001";
+                });
     }
 
     @Test
     void createNormalizesSkuAndNestedCodes() {
-        when(productRepository.existsBySkuIgnoreCase("COFFEE-12OZ")).thenReturn(false);
+        when(productRepository.existsBySkuIgnoreCase("HOUSE-COFFEE-001")).thenReturn(false);
 
         ProductResponse response = productService.create(new ProductRequest(
                 " coffee-12oz ",
@@ -107,17 +118,17 @@ class ProductServiceTest {
         verify(entityManager).flush();
         verify(productRepository, never()).saveAndFlush(any(Product.class));
 
-        assertThat(response.sku()).isEqualTo("COFFEE-12OZ");
+        assertThat(response.sku()).isEqualTo("HOUSE-COFFEE-001");
         assertThat(response.name()).isEqualTo("House Coffee");
         assertThat(response.description()).isEqualTo("Fresh brewed");
         assertThat(response.cost()).isEqualByComparingTo("1.2500");
         assertThat(response.price()).isEqualByComparingTo("3.2500");
         assertThat(response.sellableType()).isEqualTo(SellableType.STANDARD_PRODUCT);
-        assertThat(response.variants()).extracting(ProductVariantResponse::sku).containsExactly("LARGE", "SMALL");
+        assertThat(response.variants()).extracting(ProductVariantResponse::sku).containsExactly("HOUSE-COFFEE-LARGE-001", "HOUSE-COFFEE-SMALL-001");
         assertThat(response.barcodes()).extracting(ProductBarcodeResponse::barcode)
                 .containsExactly("012345678905", "012345678906", "012345678907");
         assertThat(response.barcodes()).extracting(ProductBarcodeResponse::variantSku)
-                .containsExactly("LARGE", "LARGE", "SMALL");
+                .containsExactly("HOUSE-COFFEE-LARGE-001", "HOUSE-COFFEE-LARGE-001", "HOUSE-COFFEE-SMALL-001");
         assertThat(response.capabilities()).contains(ProductCapability.TRACK_INVENTORY, ProductCapability.ALLOW_DISCOUNT);
         assertThat(captor.getValue().getId()).isNotNull();
 
@@ -129,7 +140,7 @@ class ProductServiceTest {
 
     @Test
     void createRejectsDuplicateSku() {
-        when(productRepository.existsBySkuIgnoreCase("COFFEE-12OZ")).thenReturn(true);
+        when(productRepository.existsBySkuIgnoreCase("HOUSE-COFFEE-001")).thenReturn(true);
 
         assertThatThrownBy(() -> productService.create(new ProductRequest(
                 "coffee-12oz",
