@@ -5,6 +5,7 @@ describe('central API error resolver', () => {
   it.each([
     ['EMAIL_ALREADY_REGISTERED', 'This email address is already associated with another user. Please use a different email address.'],
     ['BARCODE_ALREADY_IN_USE', 'This barcode is already assigned to another product. Please enter a different barcode.'],
+    ['PRODUCT_NOT_AVAILABLE_AT_STORE', 'This product is not available for sale at this store. Remove it from the cart or ask a manager to review its store availability.'],
     ['PREVIOUS_BUSINESS_DAY_STILL_OPEN', "The previous business day is still open. Close it before opening today's business day."],
     ['REGISTER_ACCESS_DENIED', "You don't have access to this register."]
   ])('maps %s to business language', (code, expected) => {

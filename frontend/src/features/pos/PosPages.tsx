@@ -101,7 +101,7 @@ function errorMessage(error: unknown) {
 function posErrorMessage(error: unknown) {
   const message = errorMessage(error);
   if (message.includes('BARCODE_NOT_FOUND')) return 'No product was found for this barcode.';
-  if (message.includes('PRODUCT_NOT_ACTIVE') || message.includes('PRODUCT_NOT_AVAILABLE_IN_STORE')) return 'This product is not available for sale.';
+  if (message.includes('PRODUCT_NOT_ACTIVE') || message.includes('PRODUCT_NOT_AVAILABLE_IN_STORE') || message.includes('PRODUCT_NOT_AVAILABLE_AT_STORE')) return 'This product is not available for sale at this store. Remove it from the cart or ask a manager to review its store availability.';
   if (message.includes('PRODUCT_OUT_OF_STOCK')) return 'This item is out of stock.';
   if (message.includes('BARCODE_AMBIGUOUS')) return 'This barcode is linked to more than one product. Please ask a manager to correct the product setup.';
   if (message.includes('AGE_VERIFICATION_REQUIRED')) return "Please verify the customer's age before completing this sale.";

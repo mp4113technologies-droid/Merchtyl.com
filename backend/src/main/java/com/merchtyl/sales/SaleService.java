@@ -29,6 +29,7 @@ import com.merchtyl.product.Product;
 import com.merchtyl.payments.CashRoundingResult;
 import com.merchtyl.payments.CashRoundingService;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.ProductAvailabilityScope;
 import com.merchtyl.product.ProductVariant;
 import com.merchtyl.product.ProductVariantRepository;
 import com.merchtyl.product.StoreProduct;
@@ -743,6 +744,12 @@ public class SaleService {
         }
         if (storeProductRepository == null) {
             Product product = productRepository.findById(productId).orElseThrow(() -> new NotFoundException("Product not found"));
+            return new ResolvedStoreProduct(product, product.getPrice());
+        }
+        Product product = productRepository.findByIdAndTenantId(productId, sale.getStore().getTenantId())
+                .filter(Product::isActive)
+                .orElseThrow(() -> new BadRequestException("PRODUCT_NOT_AVAILABLE_AT_STORE"));
+        if (product.getAvailabilityScope() == ProductAvailabilityScope.ALL_STORES) {
             return new ResolvedStoreProduct(product, product.getPrice());
         }
         StoreProduct mapping = storeProductRepository.findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(

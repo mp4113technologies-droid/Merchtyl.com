@@ -14,6 +14,7 @@ final class DomainErrorCatalog {
             entry("ACCESS_DENIED", "You don't have permission to perform this action."),
             entry("STORE_ACCESS_DENIED", "You don't have access to this store."),
             entry("PRODUCT_STORE_ACCESS_DENIED", "You don't have access to this store."),
+            entry("PRODUCT_NOT_AVAILABLE_AT_STORE", "This product is not available for sale at this store. Remove it from the cart or ask a manager to review its store availability."),
             entry("REGISTER_ACCESS_DENIED", "You don't have access to this register."),
             entry("REGISTER_NOT_ASSIGNED", "This register isn't assigned to your account."),
             entry("LOGIN_FAILED", "Email or password is incorrect."),

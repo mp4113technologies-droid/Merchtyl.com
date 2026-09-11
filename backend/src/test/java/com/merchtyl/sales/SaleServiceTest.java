@@ -26,7 +26,9 @@ import com.merchtyl.discount.DiscountEngine;
 import com.merchtyl.discount.DiscountDefinitionService;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductCapability;
+import com.merchtyl.product.ProductAvailabilityScope;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.StoreProductRepository;
 import com.merchtyl.product.ProductValues;
 import com.merchtyl.product.SellableType;
 import com.merchtyl.register.Register;
@@ -87,6 +89,7 @@ class SaleServiceTest {
     private final SaleRepository saleRepository = mock(SaleRepository.class);
     private final RegisterSessionRepository registerSessionRepository = mock(RegisterSessionRepository.class);
     private final ProductRepository productRepository = mock(ProductRepository.class);
+    private final StoreProductRepository storeProductRepository = mock(StoreProductRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final SaleItemHandlerRegistry saleItemHandlerRegistry = mock(SaleItemHandlerRegistry.class);
     private final TaxEngine taxEngine = mock(TaxEngine.class);
@@ -227,6 +230,60 @@ class SaleServiceTest {
         assertThat(request.getValue().productTaxCategoryId()).isEqualTo(exempt.getId());
         assertThat(request.getValue().unitPrice()).isEqualByComparingTo("3.50");
         assertThat(request.getValue().quantity()).isEqualByComparingTo("3.0000");
+    }
+
+    @Test
+    void checkoutAllowsActiveAllStoresProductWithoutStoreProductMapping() {
+        UUID tenantId = UUID.randomUUID();
+        product.assignTenant(tenantId);
+        product.setAvailabilityScope(ProductAvailabilityScope.ALL_STORES);
+        when(store.getTenantId()).thenReturn(tenantId);
+        when(productRepository.findByIdAndTenantId(product.getId(), tenantId)).thenReturn(Optional.of(product));
+        ReflectionTestUtils.setField(service, "storeProductRepository", storeProductRepository);
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(product.getId(), null, null, BigDecimal.ONE, false))), cashierAuth());
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().getFirst().productId()).isEqualTo(product.getId());
+        assertThat(response.items().getFirst().unitPrice()).isEqualByComparingTo(product.getPrice());
+        verify(storeProductRepository, never())
+                .findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(any(), any(), any());
+    }
+
+    @Test
+    void checkoutRejectsSelectedStoresProductWithoutActiveStoreMappingUsingFriendlyCode() {
+        UUID tenantId = UUID.randomUUID();
+        product.assignTenant(tenantId);
+        product.setAvailabilityScope(ProductAvailabilityScope.SELECTED_STORES);
+        when(store.getTenantId()).thenReturn(tenantId);
+        when(productRepository.findByIdAndTenantId(product.getId(), tenantId)).thenReturn(Optional.of(product));
+        when(storeProductRepository.findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(
+                tenantId, STORE_ID, product.getId())).thenReturn(Optional.empty());
+        ReflectionTestUtils.setField(service, "storeProductRepository", storeProductRepository);
+
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(product.getId(), null, null, BigDecimal.ONE, false))), cashierAuth()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("PRODUCT_NOT_AVAILABLE_AT_STORE");
+        verify(taxEngine, never()).calculate(any(), any());
+    }
+
+    @Test
+    void checkoutDoesNotResolveAllStoresProductAcrossTenantBoundary() {
+        UUID storeTenantId = UUID.randomUUID();
+        product.assignTenant(UUID.randomUUID());
+        product.setAvailabilityScope(ProductAvailabilityScope.ALL_STORES);
+        when(store.getTenantId()).thenReturn(storeTenantId);
+        when(productRepository.findByIdAndTenantId(product.getId(), storeTenantId)).thenReturn(Optional.empty());
+        ReflectionTestUtils.setField(service, "storeProductRepository", storeProductRepository);
+
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(product.getId(), null, null, BigDecimal.ONE, false))), cashierAuth()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("PRODUCT_NOT_AVAILABLE_AT_STORE");
+        verify(storeProductRepository, never())
+                .findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(any(), any(), any());
     }
 
     @Test

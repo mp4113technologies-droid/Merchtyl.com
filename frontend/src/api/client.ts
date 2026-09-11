@@ -1455,6 +1455,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   forbidden: "You don't have permission to perform this action.",
   STORE_ACCESS_DENIED: "You don't have access to this store.",
   PRODUCT_STORE_ACCESS_DENIED: "You don't have access to this store.",
+  PRODUCT_NOT_AVAILABLE_AT_STORE: 'This product is not available for sale at this store. Remove it from the cart or ask a manager to review its store availability.',
   REGISTER_ACCESS_DENIED: "You don't have access to this register.",
   REGISTER_NOT_ASSIGNED: "This register isn't assigned to your account.",
   LOGIN_FAILED: 'Email or password is incorrect.',
