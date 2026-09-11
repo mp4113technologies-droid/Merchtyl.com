@@ -72,6 +72,19 @@ public class SaleItem extends BaseUuidEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount;
 
+    private UUID promotionId;
+    @Column(length = 120) private String promotionName;
+    @Enumerated(EnumType.STRING) @Column(length = 40) private SaleAdjustmentType promotionType;
+    private Integer promotionBuyQuantity;
+    @Column(precision = 12, scale = 4) private BigDecimal promotionBundlePrice;
+    @Column(precision = 12, scale = 2) private BigDecimal promotionRegularAmount;
+    @Column(precision = 12, scale = 2) private BigDecimal promotionDiscountAmount;
+    @Column(precision = 12, scale = 2) private BigDecimal promotionFinalAmount;
+    private UUID menuItemId;
+    private UUID menuItemVariantId;
+    @Column(length=180) private String itemNameSnapshot;
+    @Column(length=180) private String menuVariantNameSnapshot;
+
     @Column(nullable = false)
     private boolean priceOverride;
 
@@ -175,6 +188,25 @@ public class SaleItem extends BaseUuidEntity {
     void applyDiscount(BigDecimal discountAmount) {
         this.discountAmount = discountAmount;
     }
+    void addDiscount(BigDecimal discountAmount) { this.discountAmount=money(this.discountAmount.add(discountAmount)); }
+
+    void applyPromotion(UUID id, String name, int buyQuantity, BigDecimal bundlePrice, BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
+        this.promotionId = id;
+        this.promotionName = name;
+        this.promotionType = SaleAdjustmentType.MULTI_BUY_FIXED_PRICE;
+        this.promotionBuyQuantity = buyQuantity;
+        this.promotionBundlePrice = bundlePrice;
+        this.promotionRegularAmount = money(unitPrice.multiply(quantity));
+        this.promotionDiscountAmount = discountAmount;
+        this.promotionFinalAmount = money(this.promotionRegularAmount.subtract(discountAmount));
+    }
+    void snapshotFoodSource(UUID menuItemId, UUID menuItemVariantId, String itemName, String variantName) {
+        this.menuItemId=menuItemId; this.menuItemVariantId=menuItemVariantId; this.itemNameSnapshot=itemName;
+        this.menuVariantNameSnapshot=variantName; this.productName=variantName==null?itemName:itemName+" — "+variantName;
+    }
+
+    private static BigDecimal money(BigDecimal value) { return value.setScale(2, java.math.RoundingMode.HALF_UP); }
 
     void updateInputs(
             BigDecimal quantity,
@@ -283,6 +315,12 @@ public class SaleItem extends BaseUuidEntity {
     public BigDecimal getDiscountAmount() {
         return discountAmount;
     }
+    public UUID getPromotionId(){return promotionId;} public String getPromotionName(){return promotionName;}
+    public SaleAdjustmentType getPromotionType(){return promotionType;} public Integer getPromotionBuyQuantity(){return promotionBuyQuantity;}
+    public BigDecimal getPromotionBundlePrice(){return promotionBundlePrice;} public BigDecimal getPromotionRegularAmount(){return promotionRegularAmount;}
+    public BigDecimal getPromotionDiscountAmount(){return promotionDiscountAmount;} public BigDecimal getPromotionFinalAmount(){return promotionFinalAmount;}
+    public UUID getMenuItemId(){return menuItemId;} public UUID getMenuItemVariantId(){return menuItemVariantId;}
+    public String getItemNameSnapshot(){return itemNameSnapshot;} public String getMenuVariantNameSnapshot(){return menuVariantNameSnapshot;}
 
     public boolean isPriceOverride() {
         return priceOverride;

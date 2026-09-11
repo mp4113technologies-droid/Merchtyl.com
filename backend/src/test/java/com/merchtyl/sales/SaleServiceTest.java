@@ -24,6 +24,9 @@ import com.merchtyl.foodmenu.FoodMenuItemRepository;
 import com.merchtyl.discount.DiscountDefinition;
 import com.merchtyl.discount.DiscountEngine;
 import com.merchtyl.discount.DiscountDefinitionService;
+import com.merchtyl.discount.PromotionDomain;
+import com.merchtyl.discount.PromotionTarget;
+import com.merchtyl.discount.PromotionTargetType;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductCapability;
 import com.merchtyl.product.ProductAvailabilityScope;
@@ -392,6 +395,30 @@ class SaleServiceTest {
         assertThat(response.estimatedTaxAmount()).isEqualByComparingTo("3.24");
         assertThat(response.totalAmount()).isEqualByComparingTo("24.84");
         verify(saleAdjustmentRepository).save(any(SaleAdjustment.class));
+    }
+
+    @Test
+    void restaurantCheckoutAutomaticallyAppliesMultiBuyBeforeTaxWithoutDiscountPermission() {
+        UUID tenantId=UUID.randomUUID(),promotionId=UUID.randomUUID();
+        FoodMenuItem menuItem=discountableMenuItem(new BigDecimal("8.00"));
+        DiscountDefinition promotion=mock(DiscountDefinition.class);
+        when(store.getTenantId()).thenReturn(tenantId);
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID,STORE_ID)).thenReturn(Optional.of(menuItem));
+        when(discountDefinitionService.automaticMultiBuyForStore(tenantId,STORE_ID,PromotionDomain.FOOD_SERVICE,NOW)).thenReturn(List.of(promotion));
+        when(promotion.getId()).thenReturn(promotionId);when(promotion.getName()).thenReturn("2 Burgers for $14");
+        when(promotion.getType()).thenReturn(SaleAdjustmentType.MULTI_BUY_FIXED_PRICE);when(promotion.isActive()).thenReturn(true);
+        when(promotion.isAllStores()).thenReturn(true);when(promotion.getDomain()).thenReturn(PromotionDomain.FOOD_SERVICE);
+        when(promotion.getBuyQuantity()).thenReturn(2);when(promotion.getBundlePrice()).thenReturn(new BigDecimal("14"));
+        when(promotion.getTargets()).thenReturn(Set.of(new PromotionTarget(PromotionTargetType.MENU_ITEM,MENU_ITEM_ID)));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class),any())).thenAnswer(invocation->{TaxCalculationRequest request=invocation.getArgument(0);assertThat(request.discountAmount()).isEqualByComparingTo("2.00");return taxResponse(new BigDecimal("14.00"),new BigDecimal("2.10"),new BigDecimal("16.10"));});
+
+        SaleResponse response=service.checkout(new SaleCheckoutRequest(SESSION_ID,"POS",List.of(
+                new SaleCheckoutItemRequest(null,null,MENU_ITEM_ID,new BigDecimal("2"),false))),cashierAuth());
+
+        assertThat(response.discountAmount()).isEqualByComparingTo("2.00");
+        assertThat(response.discountName()).isEqualTo("2 Burgers for $14");
+        assertThat(response.items().getFirst().promotionId()).isEqualTo(promotionId);
+        assertThat(response.totalAmount()).isEqualByComparingTo("16.10");
     }
 
     @Test
@@ -973,6 +1000,7 @@ class SaleServiceTest {
     private FoodMenuItem discountableMenuItem(BigDecimal price) {
         FoodMenuItem menuItem = mock(FoodMenuItem.class);
         when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(menuItem.getId()).thenReturn(MENU_ITEM_ID);
         when(menuItem.getProduct()).thenReturn(product);
         when(menuItem.getPrice()).thenReturn(price);
         when(menuItem.isAvailable()).thenReturn(true);

@@ -68,6 +68,7 @@ import {
 import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
+import { bestMultiBuyPromotion } from './multiBuyPricing';
 import { posTokens } from '../../app/theme';
 import {
   KeyboardWedgeScanner,
@@ -425,9 +426,9 @@ function CartLines({
   );
 }
 
-function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount }: { sale: Sale | null; currencyCode: string; provisionalSubtotal?: number; discount?: OrderDiscount | null }) {
+function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount, automaticPromotion }: { sale: Sale | null; currencyCode: string; provisionalSubtotal?: number; discount?: OrderDiscount | null; automaticPromotion?:ReturnType<typeof bestMultiBuyPromotion> }) {
   const subtotal = sale?.subtotalAmount ?? provisionalSubtotal;
-  const discountAmount = sale?.discountAmount ?? (discount ? Math.min(provisionalSubtotal,discount.type==='DISCOUNT_PERCENTAGE'?provisionalSubtotal*discount.value/100:discount.value):0);
+  const discountAmount = sale?.discountAmount ?? (discount ? Math.min(provisionalSubtotal,discount.type==='DISCOUNT_PERCENTAGE'?provisionalSubtotal*discount.value/100:discount.value):(automaticPromotion?.amount??0));
   const tax = sale?.estimatedTaxAmount ?? 0;
   const total = sale?.totalAmount ?? 0;
 
@@ -439,7 +440,7 @@ function TotalsPanel({ sale, currencyCode, provisionalSubtotal = 0, discount }: 
           <Typography>{money(subtotal, currencyCode)}</Typography>
         </Stack>
         <Stack direction="row" justifyContent="space-between">
-          <Typography color="text.secondary">{sale?.discountName ?? discount?.name ?? 'Discount'}</Typography>
+          <Typography color="text.secondary">{sale?.discountName ?? discount?.name ?? automaticPromotion?.definition.name ?? 'Discount'}</Typography>
           <Typography>{money(-discountAmount, currencyCode)}</Typography>
         </Stack>
         <Stack direction="row" justifyContent="space-between">
@@ -985,7 +986,7 @@ export function PosCartPage() {
     queryFn: async () => listProducts(await getValidAccessToken(), { q: submittedSearch, storeId: current.data?.storeId, active: true, size: 20 }),
     enabled: submittedSearch.trim().length > 0 && Boolean(current.data?.storeId)
   });
-  const savedDiscounts=useQuery({queryKey:['active-pos-discounts',current.data?.storeId],queryFn:async()=>listActiveStoreDiscounts(await getValidAccessToken(),current.data?.storeId??''),enabled:Boolean(current.data?.storeId)&&Boolean(currentUser?.permissions?.includes('POS_SALE_DISCOUNT')),staleTime:5*60_000});
+  const savedDiscounts=useQuery({queryKey:['active-pos-discounts',current.data?.storeId],queryFn:async()=>listActiveStoreDiscounts(await getValidAccessToken(),current.data?.storeId??''),enabled:Boolean(current.data?.storeId),staleTime:5*60_000});
 
   React.useEffect(() => {
     if (searchMode !== 'PRODUCT') return;
@@ -1008,6 +1009,7 @@ export function PosCartPage() {
   const device = devices.data?.content.find((item) => item.id === current.data?.deviceId);
   const currencyCode = activeSale?.currencyCode ?? store?.currencyCode ?? 'USD';
   const provisionalSubtotal = cartItems.reduce((sum, item) => sum + item.unitPrice * item.quantity - item.discountAmount, 0);
+  const automaticPromotion=bestMultiBuyPromotion(savedDiscounts.data??[],'RETAIL',cartItems.filter(item=>item.productId).map(item=>({id:item.id,quantity:item.quantity,unitPrice:item.unitPrice,targets:{PRODUCT:item.productId??undefined,PRODUCT_VARIANT:item.variantId??undefined}})));
 
   function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
     cartRevisionRef.current += 1;
@@ -1549,13 +1551,13 @@ export function PosCartPage() {
           <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
               <CompactIdentitySummary session={current.data} store={store} register={register} device={device} />
-              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discountPricingError ? null : discount} />
+              <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discountPricingError ? null : discount} automaticPromotion={discount?undefined:automaticPromotion} />
               <Paper variant="outlined" sx={{ p: 1.25, borderRadius: posTokens.radius.card }}>
                 <Stack spacing={0.75}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Discount</Typography><Chip label={discountPricingError ? 'NOT APPLICABLE' : discount ? (activeSale ? 'APPLIED' : 'SELECTED') : 'NONE'} size="small" color={discountPricingError ? 'error' : discount ? 'primary' : 'default'} variant="outlined" /></Stack>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Discount</Typography><Chip label={discountPricingError ? 'NOT APPLICABLE' : discount ? (activeSale ? 'APPLIED' : 'SELECTED') : automaticPromotion ? 'AUTO' : 'NONE'} size="small" color={discountPricingError ? 'error' : discount||automaticPromotion ? 'primary' : 'default'} variant="outlined" /></Stack>
                   {currentUser?.permissions?.includes('POS_SALE_DISCOUNT') ? <>
-                    <TextField select size="small" label="Discount" value={discount?.definitionId??(discount?'__custom__':'')} disabled={!cartItems.length||busy} onChange={event=>{if(event.target.value==='__custom__'){setDiscountOpen(true);return;}const selected=savedDiscounts.data?.find((value:DiscountDefinition)=>value.id===event.target.value);if(selected){setDiscount({definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:''});cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}}>
-                      <MenuItem value=""><em>Select discount</em></MenuItem>{(savedDiscounts.data??[]).map((value:DiscountDefinition)=><MenuItem key={value.id} value={value.id}>{value.name} — {value.type==='DISCOUNT_PERCENTAGE'?`${value.value}%`:money(value.value,currencyCode)}</MenuItem>)}<Divider/><MenuItem value="__custom__">Custom Discount</MenuItem>
+                    <TextField select size="small" label="Discount" value={discount?.definitionId??(discount?'__custom__':'')} disabled={!cartItems.length||busy} onChange={event=>{if(event.target.value==='__custom__'){setDiscountOpen(true);return;}const selected=savedDiscounts.data?.find((value:DiscountDefinition)=>value.id===event.target.value);if(selected&&selected.type!=='MULTI_BUY_FIXED_PRICE'){setDiscount({definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:''});cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}}>
+                      <MenuItem value=""><em>Select discount</em></MenuItem>{(savedDiscounts.data??[]).filter(value=>value.type!=='MULTI_BUY_FIXED_PRICE').map((value:DiscountDefinition)=><MenuItem key={value.id} value={value.id}>{value.name} — {value.type==='DISCOUNT_PERCENTAGE'?`${value.value}%`:money(value.value,currencyCode)}</MenuItem>)}<Divider/><MenuItem value="__custom__">Custom Discount</MenuItem>
                     </TextField>
                     {discountPricingError ? <Alert severity="warning" sx={{ py: 0, '& .MuiAlert-message': { py: 0.25 }, fontSize: 13 }}>{discountPricingError}</Alert> : null}
                     {discount?<Button size="small" color="error" sx={{ alignSelf: 'flex-start' }} onClick={()=>{setDiscount(null);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}>Remove Discount</Button>:null}

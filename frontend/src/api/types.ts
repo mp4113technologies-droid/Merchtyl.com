@@ -422,8 +422,12 @@ export type FoodMenuCategory = { id: string; storeId: string; name: string; disp
 export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; version: number };
 export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
 export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string };
-export type DiscountDefinition = { id: string; name: string; type: 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT'; value: number; description: string | null; minimumPurchaseAmount:number|null; maximumPurchaseAmount:number|null; maximumDiscountAmount:number|null; minimumQuantity:number|null; eligibleCategoryIds:string[]; eligibleProductIds:string[]; allStores:boolean; storeIds:string[]; startsAt:string|null; endsAt:string|null; active: boolean; createdAt: string; updatedAt: string; version: number };
-export type DiscountDefinitionPayload = { name: string; type: 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT'; value: number; description?: string; minimumPurchaseAmount?:number; maximumPurchaseAmount?:number; maximumDiscountAmount?:number; minimumQuantity?:number; eligibleCategoryIds:string[]; eligibleProductIds:string[]; allStores:boolean; storeIds:string[]; startsAt?:string; endsAt?:string; active: boolean };
+export type DiscountType = 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT' | 'MULTI_BUY_FIXED_PRICE';
+export type PromotionDomain = 'RETAIL' | 'FOOD_SERVICE';
+export type PromotionTargetType = 'PRODUCT' | 'PRODUCT_VARIANT' | 'PRODUCT_CATEGORY' | 'MENU_ITEM' | 'MENU_ITEM_VARIANT' | 'MENU_CATEGORY';
+export type PromotionTarget = { targetType: PromotionTargetType; targetId: string };
+export type DiscountDefinition = { id: string; name: string; type: DiscountType; value: number; description: string | null; minimumPurchaseAmount:number|null; maximumPurchaseAmount:number|null; maximumDiscountAmount:number|null; minimumQuantity:number|null; eligibleCategoryIds:string[]; eligibleProductIds:string[]; allStores:boolean; storeIds:string[]; startsAt:string|null; endsAt:string|null; active: boolean; domain:PromotionDomain|null; buyQuantity:number|null; bundlePrice:number|null; priority:number; stackable:boolean; targets:PromotionTarget[]; createdAt: string; updatedAt: string; version: number };
+export type DiscountDefinitionPayload = { name: string; type: DiscountType; value: number; description?: string; minimumPurchaseAmount?:number; maximumPurchaseAmount?:number; maximumDiscountAmount?:number; minimumQuantity?:number; eligibleCategoryIds:string[]; eligibleProductIds:string[]; allStores:boolean; storeIds:string[]; startsAt?:string; endsAt?:string; active: boolean; domain?:PromotionDomain; buyQuantity?:number; bundlePrice?:number; priority?:number; stackable?:boolean; targets?:PromotionTarget[] };
 
 export type ProductVariant = {
   id: string;
@@ -1825,6 +1829,14 @@ export type SaleItem = {
   quantity: number;
   unitPrice: number;
   discountAmount: number;
+  promotionId?: string | null;
+  promotionName?: string | null;
+  promotionType?: 'MULTI_BUY_FIXED_PRICE' | null;
+  promotionBuyQuantity?: number | null;
+  promotionBundlePrice?: number | null;
+  promotionRegularAmount?: number | null;
+  promotionDiscountAmount?: number | null;
+  promotionFinalAmount?: number | null;
   completedProductCost: number | null;
   completedProductPrice: number | null;
   completedProductCapabilities: string | null;
@@ -2035,6 +2047,9 @@ export type ReceiptItem = {
   lineSubtotal: number;
   taxAmount: number;
   lineTotal: number;
+  promotionId?: string | null;
+  promotionName?: string | null;
+  promotionDiscountAmount?: number | null;
 };
 
 export type ReceiptTaxSummary = {

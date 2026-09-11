@@ -209,7 +209,10 @@ public class ReceiptService {
                 item.getDiscountAmount(),
                 item.getLineSubtotal(),
                 item.getEstimatedTaxAmount(),
-                item.getLineTotal());
+                item.getLineTotal(),
+                item.getPromotionId(),
+                item.getPromotionName(),
+                item.getPromotionDiscountAmount());
     }
 
     private ReceiptPaymentDto payment(Payment payment) {

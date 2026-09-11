@@ -25,6 +25,7 @@ import com.merchtyl.foodmenu.FoodMenuItemRepository;
 import com.merchtyl.discount.DiscountDefinitionService;
 import com.merchtyl.discount.DiscountDefinition;
 import com.merchtyl.discount.DiscountEngine;
+import com.merchtyl.discount.PromotionDomain;
 import com.merchtyl.product.Product;
 import com.merchtyl.payments.CashRoundingResult;
 import com.merchtyl.payments.CashRoundingService;
@@ -198,6 +199,7 @@ public class SaleService {
                 session.getStore().isPricesIncludeTax());
 
         List<DiscountEngine.Line> discountLines=new java.util.ArrayList<>();
+        List<DiscountEngine.PromotionLine> promotionLines=new java.util.ArrayList<>();
         for (SaleCheckoutItemRequest line : request.items()) {
             if (!line.isValidShape()) throw new BadRequestException("INVALID_CHECKOUT_ITEM");
             if (line.resolvedLineType() == SaleLineType.CUSTOM_ITEM) {
@@ -230,12 +232,17 @@ public class SaleService {
             SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
                     normalizeMoney(unitPrice, "unitPrice"), moneyZero(), false,
                     Boolean.TRUE.equals(line.ageVerified()), null, null, null, null);
+            if(resolved.menuItemId()!=null)item.snapshotFoodSource(resolved.menuItemId(),null,resolved.menuItemName(),null);
             saleItemHandlerRegistry.validate(item.validationRequest());
             sale.addItem(item);
             discountLines.add(new DiscountEngine.Line(item.getId(),product.getId(),resolved.sourceItemId(),resolved.categoryId(),item.getQuantity(),money(unitPrice.multiply(item.getQuantity())),product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
+            promotionLines.add(new DiscountEngine.PromotionLine(item.getId(), product.getId(), variant==null?null:variant.getId(),
+                    resolved.productCategoryId(), resolved.menuItemId(), null, resolved.menuCategoryId(), item.getQuantity(), unitPrice,
+                    product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
         }
         ResolvedDiscount resolvedDiscount = resolveCheckoutDiscount(sale, request.discount());
-        BigDecimal checkoutDiscount = applyCheckoutDiscount(sale, resolvedDiscount, discountLines, authentication);
+        BigDecimal automaticDiscount=applyAutomaticMultiBuy(sale, session, promotionLines, actor,resolvedDiscount!=null);
+        BigDecimal checkoutDiscount = automaticDiscount.add(applyCheckoutDiscount(sale, resolvedDiscount, discountLines, authentication));
         if (resolvedDiscount != null) sale.applyDiscountSnapshot(resolvedDiscount.definitionId(), resolvedDiscount.name(), resolvedDiscount.type(), resolvedDiscount.value(), resolvedDiscount.reason());
         recalculate(sale, authentication);
         Sale saved = save(sale);
@@ -268,13 +275,50 @@ public class SaleService {
         boolean permitted = authentication != null && authentication.getAuthorities().stream()
                 .anyMatch(authority -> PermissionCode.POS_SALE_DISCOUNT.name().equals(authority.getAuthority()));
         if (!permitted) throw new ForbiddenOperationException("POS_SALE_DISCOUNT is required");
-        var result=discountEngine.evaluate(request.type(),request.value(),request.definition(),sale.getStore().getId(),lines,Instant.now(clock));
+        var currentDiscounts=sale.getItems().stream().collect(java.util.stream.Collectors.toMap(SaleItem::getId,SaleItem::getDiscountAmount));
+        var remainingLines=lines.stream().map(line->new DiscountEngine.Line(line.lineId(),line.productId(),line.sourceItemId(),line.categoryId(),line.quantity(),
+                money(line.subtotal().subtract(currentDiscounts.getOrDefault(line.lineId(),moneyZero()))),line.discountAllowed())).toList();
+        var result=discountEngine.evaluate(request.type(),request.value(),request.definition(),sale.getStore().getId(),remainingLines,Instant.now(clock));
         var amounts=result.allocations().stream().collect(java.util.stream.Collectors.toMap(DiscountEngine.Allocation::lineId,DiscountEngine.Allocation::amount));
-        sale.getItems().forEach(item->{var amount=amounts.get(item.getId());if(amount!=null)item.applyDiscount(amount);});
+        sale.getItems().forEach(item->{var amount=amounts.get(item.getId());if(amount!=null)item.addDiscount(amount);});
         return result.amount();
     }
 
     private record ResolvedDiscount(UUID definitionId, String name, SaleAdjustmentType type, BigDecimal value, String reason, DiscountDefinition definition) {}
+
+    private BigDecimal applyAutomaticMultiBuy(Sale sale, RegisterSession session,
+                                               List<DiscountEngine.PromotionLine> lines, User actor, boolean stackingRequired) {
+        PromotionDomain domain = session.getRegister().getType() == RegisterType.FOOD_SERVICE
+                ? PromotionDomain.FOOD_SERVICE : PromotionDomain.RETAIL;
+        Instant now = Instant.now(clock);
+        DiscountDefinition selected = null;
+        DiscountEngine.Result selectedResult = null;
+        for (DiscountDefinition definition : discountDefinitionService.automaticMultiBuyForStore(
+                sale.getStore().getTenantId(), sale.getStore().getId(), domain, now)) {
+            if(stackingRequired&&!definition.isStackable())continue;
+            DiscountEngine.Result result = discountEngine.evaluateMultiBuy(definition, sale.getStore().getId(), domain, lines, now);
+            if (result.amount().signum() > 0 && (selectedResult == null || result.amount().compareTo(selectedResult.amount()) > 0)) {
+                selected = definition;
+                selectedResult = result;
+            }
+        }
+        if (selected == null) return moneyZero();
+        var amounts = selectedResult.allocations().stream().collect(java.util.stream.Collectors.toMap(
+                DiscountEngine.Allocation::lineId, DiscountEngine.Allocation::amount));
+        DiscountDefinition promotion = selected;
+        sale.getItems().forEach(item -> {
+            BigDecimal amount = amounts.get(item.getId());
+            if (amount != null) item.applyPromotion(promotion.getId(), promotion.getName(), promotion.getBuyQuantity(),
+                    promotion.getBundlePrice(), amount);
+        });
+        sale.applyDiscountSnapshot(promotion.getId(), promotion.getName(), promotion.getType(), promotion.getBundlePrice(),
+                promotion.getBuyQuantity() + " for " + promotion.getBundlePrice());
+        saleAdjustmentRepository.save(new SaleAdjustment(sale, null, SaleAdjustmentType.MULTI_BUY_FIXED_PRICE,
+                sale.getItems().stream().map(item -> money(item.getUnitPrice().multiply(item.getQuantity()))).reduce(moneyZero(),BigDecimal::add),
+                sale.getItems().stream().map(item -> money(item.getUnitPrice().multiply(item.getQuantity()).subtract(item.getDiscountAmount()))).reduce(moneyZero(),BigDecimal::add),
+                null,"AUTOMATIC_MULTI_BUY",promotion.getName(),actor,actor,now,MDC.get("correlationId")));
+        return selectedResult.amount();
+    }
 
     private ResolvedCheckoutItem resolveCheckoutItem(RegisterSession session, Sale sale, SaleCheckoutItemRequest line) {
         if (line.foodMenuItemId() != null) {
@@ -295,7 +339,10 @@ public class SaleService {
             if (line.productId() != null && !line.productId().equals(product.getId())) {
                 throw new BadRequestException("INVALID_CHECKOUT_ITEM: product does not match food menu item");
             }
-            return new ResolvedCheckoutItem(product, null, menuItem.getPrice(),menuItem.getId(),menuItem.getCategory()==null?null:menuItem.getCategory().getId());
+            return new ResolvedCheckoutItem(product, null, menuItem.getPrice(),menuItem.getId(),
+                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),
+                    product.getCategory()==null?null:product.getCategory().getId(),menuItem.getId(),
+                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName());
         }
 
         if (line.productId() == null) {
@@ -307,10 +354,12 @@ public class SaleService {
                 .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_AVAILABLE"));
         return new ResolvedCheckoutItem(storeProduct.product(), variant,
                 variant == null ? storeProduct.sellingPrice() : variant.getPrice(),null,
-                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId());
+                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),
+                storeProduct.product().getCategory()==null?null:storeProduct.product().getCategory().getId(),null,null,null);
     }
 
-    private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice,UUID sourceItemId,UUID categoryId) {}
+    private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice,UUID sourceItemId,
+                                        UUID categoryId, UUID productCategoryId, UUID menuItemId, UUID menuCategoryId, String menuItemName) {}
 
     @Transactional(readOnly = true)
     public SaleResponse get(UUID id) {

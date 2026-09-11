@@ -23,7 +23,7 @@ describe('saved discount management',()=>{
     await userEvent.type(screen.getByLabelText('Discount name'),'Staff Discount');
     await userEvent.type(screen.getByLabelText('Percentage'),'10');
     await userEvent.click(screen.getByRole('button',{name:'Save Discount'}));
-    await waitFor(()=>expect(submitted).toEqual({name:'Staff Discount',type:'DISCOUNT_PERCENTAGE',value:10,description:'',eligibleCategoryIds:[],eligibleProductIds:[],allStores:true,storeIds:[],active:true}));
+    await waitFor(()=>expect(submitted).toEqual({name:'Staff Discount',type:'DISCOUNT_PERCENTAGE',value:10,description:'',eligibleCategoryIds:[],eligibleProductIds:[],allStores:true,storeIds:[],active:true,priority:0,stackable:false,targets:[]}));
     await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Add Discount'})).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole('button',{name:'Deactivate'}));
     await waitFor(()=>expect(calls).toContain('PUT /api/v1/discounts/five-off'));

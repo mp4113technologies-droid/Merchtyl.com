@@ -15,6 +15,7 @@ import { loadReceiptPrinterPreferences } from './receiptPrinter';
 import { printFoodDocuments, type FoodPrintDocument, type FoodPrintStatus } from './foodOrderPrinter';
 import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
 import { SecureTill } from './SecureTill';
+import { bestMultiBuyPromotion } from './multiBuyPricing';
 
 function money(value: number, currency = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
@@ -52,7 +53,7 @@ export function FoodPosPage() {
   const configuration = useQuery({ queryKey: ['food-service', current.data?.storeId], queryFn: async () => getFoodServiceConfiguration(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && Boolean(current.data?.storeId) });
   const categories = useQuery({ queryKey: ['food-menu-categories', current.data?.storeId], queryFn: async () => listFoodMenuCategories(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
   const products = useQuery({ queryKey: ['food-menu-items', current.data?.storeId], queryFn: async () => listFoodMenuItems(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
-  const savedDiscounts = useQuery({ queryKey: ['active-pos-discounts', current.data?.storeId], queryFn: async () => listActiveStoreDiscounts(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && canDiscount && Boolean(current.data?.storeId), staleTime: 5 * 60_000 });
+  const savedDiscounts = useQuery({ queryKey: ['active-pos-discounts', current.data?.storeId], queryFn: async () => listActiveStoreDiscounts(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && Boolean(current.data?.storeId), staleTime: 5 * 60_000 });
 
   React.useEffect(() => {
     if (!current.data || restoredSessionRef.current === current.data.id) return;
@@ -111,9 +112,10 @@ export function FoodPosPage() {
   const busy = checkout.isPending || payment.isPending || complete.isPending;
   const canManageMenu = currentUser?.permissions?.some(permission => permission === 'PRODUCT_MANAGE' || permission === 'FOOD_ORDER_UPDATE');
   const provisionalSubtotal = cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
+  const automaticPromotion=bestMultiBuyPromotion(savedDiscounts.data??[],'FOOD_SERVICE',cart.map(line=>({id:line.item.id,quantity:line.quantity,unitPrice:line.item.price,targets:{MENU_ITEM:line.item.id,MENU_CATEGORY:line.item.categoryId}})));
   const provisionalDiscount = discount
     ? Math.min(provisionalSubtotal, discount.type === 'DISCOUNT_PERCENTAGE' ? provisionalSubtotal * discount.value / 100 : discount.value)
-    : 0;
+    : automaticPromotion?.amount??0;
 
   function startNewOrder() {
     setCart([]);
@@ -195,15 +197,15 @@ export function FoodPosPage() {
             {cart.map(({ item, quantity }) => <Stack key={item.id} direction={{ xs: 'column', sm: 'row', md: 'column', lg: 'row' }} alignItems={{ xs: 'stretch', sm: 'center', md: 'stretch', lg: 'center' }} spacing={1}><Box flex={1} minWidth={0}><Typography fontWeight={700}>{item.displayName}</Typography><Typography variant="body2">{quantity} × {money(item.price, store?.currencyCode)} = {money(quantity * item.price, store?.currencyCode)}</Typography></Box><Stack direction="row" alignSelf={{ xs: 'flex-end', sm: 'auto', md: 'flex-end', lg: 'auto' }}><IconButton aria-label={`Decrease ${item.displayName}`} disabled={busy || quantity <= 1} onClick={() => changeCart(lines => lines.map(line => line.item.id === item.id ? { ...line, quantity: line.quantity - 1 } : line))}><RemoveIcon /></IconButton><IconButton aria-label={`Increase ${item.displayName}`} disabled={busy} onClick={() => changeCart(lines => lines.map(line => line.item.id === item.id ? { ...line, quantity: line.quantity + 1 } : line))}><AddIcon /></IconButton><IconButton aria-label={`Remove ${item.displayName}`} disabled={busy} onClick={() => changeCart(lines => lines.filter(line => line.item.id !== item.id))}><DeleteOutlineIcon /></IconButton></Stack></Stack>)}
             {!cart.length ? <Typography color="text.secondary">Tap a product tile to begin.</Typography> : null}<Divider />
             <Stack direction="row" justifyContent="space-between"><Typography>Subtotal</Typography><Typography>{money(sale?.subtotalAmount ?? provisionalSubtotal, sale?.currencyCode ?? store?.currencyCode)}</Typography></Stack>
-            <Stack direction="row" justifyContent="space-between"><Typography>{discount?.name ?? 'Discount'}{discount?.type === 'DISCOUNT_PERCENTAGE' ? ` (${discount.value}%)` : ''}</Typography><Typography>{money(-(sale?.discountAmount ?? provisionalDiscount), sale?.currencyCode ?? store?.currencyCode)}</Typography></Stack>
+            <Stack direction="row" justifyContent="space-between"><Typography>{discount?.name ?? automaticPromotion?.definition.name ?? 'Discount'}{discount?.type === 'DISCOUNT_PERCENTAGE' ? ` (${discount.value}%)` : ''}</Typography><Typography>{money(-(sale?.discountAmount ?? provisionalDiscount), sale?.currencyCode ?? store?.currencyCode)}</Typography></Stack>
             {canDiscount ? <Stack spacing={1}>
               <TextField select size="small" label="Discount" value={discount?.definitionId ?? (discount ? '__custom__' : '')} disabled={!cart.length || busy} onChange={(event) => {
                 if (event.target.value === '__custom__') { setDiscountOpen(true); return; }
                 const selected = savedDiscounts.data?.find(value => value.id === event.target.value);
-                if (selected) { setDiscount({ definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:'' }); setSale(null); setPaymentOpen(false); }
+                if (selected && selected.type !== 'MULTI_BUY_FIXED_PRICE') { setDiscount({ definitionId:selected.id,name:selected.name,type:selected.type,value:selected.value,reason:'' }); setSale(null); setPaymentOpen(false); }
               }}>
                 <MenuItem value=""><em>Select discount</em></MenuItem>
-                {(savedDiscounts.data ?? []).map(value => <MenuItem key={value.id} value={value.id}>{value.name} — {value.type === 'DISCOUNT_PERCENTAGE' ? `${value.value}%` : money(value.value, store?.currencyCode)}</MenuItem>)}
+                {(savedDiscounts.data ?? []).filter(value=>value.type!=='MULTI_BUY_FIXED_PRICE').map(value => <MenuItem key={value.id} value={value.id}>{value.name} — {value.type === 'DISCOUNT_PERCENTAGE' ? `${value.value}%` : money(value.value, store?.currencyCode)}</MenuItem>)}
                 <Divider /><MenuItem value="__custom__">Custom Discount</MenuItem>
               </TextField>
               {discount ? <Stack direction="row" spacing={1}>{!discount.definitionId ? <Button size="small" onClick={() => setDiscountOpen(true)}>Edit Custom Discount</Button> : null}<Button size="small" color="error" disabled={busy} onClick={() => { setDiscount(null); setSale(null); setPaymentOpen(false); }}>Remove Discount</Button></Stack> : null}

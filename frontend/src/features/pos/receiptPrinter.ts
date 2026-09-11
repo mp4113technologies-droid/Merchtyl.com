@@ -501,7 +501,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
       <td class="qty"></td>
       <td class="money">${formatMoney(item.lineSubtotal, receipt.currencyCode)}</td>
     </tr>
-    ${item.discountAmount > 0 ? `<tr><td colspan="3" class="muted">Discount ${formatMoney(item.discountAmount, receipt.currencyCode)}</td></tr>` : ''}
+      ${item.discountAmount > 0 ? `<tr><td colspan="3" class="muted">${escapeHtml(item.promotionName || 'Discount')} -${formatMoney(item.discountAmount, receipt.currencyCode)}</td></tr>` : ''}
   `).join('');
 
   const taxRows = receipt.taxSummaries.map((tax) => `

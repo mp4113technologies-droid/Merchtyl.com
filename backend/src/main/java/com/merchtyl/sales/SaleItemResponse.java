@@ -17,6 +17,14 @@ public record SaleItemResponse(
         BigDecimal quantity,
         BigDecimal unitPrice,
         BigDecimal discountAmount,
+        UUID promotionId,
+        String promotionName,
+        SaleAdjustmentType promotionType,
+        Integer promotionBuyQuantity,
+        BigDecimal promotionBundlePrice,
+        BigDecimal promotionRegularAmount,
+        BigDecimal promotionDiscountAmount,
+        BigDecimal promotionFinalAmount,
         BigDecimal completedProductCost,
         BigDecimal completedProductPrice,
         String completedProductCapabilities,
@@ -38,7 +46,7 @@ public record SaleItemResponse(
                             String serialNumber, String externalReference, UUID customerId, String paymentMethodCode,
                             BigDecimal lineSubtotal, BigDecimal estimatedTaxAmount, BigDecimal lineTotal, long version) {
         this(id, SaleLineType.CATALOG_PRODUCT, productId, null, lineNumber, productSku, productName, null, null, null, quantity, unitPrice,
-                discountAmount, completedProductCost, completedProductPrice, completedProductCapabilities,
+                discountAmount, null,null,null,null,null,null,null,null, completedProductCost, completedProductPrice, completedProductCapabilities,
                 priceOverride, ageVerified, serialNumber, externalReference, customerId, paymentMethodCode,
                 lineSubtotal, estimatedTaxAmount, lineTotal, version);
     }
@@ -58,6 +66,8 @@ public record SaleItemResponse(
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getDiscountAmount(),
+                item.getPromotionId(),item.getPromotionName(),item.getPromotionType(),item.getPromotionBuyQuantity(),item.getPromotionBundlePrice(),
+                item.getPromotionRegularAmount(),item.getPromotionDiscountAmount(),item.getPromotionFinalAmount(),
                 item.getCompletedProductCost(),
                 item.getCompletedProductPrice(),
                 item.getCompletedProductCapabilities(),
