@@ -47,6 +47,7 @@ import { z } from 'zod';
 import {
   catalogueReferenceApi,
   createProduct,
+  deleteProduct,
   getProduct,
   listProducts,
   listAssignedStores,
@@ -210,9 +211,26 @@ function useProductPermissions() {
     canCreate: permissions.size ? permissions.has('PRODUCT_CREATE') : canManageProducts(roles),
     canUpdate: permissions.size ? permissions.has('PRODUCT_UPDATE') : canManageProducts(roles),
     canDeactivate: permissions.size ? permissions.has('PRODUCT_DEACTIVATE') : canManageProducts(roles),
+    canDelete: permissions.size ? permissions.has('PRODUCT_DELETE') : canManageProducts(roles),
     canPriceUpdate: permissions.size ? permissions.has('PRODUCT_PRICE_UPDATE') : canManageProducts(roles),
     canCostView: permissions.size ? permissions.has('PRODUCT_COST_VIEW') : roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER')
   };
+}
+
+function DeleteProductDialog({product,open,loading,error,onClose,onConfirm}:{product:Product|null;open:boolean;loading:boolean;error?:string;onClose:()=>void;onConfirm:()=>void}) {
+  const [confirmation,setConfirmation]=React.useState('');
+  React.useEffect(()=>{if(open)setConfirmation('');},[open,product?.id]);
+  return <Dialog open={open} onClose={loading?undefined:onClose} fullWidth maxWidth="sm">
+    <DialogTitle>Delete Product?</DialogTitle>
+    <DialogContent><Stack spacing={2} sx={{pt:1}}>
+      <Typography>This will permanently remove <strong>{product?.name}</strong> from your current product catalog.</Typography>
+      <Typography>Its barcodes will become available for reuse. Historical invoices and completed sales will not be deleted.</Typography>
+      <Alert severity="warning">This action cannot be undone.</Alert>
+      {error?<Alert severity="error">{error}</Alert>:null}
+      <TextField autoFocus label="Type DELETE to confirm" value={confirmation} onChange={event=>setConfirmation(event.target.value)} />
+    </Stack></DialogContent>
+    <DialogActions><Button onClick={onClose} disabled={loading}>Cancel</Button><Button color="error" variant="contained" startIcon={<DeleteIcon/>} disabled={confirmation!=='DELETE'||loading} onClick={onConfirm}>Delete Product</Button></DialogActions>
+  </Dialog>;
 }
 
 function useReferenceOptions(enabled: boolean) {
@@ -1025,7 +1043,7 @@ function SwitchInput({
 
 export function ProductsPage() {
   const { getValidAccessToken } = useSession();
-  const { canView, canCreate, canDeactivate } = useProductPermissions();
+  const { canView, canCreate, canDeactivate, canDelete } = useProductPermissions();
   const queryClient = useQueryClient();
   const location = useLocation();
   const successMessage = (location.state as { successMessage?: string } | null)?.successMessage;
@@ -1041,6 +1059,7 @@ export function ProductsPage() {
   const [page, setPage] = React.useState(0);
   const [size, setSize] = React.useState(10);
   const [includeInactive, setIncludeInactive] = React.useState(false);
+  const [deleteTarget,setDeleteTarget]=React.useState<Product|null>(null);
 
   const categoryMap = React.useMemo(() => new Map((references.categories.data?.content ?? []).map((item) => [item.id, item])), [references.categories.data?.content]);
   const brandMap = React.useMemo(() => new Map((references.brands.data?.content ?? []).map((item) => [item.id, item])), [references.brands.data?.content]);
@@ -1071,6 +1090,7 @@ export function ProductsPage() {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
     }
   });
+  const deleteMutation=useMutation({mutationFn:async(product:Product)=>deleteProduct(await getValidAccessToken(),product.id,product.version),onSuccess:async()=>{setDeleteTarget(null);await Promise.all([queryClient.invalidateQueries({queryKey:['products']}),queryClient.invalidateQueries({queryKey:['inventory']}),queryClient.invalidateQueries({queryKey:['pos-products']}),queryClient.invalidateQueries({queryKey:['food-menu-items']})]);}});
 
   if (!canView) {
     return <Navigate to="/unauthorized" replace />;
@@ -1134,6 +1154,7 @@ export function ProductsPage() {
       {references.categories.isError ? <Alert severity="error">{errorMessage(references.categories.error)}</Alert> : null}
       {references.brands.isError ? <Alert severity="error">{errorMessage(references.brands.error)}</Alert> : null}
       {statusMutation.isError ? <Alert severity="error">{errorMessage(statusMutation.error)}</Alert> : null}
+      <DeleteProductDialog product={deleteTarget} open={Boolean(deleteTarget)} loading={deleteMutation.isPending} error={deleteMutation.isError?errorMessage(deleteMutation.error):undefined} onClose={()=>{if(!deleteMutation.isPending)setDeleteTarget(null);}} onConfirm={()=>deleteTarget&&deleteMutation.mutate(deleteTarget)}/>
 
       <TableContainer component={Paper} elevation={0} aria-busy={products.isFetching} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflowX: 'auto' }}>
         <Stack direction="row" spacing={2} alignItems="center" sx={{ p: 2 }}>
@@ -1195,6 +1216,7 @@ export function ProductsPage() {
                             </span>
                           </Tooltip>
                         ) : null}
+                        {canDelete?<Tooltip title="Delete product"><IconButton color="error" aria-label={`Delete ${product.name}`} onClick={()=>setDeleteTarget(product)}><DeleteIcon/></IconButton></Tooltip>:null}
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -1302,10 +1324,12 @@ export function NewProductPage() {
 }
 
 export function ProductDetailPage() {
+  const navigate=useNavigate();
   const { id } = useParams();
   const { getValidAccessToken } = useSession();
   const queryClient = useQueryClient();
-  const { canView, canUpdate, canDeactivate } = useProductPermissions();
+  const { canView, canUpdate, canDeactivate, canDelete } = useProductPermissions();
+  const [deleteOpen,setDeleteOpen]=React.useState(false);
   const references = useReferenceOptions(canView);
   const stores=useQuery({queryKey:['assigned-stores','product-edit'],queryFn:async()=>listAssignedStores(await getValidAccessToken()),enabled:canView});
 
@@ -1351,6 +1375,7 @@ export function ProductDetailPage() {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
     }
   });
+  const deleteMutation=useMutation({mutationFn:async()=>{if(!product.data||!id)throw new Error('Product is not loaded');return deleteProduct(await getValidAccessToken(),id,product.data.version);},onSuccess:async()=>{await Promise.all([queryClient.invalidateQueries({queryKey:['products']}),queryClient.invalidateQueries({queryKey:['inventory']}),queryClient.invalidateQueries({queryKey:['pos-products']}),queryClient.invalidateQueries({queryKey:['food-menu-items']})]);navigate('/products',{state:{successMessage:'Product deleted. Its barcodes are available for reuse.'}});}});
 
   if (!canView) {
     return <Navigate to="/unauthorized" replace />;
@@ -1400,7 +1425,10 @@ export function ProductDetailPage() {
             {product.data.active ? 'Deactivate' : 'Activate'}
           </Button>
         ) : null}
+        {canDelete?<Button color="error" variant="outlined" startIcon={<DeleteIcon/>} onClick={()=>setDeleteOpen(true)} disabled={deleteMutation.isPending||updateMutation.isPending}>Delete</Button>:null}
       </Stack>
+
+      <DeleteProductDialog product={product.data} open={deleteOpen} loading={deleteMutation.isPending} error={deleteMutation.isError?errorMessage(deleteMutation.error):undefined} onClose={()=>setDeleteOpen(false)} onConfirm={()=>deleteMutation.mutate()}/>
 
       {references.categories.isError ? <Alert severity="error">{errorMessage(references.categories.error)}</Alert> : null}
       {references.brands.isError ? <Alert severity="error">{errorMessage(references.brands.error)}</Alert> : null}

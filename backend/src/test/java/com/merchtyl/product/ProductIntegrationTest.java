@@ -24,6 +24,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -34,6 +35,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -57,6 +59,9 @@ class ProductIntegrationTest {
 
     @Autowired
     ProductRepository productRepository;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Autowired
     ProductVariantRepository productVariantRepository;
@@ -119,6 +124,30 @@ class ProductIntegrationTest {
         category = categoryRepository.saveAndFlush(new Category("BEV", "Beverages", null, true));
         brand = brandRepository.saveAndFlush(new Brand("HOUSE", "House Brand", null, true));
         unit = unitOfMeasureRepository.saveAndFlush(new UnitOfMeasure("EA", "Each", null, true));
+    }
+
+    @Test
+    void deletesInactiveProductFromCatalogAndImmediatelyReleasesItsBarcode() throws Exception {
+        String token = registerAndGetToken("owner-delete@products.test", "Owner");
+        JsonNode original = createProduct(token, "coke-500", "Coke 500 mL", "123456789012", false);
+
+        mockMvc.perform(delete("/api/v1/products/{id}", original.get("id").asText())
+                        .param("version", original.get("version").asText())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/v1/products").param("includeInactive", "true")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(0));
+        mockMvc.perform(get("/api/v1/products/barcodes/{barcode}/ownership", "123456789012")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.assigned").value(false));
+
+        JsonNode replacement = createProduct(token, "coke", "Coke 500 mL", "123456789012", true);
+        assertThat(replacement.get("id").asText()).isNotEqualTo(original.get("id").asText());
+        assertThat(jdbcTemplate.queryForObject("select deleted_at is not null from products where id = ?", Boolean.class,
+                UUID.fromString(original.get("id").asText()))).isTrue();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from product_barcodes where product_id = ?", Integer.class,
+                UUID.fromString(original.get("id").asText()))).isZero();
     }
 
     @Test

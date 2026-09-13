@@ -6,4 +6,5 @@ public interface StoreProductRepository extends JpaRepository<StoreProduct, UUID
  Optional<StoreProduct> findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(UUID tenantId, UUID storeId, UUID productId);
  List<StoreProduct> findByTenantIdAndProduct_IdOrderByStore_NameAsc(UUID tenantId, UUID productId);
  List<StoreProduct> findByTenantIdAndProduct_Id(UUID tenantId, UUID productId);
+ void deleteByTenantIdAndProduct_Id(UUID tenantId, UUID productId);
 }

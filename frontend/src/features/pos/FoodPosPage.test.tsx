@@ -39,6 +39,24 @@ describe('Food POS', () => {
     vi.restoreAllMocks();
   });
 
+  it('redirects an open Food Service register away from the Retail POS route', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
+      if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
+      if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
+      if (url.pathname.endsWith('/food-menu/categories') || url.pathname.endsWith('/food-menu/items') || url.pathname.endsWith(`/stores/${storeId}/discounts`)) return response([]);
+      if (url.pathname.endsWith('/registers') || url.pathname.endsWith('/devices') || url.pathname.endsWith('/products')) return response(page([]));
+      return response({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+
+    expect(await screen.findByText("Joe's Kitchen")).toBeInTheDocument();
+    expect(screen.getByTestId('restaurant-pos-shell')).toBeInTheDocument();
+  });
+
   it('loads tiles and completes a taxed sale through shared checkout', async () => {
     const calls: string[] = [];
     let checkoutBody: unknown;

@@ -9,7 +9,7 @@ import RestoreIcon from '@mui/icons-material/Restore';
 import { Alert, Box, Button, Card, CardActionArea, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, InputAdornment, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { checkoutSaleCart, completeSale, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, holdSale, listActiveStoreDiscounts, listFoodMenuCategories, listFoodMenuItems, listSales, listStores, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt, resumeSale } from '../../api/client';
 import type { FoodComponentSelectionState, FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
@@ -43,6 +43,7 @@ function freshPrintStates(): FoodPrintStates {
 
 export function FoodPosPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { currentUser, getValidAccessToken } = useSession();
   const [categoryId, setCategoryId] = React.useState<string | null>(null);
   const [sale, setSale] = React.useState<Sale | null>(null);
@@ -71,6 +72,10 @@ export function FoodPosPage() {
   const products = useQuery({ queryKey: ['food-menu-items', current.data?.storeId], queryFn: async () => listFoodMenuItems(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
   const savedDiscounts = useQuery({ queryKey: ['active-pos-discounts', current.data?.storeId], queryFn: async () => listActiveStoreDiscounts(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && Boolean(current.data?.storeId), staleTime: 5 * 60_000 });
   const heldOrders = useQuery({ queryKey: ['sales', 'held', current.data?.id], queryFn: async () => listSales(await getValidAccessToken(), { registerSessionId: current.data?.id, status: 'HELD', size: 50 }), enabled: permitted && heldOrdersOpen && Boolean(current.data?.id) });
+
+  React.useEffect(() => {
+    if (current.data?.registerType === 'RETAIL') navigate('/pos', { replace: true });
+  }, [current.data?.registerType, navigate]);
 
   React.useEffect(() => {
     if (!current.data || restoredSessionRef.current === current.data.id) return;

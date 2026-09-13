@@ -117,7 +117,7 @@ class SaleControllerAuthorizationTest {
 
     @Test
     void foodCheckoutAcceptsMenuItemWithoutRetailProductId() throws Exception {
-        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.DRAFT));
+        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.PENDING_PAYMENT));
 
         mockMvc.perform(post("/api/v1/sales/checkout")
                         .with(user("kitchen").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
@@ -132,14 +132,14 @@ class SaleControllerAuthorizationTest {
     }
 
     @Test
-    void creatorCanCreateDraftAndMutateCart() throws Exception {
+    void creatorCannotUseLegacyDraftEndpointButCanUseCheckoutAndMutatePendingCart() throws Exception {
         when(saleService.createDraft(any(), any())).thenReturn(response(SaleStatus.DRAFT));
-        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.DRAFT));
+        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.PENDING_PAYMENT));
         when(saleService.addItem(any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.updateQuantity(any(), any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.removeItem(any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.hold(any(), any())).thenReturn(response(SaleStatus.HELD));
-        when(saleService.resume(any(), any())).thenReturn(response(SaleStatus.DRAFT));
+        when(saleService.resume(any(), any())).thenReturn(response(SaleStatus.PENDING_PAYMENT));
         when(saleService.cancel(any(), any())).thenReturn(response(SaleStatus.CANCELLED));
         when(saleService.recalculate(any(), any())).thenReturn(response(SaleStatus.DRAFT));
         when(saleService.recordPayment(any(), any(), any())).thenReturn(response(SaleStatus.DRAFT));
@@ -154,14 +154,15 @@ class SaleControllerAuthorizationTest {
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(DRAFT_JSON))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("DRAFT"));
+                .andExpect(status().isConflict());
+        verify(saleService, never()).createDraft(any(), any());
 
         mockMvc.perform(post("/api/v1/sales/checkout")
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CHECKOUT_JSON))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"))
                 .andExpect(jsonPath("$.estimatedTaxAmount").value(1.50));
 
         mockMvc.perform(post("/api/v1/sales/{id}/items", SALE_ID)
@@ -189,7 +190,7 @@ class SaleControllerAuthorizationTest {
         mockMvc.perform(post("/api/v1/sales/{id}/resume", SALE_ID)
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("DRAFT"));
+                .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"));
 
         mockMvc.perform(post("/api/v1/sales/{id}/cancel", SALE_ID)
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))

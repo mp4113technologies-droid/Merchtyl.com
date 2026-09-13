@@ -128,6 +128,21 @@ class RegisterSessionControllerAuthorizationTest {
     }
 
     @Test
+    void registerSessionViewerCanCheckRegisterAvailability() throws Exception {
+        when(registerSessionService.availability(any(), any())).thenReturn(new RegisterAvailabilityResponse(
+                REGISTER_ID, com.merchtyl.register.RegisterType.RETAIL, "IN_USE", null, null,
+                Instant.parse("2026-07-21T12:00:00Z"), null));
+
+        mockMvc.perform(get("/api/v1/register-sessions/availability")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
+                        .param("registerId", REGISTER_ID.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("IN_USE"))
+                .andExpect(jsonPath("$.sessionId").doesNotExist())
+                .andExpect(jsonPath("$.operatorDisplayName").doesNotExist());
+    }
+
+    @Test
     void closeRequiresRegisterSessionClosePermission() throws Exception {
         mockMvc.perform(post("/api/v1/register-sessions/{id}/close", SESSION_ID)
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW")))

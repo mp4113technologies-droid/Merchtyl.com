@@ -43,7 +43,8 @@ class DatabaseOptimizationIntegrationTest {
                 "uq_security_users_email_lower",
                 "uq_products_sku_lower",
                 "uq_product_barcodes_barcode_lower",
-                "uq_refund_payments_refund_original_payment");
+                "uq_refund_payments_refund_original_payment",
+                "uq_register_sessions_active_register");
 
         String completedConstraint = jdbcTemplate.queryForObject("""
                 select pg_get_constraintdef(oid)
@@ -55,6 +56,13 @@ class DatabaseOptimizationIntegrationTest {
                 .contains("COMPLETED")
                 .contains("PARTIALLY_REFUNDED")
                 .contains("REFUNDED");
+
+        String saleStatusConstraint = jdbcTemplate.queryForObject("""
+                select pg_get_constraintdef(oid)
+                from pg_constraint
+                where conname = 'ck_sales_status'
+                """, String.class);
+        assertThat(saleStatusConstraint).contains("PENDING_PAYMENT");
     }
 
     @Test

@@ -859,7 +859,7 @@ describe('POS pages', () => {
 
     render(<App initialEntries={['/pos']} />);
 
-    expect(await screen.findByText('Draft cart recovered after refresh.')).toBeInTheDocument();
+    expect(await screen.findByText('Checkout recovered after refresh.')).toBeInTheDocument();
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('$11.50').length).toBeGreaterThan(0);
     expect(fetchMock.mock.calls.some(([input, init]) => {

@@ -18,6 +18,7 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -71,6 +72,9 @@ public class Product extends BaseUuidEntity {
 
     @Column(nullable = false)
     private boolean active;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
 
     @Column(nullable = false)
     private boolean inventoryTrackingEnabled;
@@ -139,6 +143,15 @@ public class Product extends BaseUuidEntity {
     public void setActive(boolean active) {
         this.active = active;
     }
+
+    public void markDeleted(Instant deletedAt) {
+        this.active = false;
+        this.deletedAt = deletedAt;
+        this.barcodes.clear();
+    }
+
+    public boolean isDeleted() { return deletedAt != null; }
+    public Instant getDeletedAt() { return deletedAt; }
 
     public void setAvailabilityScope(ProductAvailabilityScope availabilityScope) {
         this.availabilityScope = availabilityScope == null ? ProductAvailabilityScope.SELECTED_STORES : availabilityScope;

@@ -44,13 +44,15 @@ describe('Food menu management',()=>{
     expect(submitted?.productId).toBeUndefined();
   });
 
-  it('keeps stable focus and row identity while editing variants and modifiers', async () => {
+  it('keeps stable focus and row identity while editing variants and reusable choices', async () => {
     const requests:string[]=[];
     let saved:Record<string,unknown>|undefined;
     vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input),location.origin);requests.push(`${init?.method??'GET'} ${url.pathname}`);
       if(url.pathname.endsWith('/auth/me'))return json({userId:'owner',email:'owner@test',displayName:'Owner',roles:['TENANT_OWNER'],permissions:['FOOD_ORDER_UPDATE']});
       if(url.pathname.endsWith('/stores'))return json(page([{id:storeId,name:'Kitchen',code:'K',capabilities:['FOOD_SERVICE']}]));
       if(url.pathname.endsWith('/food-menu/categories'))return json([{id:'cat',storeId,name:'Entrees',displayOrder:1,active:true}]);
+      if(url.pathname.endsWith('/food-menu/choice-groups')&&(!init?.method||init.method==='GET'))return json([]);
+      if(url.pathname.endsWith('/food-menu/choice-groups')&&init?.method==='POST')return json({id:'seasoning',storeId,name:'Seasoning',active:true,usageCount:0,usedBy:[],options:JSON.parse(String(init.body)).options,version:0});
       if(url.pathname.endsWith('/food-menu/items')&&(!init?.method||init.method==='GET'))return json([{id:'item',storeId,categoryId:'cat',categoryName:'Entrees',productId:null,productName:null,displayName:'Monkey Fingers',description:null,price:8,inventoryTracked:false,madeToOrder:true,displayOrder:1,available:true,imageUrl:null,variants:[],modifierGroups:[],version:0}]);
       if(url.pathname.endsWith('/food-menu/items/item')&&init?.method==='PUT'){saved=JSON.parse(String(init.body));return json({});}
       if(url.pathname.endsWith('/products'))return json(page([]));
@@ -80,14 +82,14 @@ describe('Food menu management',()=>{
     expect(screen.getAllByLabelText('Variant name').map(input=>(input as HTMLInputElement).value)).toEqual(['Small','Large']);
     expect(screen.getAllByLabelText('Variant price').map(input=>(input as HTMLInputElement).valueAsNumber)).toEqual([10.99,18.99]);
 
-    await userEvent.click(screen.getByRole('button',{name:'Add Modifier Group'}));
-    const groupName=screen.getByLabelText('Modifier group name');
+    await userEvent.click(screen.getByRole('button',{name:'New Choice Group'}));
+    const groupName=screen.getByLabelText('Name');
     await userEvent.type(groupName,'Seasoning');
     expect(groupName).toHaveValue('Seasoning');
     expect(groupName).toHaveFocus();
     for (const optionName of ['Mild','Medium','Hot','Peri Peri']) {
-      await userEvent.click(screen.getByRole('button',{name:'Add Modifier'}));
-      const inputs=screen.getAllByLabelText('Modifier name');
+      await userEvent.click(screen.getByRole('button',{name:'Add Choice'}));
+      const inputs=screen.getAllByLabelText('Choice');
       const input=inputs[inputs.length-1];
       await userEvent.type(input,optionName);
       expect(input).toHaveValue(optionName);
@@ -100,14 +102,15 @@ describe('Food menu management',()=>{
       expect(modifierPrices[index]).toHaveValue(Number(price));
       expect(modifierPrices[index]).toHaveFocus();
     }
-    const mediumModifierRow=screen.getAllByTestId(/modifier-row-/)[1];
-    await userEvent.click(within(mediumModifierRow).getByRole('button',{name:'Remove Modifier'}));
-    expect(screen.getAllByLabelText('Modifier name').map(input=>(input as HTMLInputElement).value)).toEqual(['Mild','Hot','Peri Peri']);
+    await userEvent.click(screen.getAllByRole('button',{name:'Remove'})[1]);
+    expect(screen.getAllByLabelText('Choice').map(input=>(input as HTMLInputElement).value)).toEqual(['Mild','Hot','Peri Peri']);
     expect(screen.getAllByLabelText('Added price').map(input=>(input as HTMLInputElement).valueAsNumber)).toEqual([0.25,0.75,1]);
     expect(requests.some(request=>request.startsWith('PUT '))).toBe(false);
+    await userEvent.click(screen.getByRole('button',{name:'Save Choice Group'}));
+    await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Create Choice Group'})).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole('button',{name:'Save configuration'}));
     await waitFor(()=>expect(saved).toBeDefined());
     expect((saved?.variants as Array<{name:string}>).map(value=>value.name)).toEqual(['Small','Large']);
-    expect(((saved?.modifierGroups as Array<{name:string;options:Array<{name:string}>}>)[0]).options.map(value=>value.name)).toEqual(['Mild','Hot','Peri Peri']);
+    expect(saved?.modifierGroupAssignments).toEqual([]);
   });
 });

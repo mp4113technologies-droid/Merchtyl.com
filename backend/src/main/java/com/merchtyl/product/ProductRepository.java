@@ -6,6 +6,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -17,12 +19,15 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
 
     @Override
     @EntityGraph(attributePaths = {"unitOfMeasure", "category", "brand"})
-    Optional<Product> findById(UUID id);
+    @Query("select p from Product p where p.id = :id and p.deletedAt is null")
+    Optional<Product> findById(@Param("id") UUID id);
 
-    Optional<Product> findByIdAndTenantId(UUID id, UUID tenantId);
-    @EntityGraph(attributePaths = {"variants", "barcodes", "category", "brand", "unitOfMeasure"})
-    java.util.List<Product> findAllByTenantId(UUID tenantId);
-    Optional<Product> findByTenantIdAndProductReferenceIgnoreCase(UUID tenantId, String productReference);
+    @Query("select p from Product p where p.id = :id and p.tenantId = :tenantId and p.deletedAt is null")
+    Optional<Product> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+    @Query("select p from Product p where p.tenantId = :tenantId and p.deletedAt is null")
+    java.util.List<Product> findAllByTenantId(@Param("tenantId") UUID tenantId);
+    @Query("select p from Product p where p.tenantId = :tenantId and lower(p.productReference) = lower(:productReference) and p.deletedAt is null")
+    Optional<Product> findByTenantIdAndProductReferenceIgnoreCase(@Param("tenantId") UUID tenantId, @Param("productReference") String productReference);
 
     boolean existsBySkuIgnoreCase(String sku);
     boolean existsByTenantIdAndSkuIgnoreCase(UUID tenantId, String sku);
@@ -32,5 +37,6 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     boolean existsBySkuIgnoreCaseAndIdNot(String sku, UUID id);
 
     @EntityGraph(attributePaths = {"unitOfMeasure", "category", "brand"})
-    Optional<Product> findBySkuIgnoreCase(String sku);
+    @Query("select p from Product p where lower(p.sku) = lower(:sku) and p.deletedAt is null")
+    Optional<Product> findBySkuIgnoreCase(@Param("sku") String sku);
 }

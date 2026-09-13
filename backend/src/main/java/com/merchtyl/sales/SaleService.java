@@ -196,7 +196,7 @@ public class SaleService {
                         ? Instant.now(clock).atZone(ZoneId.of(session.getStore().getTimezone())).toLocalDate()
                         : session.getBusinessDay().getBusinessDate(),
                 cleanOptional(request.saleChannel()), session.getStore().getCurrencyCode(),
-                session.getStore().isPricesIncludeTax());
+                session.getStore().isPricesIncludeTax(), SaleStatus.PENDING_PAYMENT);
 
         List<DiscountEngine.Line> discountLines=new java.util.ArrayList<>();
         List<DiscountEngine.PromotionLine> promotionLines=new java.util.ArrayList<>();
@@ -257,7 +257,7 @@ public class SaleService {
             audit(actor, AuditAction.SALE_DISCOUNT_APPLIED, SaleResponse.from(saved), "POS_ORDER_DISCOUNT");
         }
         SaleResponse response = SaleResponse.from(saved);
-        audit(actor, AuditAction.SALE_DRAFT_CREATED, response, "checkout cart items=" + request.items().size());
+        audit(actor, AuditAction.SALE_CHECKOUT_STARTED, response, "checkout cart items=" + request.items().size());
         return response;
     }
 
@@ -342,9 +342,10 @@ public class SaleService {
             var foodVariant=line.foodMenuItemVariantId()==null?null:menuItem.getVariants().stream().filter(v->v.getId().equals(line.foodMenuItemVariantId())&&v.isAvailable()).findFirst().orElseThrow(()->new NotFoundException("MENU_ITEM_VARIANT_NOT_AVAILABLE"));
             if(!menuItem.getVariants().isEmpty()&&foodVariant==null)throw new BadRequestException("MENU_ITEM_VARIANT_REQUIRED");
             var optionIds=line.foodMenuModifierOptionIds()==null?java.util.Set.<UUID>of():new java.util.HashSet<>(line.foodMenuModifierOptionIds());
-            var selectedOptions=menuItem.getModifierGroups().stream().flatMap(g->g.getOptions().stream()).filter(o->optionIds.contains(o.getId())&&o.isAvailable()).toList();
+            var activeAssignments=menuItem.getModifierGroupAssignments().stream().filter(a->a.isActive()&&a.getGroup().isActive()).toList();
+            var selectedOptions=activeAssignments.stream().flatMap(a->a.getGroup().getOptions().stream()).filter(o->optionIds.contains(o.getId())&&o.isAvailable()).toList();
             if(selectedOptions.size()!=optionIds.size())throw new BadRequestException("INVALID_MENU_MODIFIER");
-            for(var group:menuItem.getModifierGroups()){long count=selectedOptions.stream().filter(o->o.getGroup().getId().equals(group.getId())).count();if(count<group.getMinimumSelections()||count>group.getMaximumSelections())throw new BadRequestException("INVALID_MODIFIER_SELECTION");}
+            for(var assignment:activeAssignments){long count=selectedOptions.stream().filter(o->o.getGroup().getId().equals(assignment.getGroup().getId())).count();if(count<assignment.getMinimumSelections()||count>assignment.getMaximumSelections())throw new BadRequestException("INVALID_MODIFIER_SELECTION");}
             var componentRequests=line.foodMenuComponentSelections()==null?java.util.List.<com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest>of():line.foodMenuComponentSelections();
             if(componentRequests.stream().map(com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest::componentId).distinct().count()!=componentRequests.size())throw new BadRequestException("DUPLICATE_MENU_COMPONENT");
             var activeComponents=menuItem.getComponents().stream().filter(com.merchtyl.foodmenu.FoodMenuItemComponent::isActive).collect(java.util.stream.Collectors.toMap(com.merchtyl.platform.persistence.BaseUuidEntity::getId,java.util.function.Function.identity()));
@@ -418,7 +419,7 @@ public class SaleService {
             throw new ForbiddenOperationException("Food menu does not belong to the sale store");
         }
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         ResolvedStoreProduct storeProduct = storeProduct(sale, request.productId());
         Product product = storeProduct.product();
@@ -469,7 +470,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         SaleItem item = findItem(sale, itemId);
         item.updateQuantity(normalizeQuantity(request.quantity()));
@@ -485,7 +486,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         SaleItem item = findItem(sale, itemId);
         String productName = item.getProductName();
@@ -501,7 +502,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         SaleItem item = findItem(sale, itemId);
         BigDecimal original = item.getUnitPrice();
@@ -522,7 +523,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         SaleItem item = findItem(sale, itemId);
         BigDecimal lineBase = item.getUnitPrice().multiply(item.getQuantity());
@@ -549,7 +550,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         sale.hold(Instant.now(clock));
         SaleResponse response = SaleResponse.from(save(sale));
@@ -577,7 +578,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireNoPayments(sale);
         sale.cancel(Instant.now(clock));
         SaleResponse response = SaleResponse.from(save(sale));
@@ -591,7 +592,7 @@ public class SaleService {
         Sale sale = findSaleForUpdate(saleId);
         storeAccessService.requireStoreManagement(authentication, sale.getStore().getId());
         if (sale.getVersion() != request.version()) throw new ConflictException("SALE_STATE_CHANGED");
-        if (sale.getStatus() != SaleStatus.DRAFT && sale.getStatus() != SaleStatus.HELD) {
+        if (!isMutableCheckout(sale) && sale.getStatus() != SaleStatus.HELD) {
             throw new ConflictException("SALE_NOT_DRAFT");
         }
         String reasonCode = cleanOptional(request.reasonCode());
@@ -613,7 +614,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSale(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        if (sale.getStatus() != SaleStatus.DRAFT && sale.getStatus() != SaleStatus.HELD) {
+        if (!isMutableCheckout(sale) && sale.getStatus() != SaleStatus.HELD) {
             throw new ConflictException("Only draft or held sales can be recalculated");
         }
         recalculate(sale, authentication);
@@ -638,7 +639,7 @@ public class SaleService {
     SaleResponse complete(UUID saleId, User actor, Authentication authentication) {
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         requireOpenRegisterSession(sale);
         if (sale.getItems().isEmpty()) {
             throw new ConflictException("Sale must have at least one item before completion");
@@ -671,7 +672,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireDraft(sale);
+        requireMutableCheckout(sale);
         if (sale.getItems().isEmpty() || sale.getTotalAmount().signum() <= 0) {
             throw new ConflictException("Sale must have a payable total before recording payment");
         }
@@ -848,19 +849,19 @@ public class SaleService {
     }
 
     private static void validateUserCanUseSession(User actor, RegisterSession session, Authentication authentication) {
-        if (hasAuthority(authentication, "ROLE_OWNER") || hasAuthority(authentication, "ROLE_TENANT_OWNER")
-                || hasAuthority(authentication, "ROLE_MANAGER") || hasAuthority(authentication, "ROLE_STORE_MANAGER")) {
-            return;
-        }
         if (!session.getAssignedCashier().getId().equals(actor.getId())) {
-            throw new ForbiddenOperationException("Sale user must be assigned to this register session");
+            throw new ForbiddenOperationException("REGISTER_SESSION_OWNED_BY_ANOTHER_USER");
         }
     }
 
-    private static void requireDraft(Sale sale) {
-        if (sale.getStatus() != SaleStatus.DRAFT) {
-            throw new ConflictException("Sale must be in draft status");
+    private static void requireMutableCheckout(Sale sale) {
+        if (!isMutableCheckout(sale)) {
+            throw new ConflictException("Sale must be pending checkout");
         }
+    }
+
+    private static boolean isMutableCheckout(Sale sale) {
+        return sale.getStatus() == SaleStatus.PENDING_PAYMENT || sale.getStatus() == SaleStatus.DRAFT;
     }
 
     private static void requireOpenRegisterSession(Sale sale) {

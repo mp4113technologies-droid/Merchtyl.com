@@ -10,6 +10,7 @@ import type {
   Device,
   DeviceListResponse,
   Register,
+  RegisterAvailability,
   RegisterListResponse,
   RegisterSession,
   Store,
@@ -84,6 +85,18 @@ function register(): Register {
     createdAt: '2026-07-21T12:00:00Z',
     updatedAt: '2026-07-21T12:00:00Z',
     version: 0
+  };
+}
+
+function availableRegister(current: Register = register()): RegisterAvailability {
+  return {
+    registerId: current.id,
+    registerType: current.type ?? 'RETAIL',
+    state: 'AVAILABLE',
+    sessionId: null,
+    operatorDisplayName: null,
+    openedAt: null,
+    version: null
   };
 }
 
@@ -346,6 +359,9 @@ describe('Register session pages', () => {
       if (url.pathname.endsWith('/api/v1/registers')) {
         return jsonResponse(page<Register>([frontRegister]) satisfies RegisterListResponse);
       }
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) {
+        return jsonResponse(availableRegister(frontRegister));
+      }
       if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
         return jsonResponse(page<RegisterSession>([]));
       }
@@ -388,6 +404,34 @@ describe('Register session pages', () => {
     expect(screen.queryByText('Unauthorized')).not.toBeInTheDocument();
   });
 
+  it('shows another cashier\'s open register as unavailable without exposing their session', async () => {
+    storeSession(['CASHIER']);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser(['CASHIER'], ['REGISTER_SESSION_OPEN', 'REGISTER_SESSION_VIEW']));
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse({
+        ...availableRegister(),
+        state: 'IN_USE'
+      });
+      if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
+        return jsonResponse(page<RegisterSession>([]));
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/open']} />);
+
+    expect(await screen.findByText(/Register unavailable/)).toBeInTheDocument();
+    expect(screen.getByText(/currently open in another session/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Opening cash')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open register' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/register-sessions/availability'))).toBe(true);
+  });
+
   it('starts a missing business day from register open and enables register operation immediately', async () => {
     storeSession(['CASHIER']);
     let businessDayOpen = false;
@@ -398,6 +442,7 @@ describe('Register session pages', () => {
       }
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
       if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse(availableRegister());
       if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
         return jsonResponse(page<RegisterSession>([]));
       }
@@ -434,6 +479,14 @@ describe('Register session pages', () => {
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
       if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse({
+        ...availableRegister(),
+        state: 'IN_USE',
+        sessionId: activeSession.id,
+        operatorDisplayName: activeSession.assignedCashierDisplayName,
+        openedAt: activeSession.openedAt,
+        version: activeSession.version
+      });
       if (url.pathname.endsWith('/api/v1/register-sessions/open') && init?.method === 'POST') {
         return apiError('Register already has an open session', 409, 'conflict');
       }
@@ -477,6 +530,7 @@ describe('Register session pages', () => {
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['CASHIER']));
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
       if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse(availableRegister());
       if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
         return jsonResponse(page<RegisterSession>([]));
       }

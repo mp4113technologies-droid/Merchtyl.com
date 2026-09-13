@@ -218,8 +218,11 @@ function BlockerList({ blockers, onCancelDraft, cancellingDraft, onForceCloseDra
         {blockers.map((blocker) => <Box component="li" key={`${blocker.code}-${blocker.relatedId ?? blocker.message}`} sx={{ mb: 0.5 }}>
               <Typography>{blocker.message}</Typography>
           {blocker.code === 'UNFINALIZED_DRAFT_SALE' && blocker.relatedId && onCancelDraft ? <Button size="small" color="warning" disabled={cancellingDraft} onClick={() => onCancelDraft(blocker.relatedId!)}>Cancel Draft Sale</Button> : null}
+          {blocker.code === 'UNFINISHED_CHECKOUT' && blocker.relatedId && onCancelDraft ? <Button size="small" color="warning" disabled={cancellingDraft} onClick={() => onCancelDraft(blocker.relatedId!)}>Cancel Checkout</Button> : null}
           {blocker.code === 'UNFINALIZED_PAID_DRAFT_SALE' && blocker.relatedId ? <Button size="small" component={Link} to={`/pos?saleId=${blocker.relatedId}`}>Review Paid Draft Sale</Button> : null}
+          {blocker.code === 'UNFINISHED_PAID_CHECKOUT' && blocker.relatedId ? <Button size="small" component={Link} to={`/pos?saleId=${blocker.relatedId}`}>Review Checkout</Button> : null}
           {blocker.code === 'UNFINALIZED_PAID_DRAFT_SALE' && blocker.relatedId && onForceCloseDraft ? <Button size="small" color="error" onClick={() => onForceCloseDraft(blocker.relatedId!)}>Force Close Draft</Button> : null}
+          {blocker.code === 'UNFINISHED_PAID_CHECKOUT' && blocker.relatedId && onForceCloseDraft ? <Button size="small" color="error" onClick={() => onForceCloseDraft(blocker.relatedId!)}>Force Close Checkout</Button> : null}
           {blocker.code === 'UNFINALIZED_HELD_SALE' ? <Button size="small" component={Link} to="/pos/held-sales">Review Held Sales</Button> : null}
         </Box>)}
       </Stack>

@@ -38,16 +38,17 @@ public class SaleController {
     }
 
     @PostMapping("/drafts")
-    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
-    SaleResponse createDraft(@Valid @RequestBody SaleCreateDraftRequest request, Authentication authentication) {
-        return saleService.createDraft(request, authentication);
+    ResponseEntity<java.util.Map<String, String>> createDraft(@Valid @RequestBody SaleCreateDraftRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(java.util.Map.of(
+                "code", "DRAFT_SALES_DISABLED",
+                "message", "Draft sales are disabled. Hold an order explicitly or proceed through checkout."));
     }
 
     @PostMapping("/checkout")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
-    @Operation(summary = "Prepare an authoritative POS checkout", description = "Creates the draft from the complete local cart and calculates authoritative pricing and tax once.")
+    @Operation(summary = "Prepare an authoritative POS checkout", description = "Persists an internal pending checkout from the complete local cart and calculates authoritative pricing and tax once.")
     SaleResponse checkout(@Valid @RequestBody SaleCheckoutRequest request, Authentication authentication) {
         return saleService.checkout(request, authentication);
     }

@@ -354,6 +354,25 @@ class BusinessDayServiceTest {
                 .containsExactly("UNFINALIZED_PAID_DRAFT_SALE");
     }
 
+    @Test
+    void pendingPaymentUsesCheckoutLanguageInsteadOfLegacyDraftLanguage() {
+        com.merchtyl.sales.Sale pending = mock(com.merchtyl.sales.Sale.class);
+        when(pending.getId()).thenReturn(UUID.randomUUID());
+        when(pending.getStatus()).thenReturn(com.merchtyl.sales.SaleStatus.PENDING_PAYMENT);
+        when(pending.getPayments()).thenReturn(List.of(mock(com.merchtyl.sales.Payment.class)));
+        when(businessDays.findById(dayId)).thenReturn(Optional.of(day));
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(day.getTimezone()).thenReturn("UTC");
+        when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(pending), List.of());
+
+        ClosingValidationResponse result = service.validateClosing(dayId, authentication);
+
+        assertThat(result.blockers()).extracting(ClosingBlockerResponse::code)
+                .containsExactly("UNFINISHED_PAID_CHECKOUT");
+        assertThat(result.blockers().getFirst().message()).doesNotContainIgnoringCase("draft");
+    }
+
     private RegisterSession session(String code, RegisterSessionStatus status, String counted, String expectedAtClose) {
         RegisterSession session = mock(RegisterSession.class);
         Register register = mock(Register.class);

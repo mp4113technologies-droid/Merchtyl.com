@@ -479,7 +479,7 @@ public class BusinessDayService {
         if (hasClosingBlocker(blockers, "MISSING_COUNTED_CASH", "MISSING_RECONCILIATION", "REGISTER_RECONCILIATION_INCOMPLETE")) {
             return "BUSINESS_DAY_HAS_UNRECONCILED_REGISTER_SESSIONS";
         }
-        if (hasClosingBlocker(blockers, "UNFINALIZED_DRAFT_SALE", "UNFINALIZED_PAID_DRAFT_SALE", "UNFINALIZED_HELD_SALE")) {
+        if (hasClosingBlocker(blockers, "UNFINISHED_CHECKOUT", "UNFINISHED_PAID_CHECKOUT", "UNFINALIZED_DRAFT_SALE", "UNFINALIZED_PAID_DRAFT_SALE", "UNFINALIZED_HELD_SALE")) {
             return "BUSINESS_DAY_HAS_UNFINALIZED_SALES";
         }
         return "BUSINESS_DAY_CLOSING_BLOCKED";
@@ -923,9 +923,15 @@ public class BusinessDayService {
         unsettledSales.forEach(sale -> {
             String code = sale.getStatus() == SaleStatus.HELD
                     ? "UNFINALIZED_HELD_SALE"
-                    : sale.getPayments().isEmpty() ? "UNFINALIZED_DRAFT_SALE" : "UNFINALIZED_PAID_DRAFT_SALE";
-            String message = "UNFINALIZED_PAID_DRAFT_SALE".equals(code)
-                    ? "Draft sale has recorded payments and requires review"
+                    : sale.getStatus() == SaleStatus.PENDING_PAYMENT
+                    ? (sale.getPayments().isEmpty() ? "UNFINISHED_CHECKOUT" : "UNFINISHED_PAID_CHECKOUT")
+                    : (sale.getPayments().isEmpty() ? "UNFINALIZED_DRAFT_SALE" : "UNFINALIZED_PAID_DRAFT_SALE");
+            String message = "UNFINISHED_PAID_CHECKOUT".equals(code)
+                    ? "Unfinished checkout has recorded payments and requires review"
+                    : "UNFINISHED_CHECKOUT".equals(code)
+                    ? "Checkout was not completed"
+                    : "UNFINALIZED_PAID_DRAFT_SALE".equals(code)
+                    ? "Legacy draft sale has recorded payments and requires review"
                     : "Sale remains in " + sale.getStatus() + " state";
             blockers.add(blocker(code, message, sale.getId()));
         });
@@ -1511,7 +1517,7 @@ public class BusinessDayService {
         return (root, query, cb) -> cb.and(
                 cb.equal(root.get("store").get("id"), storeId),
                 cb.equal(root.get("businessDate"), businessDate),
-                root.get("status").in(List.of(SaleStatus.DRAFT, SaleStatus.HELD)));
+                root.get("status").in(List.of(SaleStatus.DRAFT, SaleStatus.PENDING_PAYMENT, SaleStatus.HELD)));
     }
 
     private static Specification<Sale> voidedSaleSpec(UUID storeId, LocalDate businessDate) {

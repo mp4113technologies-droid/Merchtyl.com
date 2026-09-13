@@ -175,7 +175,7 @@ public class RegisterSessionService {
 
     private RegisterSessionResponse doOpen(RegisterSessionOpenRequest request, Authentication authentication, boolean enforcementEnabled) {
         Store store = findStore(request.storeId());
-        Register register = findRegister(request.registerId(), properties.isSingleOpenPerRegister());
+        Register register = findRegister(request.registerId(), true);
         if (enforcementEnabled && request.deviceId() == null) {
             throw new RegisterDeviceRequiredException();
         }
@@ -202,7 +202,7 @@ public class RegisterSessionService {
                 : businessDayService.requireOpenBusinessDayForUpdate(store.getId());
         if (registerSessionRepository.findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(
                 register.getId(), CURRENT_STATUSES).isPresent()) {
-            throw new ConflictException("REGISTER_OPENING_CASH_IMMUTABLE");
+            throw alreadyOpen();
         }
         BigDecimal openingCash = normalizeOpeningCash(request.openingCash());
         if (device != null) {
@@ -248,6 +248,22 @@ public class RegisterSessionService {
                 .filter(session -> canViewCurrent(session, actor, authentication))
                 .map(session -> RegisterSessionResponse.from(session, cashLedgerService.breakdown(session)))
                 .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public RegisterAvailabilityResponse availability(UUID registerId, Authentication authentication) {
+        User actor = currentUser(authentication);
+        Register register = findRegister(registerId, false);
+        if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, register.getStore().getId());
+        var active = registerSessionRepository.findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(registerId, CURRENT_STATUSES);
+        if (active.isEmpty()) return RegisterAvailabilityResponse.available(registerId, register.getType());
+        RegisterSession session = active.get();
+        boolean own = session.getAssignedCashier().getId().equals(actor.getId());
+        boolean management = isOwner(authentication) || isManager(authentication);
+        return new RegisterAvailabilityResponse(registerId, register.getType(), own ? "YOUR_SESSION" : "IN_USE",
+                own || management ? session.getId() : null,
+                own || management ? session.getAssignedCashier().getDisplayName() : null,
+                session.getOpenedAt(), own || management ? session.getVersion() : null);
     }
 
     @Transactional
@@ -644,9 +660,8 @@ public class RegisterSessionService {
     }
 
     private void enforceSingleOpenSession(UUID registerId, UUID deviceId) {
-        if (properties.isSingleOpenPerRegister()
-                && registerSessionRepository.existsByRegister_IdAndStatusIn(registerId, CURRENT_STATUSES)) {
-            throw new ConflictException("Register already has an open session");
+        if (registerSessionRepository.existsByRegister_IdAndStatusIn(registerId, CURRENT_STATUSES)) {
+            throw alreadyOpen();
         }
         if (deviceId != null && properties.isSingleOpenPerDevice()
                 && registerSessionRepository.existsByDevice_IdAndStatusIn(deviceId, CURRENT_STATUSES)) {
@@ -880,6 +895,6 @@ public class RegisterSessionService {
     }
 
     private static ConflictException alreadyOpen() {
-        return new ConflictException("Register session is already open for this register or device");
+        return new ConflictException("REGISTER_ALREADY_OPEN");
     }
 }

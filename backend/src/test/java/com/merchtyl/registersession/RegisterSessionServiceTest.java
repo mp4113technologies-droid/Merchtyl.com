@@ -25,6 +25,7 @@ import com.merchtyl.store.StoreRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -321,9 +322,23 @@ class RegisterSessionServiceTest {
 
         assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_MANAGER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Register already has an open session");
+                .hasMessage("REGISTER_ALREADY_OPEN");
 
         verify(registerSessionRepository, never()).saveAndFlush(any());
+        verify(auditService, never()).record(any());
+    }
+
+    @Test
+    void concurrentOpenDatabaseConflictUsesStableRegisterAlreadyOpenError() {
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        when(registerSessionRepository.saveAndFlush(any(RegisterSession.class)))
+                .thenThrow(new DataIntegrityViolationException("uq_register_sessions_active_register"));
+
+        assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_CASHIER")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("REGISTER_ALREADY_OPEN");
+
+        verify(cashLedgerService, never()).appendOpeningFloat(any(), any());
         verify(auditService, never()).record(any());
     }
 
@@ -338,10 +353,26 @@ class RegisterSessionServiceTest {
                 new RegisterSessionOpenRequest(STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("999.00")),
                 authentication("ROLE_TENANT_OWNER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("REGISTER_OPENING_CASH_IMMUTABLE");
+                .hasMessage("REGISTER_ALREADY_OPEN");
 
         assertThat(existing.getOpeningCash()).isEqualByComparingTo("200.00");
         verify(registerSessionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void cashierSeesAnotherOperatorsRegisterAsInUseWithoutIdentityOrSessionDetails() {
+        User otherCashier = new User("other@example.local", "Other Cashier", "hash");
+        RegisterSession existing = new RegisterSession(
+                store, register, device, otherCashier, new BigDecimal("200.00"), NOW.minusSeconds(3600));
+        when(registerSessionRepository.findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(
+                REGISTER_ID, List.of(RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING))).thenReturn(Optional.of(existing));
+
+        RegisterAvailabilityResponse result = service.availability(REGISTER_ID, authentication("ROLE_CASHIER"));
+
+        assertThat(result.state()).isEqualTo("IN_USE");
+        assertThat(result.sessionId()).isNull();
+        assertThat(result.operatorDisplayName()).isNull();
+        assertThat(result.openedAt()).isEqualTo(NOW.minusSeconds(3600));
     }
 
     @Test

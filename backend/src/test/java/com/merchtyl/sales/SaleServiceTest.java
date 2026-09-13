@@ -191,6 +191,7 @@ class SaleServiceTest {
                 new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, " Grocery Item ",
                         new BigDecimal("7.99"), CustomItemTaxTreatment.TAXABLE, new BigDecimal("2"), false))), customItemAuth());
 
+        assertThat(response.status()).isEqualTo(SaleStatus.PENDING_PAYMENT);
         SaleItemResponse item = response.items().getFirst();
         assertThat(item.lineType()).isEqualTo(SaleLineType.CUSTOM_ITEM);
         assertThat(item.productId()).isNull();
@@ -370,7 +371,9 @@ class SaleServiceTest {
         SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
                 new SaleCheckoutItemRequest(null, null, MENU_ITEM_ID, BigDecimal.ONE, false),
                 new SaleCheckoutItemRequest(null, null, secondMenuItemId, new BigDecimal("2.0000"), false)
-        )), cashierAuth());
+                )), cashierAuth());
+
+        assertThat(response.status()).isEqualTo(SaleStatus.PENDING_PAYMENT);
 
         assertThat(response.items()).hasSize(2);
         verify(taxEngine, org.mockito.Mockito.times(2)).calculate(any(TaxCalculationRequest.class), any());
@@ -498,7 +501,7 @@ class SaleServiceTest {
 
         assertThatThrownBy(() -> service.createDraft(new SaleCreateDraftRequest(SESSION_ID, null, null), cashierAuth()))
                 .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessage("Sale user must be assigned to this register session");
+                .hasMessage("REGISTER_SESSION_OWNED_BY_ANOTHER_USER");
 
         verify(saleRepository, never()).saveAndFlush(any());
     }
@@ -573,7 +576,7 @@ class SaleServiceTest {
         assertThat(held.heldAt()).isEqualTo(NOW);
 
         SaleResponse resumed = service.resume(sale.getId(), cashierAuth());
-        assertThat(resumed.status()).isEqualTo(SaleStatus.DRAFT);
+        assertThat(resumed.status()).isEqualTo(SaleStatus.PENDING_PAYMENT);
         assertThat(resumed.heldAt()).isNull();
 
         SaleResponse cancelled = service.cancel(sale.getId(), cashierAuth());
@@ -623,7 +626,7 @@ class SaleServiceTest {
 
         assertThatThrownBy(() -> service.addItem(sale.getId(), addItemRequest(BigDecimal.ONE), cashierAuth()))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Sale must be in draft status");
+                .hasMessage("Sale must be pending checkout");
     }
 
     @Test

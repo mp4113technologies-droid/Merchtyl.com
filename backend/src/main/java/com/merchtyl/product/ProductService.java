@@ -19,6 +19,9 @@ import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.PermissionCode;
 import com.merchtyl.inventory.InventoryBalanceRepository;
 import com.merchtyl.inventory.InventoryBalance;
+import com.merchtyl.foodmenu.FoodMenuItemRepository;
+import com.merchtyl.supplier.ProductSupplierRepository;
+import com.merchtyl.tax.ProductTaxCategoryAssignmentRepository;
 import com.merchtyl.tax.TaxCategoryRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -34,6 +37,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
 import java.util.HashSet;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -59,6 +63,9 @@ public class ProductService {
     @Autowired private StoreAccessService storeAccessService;
     @Autowired private StoreProductRepository storeProductRepository;
     @Autowired private InventoryBalanceRepository inventoryBalanceRepository;
+    @Autowired private FoodMenuItemRepository foodMenuItemRepository;
+    @Autowired private ProductSupplierRepository productSupplierRepository;
+    @Autowired private ProductTaxCategoryAssignmentRepository productTaxCategoryAssignmentRepository;
     @Autowired private ProductReferenceGenerator productReferenceGenerator;
     @Autowired private SkuGenerator skuGenerator;
     @PersistenceContext private EntityManager entityManager;
@@ -146,7 +153,7 @@ public class ProductService {
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         Boolean activeFilter = request.active() != null ? request.active() : request.includeInactive() ? null : Boolean.TRUE;
         var page = productRepository.findAll(
-                specification(request, activeFilter).and(equalUuid("tenantId", tenantId))
+                specification(request, activeFilter).and(equalUuid("tenantId", tenantId)).and(isNull("deletedAt"))
                         .and(storeAvailability(tenantId, request.storeId()))
                         .and(storeAvailabilityIn(tenantId, visibleStoreIds)),
                 PageRequest.of(pageNumber, pageSize, productListSort()));
@@ -282,6 +289,27 @@ public class ProductService {
         audit(authentication, AuditAction.PRODUCT_STATUS_CHANGED, id, before, after);
         log.info("product_event event=PRODUCT_DEACTIVATED tenant_id={} product_id={} active={} actor={}", product.getTenantId(), id, request.active(), actorName(authentication));
         return after;
+    }
+
+    @Transactional
+    public void delete(UUID id, long version, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
+        Product product = find(id, tenantId);
+        requireAllProductStoresManaged(product, authentication);
+        requireCurrentVersion(product, version);
+        ProductResponse before = ProductResponse.from(product);
+        int barcodeCount = product.getBarcodes().size();
+        foodMenuItemRepository.deleteByProductId(id);
+        productSupplierRepository.deleteByProductId(id);
+        productTaxCategoryAssignmentRepository.deleteByProduct_Id(id);
+        storeProductRepository.deleteByTenantIdAndProduct_Id(tenantId, id);
+        inventoryBalanceRepository.deleteByProductId(id);
+        product.markDeleted(Instant.now());
+        if (entityManager != null) entityManager.flush(); else productRepository.flush();
+        audit(authentication, AuditAction.PRODUCT_DELETED, id, before,
+                Map.of("productId", id, "productName", before.name(), "releasedBarcodeCount", barcodeCount));
+        log.info("product_event event=PRODUCT_DELETED tenant_id={} product_id={} released_barcode_count={} actor={}",
+                tenantId, id, barcodeCount, actorName(authentication));
     }
 
     private ProductValues values(ProductRequest request, UUID tenantId) {
@@ -899,6 +927,10 @@ public class ProductService {
             return null;
         }
         return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get(field), value);
+    }
+
+    private static Specification<Product> isNull(String field) {
+        return (root, query, criteriaBuilder) -> criteriaBuilder.isNull(root.get(field));
     }
 
     private static Specification<Product> equalEnum(String field, SellableType value) {

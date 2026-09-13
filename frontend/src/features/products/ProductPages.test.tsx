@@ -275,6 +275,30 @@ describe('Product pages', () => {
     expect(requested.some((url) => url.searchParams.get('includeInactive') === 'true')).toBe(true);
   });
 
+  it('requires typed confirmation and deletes a product with its current version', async () => {
+    storeSession(['OWNER']);
+    const calls:Array<{url:URL;method:string}>=[];
+    vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{
+      const url=new URL(String(input),window.location.origin);
+      const method=init?.method??'GET';calls.push({url,method});
+      if(url.pathname.endsWith('/api/v1/auth/me'))return jsonResponse(currentUser(['OWNER']));
+      const referenceResponse=mockReferenceEndpoints(url);if(referenceResponse)return referenceResponse;
+      if(url.pathname.endsWith('/api/v1/products/00000000-0000-0000-0000-000000001201')&&method==='DELETE')return Promise.resolve(new Response(null,{status:204}));
+      if(url.pathname.endsWith('/api/v1/products'))return jsonResponse(pageResponse([product()]));
+      return apiError('Unexpected request');
+    });
+    render(<App initialEntries={['/products']}/>);
+    await screen.findByText('House Coffee');
+    await userEvent.click(screen.getByRole('button',{name:'Delete House Coffee'}));
+    expect(screen.getByText(/Historical invoices and completed sales will not be deleted/)).toBeVisible();
+    const confirm=screen.getByLabelText('Type DELETE to confirm');
+    const deleteButton=screen.getByRole('button',{name:'Delete Product'});
+    expect(deleteButton).toBeDisabled();
+    await userEvent.type(confirm,'DELETE');
+    await userEvent.click(deleteButton);
+    await waitFor(()=>expect(calls.some(call=>call.method==='DELETE'&&call.url.searchParams.get('version')==='0')).toBe(true));
+  });
+
   it('hides mutating actions from cashier users', async () => {
     storeSession(['CASHIER']);
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {

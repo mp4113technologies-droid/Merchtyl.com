@@ -77,6 +77,7 @@ import {
 } from '../hardware/barcodeScanner';
 import {
   clearDraftCartRecovery,
+  isPendingCheckoutStatus,
   loadDraftCartRecovery,
   saleFromDraftCartRecord,
   saveDraftCartRecovery
@@ -960,7 +961,7 @@ export function PosCartPage() {
 
   React.useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (activeSale?.status === 'DRAFT' && activeSale.items.length > 0) {
+      if (activeSale && isPendingCheckoutStatus(activeSale.status) && activeSale.items.length > 0) {
         event.preventDefault();
       }
     };
@@ -972,6 +973,10 @@ export function PosCartPage() {
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier })
   });
+
+  React.useEffect(() => {
+    if (current.data?.registerType === 'FOOD_SERVICE') navigate('/pos/food', { replace: true });
+  }, [current.data?.registerType, navigate]);
 
   const stores = useQuery({
     queryKey: ['stores', 'pos'],
@@ -1040,7 +1045,7 @@ export function PosCartPage() {
   function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
     cartRevisionRef.current += 1;
     setCartItems(update);
-    if (activeSale?.status === 'DRAFT' && activeSale.payments.length === 0) {
+    if (activeSale && isPendingCheckoutStatus(activeSale.status) && activeSale.payments.length === 0) {
       void getValidAccessToken().then(token => cancelSale(token, activeSale.id)).catch(() => undefined);
       setSearchParams({});
     }
@@ -1085,7 +1090,7 @@ export function PosCartPage() {
 
   function rememberSale(sale: Sale | null) {
     setActiveSale(sale);
-    if (sale?.status === 'DRAFT') {
+    if (sale && isPendingCheckoutStatus(sale.status)) {
       queryClient.setQueryData(['sale', sale.id], sale);
       setSearchParams({ saleId: sale.id });
       void saveDraftCartRecovery(sale);
@@ -1437,12 +1442,12 @@ export function PosCartPage() {
           No register session is open for this device.
         </Alert>
       ) : null}
-      {(pageError || inventoryWarning || (draftRecovered && activeSale?.status === 'DRAFT') || unknownBarcode) ? (
+      {(pageError || inventoryWarning || (draftRecovered && isPendingCheckoutStatus(activeSale?.status)) || unknownBarcode) ? (
         <Box sx={{ flexShrink: 0, maxHeight: 54, overflowY: 'auto' }}>
           {pageError ? <Alert severity="error" sx={{ py: 0 }}>{posErrorMessage(pageError)}</Alert> : null}
           {!pageError && inventoryWarning ? <Alert severity="warning" onClose={() => setInventoryWarning(null)} sx={{ py: 0 }}>{inventoryWarning}</Alert> : null}
-          {!pageError && !inventoryWarning && draftRecovered && activeSale?.status === 'DRAFT' ? <Alert severity="success" onClose={() => setDraftRecovered(false)} sx={{ py: 0 }}>Draft cart recovered after refresh.</Alert> : null}
-          {!pageError && !inventoryWarning && !(draftRecovered && activeSale?.status === 'DRAFT') && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }} action={currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button onClick={() => { setCustomItemDescription(''); setEditingCustomItem(undefined); setCustomItemOpen(true); }}>Custom Item</Button> : undefined}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
+          {!pageError && !inventoryWarning && draftRecovered && isPendingCheckoutStatus(activeSale?.status) ? <Alert severity="success" onClose={() => setDraftRecovered(false)} sx={{ py: 0 }}>Checkout recovered after refresh.</Alert> : null}
+          {!pageError && !inventoryWarning && !(draftRecovered && isPendingCheckoutStatus(activeSale?.status)) && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }} action={currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button onClick={() => { setCustomItemDescription(''); setEditingCustomItem(undefined); setCustomItemOpen(true); }}>Custom Item</Button> : undefined}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
         </Box>
       ) : null}
 

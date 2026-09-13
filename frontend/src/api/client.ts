@@ -2021,6 +2021,10 @@ export function updateProductStatus(token: string, id: string, payload: ProductS
   }, token);
 }
 
+export function deleteProduct(token: string, id: string, version: number) {
+  return request<void>(`/products/${id}${queryString({ version })}`, { method: 'DELETE' }, token);
+}
+
 function queryString(params: Record<string, string | number | boolean | undefined | null>) {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -2050,6 +2054,9 @@ export function createFoodMenuCategory(token: string, storeId: string, payload: 
 export function updateFoodMenuCategory(token: string, storeId: string, id: string, payload: import('./types').FoodMenuCategoryPayload) { return request<import('./types').FoodMenuCategory>(`/stores/${storeId}/food-menu/categories/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token); }
 export function deleteFoodMenuCategory(token: string, storeId: string, id: string) { return request<void>(`/stores/${storeId}/food-menu/categories/${id}`, { method: 'DELETE' }, token); }
 export function listFoodMenuItems(token: string, storeId: string) { return request<import('./types').FoodMenuItem[]>(`/stores/${storeId}/food-menu/items`, undefined, token); }
+export function listFoodMenuChoiceGroups(token: string, storeId: string) { return request<import('./types').FoodMenuChoiceGroup[]>(`/stores/${storeId}/food-menu/choice-groups`, undefined, token); }
+export function createFoodMenuChoiceGroup(token: string, storeId: string, payload: import('./types').FoodMenuChoiceGroupPayload) { return request<import('./types').FoodMenuChoiceGroup>(`/stores/${storeId}/food-menu/choice-groups`, { method: 'POST', body: JSON.stringify(payload) }, token); }
+export function updateFoodMenuChoiceGroup(token: string, storeId: string, id: string, payload: import('./types').FoodMenuChoiceGroupPayload) { return request<import('./types').FoodMenuChoiceGroup>(`/stores/${storeId}/food-menu/choice-groups/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token); }
 export function createFoodMenuItem(token: string, storeId: string, payload: import('./types').FoodMenuItemPayload) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items`, { method: 'POST', body: JSON.stringify(payload) }, token); }
 export function updateFoodMenuItem(token: string, storeId: string, id: string, payload: import('./types').FoodMenuItemPayload) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token); }
 export function updateFoodMenuItemAvailability(token: string, storeId: string, id: string, available: boolean) { return request<import('./types').FoodMenuItem>(`/stores/${storeId}/food-menu/items/${id}/availability`, { method: 'PATCH', body: JSON.stringify({ available }) }, token); }
@@ -2574,6 +2581,10 @@ export async function getCurrentRegisterSession(token: string, params: { deviceI
     undefined,
     token
   )) ?? null;
+}
+
+export function getRegisterAvailability(token: string, registerId: string) {
+  return request<import('./types').RegisterAvailability>(`/register-sessions/availability${queryString({ registerId })}`, undefined, token);
 }
 
 export function secureTill(token: string, registerSessionId: string) {

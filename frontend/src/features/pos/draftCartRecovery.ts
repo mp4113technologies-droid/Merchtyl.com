@@ -32,6 +32,7 @@ export type DraftCartRecoveryRecord = {
   registerId: string;
   registerSessionId: string;
   createdBy: string;
+  status?: 'DRAFT' | 'PENDING_PAYMENT';
   customerId: string | null;
   businessDate: string;
   saleChannel: string | null;
@@ -61,7 +62,7 @@ class DraftCartRecoveryDatabase extends Dexie {
 export const draftCartRecoveryDatabase = new DraftCartRecoveryDatabase();
 
 export function draftCartRecordFromSale(sale: Sale): DraftCartRecoveryRecord | null {
-  if (sale.status !== 'DRAFT' || sale.payments.length > 0) {
+  if (!isPendingCheckoutStatus(sale.status) || sale.payments.length > 0) {
     return null;
   }
 
@@ -72,6 +73,7 @@ export function draftCartRecordFromSale(sale: Sale): DraftCartRecoveryRecord | n
     registerId: sale.registerId,
     registerSessionId: sale.registerSessionId,
     createdBy: sale.createdBy,
+    status: sale.status,
     customerId: sale.customerId,
     businessDate: sale.businessDate,
     saleChannel: sale.saleChannel,
@@ -115,7 +117,7 @@ export function saleFromDraftCartRecord(record: DraftCartRecoveryRecord): Sale {
     registerSessionId: record.registerSessionId,
     createdBy: record.createdBy,
     customerId: record.customerId,
-    status: 'DRAFT',
+    status: record.status ?? 'DRAFT',
     businessDate: record.businessDate,
     saleChannel: record.saleChannel,
     currencyCode: record.currencyCode,
@@ -143,6 +145,10 @@ export function saleFromDraftCartRecord(record: DraftCartRecoveryRecord): Sale {
     updatedAt: record.updatedAt,
     version: record.version
   };
+}
+
+export function isPendingCheckoutStatus(status: Sale['status'] | undefined): status is 'DRAFT' | 'PENDING_PAYMENT' {
+  return status === 'PENDING_PAYMENT' || status === 'DRAFT';
 }
 
 export async function saveDraftCartRecovery(sale: Sale) {

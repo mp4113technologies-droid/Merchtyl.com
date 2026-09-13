@@ -126,12 +126,27 @@ public class Sale extends BaseUuidEntity {
             String saleChannel,
             String currencyCode,
             boolean pricesIncludeTax) {
+        this(store, register, registerSession, createdBy, customerId, businessDate, saleChannel,
+                currencyCode, pricesIncludeTax, SaleStatus.DRAFT);
+    }
+
+    Sale(
+            Store store,
+            Register register,
+            RegisterSession registerSession,
+            User createdBy,
+            UUID customerId,
+            LocalDate businessDate,
+            String saleChannel,
+            String currencyCode,
+            boolean pricesIncludeTax,
+            SaleStatus initialStatus) {
         this.store = store;
         this.register = register;
         this.registerSession = registerSession;
         this.createdBy = createdBy;
         this.customerId = customerId;
-        this.status = SaleStatus.DRAFT;
+        this.status = initialStatus;
         this.businessDate = businessDate;
         this.saleChannel = saleChannel;
         this.currencyCode = currencyCode;
@@ -174,7 +189,7 @@ public class Sale extends BaseUuidEntity {
     }
 
     void resume() {
-        this.status = SaleStatus.DRAFT;
+        this.status = SaleStatus.PENDING_PAYMENT;
         this.heldAt = null;
     }
 

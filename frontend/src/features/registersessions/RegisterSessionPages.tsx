@@ -41,6 +41,7 @@ import {
   forceCloseRegisterSession,
   getBusinessDayOperationalState,
   getCurrentRegisterSession,
+  getRegisterAvailability,
   listCashMovements,
   listDevices,
   listRegisters,
@@ -923,6 +924,12 @@ export function RegisterOpenPage() {
     }),
     enabled: canUse && Boolean(selectedRegisterId)
   });
+  const availability = useQuery({
+    queryKey: ['register-session-availability', selectedRegisterId],
+    queryFn: async () => getRegisterAvailability(await getValidAccessToken(), selectedRegisterId),
+    enabled: canUse && Boolean(selectedRegisterId)
+  });
+  const unavailableToCurrentUser = availability.data?.state === 'IN_USE' && !existingSession;
 
   React.useEffect(() => {
     setExistingSession(activeSessions.data?.content[0] ?? null);
@@ -964,13 +971,16 @@ export function RegisterOpenPage() {
     },
     onError: async (error, values) => {
       if (!(error instanceof ApiClientError) || error.status !== 409) return;
-      const page = await listRegisterSessions(await getValidAccessToken(), {
-        registerId: values.registerId,
-        status: 'OPEN',
-        page: 0,
-        size: 1
-      });
-      setExistingSession(page.content[0] ?? null);
+      await queryClient.invalidateQueries({ queryKey: ['register-session-availability', values.registerId] });
+      if (canOverride || canForceClose) {
+        const page = await listRegisterSessions(await getValidAccessToken(), {
+          registerId: values.registerId,
+          status: 'OPEN',
+          page: 0,
+          size: 1
+        });
+        setExistingSession(page.content[0] ?? null);
+      }
     }
   });
 
@@ -1133,7 +1143,10 @@ export function RegisterOpenPage() {
               {selectedRegisterId && activeSessions.isLoading ? (
                 <Grid item xs={12}><LoadingPanel label="Checking register availability" /></Grid>
               ) : null}
-              {!existingSession && !activeSessions.isLoading ? <Grid item xs={12} md={6}>
+              {unavailableToCurrentUser ? <Grid item xs={12}>
+                <Alert severity="warning">Register unavailable. This register is currently open in another session. Please choose another register or ask a manager for assistance.</Alert>
+              </Grid> : null}
+              {!existingSession && !unavailableToCurrentUser && !activeSessions.isLoading && !availability.isLoading ? <Grid item xs={12} md={6}>
                 <Controller
                   name="openingCash"
                   control={form.control}
@@ -1153,7 +1166,7 @@ export function RegisterOpenPage() {
             </Grid>
             {registers.isError ? <Alert severity="error">{errorMessage(registers.error)}</Alert> : null}
             {deviceEnforcementEnabled && devices.isError ? <Alert severity="error">{errorMessage(devices.error)}</Alert> : null}
-            {!existingSession && !activeSessions.isLoading ? <Button
+            {!existingSession && !unavailableToCurrentUser && !activeSessions.isLoading && !availability.isLoading ? <Button
               type="submit"
               variant="contained"
               startIcon={<LockOpenOutlinedIcon />}

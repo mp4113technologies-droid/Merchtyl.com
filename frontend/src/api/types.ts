@@ -421,13 +421,15 @@ export type ProductCapability =
 export type FoodMenuCategory = { id: string; storeId: string; name: string; displayOrder: number; active: boolean; imageUrl: string | null; version: number };
 export type FoodMenuItemVariant = { id: string; name: string; price: number; displayOrder: number; available: boolean };
 export type FoodMenuModifierOption = { id: string; name: string; priceAdjustment: number; displayOrder: number; available: boolean };
-export type FoodMenuModifierGroup = { id: string; name: string; minimumSelections: number; maximumSelections: number; displayOrder: number; options: FoodMenuModifierOption[] };
+export type FoodMenuModifierGroup = { id: string; name: string; minimumSelections: number; maximumSelections: number; displayOrder: number; active: boolean; options: FoodMenuModifierOption[] };
+export type FoodMenuChoiceGroup = { id: string; storeId: string; name: string; active: boolean; usageCount: number; usedBy: string[]; options: FoodMenuModifierOption[]; version: number };
+export type FoodMenuChoiceGroupPayload = { name: string; active: boolean; options: Array<{name:string;priceAdjustment:number;displayOrder:number;available:boolean}> };
 export type FoodComponentSelectionState = 'REMOVED' | 'EXTRA';
 export type FoodMenuItemComponent = { id: string; name: string; includedByDefault: boolean; removable: boolean; allowExtra: boolean; extraPrice: number; displayOrder: number; active: boolean };
 export type FoodComponentSnapshot = { componentId: string; state: FoodComponentSelectionState; name: string; priceAdjustment: number };
 export type FoodMenuItem = { id: string; storeId: string; categoryId: string; categoryName: string; productId: string | null; productName: string | null; displayName: string; description: string | null; price: number; inventoryTracked: boolean; madeToOrder: boolean; displayOrder: number; available: boolean; imageUrl: string | null; variants?: FoodMenuItemVariant[]; modifierGroups?: FoodMenuModifierGroup[]; components?: FoodMenuItemComponent[]; version: number };
 export type FoodMenuCategoryPayload = { name: string; displayOrder: number; active: boolean; imageUrl?: string };
-export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string; variants?: Array<{name:string;price:number;displayOrder:number;available:boolean}>; modifierGroups?: Array<{name:string;minimumSelections:number;maximumSelections:number;displayOrder:number;options:Array<{name:string;priceAdjustment:number;displayOrder:number;available:boolean}>}>; components?: Array<{name:string;includedByDefault:boolean;removable:boolean;allowExtra:boolean;extraPrice:number;displayOrder:number;active:boolean}> };
+export type FoodMenuItemPayload = { productId?: string; categoryId: string; displayName: string; description?: string; price: number; taxCategoryId?: string; displayOrder: number; available: boolean; imageUrl?: string; variants?: Array<{name:string;price:number;displayOrder:number;available:boolean}>; modifierGroups?: Array<{name:string;minimumSelections:number;maximumSelections:number;displayOrder:number;options:Array<{name:string;priceAdjustment:number;displayOrder:number;available:boolean}>}>; modifierGroupAssignments?: Array<{modifierGroupId:string;minimumSelections:number;maximumSelections:number;displayOrder:number;active:boolean}>; components?: Array<{name:string;includedByDefault:boolean;removable:boolean;allowExtra:boolean;extraPrice:number;displayOrder:number;active:boolean}> };
 export type DiscountType = 'DISCOUNT_PERCENTAGE' | 'DISCOUNT_AMOUNT' | 'MULTI_BUY_FIXED_PRICE';
 export type PromotionDomain = 'RETAIL' | 'FOOD_SERVICE';
 export type PromotionTargetType = 'PRODUCT' | 'PRODUCT_VARIANT' | 'PRODUCT_CATEGORY' | 'MENU_ITEM' | 'MENU_ITEM_VARIANT' | 'MENU_CATEGORY';
@@ -1660,6 +1662,16 @@ export type RegisterSession = {
 
 export type RegisterSessionListResponse = PageResponse<RegisterSession>;
 
+export type RegisterAvailability = {
+  registerId: string;
+  registerType: 'RETAIL' | 'FOOD_SERVICE';
+  state: 'AVAILABLE' | 'YOUR_SESSION' | 'IN_USE';
+  sessionId: string | null;
+  operatorDisplayName: string | null;
+  openedAt: string | null;
+  version: number | null;
+};
+
 export type CashLedgerDirection = 'IN' | 'OUT';
 
 export type CashLedgerSourceType =
@@ -1794,6 +1806,7 @@ export type RegisterReport = {
 
 export type SaleStatus =
   | 'DRAFT'
+  | 'PENDING_PAYMENT'
   | 'HELD'
   | 'COMPLETED'
   | 'VOIDED'

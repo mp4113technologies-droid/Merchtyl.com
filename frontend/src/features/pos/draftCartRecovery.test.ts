@@ -115,6 +115,15 @@ describe('draft cart recovery', () => {
     expect(saleFromDraftCartRecord(record!).status).toBe('DRAFT');
   });
 
+  it('preserves an internal pending checkout without presenting it as a legacy draft', async () => {
+    await saveDraftCartRecovery(sale({ status: 'PENDING_PAYMENT' }));
+
+    const record = await loadDraftCartRecovery(sessionId);
+
+    expect(record?.status).toBe('PENDING_PAYMENT');
+    expect(saleFromDraftCartRecord(record!).status).toBe('PENDING_PAYMENT');
+  });
+
   it('does not create recovery records for paid or completed sales', async () => {
     await saveDraftCartRecovery(sale());
     await saveDraftCartRecovery(sale({ payments: [payment()], paidAmount: 10.35, balanceDue: 0, paymentComplete: true }));

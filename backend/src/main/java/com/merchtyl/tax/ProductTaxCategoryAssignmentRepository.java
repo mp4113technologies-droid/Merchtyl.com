@@ -23,4 +23,6 @@ public interface ProductTaxCategoryAssignmentRepository extends JpaRepository<Pr
     boolean existsByProduct(Product product);
 
     boolean existsByProductAndIdNot(Product product, UUID id);
+
+    void deleteByProduct_Id(UUID productId);
 }

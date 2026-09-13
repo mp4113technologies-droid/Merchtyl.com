@@ -60,6 +60,12 @@ public class RegisterSessionController {
         return current == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(current);
     }
 
+    @GetMapping("/availability")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_VIEW)")
+    RegisterAvailabilityResponse availability(@RequestParam UUID registerId, Authentication authentication) {
+        return registerSessionService.availability(registerId, authentication);
+    }
+
     @PostMapping("/{id}/close")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_CLOSE)")
     RegisterSessionResponse close(

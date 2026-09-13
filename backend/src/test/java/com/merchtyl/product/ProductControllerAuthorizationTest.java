@@ -32,12 +32,15 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -190,6 +193,26 @@ class ProductControllerAuthorizationTest {
 
         verify(productService).search(argThat(request -> "  cOcA  ".equals(request.query())
                 && storeId.equals(request.storeId()) && Boolean.TRUE.equals(request.active())), any());
+    }
+
+    @Test
+    void productDeleteRequiresDedicatedPermission() throws Exception {
+        UUID id=UUID.randomUUID();
+        mockMvc.perform(delete("/api/v1/products/{id}",id).param("version","3")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                .andExpect(status().isForbidden());
+        verify(productService,never()).delete(any(),anyLong(),any());
+    }
+
+    @Test
+    void productManagerWithDeletePermissionCanDelete() throws Exception {
+        UUID id=UUID.randomUUID();
+        mockMvc.perform(delete("/api/v1/products/{id}",id).param("version","3")
+                        .with(user("manager").authorities(
+                                new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
+                                new SimpleGrantedAuthority("PRODUCT_DELETE"))))
+                .andExpect(status().isNoContent());
+        verify(productService).delete(eq(id),eq(3L),any());
     }
 
     @SpringBootConfiguration

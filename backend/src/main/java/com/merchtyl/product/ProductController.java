@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -94,5 +95,12 @@ public class ProductController {
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_DEACTIVATE)")
     ProductResponse updateStatus(@PathVariable UUID id, @Valid @RequestBody ProductStatusRequest request, Authentication authentication) {
         return productService.updateStatus(id, request, authentication);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_DELETE)")
+    void delete(@PathVariable UUID id, @RequestParam long version, Authentication authentication) {
+        productService.delete(id, version, authentication);
     }
 }
