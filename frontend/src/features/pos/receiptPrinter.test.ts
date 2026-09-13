@@ -206,7 +206,7 @@ describe('BrowserReceiptPrinter', () => {
     expect(html).toContain('Powered by');
   });
 
-  it('renders snapshotted restaurant component changes subtly on the customer receipt', () => {
+  it('hides all restaurant customization details while retaining the charged line amount', () => {
     const document = receipt();
     document.items[0].foodMenuComponents = [
       { componentId: 'tomato-id', state: 'REMOVED', name: 'Tomato', priceAdjustment: 0 },
@@ -214,9 +214,10 @@ describe('BrowserReceiptPrinter', () => {
     ];
     document.items[0].foodMenuModifiers = ['+ Bacon'];
     const html = receiptHtml(document, 58);
-    expect(html).toContain('No Tomato');
-    expect(html).toContain('Extra Pickles');
-    expect(html).toContain('+ Bacon');
+    expect(html).not.toContain('No Tomato');
+    expect(html).not.toContain('Extra Pickles');
+    expect(html).not.toContain('+ Bacon');
+    expect(html).toContain('$10.00');
     expect(html).not.toContain('tomato-id');
   });
 

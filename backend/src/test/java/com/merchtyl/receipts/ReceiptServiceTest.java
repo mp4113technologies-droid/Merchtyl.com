@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -104,6 +105,28 @@ class ReceiptServiceTest {
         verify(auditService).record(audit.capture());
         assertThat(audit.getValue().action()).isEqualTo(AuditAction.RECEIPT_GENERATED);
         assertThat(audit.getValue().entityType()).isEqualTo("RECEIPT");
+    }
+
+    @Test
+    void restaurantReceiptUsesBaseMenuItemNameAndSuppressesOperationalCustomization() throws Exception {
+        Sale sale = completedSale();
+        SaleItem item = sale.getItems().getFirst();
+        ReflectionTestUtils.setField(item, "menuItemId", UUID.randomUUID());
+        ReflectionTestUtils.setField(item, "itemNameSnapshot", "Chicken Wings + Nachos");
+        ReflectionTestUtils.setField(item, "menuVariantNameSnapshot", "Large");
+        ReflectionTestUtils.setField(item, "menuModifierSnapshot", "Wing Sauce: Hot\nNacho Choice: Loaded Nachos");
+        ReflectionTestUtils.setField(item, "menuComponentSnapshot", "historical customization remains stored");
+        when(receiptRepository.findBySale_Id(sale.getId())).thenReturn(Optional.empty());
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+
+        ReceiptItemDto receiptItem = service.getForSale(sale.getId(), auth()).document().items().getFirst();
+
+        assertThat(receiptItem.productName()).isEqualTo("Chicken Wings + Nachos");
+        assertThat(receiptItem.productName()).doesNotContain("Large");
+        assertThat(receiptItem.foodMenuModifiers()).isEmpty();
+        assertThat(receiptItem.foodMenuComponents()).isEmpty();
+        assertThat(receiptItem.lineSubtotal()).isEqualByComparingTo("10.00");
+        assertThat(item.getMenuModifiers()).containsExactly("Wing Sauce: Hot", "Nacho Choice: Loaded Nachos");
     }
 
     @Test

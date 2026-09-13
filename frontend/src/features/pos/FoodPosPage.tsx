@@ -1,5 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
+import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import RemoveIcon from '@mui/icons-material/Remove';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
@@ -26,13 +27,24 @@ function money(value: number, currency = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
 }
 
+function currencySymbol(currency = 'USD') {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency })
+    .formatToParts(0)
+    .find(part => part.type === 'currency')?.value ?? '$';
+}
+
 function completionKey() {
   return globalThis.crypto?.randomUUID?.() ?? `food-${Date.now()}`;
 }
 
 type FoodPrintStates = Record<FoodPrintDocument, { status: FoodPrintStatus; error?: string }>;
 type ComponentChoice = { componentId:string; state:FoodComponentSelectionState; name:string; priceAdjustment:number };
-type FoodCartLine = { key:string; item:FoodMenuItem; quantity:number; variantId?:string; variantName?:string; unitPrice:number; modifierOptionIds:string[]; modifierNames:string[]; componentChoices:ComponentChoice[]; preparationInstructions:string };
+type CustomItemTaxTreatment = 'TAXABLE' | 'NON_TAXABLE';
+type FoodCartLine = { key:string; item:FoodMenuItem; quantity:number; lineType?:'CUSTOM_ITEM'; customItemTaxTreatment?:CustomItemTaxTreatment; variantId?:string; variantName?:string; unitPrice:number; modifierOptionIds:string[]; modifierNames:string[]; componentChoices:ComponentChoice[]; preparationInstructions:string };
+
+function customFoodItem(): FoodMenuItem {
+  return { id:'custom-food-item',storeId:'',categoryId:'',categoryName:'',productId:null,productName:null,displayName:'Custom Food Item',description:null,price:0,inventoryTracked:false,madeToOrder:true,displayOrder:0,available:true,imageUrl:null,variants:[],modifierGroups:[],components:[],version:0 };
+}
 
 function freshPrintStates(): FoodPrintStates {
   return {
@@ -59,6 +71,9 @@ export function FoodPosPage() {
   const [search, setSearch] = React.useState('');
   const [selectedItemId, setSelectedItemId] = React.useState<string | null>(null);
   const [heldOrdersOpen, setHeldOrdersOpen] = React.useState(false);
+  const [customTaxTreatment,setCustomTaxTreatment]=React.useState<CustomItemTaxTreatment|null>(null);
+  const [customAmount,setCustomAmount]=React.useState('');
+  const [customQuantity,setCustomQuantity]=React.useState(1);
   const [printStates, setPrintStates] = React.useState<FoodPrintStates>(freshPrintStates);
   const restoredSessionRef = React.useRef<string | null>(null);
   const deviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
@@ -67,6 +82,7 @@ export function FoodPosPage() {
   const stores = useQuery({ queryKey: ['stores', 'food-pos'], queryFn: async () => listStores(await getValidAccessToken(), { size: 100 }), enabled: permitted });
   const store = stores.data?.content.find((candidate) => candidate.id === current.data?.storeId);
   const canDiscount = currentUser?.permissions?.includes('POS_SALE_DISCOUNT') ?? false;
+  const canAddCustomItem = currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ?? false;
   const configuration = useQuery({ queryKey: ['food-service', current.data?.storeId], queryFn: async () => getFoodServiceConfiguration(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && Boolean(current.data?.storeId) });
   const categories = useQuery({ queryKey: ['food-menu-categories', current.data?.storeId], queryFn: async () => listFoodMenuCategories(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
   const products = useQuery({ queryKey: ['food-menu-items', current.data?.storeId], queryFn: async () => listFoodMenuItems(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
@@ -114,22 +130,44 @@ export function FoodPosPage() {
     changeCart(lines => {
       const variant=product.variants?.find(value=>value.id===chosenVariant);
       const options=(product.modifierGroups??[]).flatMap(group=>group.options).filter(option=>chosenModifiers.includes(option.id));
+      const modifierNames=[...(product.modifierGroups??[])].sort((left,right)=>left.displayOrder-right.displayOrder).flatMap(group=>group.options.filter(option=>chosenModifiers.includes(option.id)).map(option=>`${group.name}: ${option.name}`));
       const componentChoices=(product.components??[]).filter(component=>component.active&&chosenComponents[component.id]).map(component=>({componentId:component.id,state:chosenComponents[component.id]!,name:component.name,priceAdjustment:chosenComponents[component.id]==='EXTRA'?component.extraPrice:0}));
       const key=[product.id,variant?.id??'',...options.map(option=>option.id).sort(),...componentChoices.map(value=>`${value.componentId}-${value.state}`).sort(),preparationInstructions.trim()].join(':');
       setSelectedItemId(key);
       const existing = lines.find(line => line.key === key);
       return existing
         ? lines.map(line => line.key === key ? { ...line, quantity: line.quantity + 1 } : line)
-        : [...lines, { key,item: product, quantity: 1,variantId:variant?.id,variantName:variant?.name,unitPrice:(variant?.price??product.price)+options.reduce((sum,option)=>sum+option.priceAdjustment,0)+componentChoices.reduce((sum,value)=>sum+value.priceAdjustment,0),modifierOptionIds:options.map(option=>option.id),modifierNames:options.map(option=>option.name),componentChoices,preparationInstructions:preparationInstructions.trim() }];
+        : [...lines, { key,item: product, quantity: 1,variantId:variant?.id,variantName:variant?.name,unitPrice:(variant?.price??product.price)+options.reduce((sum,option)=>sum+option.priceAdjustment,0)+componentChoices.reduce((sum,value)=>sum+value.priceAdjustment,0),modifierOptionIds:options.map(option=>option.id),modifierNames,componentChoices,preparationInstructions:preparationInstructions.trim() }];
     });
     setConfiguring(null);
+  }
+  function openCustomItem(taxTreatment:CustomItemTaxTreatment){setCustomTaxTreatment(taxTreatment);setCustomAmount('');setCustomQuantity(1);}
+  function selectModifier(group:NonNullable<FoodMenuItem['modifierGroups']>[number],optionId:string,checked:boolean){
+    setChosenModifiers(values=>{
+      const groupOptionIds=new Set(group.options.map(option=>option.id));
+      if(!checked)return values.filter(id=>id!==optionId);
+      const outsideGroup=values.filter(id=>!groupOptionIds.has(id));
+      const withinGroup=values.filter(id=>groupOptionIds.has(id));
+      if(group.maximumSelections===1)return [...outsideGroup,optionId];
+      if(withinGroup.length>=group.maximumSelections)return values;
+      return [...values,optionId];
+    });
+  }
+  function addCustomItem(){
+    const amount=Number(customAmount);
+    if(!customTaxTreatment||!Number.isFinite(amount)||amount<=0)return;
+    const item=customFoodItem();
+    changeCart(lines=>[...lines,{key:`custom:${crypto.randomUUID()}`,item,lineType:'CUSTOM_ITEM',customItemTaxTreatment:customTaxTreatment,quantity:customQuantity,unitPrice:amount,modifierOptionIds:[],modifierNames:[],componentChoices:[],preparationInstructions:''}]);
+    setCustomTaxTreatment(null);
   }
   async function calculateOrder() {
       if (!current.data) throw new Error('Open a register before starting an order');
       return checkoutSaleCart(await getValidAccessToken(), {
         registerSessionId: current.data.id,
         saleChannel: 'POS',
-        items: cart.map(line => ({ foodMenuItemId: line.item.id, foodMenuItemVariantId:line.variantId,foodMenuModifierOptionIds:line.modifierOptionIds.length?line.modifierOptionIds:undefined,foodMenuComponentSelections:line.componentChoices.length?line.componentChoices.map(({componentId,state})=>({componentId,state})):undefined,preparationInstructions:line.preparationInstructions||undefined, quantity: line.quantity })),
+        items: cart.map(line => line.lineType==='CUSTOM_ITEM'
+          ? {lineType:'CUSTOM_ITEM' as const,description:'Custom Food Item',unitPrice:line.unitPrice,taxTreatment:line.customItemTaxTreatment,quantity:line.quantity}
+          : { foodMenuItemId: line.item.id, foodMenuItemVariantId:line.variantId,foodMenuModifierOptionIds:line.modifierOptionIds.length?line.modifierOptionIds:undefined,foodMenuComponentSelections:line.componentChoices.length?line.componentChoices.map(({componentId,state})=>({componentId,state})):undefined,preparationInstructions:line.preparationInstructions||undefined, quantity: line.quantity }),
         discount: discount ? (discount.definitionId ? { discountDefinitionId: discount.definitionId } : { type: discount.type, value: discount.value, reason: discount.reason || undefined }) : undefined
       });
   }
@@ -156,12 +194,13 @@ export function FoodPosPage() {
     onSuccess: async (resumed) => {
       const menuItems = products.data ?? [];
       const restored = resumed.items.map((saleItem, index) => {
+        if(saleItem.lineType==='CUSTOM_ITEM') return {key:`custom:${saleItem.id}`,item:customFoodItem(),lineType:'CUSTOM_ITEM' as const,customItemTaxTreatment:saleItem.customItemTaxTreatment??'NON_TAXABLE',quantity:saleItem.quantity,unitPrice:saleItem.unitPrice,modifierOptionIds:[],modifierNames:[],componentChoices:[],preparationInstructions:''};
         const item = menuItems.find(candidate => candidate.id === saleItem.foodMenuItemId)
           ?? menuItems.find(candidate => candidate.productId === saleItem.productId);
         if (!item) return null;
-        const modifierNames = (saleItem.foodMenuModifiers ?? []).map(name => name.replace(/^\+\s*/, ''));
+        const modifierNames = saleItem.foodMenuModifiers ?? [];
         const modifierOptionIds = (item.modifierGroups ?? []).flatMap(group => group.options)
-          .filter(option => modifierNames.includes(option.name)).map(option => option.id);
+          .filter(option => modifierNames.some(snapshot=>snapshot===`+ ${option.name}`||snapshot===option.name||snapshot.endsWith(`: ${option.name}`))).map(option => option.id);
         const componentChoices=(saleItem.foodMenuComponents??[]).map(value=>({...value}));
         return { key: `${item.id}:${saleItem.foodMenuItemVariantId ?? ''}:${modifierOptionIds.sort().join(':')}:${componentChoices.map(value=>`${value.componentId}-${value.state}`).sort().join(':')}:held-${index}`, item,
           quantity: saleItem.quantity, variantId: saleItem.foodMenuItemVariantId ?? undefined,
@@ -198,7 +237,7 @@ export function FoodPosPage() {
   const depositTotal = sale?.containerDepositTotal
     ?? sale?.items.reduce((sum, item) => sum + (item.depositTotal ?? 0), 0)
     ?? 0;
-  const restaurantHeldOrders = heldOrders.data?.content.filter(held => held.items.some(item => item.foodMenuItemId)) ?? [];
+  const restaurantHeldOrders = heldOrders.data?.content.filter(held => held.items.some(item => item.foodMenuItemId || item.lineType==='CUSTOM_ITEM')) ?? [];
 
   function startNewOrder() {
     setCart([]);
@@ -268,11 +307,11 @@ export function FoodPosPage() {
           </Box>
 
           <Stack spacing={1} sx={{ minHeight: 0, overflowY: 'auto', p: 1.25 }}>
-            {cart.map(({ key, item, quantity, unitPrice, variantName, modifierNames,componentChoices,preparationInstructions }) => {
+            {cart.map(({ key, item, quantity, lineType,customItemTaxTreatment,unitPrice, variantName, modifierNames,componentChoices,preparationInstructions }) => {
               const selected = selectedItemId === key;
               return <Paper key={key} component="article" variant="outlined" onClick={() => setSelectedItemId(key)} sx={{ p: 1.25, borderWidth: selected ? 2 : 1, borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? posTokens.colors.blueLight : '#fff', cursor: 'pointer' }}>
                 <Stack spacing={0.75}>
-                  <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start"><Box minWidth={0}><Typography fontWeight={800}>{item.displayName}</Typography>{variantName?<Typography variant="body2">{variantName}</Typography>:null}{componentChoices.filter(value=>value.state==='REMOVED').map(value=><Typography key={`${value.componentId}-removed`} variant="caption" display="block" color="error.main" fontWeight={800}>NO {value.name.toUpperCase()}</Typography>)}{modifierNames.map(name=><Typography key={name} variant="caption" display="block" color="text.secondary">+ {name}</Typography>)}{componentChoices.filter(value=>value.state==='EXTRA').map(value=><Typography key={`${value.componentId}-extra`} variant="caption" display="block" color="text.secondary">+ Extra {value.name}</Typography>)}{preparationInstructions?<Typography variant="caption" display="block" fontWeight={700}>Note: {preparationInstructions}</Typography>:null}</Box><Typography fontWeight={800} noWrap>{money(quantity * unitPrice, store?.currencyCode)}</Typography></Stack>
+                  <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start"><Box minWidth={0}><Typography fontWeight={800}>{item.displayName}</Typography>{lineType==='CUSTOM_ITEM'?<Typography variant="caption" color="text.secondary">{customItemTaxTreatment==='TAXABLE'?'Taxable':'Non-Taxable'}</Typography>:null}{variantName?<Typography variant="body2">{variantName}</Typography>:null}{componentChoices.filter(value=>value.state==='REMOVED').map(value=><Typography key={`${value.componentId}-removed`} variant="caption" display="block" color="error.main" fontWeight={800}>NO {value.name.toUpperCase()}</Typography>)}{modifierNames.map(name=><Typography key={name} variant="caption" display="block" color="text.secondary">+ {name}</Typography>)}{componentChoices.filter(value=>value.state==='EXTRA').map(value=><Typography key={`${value.componentId}-extra`} variant="caption" display="block" color="text.secondary">+ Extra {value.name}</Typography>)}{preparationInstructions?<Typography variant="caption" display="block" fontWeight={700}>Note: {preparationInstructions}</Typography>:null}</Box><Typography fontWeight={800} noWrap>{money(quantity * unitPrice, store?.currencyCode)}</Typography></Stack>
                   <Typography variant="body2" color="text.secondary">{quantity} × {money(unitPrice, store?.currencyCode)} = {money(quantity * unitPrice, store?.currencyCode)}</Typography>
                   <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                     <Stack direction="row" alignItems="center" spacing={0.5}>
@@ -328,7 +367,7 @@ export function FoodPosPage() {
               {activeCategories.map(category => <Button key={category.id} variant={categoryId === category.id ? 'contained' : 'outlined'} onClick={() => setCategoryId(category.id)} sx={{ minHeight: 48, minWidth: 112, flexShrink: 0, fontWeight: 800 }}>{category.name}</Button>)}
             </Stack>
           </Box>
-          <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: posTokens.colors.muted }}><TextField fullWidth size="small" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search menu…" inputProps={{ 'aria-label': 'Search menu' }} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} sx={{ maxWidth: 420, bgcolor: '#fff' }} /></Box>
+          <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: posTokens.colors.muted }}><Stack direction="row" spacing={1}><TextField fullWidth size="small" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search menu…" inputProps={{ 'aria-label': 'Search menu' }} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} sx={{ maxWidth: 420, bgcolor: '#fff' }} />{canAddCustomItem?<><Button variant="outlined" startIcon={<AddIcon/>} onClick={()=>openCustomItem('TAXABLE')} sx={{whiteSpace:'nowrap'}}>Taxable Item</Button><Button variant="outlined" startIcon={<AddIcon/>} onClick={()=>openCustomItem('NON_TAXABLE')} sx={{whiteSpace:'nowrap'}}>Non-Taxable Item</Button></>:null}</Stack></Box>
           <Box sx={{ minHeight: 0, overflowY: 'auto', p: 1.5, bgcolor: posTokens.colors.muted }}>
             {categories.isSuccess && products.isSuccess && categories.data.length === 0 && products.data.length === 0 ? <Alert severity="info" action={canManageMenu ? <Button component={Link} to="/food-menu">Create Restaurant Menu</Button> : undefined}>{canManageMenu ? 'No Restaurant Menu has been configured for this store.' : 'No Restaurant Menu has been configured for this store. Ask a manager to configure the Restaurant Menu.'}</Alert> : null}
             <Box aria-label="Food products" sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(138px, 1fr))', gap: 1.25 }}>
@@ -348,11 +387,22 @@ export function FoodPosPage() {
         <DialogContent><Stack spacing={2} sx={{pt:1}}>
           {(configuring?.variants?.length??0)>0?<Box><Typography fontWeight={800} mb={1}>Choose a variant</Typography><Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">{configuring?.variants?.filter(value=>value.available).map(value=><Button key={value.id} variant={chosenVariant===value.id?'contained':'outlined'} onClick={()=>setChosenVariant(value.id)} sx={{minHeight:52}}>{value.name} · {money(value.price,store?.currencyCode)}</Button>)}</Stack></Box>:null}
           {(configuring?.components?.filter(value=>value.active&&value.includedByDefault).length??0)>0?<Box><Typography fontWeight={800}>Included</Typography><Stack spacing={1} mt={1}>{configuring?.components?.filter(value=>value.active&&value.includedByDefault).map(component=><Box key={component.id} sx={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:1}}><Typography>{component.name}</Typography>{component.allowExtra?<Stack direction="row" spacing={0.5}><Button size="small" variant={!chosenComponents[component.id]?'contained':'outlined'} onClick={()=>setChosenComponents(value=>({...value,[component.id]:undefined}))}>Normal</Button>{component.removable?<Button size="small" color="error" variant={chosenComponents[component.id]==='REMOVED'?'contained':'outlined'} onClick={()=>setChosenComponents(value=>({...value,[component.id]:'REMOVED'}))}>No</Button>:null}<Button size="small" variant={chosenComponents[component.id]==='EXTRA'?'contained':'outlined'} onClick={()=>setChosenComponents(value=>({...value,[component.id]:'EXTRA'}))}>Extra +{money(component.extraPrice,store?.currencyCode)}</Button></Stack>:<FormControlLabel control={<Checkbox checked={chosenComponents[component.id]!=='REMOVED'} disabled={!component.removable} onChange={(_,checked)=>setChosenComponents(value=>({...value,[component.id]:checked?undefined:'REMOVED'}))}/>} label={component.removable?'Included':'Always included'}/>}</Box>)}</Stack></Box>:null}
-          {configuring?.modifierGroups?.map(group=><Box key={group.id}><Typography fontWeight={800}>{group.name}</Typography><Typography variant="caption" color="text.secondary">Choose {group.minimumSelections}–{group.maximumSelections}</Typography>{group.options.filter(option=>option.available).map(option=><FormControlLabel key={option.id} control={<Checkbox checked={chosenModifiers.includes(option.id)} onChange={(_,checked)=>setChosenModifiers(values=>checked?[...values,option.id]:values.filter(id=>id!==option.id))}/>} label={`${option.name}${option.priceAdjustment?` +${money(option.priceAdjustment,store?.currencyCode)}`:''}`}/>)}</Box>)}
+          {[...(configuring?.modifierGroups??[])].sort((left,right)=>left.displayOrder-right.displayOrder).map(group=>{const selectedCount=group.options.filter(option=>chosenModifiers.includes(option.id)).length;return <Box key={group.id}><Typography fontWeight={800}>{group.name}{group.minimumSelections>0?' *':''}</Typography><Typography variant="caption" color="text.secondary">{group.minimumSelections===group.maximumSelections?`Choose ${group.maximumSelections}`:`Choose ${group.minimumSelections}–${group.maximumSelections}`}</Typography><Stack>{group.options.filter(option=>option.available).map(option=><FormControlLabel key={option.id} control={<Checkbox checked={chosenModifiers.includes(option.id)} disabled={!chosenModifiers.includes(option.id)&&selectedCount>=group.maximumSelections&&group.maximumSelections>1} onChange={(_,checked)=>selectModifier(group,option.id,checked)}/>} label={`${option.name}${option.priceAdjustment?` +${money(option.priceAdjustment,store?.currencyCode)}`:''}`}/>)}</Stack></Box>})}
           <TextField label="Kitchen notes (optional)" value={preparationInstructions} onChange={event=>setPreparationInstructions(event.target.value)} inputProps={{maxLength:255}} multiline minRows={2}/>
           {configuring?<Typography fontWeight={800}>Item total: {money((configuring.variants?.find(value=>value.id===chosenVariant)?.price??configuring.price)+(configuring.modifierGroups??[]).flatMap(group=>group.options).filter(option=>chosenModifiers.includes(option.id)).reduce((sum,option)=>sum+option.priceAdjustment,0)+(configuring.components??[]).filter(component=>chosenComponents[component.id]==='EXTRA').reduce((sum,component)=>sum+component.extraPrice,0),store?.currencyCode)}</Typography>:null}
         </Stack></DialogContent>
         <DialogActions><Button onClick={()=>setConfiguring(null)}>Cancel</Button><Button variant="contained" disabled={!configuring||Boolean(configuring.variants?.length&&!chosenVariant)||Boolean(configuring.modifierGroups?.some(group=>{const count=group.options.filter(option=>chosenModifiers.includes(option.id)).length;return count<group.minimumSelections||count>group.maximumSelections;}))} onClick={()=>configuring&&addConfigured(configuring)}>Add to Order</Button></DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(customTaxTreatment)} onClose={()=>setCustomTaxTreatment(null)} maxWidth={false} slotProps={{paper:{sx:{width:430,maxWidth:'calc(100vw - 32px)',m:{xs:1.5,sm:2},height:'auto',borderRadius:2.5}}}}>
+        <DialogTitle sx={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:1,p:'18px 20px 10px',fontWeight:850}}>{customTaxTreatment==='NON_TAXABLE'?'Non-Taxable Item':'Taxable Item'}<IconButton aria-label="Close custom item" onClick={()=>setCustomTaxTreatment(null)} size="small"><CloseIcon/></IconButton></DialogTitle>
+        <Box component="form" onSubmit={event=>{event.preventDefault();if(Number.isFinite(Number(customAmount))&&Number(customAmount)>0)addCustomItem();}}>
+          <DialogContent sx={{px:2.5,pt:'8px !important',pb:2}}><Stack spacing={2}>
+            <TextField autoFocus fullWidth label="Amount" type="number" placeholder="0.00" value={customAmount} onChange={event=>setCustomAmount(event.target.value)} inputProps={{min:0.01,step:0.01,inputMode:'decimal'}} InputProps={{startAdornment:<InputAdornment position="start">{currencySymbol(store?.currencyCode)}</InputAdornment>}} />
+            <Box><Typography fontWeight={700} mb={0.75}>Quantity</Typography><Stack direction="row" alignItems="center" spacing={1}><IconButton aria-label="Decrease custom item quantity" disabled={customQuantity<=1} onClick={()=>setCustomQuantity(value=>Math.max(1,value-1))} sx={{border:'1px solid',borderColor:'divider',width:44,height:44}}><RemoveIcon/></IconButton><Typography aria-label="Custom item quantity" fontWeight={900} sx={{minWidth:40,textAlign:'center'}}>{customQuantity}</Typography><IconButton aria-label="Increase custom item quantity" onClick={()=>setCustomQuantity(value=>value+1)} sx={{border:'1px solid',borderColor:'divider',width:44,height:44}}><AddIcon/></IconButton></Stack></Box>
+          </Stack></DialogContent>
+          <Divider/>
+          <DialogActions sx={{px:2.5,py:1.75,gap:1}}><Button variant="outlined" onClick={()=>setCustomTaxTreatment(null)}>Cancel</Button><Button type="submit" variant="contained" disabled={!Number.isFinite(Number(customAmount))||Number(customAmount)<=0}>Add to Order</Button></DialogActions>
+        </Box>
       </Dialog>
       <PaymentDialog open={paymentOpen} sale={sale} busy={payment.isPending} onClose={() => setPaymentOpen(false)} onSubmit={(value) => payment.mutate(value)} />
       <DiscountDialog open={discountOpen} initial={discount} currencyCode={store?.currencyCode ?? 'USD'} onClose={() => setDiscountOpen(false)} onApply={(value) => { setDiscount(value); setDiscountOpen(false); setSale(null); setPaymentOpen(false); }} />

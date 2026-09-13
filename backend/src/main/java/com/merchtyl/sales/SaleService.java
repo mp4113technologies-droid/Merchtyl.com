@@ -203,11 +203,10 @@ public class SaleService {
         for (SaleCheckoutItemRequest line : request.items()) {
             if (!line.isValidShape()) throw new BadRequestException("INVALID_CHECKOUT_ITEM");
             if (line.resolvedLineType() == SaleLineType.CUSTOM_ITEM) {
-                if (session.getRegister().getType() != RegisterType.RETAIL) {
-                    throw new BadRequestException("RETAIL_REGISTER_REQUIRED");
-                }
                 requireCustomItemPermission(authentication);
-                String description = cleanOptional(line.description());
+                String description = session.getRegister().getType() == RegisterType.FOOD_SERVICE
+                        ? "Custom Food Item"
+                        : cleanOptional(line.description());
                 if (description == null) throw new BadRequestException("CUSTOM_ITEM_DESCRIPTION_REQUIRED");
                 if (line.unitPrice() == null) throw new BadRequestException("CUSTOM_ITEM_PRICE_REQUIRED");
                 BigDecimal price = normalizeMoney(line.unitPrice(), "unitPrice");
@@ -342,10 +341,11 @@ public class SaleService {
             var foodVariant=line.foodMenuItemVariantId()==null?null:menuItem.getVariants().stream().filter(v->v.getId().equals(line.foodMenuItemVariantId())&&v.isAvailable()).findFirst().orElseThrow(()->new NotFoundException("MENU_ITEM_VARIANT_NOT_AVAILABLE"));
             if(!menuItem.getVariants().isEmpty()&&foodVariant==null)throw new BadRequestException("MENU_ITEM_VARIANT_REQUIRED");
             var optionIds=line.foodMenuModifierOptionIds()==null?java.util.Set.<UUID>of():new java.util.HashSet<>(line.foodMenuModifierOptionIds());
-            var activeAssignments=menuItem.getModifierGroupAssignments().stream().filter(a->a.isActive()&&a.getGroup().isActive()).toList();
+            var activeAssignments=menuItem.getModifierGroupAssignments().stream().filter(a->a.isActive()&&a.getGroup().isActive()).sorted(java.util.Comparator.comparingInt(com.merchtyl.foodmenu.FoodMenuItemModifierGroupAssignment::getDisplayOrder)).toList();
             var selectedOptions=activeAssignments.stream().flatMap(a->a.getGroup().getOptions().stream()).filter(o->optionIds.contains(o.getId())&&o.isAvailable()).toList();
             if(selectedOptions.size()!=optionIds.size())throw new BadRequestException("INVALID_MENU_MODIFIER");
             for(var assignment:activeAssignments){long count=selectedOptions.stream().filter(o->o.getGroup().getId().equals(assignment.getGroup().getId())).count();if(count<assignment.getMinimumSelections()||count>assignment.getMaximumSelections())throw new BadRequestException("INVALID_MODIFIER_SELECTION");}
+            var modifierSnapshots=activeAssignments.stream().flatMap(assignment->assignment.getGroup().getOptions().stream().filter(option->optionIds.contains(option.getId())&&option.isAvailable()).map(option->assignment.getGroup().getName()+": "+option.getName())).toList();
             var componentRequests=line.foodMenuComponentSelections()==null?java.util.List.<com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest>of():line.foodMenuComponentSelections();
             if(componentRequests.stream().map(com.merchtyl.foodmenu.FoodMenuDtos.ComponentSelectionRequest::componentId).distinct().count()!=componentRequests.size())throw new BadRequestException("DUPLICATE_MENU_COMPONENT");
             var activeComponents=menuItem.getComponents().stream().filter(com.merchtyl.foodmenu.FoodMenuItemComponent::isActive).collect(java.util.stream.Collectors.toMap(com.merchtyl.platform.persistence.BaseUuidEntity::getId,java.util.function.Function.identity()));
@@ -357,7 +357,7 @@ public class SaleService {
             return new ResolvedCheckoutItem(product, null, foodPrice,menuItem.getId(),
                     menuItem.getCategory()==null?null:menuItem.getCategory().getId(),
                     product.getCategory()==null?null:product.getCategory().getId(),menuItem.getId(),
-                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName(),foodVariant==null?null:foodVariant.getId(),foodVariant==null?null:foodVariant.getName(),selectedOptions.stream().map(o->"+ "+o.getName()).toList(),componentSnapshots);
+                    menuItem.getCategory()==null?null:menuItem.getCategory().getId(),menuItem.getDisplayName(),foodVariant==null?null:foodVariant.getId(),foodVariant==null?null:foodVariant.getName(),modifierSnapshots,componentSnapshots);
         }
 
         if (line.productId() == null) {

@@ -8,6 +8,7 @@ public record KitchenTicketItemDto(
         UUID saleItemId,
         String name,
         BigDecimal quantity,
+        String variantName,
         List<String> modifiers,
         List<String> removedComponents,
         List<String> extraComponents,

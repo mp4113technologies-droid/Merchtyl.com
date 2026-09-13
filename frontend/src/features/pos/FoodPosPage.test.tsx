@@ -63,11 +63,11 @@ describe('Food POS', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin); calls.push(`${init?.method ?? 'GET'} ${url.pathname}`);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS', 'POS_SALE_DISCOUNT'] });
-      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true, imageUrl: null, version: 0 }]);
-      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }, { id:'configured-item',storeId,displayName:'Build a Pizza',price:0,categoryId:'pizza',categoryName:'Pizza',displayOrder:2,available:true,variants:[{id:'small',name:'Small',price:10,displayOrder:1,available:true},{id:'large',name:'Large',price:18,displayOrder:2,available:true}],components:[{id:'tomato',name:'Tomato',includedByDefault:true,removable:true,allowExtra:false,extraPrice:0,displayOrder:1,active:true},{id:'pickles',name:'Pickles',includedByDefault:true,removable:true,allowExtra:true,extraPrice:.5,displayOrder:2,active:true}],modifierGroups:[{id:'addons',name:'Add-ons',minimumSelections:0,maximumSelections:2,displayOrder:1,options:[{id:'cheese',name:'Cheese',priceAdjustment:1,displayOrder:1,available:true}]}],version:0 }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([{ id: 'menu-item', storeId, productName: 'Pepperoni Pizza', displayName: 'Pepperoni Pizza', price: 12, categoryId: 'pizza', categoryName: 'Pizza', displayOrder: 1, available: true, imageUrl: null, version: 0 }, { id:'configured-item',storeId,displayName:'Build a Pizza',price:0,categoryId:'pizza',categoryName:'Pizza',displayOrder:2,available:true,variants:[{id:'small',name:'Small',price:10,displayOrder:1,available:true},{id:'large',name:'Large',price:18,displayOrder:2,available:true}],components:[{id:'tomato',name:'Tomato',includedByDefault:true,removable:true,allowExtra:false,extraPrice:0,displayOrder:1,active:true},{id:'pickles',name:'Pickles',includedByDefault:true,removable:true,allowExtra:true,extraPrice:.5,displayOrder:2,active:true}],modifierGroups:[{id:'sauce',name:'Wing Sauce',minimumSelections:1,maximumSelections:1,displayOrder:1,active:true,options:[{id:'hot',name:'Hot',priceAdjustment:0,displayOrder:1,available:true}]},{id:'nachos',name:'Nacho Choice',minimumSelections:1,maximumSelections:1,displayOrder:2,active:true,options:[{id:'loaded',name:'Loaded Nachos',priceAdjustment:3,displayOrder:1,available:true}]}],version:0 }]);
       if (url.pathname.endsWith(`/stores/${storeId}/discounts`)) return response([{ id: 'staff-discount', name: 'Staff Discount', type: 'DISCOUNT_PERCENTAGE', value: 10, description: null, active: true, version: 0 }]);
       if (url.pathname.endsWith('/sales/checkout')) {
         const request = JSON.parse(String(init?.body));
@@ -94,11 +94,15 @@ describe('Food POS', () => {
     await userEvent.click(screen.getByRole('button', { name: /Small/ }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Included' }));
     await userEvent.click(screen.getByRole('button', { name: /Extra \+/ }));
-    await userEvent.click(screen.getByRole('checkbox', { name: /Cheese/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Hot' }));
+    expect(screen.getByRole('button', { name: 'Add to Order' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: /Loaded Nachos/ }));
+    expect(screen.getByRole('button', { name: 'Add to Order' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: 'Add to Order' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getByText('Small')).toBeInTheDocument();
-    expect(screen.getByText('+ Cheese')).toBeInTheDocument();
+    expect(screen.getByText('+ Wing Sauce: Hot')).toBeInTheDocument();
+    expect(screen.getByText('+ Nacho Choice: Loaded Nachos')).toBeInTheDocument();
     expect(screen.getByText('NO TOMATO')).toBeInTheDocument();
     expect(screen.getByText('+ Extra Pickles')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
@@ -181,11 +185,53 @@ describe('Food POS', () => {
     expect(calls.filter(call => call.endsWith('/food-menu/categories'))).toHaveLength(1);
   });
 
+  it('adds taxable and non-taxable custom food items without descriptions', async () => {
+    let checkoutBody:{items:Array<Record<string,unknown>>}|undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input,init) => {
+      const url=new URL(String(input),window.location.origin);
+      if(url.pathname.endsWith('/auth/me'))return response({userId:'user',email:'kitchen@test',displayName:'Kitchen',roles:['KITCHEN'],permissions:['FOOD_POS_ACCESS','POS_CUSTOM_ITEM']});
+      if(url.pathname.endsWith('/register-sessions/current'))return response({id:sessionId,storeId,registerId:'register',status:'OPEN',registerType:'FOOD_SERVICE'});
+      if(url.pathname.endsWith('/stores'))return response(page([{id:storeId,code:'MAIN',name:'Main',currencyCode:'CAD',capabilities:['FOOD_SERVICE']} ]));
+      if(url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`))return response({storeId,restaurantPosEnabled:true,kitchenDisplayName:"Joe's Kitchen"});
+      if(url.pathname.endsWith('/food-menu/categories')||url.pathname.endsWith('/food-menu/items')||url.pathname.endsWith(`/stores/${storeId}/discounts`))return response([]);
+      if(url.pathname.endsWith('/sales/checkout')&&init?.method==='POST'){checkoutBody=JSON.parse(String(init.body));return response(sale());}
+      return response({},404);
+    });
+    render(<App initialEntries={['/pos/food']}/>);
+    await screen.findByText("Joe's Kitchen");
+
+    await userEvent.click(screen.getByRole('button',{name:'Taxable Item'}));
+    const taxableDialog=await screen.findByRole('dialog',{name:'Taxable Item'});
+    expect(taxableDialog).toHaveStyle({width:'430px',height:'auto'});
+    expect(within(taxableDialog).queryByLabelText(/Description/i)).not.toBeInTheDocument();
+    const taxableAmount=within(taxableDialog).getByLabelText('Amount');
+    expect(taxableAmount).toHaveFocus();
+    await userEvent.type(taxableAmount,'20');
+    await userEvent.click(within(taxableDialog).getByRole('button',{name:'Increase custom item quantity'}));
+    await userEvent.type(taxableAmount,'{Enter}');
+    await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button',{name:'Non-Taxable Item'}));
+    const nonTaxableDialog=await screen.findByRole('dialog',{name:'Non-Taxable Item'});
+    await userEvent.type(within(nonTaxableDialog).getByLabelText('Amount'),'15');
+    await userEvent.click(within(nonTaxableDialog).getByRole('button',{name:'Add to Order'}));
+    await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getAllByText('Custom Food Item')).toHaveLength(2);
+    expect(screen.getByText('Taxable')).toBeInTheDocument();
+    expect(screen.getByText('Non-Taxable')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button',{name:'Calculate Tax'}));
+
+    await waitFor(()=>expect(checkoutBody?.items).toEqual([
+      {lineType:'CUSTOM_ITEM',description:'Custom Food Item',unitPrice:20,taxTreatment:'TAXABLE',quantity:2},
+      {lineType:'CUSTOM_ITEM',description:'Custom Food Item',unitPrice:15,taxTreatment:'NON_TAXABLE',quantity:1}
+    ]));
+  });
+
   it('keeps the restaurant cart intact and shows a friendly error when checkout fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
-      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
@@ -208,7 +254,7 @@ describe('Food POS', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS', 'POS_SALE_DISCOUNT'] });
-      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
@@ -255,7 +301,7 @@ describe('Food POS', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
-      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, code: 'MAIN', name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', storeId, name: 'Pizza', displayOrder: 1, active: true }]);
@@ -298,7 +344,7 @@ describe('Food POS', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
-      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD' }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);
@@ -325,7 +371,7 @@ describe('Food POS', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
-      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN' });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register', status: 'OPEN', registerType: 'FOOD_SERVICE' });
       if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD', capabilities: ['FOOD_SERVICE'] }]));
       if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
       if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'pizza', active: true, name: 'Pizza' }]);

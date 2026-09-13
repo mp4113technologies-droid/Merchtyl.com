@@ -200,11 +200,15 @@ public class ReceiptService {
     }
 
     private ReceiptItemDto item(SaleItem item) {
+        boolean restaurantMenuItem = item.getMenuItemId() != null;
+        String customerName = restaurantMenuItem && item.getItemNameSnapshot() != null
+                ? item.getItemNameSnapshot()
+                : item.getProductName();
         return new ReceiptItemDto(
                 item.getId(),
                 item.getProduct() == null ? null : item.getProduct().getId(),
                 item.getLineNumber(),
-                item.getProductName(),
+                customerName,
                 item.getQuantity(),
                 item.getLineSubtotal().subtract(item.getDepositTotal()).divide(item.getQuantity(), 4, RoundingMode.HALF_UP),
                 item.getCompletedProductCost(),
@@ -221,8 +225,8 @@ public class ReceiptService {
                 item.getDepositUnitAmount(),
                 item.getDepositQuantity(),
                 item.getDepositTotal(),
-                item.getMenuComponents(),
-                item.getMenuModifiers());
+                restaurantMenuItem ? List.of() : item.getMenuComponents(),
+                restaurantMenuItem ? List.of() : item.getMenuModifiers());
     }
 
     private ReceiptPaymentDto payment(Payment payment) {

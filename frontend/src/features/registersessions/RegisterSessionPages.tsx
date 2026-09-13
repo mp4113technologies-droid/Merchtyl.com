@@ -59,6 +59,7 @@ import type { CashLedgerDirection, CashMovement, CashMovementType, Device, Regis
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { resolveBusinessDayAccess } from '../eod/businessDayAccess';
+import { posRouteForRegisterType } from '../pos/posRouting';
 
 export function registerDeviceEnforcementEnabled() {
   return import.meta.env.VITE_REGISTER_DEVICE_ENFORCEMENT_ENABLED === 'true';
@@ -967,7 +968,7 @@ export function RegisterOpenPage() {
     }),
     onSuccess: async (session) => {
       await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
-      navigate(session.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos');
+      navigate(posRouteForRegisterType(session.registerType) ?? '/store-menu');
     },
     onError: async (error, values) => {
       if (!(error instanceof ApiClientError) || error.status !== 409) return;
@@ -996,7 +997,7 @@ export function RegisterOpenPage() {
       setExistingSession(null);
       await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
       await queryClient.invalidateQueries({ queryKey: ['register-sessions'] });
-      navigate(session.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos');
+      navigate(posRouteForRegisterType(session.registerType) ?? '/store-menu');
     }
   });
 
@@ -1216,7 +1217,7 @@ export function RegisterOpenPage() {
           <Button onClick={() => { setExistingSession(null); form.setValue('registerId', ''); }}>Cancel</Button>
           <Button onClick={() => navigate('/register/history')}>View Session</Button>
           {existingSession?.assignedCashierId === currentUser?.userId ? (
-            <Button variant="contained" onClick={() => navigate(existingSession?.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos')}>Resume Register</Button>
+            <Button variant="contained" disabled={!posRouteForRegisterType(existingSession?.registerType)} onClick={() => navigate(posRouteForRegisterType(existingSession?.registerType) ?? '/store-menu')}>Resume Register</Button>
           ) : null}
           {canForceClose ? (
             <Button color="error" disabled={!overrideReason.trim() || forceCloseMutation.isPending} onClick={() => forceCloseMutation.mutate()}>

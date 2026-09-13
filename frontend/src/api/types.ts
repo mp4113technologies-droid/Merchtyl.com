@@ -2146,6 +2146,7 @@ export type KitchenTicketItem = {
   saleItemId: string;
   name: string;
   quantity: number;
+  variantName?: string | null;
   modifiers: string[];
   removedComponents?: string[];
   extraComponents?: string[];

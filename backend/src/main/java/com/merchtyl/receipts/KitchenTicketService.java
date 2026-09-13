@@ -59,8 +59,9 @@ public class KitchenTicketService {
     private KitchenTicketItemDto item(SaleItem item) {
         return new KitchenTicketItemDto(
                 item.getId(),
-                item.getProductName(),
+                item.getItemNameSnapshot() == null ? item.getProductName() : item.getItemNameSnapshot(),
                 item.getQuantity(),
+                item.getMenuVariantNameSnapshot(),
                 item.getMenuModifiers(),
                 item.getMenuComponents().stream().filter(value->value.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.REMOVED).map(com.merchtyl.sales.FoodComponentSnapshot::name).toList(),
                 item.getMenuComponents().stream().filter(value->value.state()==com.merchtyl.foodmenu.FoodComponentSelectionState.EXTRA).map(com.merchtyl.sales.FoodComponentSnapshot::name).toList(),

@@ -62,7 +62,7 @@ import {
   useMediaQuery
 } from '@mui/material';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   BrowserRouter,
   Link,
@@ -148,6 +148,7 @@ import { isMobileManagementRoute, isMobileNavigationRoute } from './mobileAccess
 import { MobileManagementRouteGuard, MobilePortalGuard } from './MobileAccessGuards';
 import { PublicComingSoonPage } from '../features/public/PublicComingSoonPage';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
+import { activeSessionAllowsPos, posRouteForRegisterType, type PosRegisterType } from '../features/pos/posRouting';
 import {
   NewPlatformMerchantPage,
   PlatformAuditPage,
@@ -323,6 +324,31 @@ function PosLayout() {
   );
 }
 
+function PosModeRouteGuard({ expectedType, children }: { expectedType: PosRegisterType; children: ReactNode }) {
+  const { currentUser, getValidAccessToken } = useSession();
+  const browserDeviceIdentifier = getApplicationDeviceIdentifier();
+  const hasModePermission = expectedType === 'FOOD_SERVICE'
+    ? currentUser?.permissions?.includes('FOOD_POS_ACCESS')
+    : currentUser?.permissions?.includes('POS_ACCESS');
+  const current = useQuery({
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
+    enabled: hasModePermission === true
+  });
+
+  if (hasModePermission !== true) return children;
+
+  if (current.isLoading) {
+    return <Box sx={{ minHeight: 240, display: 'grid', placeItems: 'center' }}><CircularProgress aria-label="Loading active register session" /></Box>;
+  }
+
+  if (current.data?.status === 'OPEN' && !activeSessionAllowsPos(current.data.registerType, expectedType)) {
+    return <Navigate to={posRouteForRegisterType(current.data.registerType) ?? '/store-menu'} replace />;
+  }
+
+  return children;
+}
+
 function StoreMenuPage() {
   const { currentUser, session, getValidAccessToken, logout } = useSession();
   const queryClient = useQueryClient();
@@ -367,19 +393,19 @@ function StoreMenuPage() {
   const store = stores.data?.content.find((item) => item.id === activeSession?.storeId);
   const register = registers.data?.content.find((item) => item.id === activeSession?.registerId);
   const foodServiceEnabled = activeSession
-    ? Boolean(store?.capabilities?.includes('FOOD_SERVICE'))
+    ? activeSession.registerType === 'FOOD_SERVICE' && Boolean(store?.capabilities?.includes('FOOD_SERVICE'))
     : Boolean(stores.data?.content.some((item) => item.capabilities?.includes('FOOD_SERVICE')));
   const retailEnabled = activeSession
-    ? Boolean(store?.capabilities?.includes('RETAIL'))
+    ? activeSession.registerType === 'RETAIL' && Boolean(store?.capabilities?.includes('RETAIL'))
     : Boolean(stores.data?.content.some((item) => item.capabilities?.includes('RETAIL')));
   const isCashier = roles.includes('CASHIER');
   const { isDesktop } = useDeviceEnvironment();
   const operations = [
-    { label: 'Retail POS', to: '/pos', visible: retailEnabled && permissions.includes('POS_ACCESS'), desktopOnly: true },
+    { label: 'Retail POS', to: '/pos', visible: retailEnabled && permissions.includes('POS_ACCESS'), desktopOnly: true, resume: activeSession?.registerType === 'RETAIL' },
     { label: 'Restaurant Menu', to: '/food-menu', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') },
     { label: 'Discounts', to: '/discounts', visible: permissions.includes('DISCOUNT_VIEW') },
     { label: 'Orders', to: '/sales', visible: foodServiceEnabled && permissions.includes('FOOD_ORDER_VIEW') },
-    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS'), desktopOnly: true },
+    { label: 'Restaurant / Kitchen POS', to: '/pos/food', visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS'), desktopOnly: true, resume: activeSession?.registerType === 'FOOD_SERVICE' },
     { label: 'Inventory / Product Lookup', to: '/inventory', visible: true },
     { label: 'Returns', to: '/returns', visible: true },
     { label: 'Current Register', to: '/register/current', visible: true },
@@ -400,7 +426,7 @@ function StoreMenuPage() {
             <Typography variant="h6">{register ? `${register.name} (${register.code})` : activeSession.registerId}</Typography>
             <Typography>{store ? `${store.name} (${store.code})` : activeSession.storeId} • OPEN</Typography>
             <Typography variant="body2" color="text.secondary">Opened {new Date(activeSession.openedAt).toLocaleString()}</Typography>
-            <Button component={Link} to={activeSession.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} variant="contained" startIcon={<PointOfSaleOutlinedIcon />} disabled={!isDesktop} sx={{ alignSelf: 'flex-start' }}>
+            <Button component={Link} to={posRouteForRegisterType(activeSession.registerType) ?? '/store-menu'} variant="contained" startIcon={<PointOfSaleOutlinedIcon />} disabled={!isDesktop || !posRouteForRegisterType(activeSession.registerType)} sx={{ alignSelf: 'flex-start' }}>
               {isDesktop ? 'Return to POS' : 'Desktop register required'}
             </Button>
           </Stack>
@@ -452,6 +478,7 @@ function StoreMenuPage() {
               <Button component={Link} to={item.to} variant="outlined" fullWidth disabled={item.desktopOnly && !isDesktop} sx={{ minHeight: 64 }}>
                 <Stack spacing={0.25}>
                   <span>{item.label}</span>
+                  {item.resume ? <Typography component="span" variant="caption">Resume</Typography> : null}
                   {item.desktopOnly && !isDesktop ? <Typography component="span" variant="caption">Desktop register required</Typography> : null}
                 </Stack>
               </Button>
@@ -492,8 +519,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     queryFn: async () => listStores(await getValidAccessToken(), { page: 0, size: 100 }),
     enabled: canViewStores
   });
-  const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
   const permissions = currentUser?.permissions ?? [];
+  const activeRegisterType = activeRegister.data?.status === 'OPEN' ? activeRegister.data.registerType : null;
+  const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
+  const retailPosVisible = canViewRegisters && activeSessionAllowsPos(activeRegisterType, 'RETAIL');
+  const foodPosVisible = foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') && activeSessionAllowsPos(activeRegisterType, 'FOOD_SERVICE');
   const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
   const { isDesktop: isDesktopDevice } = useDeviceEnvironment();
   const navigationSections = canViewPlatform ? [
@@ -519,8 +549,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       { label: 'Business Day', to: '/business-day', icon: <EventAvailableOutlinedIcon />, visible: businessDayAccess.canView }
     ] },
     { id: 'sales', label: 'Sales', items: [
-      { label: 'Retail POS', to: '/pos', icon: <PointOfSaleOutlinedIcon />, visible: canViewRegisters, desktopOnly: true },
-      { label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon />, visible: foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS'), desktopOnly: true },
+      { label: 'Retail POS', to: '/pos', icon: <PointOfSaleOutlinedIcon />, visible: retailPosVisible, desktopOnly: true },
+      { label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon />, visible: foodPosVisible, desktopOnly: true },
       { label: 'Held Sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon />, visible: canViewRegisters },
       { label: 'Returns', to: '/returns', icon: <ReceiptLongOutlinedIcon />, visible: canViewRegisters },
       { label: 'Discounts', to: '/discounts', icon: <ConfirmationNumberOutlinedIcon />, visible: permissions.includes('DISCOUNT_VIEW') }
@@ -601,7 +631,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Typography variant="body2" fontWeight={700} noWrap>
             Register {activeRegister.data.registerId.slice(0, 8)} • OPEN
           </Typography>
-          <Button component={Link} to={activeRegister.data.registerType === 'FOOD_SERVICE' ? '/pos/food' : '/pos'} size="small" variant="contained" fullWidth sx={{ mt: 1 }} onClick={onNavigate} disabled={!isDesktopDevice}>
+          <Button component={Link} to={posRouteForRegisterType(activeRegister.data.registerType) ?? '/store-menu'} size="small" variant="contained" fullWidth sx={{ mt: 1 }} onClick={onNavigate} disabled={!isDesktopDevice || !posRouteForRegisterType(activeRegister.data.registerType)}>
             {isDesktopDevice ? 'Return to POS' : 'Desktop required'}
           </Button>
         </Box>
@@ -834,8 +864,8 @@ function AppRoutes() {
       <Route path="/activate-platform-admin" element={<PlatformAdminActivationPage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<PosDeviceGuard><PosLayout /></PosDeviceGuard>}>
-          <Route path="/pos" element={<PosCartPage />} />
-          <Route path="/pos/food" element={<FoodPosPage />} />
+          <Route path="/pos" element={<PosModeRouteGuard expectedType="RETAIL"><PosCartPage /></PosModeRouteGuard>} />
+          <Route path="/pos/food" element={<PosModeRouteGuard expectedType="FOOD_SERVICE"><FoodPosPage /></PosModeRouteGuard>} />
           <Route path="/pos/held-sales" element={<HeldSalesPage />} />
         </Route>
         <Route element={<MobilePortalGuard><AppShell /></MobilePortalGuard>}>

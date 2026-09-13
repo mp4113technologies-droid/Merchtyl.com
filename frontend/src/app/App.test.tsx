@@ -111,6 +111,42 @@ describe('App authentication', () => {
     expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/business-days/open') && init?.method === 'POST')).toHaveLength(1);
   });
 
+  it.each([
+    ['RETAIL', 'Retail POS', 'Restaurant / Kitchen POS', '/pos'],
+    ['FOOD_SERVICE', 'Restaurant / Kitchen POS', 'Retail POS', '/pos/food']
+  ] as const)('shows only the POS matching an active %s session', async (registerType, visiblePos, hiddenPos, route) => {
+    const storeId = '00000000-0000-0000-0000-000000000301';
+    const registerId = '00000000-0000-0000-0000-000000000401';
+    window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse({ roles: ['CASHIER'] })));
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser({
+        roles: ['CASHIER'],
+        permissions: ['POS_ACCESS', 'FOOD_POS_ACCESS', 'REGISTER_SESSION_OPEN']
+      }));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse({
+        id: '00000000-0000-0000-0000-000000000501', storeId, registerId, registerType,
+        status: 'OPEN', openedAt: '2026-09-13T09:00:00Z', openingCash: 100, version: 0
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse({
+        content: [{ id: storeId, code: 'MAIN', name: 'Main Store', capabilities: ['RETAIL', 'FOOD_SERVICE'] }],
+        page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true
+      });
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse({
+        content: [{ id: registerId, storeId, code: 'REG-1', name: 'Register 1', type: registerType, active: true }],
+        page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true
+      });
+      return apiError('Unexpected request', 500, 'unexpected');
+    });
+
+    render(<App initialEntries={['/store-menu']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Store Menu' })).toBeInTheDocument();
+    const operationLink = await screen.findByRole('link', { name: new RegExp(`${visiblePos}.*Resume`) });
+    expect(operationLink).toHaveAttribute('href', route);
+    expect(screen.queryByRole('link', { name: hiddenPos })).not.toBeInTheDocument();
+  });
+
   it('renders the login page when no session exists', async () => {
     vi.spyOn(globalThis, 'fetch');
 

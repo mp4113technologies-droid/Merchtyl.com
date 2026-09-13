@@ -14,7 +14,7 @@ function ticket(reprint = false): KitchenTicket {
     documentType: 'KITCHEN_TICKET', saleId: 'sale-1', tokenNumber: 'A104', storeName: 'Merchtyl Restaurant',
     registerName: 'Restaurant Register 1', cashierName: 'John', orderTime: '2026-09-02T00:42:00Z',
     orderType: 'TAKEOUT', tableNumber: null, orderNotes: 'Extra sauce\nNo peanuts', reprint,
-    items: [{ saleItemId: 'item-1', name: 'Monkey Fingers', quantity: 2, modifiers: ['+ Extra Cheese'], removedComponents: ['Onion','Tomato'], extraComponents: ['Pickles'], preparationInstructions: 'Spicy' }]
+    items: [{ saleItemId: 'item-1', name: 'Monkey Fingers', quantity: 2, variantName: 'Large', modifiers: ['Wing Sauce: Hot', 'Nacho Choice: Loaded Nachos'], removedComponents: ['Onion','Tomato'], extraComponents: ['Pickles'], preparationInstructions: 'Spicy' }]
   };
 }
 
@@ -32,7 +32,12 @@ describe('food order printing', () => {
     const html = kitchenTicketHtml(ticket());
     expect(html).toContain('TOKEN A104');
     expect(html).toContain('2 x MONKEY FINGERS');
-    expect(html).toContain('+ Extra Cheese');
+    expect(html).toContain('VARIANT:');
+    expect(html).toContain('LARGE');
+    expect(html).toContain('WING SAUCE:');
+    expect(html).toContain('HOT');
+    expect(html).toContain('NACHO CHOICE:');
+    expect(html).toContain('LOADED NACHOS');
     expect(html).toContain('*** NO ONION ***');
     expect(html).toContain('*** NO TOMATO ***');
     expect(html).toContain('+ EXTRA PICKLES');

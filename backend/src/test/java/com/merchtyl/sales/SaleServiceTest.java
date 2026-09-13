@@ -21,6 +21,9 @@ import com.merchtyl.inventory.InventoryTransactionResponse;
 import com.merchtyl.inventory.InventoryTransactionType;
 import com.merchtyl.foodmenu.FoodMenuItem;
 import com.merchtyl.foodmenu.FoodMenuItemRepository;
+import com.merchtyl.foodmenu.FoodMenuItemModifierGroupAssignment;
+import com.merchtyl.foodmenu.FoodMenuModifierGroup;
+import com.merchtyl.foodmenu.FoodMenuModifierOption;
 import com.merchtyl.discount.DiscountDefinition;
 import com.merchtyl.discount.DiscountEngine;
 import com.merchtyl.discount.DiscountDefinitionService;
@@ -205,6 +208,27 @@ class SaleServiceTest {
     }
 
     @Test
+    void checkoutCreatesRestaurantCustomItemWithFixedSnapshotNameAndAuthoritativeTaxCategory() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Ignored client description",
+                        new BigDecimal("20.00"), CustomItemTaxTreatment.TAXABLE, new BigDecimal("2"), false))), customItemAuth());
+
+        SaleItemResponse item = response.items().getFirst();
+        assertThat(item.lineType()).isEqualTo(SaleLineType.CUSTOM_ITEM);
+        assertThat(item.productName()).isEqualTo("Custom Food Item");
+        assertThat(item.customItemTaxTreatment()).isEqualTo(CustomItemTaxTreatment.TAXABLE);
+        assertThat(item.productId()).isNull();
+        ArgumentCaptor<TaxCalculationRequest> request = ArgumentCaptor.forClass(TaxCalculationRequest.class);
+        verify(taxEngine).calculate(request.capture(), any());
+        assertThat(request.getValue().productTaxCategoryId()).isEqualTo(standard.getId());
+        verify(productRepository, never()).findById(any());
+    }
+
+    @Test
     void checkoutRejectsCustomItemWithoutPermissionAndRejectsProductIdentityMasqueradingAsCustom() {
         when(register.getType()).thenReturn(RegisterType.RETAIL);
         SaleCheckoutItemRequest custom = new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null,
@@ -333,6 +357,61 @@ class SaleServiceTest {
         assertThat(response.items().getFirst().unitPrice()).isEqualByComparingTo("12.0000");
         verify(registerCapabilityService).requireEnabled(store, RegisterType.FOOD_SERVICE);
         verify(taxEngine).calculate(any(TaxCalculationRequest.class), any());
+    }
+
+    @Test
+    void restaurantCheckoutValidatesAndSnapshotsMultipleChoiceGroupsIndependently() {
+        FoodMenuItem menuItem = discountableMenuItem(new BigDecimal("24.99"));
+        FoodMenuModifierGroup sauce = mock(FoodMenuModifierGroup.class);
+        FoodMenuModifierGroup nachos = mock(FoodMenuModifierGroup.class);
+        FoodMenuModifierOption hot = mock(FoodMenuModifierOption.class);
+        FoodMenuModifierOption loaded = mock(FoodMenuModifierOption.class);
+        FoodMenuItemModifierGroupAssignment sauceAssignment = mock(FoodMenuItemModifierGroupAssignment.class);
+        FoodMenuItemModifierGroupAssignment nachoAssignment = mock(FoodMenuItemModifierGroupAssignment.class);
+        UUID hotId = UUID.randomUUID();
+        UUID loadedId = UUID.randomUUID();
+        when(sauce.getId()).thenReturn(UUID.randomUUID());
+        when(sauce.getName()).thenReturn("Wing Sauce");
+        when(sauce.isActive()).thenReturn(true);
+        when(sauce.getOptions()).thenReturn(List.of(hot));
+        when(nachos.getId()).thenReturn(UUID.randomUUID());
+        when(nachos.getName()).thenReturn("Nacho Choice");
+        when(nachos.isActive()).thenReturn(true);
+        when(nachos.getOptions()).thenReturn(List.of(loaded));
+        when(hot.getId()).thenReturn(hotId);
+        when(hot.getGroup()).thenReturn(sauce);
+        when(hot.getName()).thenReturn("Hot");
+        when(hot.getPriceAdjustment()).thenReturn(BigDecimal.ZERO);
+        when(hot.isAvailable()).thenReturn(true);
+        when(loaded.getId()).thenReturn(loadedId);
+        when(loaded.getGroup()).thenReturn(nachos);
+        when(loaded.getName()).thenReturn("Loaded Nachos");
+        when(loaded.getPriceAdjustment()).thenReturn(new BigDecimal("3.00"));
+        when(loaded.isAvailable()).thenReturn(true);
+        when(sauceAssignment.getGroup()).thenReturn(sauce);
+        when(sauceAssignment.getMinimumSelections()).thenReturn(1);
+        when(sauceAssignment.getMaximumSelections()).thenReturn(1);
+        when(sauceAssignment.getDisplayOrder()).thenReturn(0);
+        when(sauceAssignment.isActive()).thenReturn(true);
+        when(nachoAssignment.getGroup()).thenReturn(nachos);
+        when(nachoAssignment.getMinimumSelections()).thenReturn(1);
+        when(nachoAssignment.getMaximumSelections()).thenReturn(1);
+        when(nachoAssignment.getDisplayOrder()).thenReturn(1);
+        when(nachoAssignment.isActive()).thenReturn(true);
+        when(menuItem.getModifierGroupAssignments()).thenReturn(Set.of(nachoAssignment, sauceAssignment));
+        when(foodMenuItemRepository.findByIdAndStoreId(MENU_ITEM_ID, STORE_ID)).thenReturn(Optional.of(menuItem));
+
+        SaleCheckoutItemRequest selectedBoth = new SaleCheckoutItemRequest(null, null, null, MENU_ITEM_ID, null,
+                List.of(hotId, loadedId), null, null, null, null, null, BigDecimal.ONE, false);
+        SaleItemResponse item = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(selectedBoth)), cashierAuth()).items().getFirst();
+
+        assertThat(item.unitPrice()).isEqualByComparingTo("27.99");
+        assertThat(item.foodMenuModifiers()).containsExactly("Wing Sauce: Hot", "Nacho Choice: Loaded Nachos");
+
+        SaleCheckoutItemRequest missingNachos = new SaleCheckoutItemRequest(null, null, null, MENU_ITEM_ID, null,
+                List.of(hotId), null, null, null, null, null, BigDecimal.ONE, false);
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(missingNachos)), cashierAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("INVALID_MODIFIER_SELECTION");
     }
 
     @Test
