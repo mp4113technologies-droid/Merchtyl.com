@@ -135,7 +135,7 @@ describe('mobile POS integration', () => {
     expect(within(navigation).queryByRole('link', { name: 'Subscription & Billing' })).not.toBeInTheDocument();
   });
 
-  it.each(['/returns', '/register/cash-movements', '/lottery/sale', '/lottery/payout'])('blocks direct mobile operational route %s', async (path) => {
+  it.each(['/returns', '/register/cash-movements'])('blocks direct mobile operational route %s', async (path) => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const requestPath = new URL(String(input), window.location.origin).pathname;
       if (requestPath.endsWith('/api/v1/auth/me')) return json(user([]));

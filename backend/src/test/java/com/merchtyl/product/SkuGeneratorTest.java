@@ -14,7 +14,6 @@ class SkuGeneratorTest {
         assertThat(generator.base("Lay's","BBQ 66g")).isEqualTo("LAYS-BBQ-66G");
     }
     @Test void normalizesMerchantSkuAndUsesReadableCollisionSuffix(){
-        assertThat(generator.preserveProvided(" 01-cöké ")).isEqualTo("01-cöké");
         Set<String> used=Set.of("COCA-COLA-500ML-001","COCA-COLA-500ML-002");
         assertThat(generator.unique("Coca Cola","500 ml",used::contains)).isEqualTo("COCA-COLA-500ML-003");
     }

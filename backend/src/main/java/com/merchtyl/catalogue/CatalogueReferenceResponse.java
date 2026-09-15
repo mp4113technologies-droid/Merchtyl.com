@@ -10,6 +10,7 @@ public record CatalogueReferenceResponse(
         String description,
         boolean active,
         boolean systemManaged,
+        String systemType,
         Instant createdAt,
         Instant updatedAt,
         long version
@@ -22,6 +23,7 @@ public record CatalogueReferenceResponse(
                 reference.getDescription(),
                 reference.isActive(),
                 reference instanceof Category category && category.isSystemManaged(),
+                reference instanceof Category category ? category.getSystemType() : null,
                 reference.getCreatedAt(),
                 reference.getUpdatedAt(),
                 reference.getVersion());

@@ -907,7 +907,7 @@ export type SaleCheckoutPayload = {
   registerSessionId: string;
   saleChannel?: string;
   items: Array<{
-    lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM';
+    lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM' | 'LOTTERY_SOLD' | 'LOTTERY_WIN';
     productId?: string;
     variantId?: string;
     foodMenuItemId?: string;
@@ -2473,6 +2473,19 @@ export function recordLotterySale(token: string, payload: LotterySalePayload, id
   }, token);
 }
 
+export function recordLotteryPosActivity(token: string, payload: {
+  registerSessionId: string;
+  type: 'SOLD' | 'WIN';
+  amount: number;
+  operationId: string;
+}) {
+  return request<{ id: string; type: 'SOLD' | 'WIN'; source: 'MANUAL_POS'; amount: number }>(
+    '/lottery/pos-activities',
+    { method: 'POST', body: JSON.stringify(payload) },
+    token
+  );
+}
+
 export function listLotterySales(token: string, params: LotterySaleSearchParams = {}) {
   return request<LotterySaleListResponse>(`/lottery/sales${queryString(params)}`, undefined, token);
 }
@@ -2688,6 +2701,13 @@ export function getInventoryReport(token: string, params: InventoryReportParams 
 
 export function getLotteryReport(token: string, params: LotteryReportParams = {}) {
   return request<LotteryReport>(`/reports/lottery${queryString(params)}`, undefined, token);
+}
+
+export function getLotterySalesReport(token: string, params: {
+  storeId?: string; registerId?: string; cashierId?: string; dateFrom?: string; dateTo?: string;
+  type?: 'ALL' | 'SOLD' | 'WIN'; source?: 'ALL' | 'PHYSICAL_TICKET' | 'MANUAL';
+} = {}) {
+  return request<import('./types').LotterySalesReport>(`/reports/lottery-sales${queryString(params)}`, undefined, token);
 }
 
 export function getRegisterReport(token: string, params: RegisterReportParams = {}) {
@@ -3054,6 +3074,7 @@ function updateCatalogueReferenceStatus(token: string, path: string, id: string,
 export const catalogueReferenceApi = {
   categories: {
     list: (token: string, params?: CatalogueReferenceSearchParams) => listCatalogueReferences(token, '/categories', params),
+    getSystem: (token: string, systemType: string) => request<CatalogueReference>(`/categories/system/${encodeURIComponent(systemType)}`, undefined, token),
     get: (token: string, id: string) => getCatalogueReference(token, '/categories', id),
     create: (token: string, payload: CatalogueReferencePayload) => createCatalogueReference(token, '/categories', payload),
     update: (token: string, id: string, payload: CatalogueReferenceUpdatePayload) => updateCatalogueReference(token, '/categories', id, payload),

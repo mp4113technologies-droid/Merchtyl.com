@@ -23,6 +23,9 @@ import com.merchtyl.inventory.InventoryTransaction;
 import com.merchtyl.inventory.InventoryTransactionRepository;
 import com.merchtyl.inventory.InventoryTransactionType;
 import com.merchtyl.lottery.LotteryPayout;
+import com.merchtyl.lottery.LotteryPosActivity;
+import com.merchtyl.lottery.LotteryPosActivityRepository;
+import com.merchtyl.lottery.LotteryPosActivityType;
 import com.merchtyl.lottery.LotteryPayoutMethod;
 import com.merchtyl.lottery.LotteryPayoutRepository;
 import com.merchtyl.lottery.LotteryPayoutReversal;
@@ -48,6 +51,8 @@ import com.merchtyl.sales.Payment;
 import com.merchtyl.sales.PaymentMethod;
 import com.merchtyl.sales.Sale;
 import com.merchtyl.sales.SaleItem;
+import com.merchtyl.sales.SaleLineType;
+import com.merchtyl.sales.LotterySaleLineClassifier;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.User;
@@ -123,6 +128,7 @@ public class BusinessDayService {
     private final LotterySaleCancellationRepository lotterySaleCancellationRepository;
     private final LotteryPayoutReversalRepository lotteryPayoutReversalRepository;
     private final LotterySettlementRepository lotterySettlementRepository;
+    private final LotteryPosActivityRepository lotteryPosActivityRepository;
     private final CashLedgerService cashLedgerService;
     private final FeatureService featureService;
     private final AuditService auditService;
@@ -149,6 +155,7 @@ public class BusinessDayService {
             LotterySaleCancellationRepository lotterySaleCancellationRepository,
             LotteryPayoutReversalRepository lotteryPayoutReversalRepository,
             LotterySettlementRepository lotterySettlementRepository,
+            LotteryPosActivityRepository lotteryPosActivityRepository,
             CashLedgerService cashLedgerService,
             FeatureService featureService,
             AuditService auditService,
@@ -170,6 +177,7 @@ public class BusinessDayService {
                 lotterySaleCancellationRepository,
                 lotteryPayoutReversalRepository,
                 lotterySettlementRepository,
+                lotteryPosActivityRepository,
                 cashLedgerService,
                 featureService,
                 auditService,
@@ -194,6 +202,7 @@ public class BusinessDayService {
             LotterySaleCancellationRepository lotterySaleCancellationRepository,
             LotteryPayoutReversalRepository lotteryPayoutReversalRepository,
             LotterySettlementRepository lotterySettlementRepository,
+            LotteryPosActivityRepository lotteryPosActivityRepository,
             CashLedgerService cashLedgerService,
             FeatureService featureService,
             AuditService auditService,
@@ -215,6 +224,7 @@ public class BusinessDayService {
         this.lotterySaleCancellationRepository = lotterySaleCancellationRepository;
         this.lotteryPayoutReversalRepository = lotteryPayoutReversalRepository;
         this.lotterySettlementRepository = lotterySettlementRepository;
+        this.lotteryPosActivityRepository = lotteryPosActivityRepository;
         this.cashLedgerService = cashLedgerService;
         this.featureService = featureService;
         this.auditService = auditService;
@@ -872,9 +882,14 @@ public class BusinessDayService {
         List<LotterySaleCancellation> cancellations = lotterySaleCancellationRepository.findAll(lotteryCancellationSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("cancelledAt").and(Sort.by("id")));
         List<LotteryPayoutReversal> reversals = lotteryPayoutReversalRepository.findAll(lotteryReversalSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("reversedAt").and(Sort.by("id")));
         List<LotterySettlement> settlements = lotterySettlementRepository.findAll(lotterySettlementSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("periodEnd").and(Sort.by("id")));
+        List<LotteryPosActivity> posActivities = lotteryPosActivityRepository.findByStore_IdAndBusinessDateOrderByOccurredAtAscIdAsc(day.getStore().getId(), day.getBusinessDate());
 
-        BigDecimal grossSales = money(sum(sales, Sale::getSubtotalAmount));
-        BigDecimal discounts = money(sum(sales, Sale::getDiscountAmount));
+        BigDecimal grossSales = money(sales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(BusinessDayService::isMerchandiseLine)
+                .map(SaleItem::getLineSubtotal).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal discounts = money(sales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(BusinessDayService::isMerchandiseLine)
+                .map(SaleItem::getDiscountAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal saleTax = money(sum(sales, Sale::getEstimatedTaxAmount));
         BigDecimal refundTotal = money(sum(refunds, Refund::getTotalAmount));
         BigDecimal refundSubtotal = money(sum(refunds, Refund::getSubtotalAmount));
@@ -899,7 +914,7 @@ public class BusinessDayService {
         List<EndOfDayPaymentValues> paymentValues = paymentValues(sales, refunds);
         List<EndOfDayTaxValues> taxValues = taxValues(sales, refunds);
         List<EndOfDayCategorySalesSummaryResponse> categoryValues = categorySalesValues(sales, refunds);
-        EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, sales, lotterySales, lotteryPayouts, cancellations, reversals, settlements);
+        EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, sales, lotterySales, lotteryPayouts, cancellations, reversals, settlements, posActivities);
         EndOfDayInventoryValues inventoryValues = inventoryValues(inventoryTransactions, balances);
         List<EndOfDayCashierValues> cashierValues = cashierValues(sales, refunds, lotterySales, lotteryPayouts);
         List<EndOfDayExceptionValues> exceptionValues = exceptionValues(day, sales, voidedSales, refunds, sessions, cashMovements, lotteryPayouts, reversals, variance);
@@ -1069,7 +1084,7 @@ public class BusinessDayService {
         TaxAccumulator salesTax = taxes.computeIfAbsent("SALES_TAX", ignored -> new TaxAccumulator("SALES_TAX", "Posted sales tax"));
         sales.forEach(sale -> {
             BigDecimal merchandiseTaxableBase = sale.getItems().stream()
-                    .filter(item -> item.getSellableTypeSnapshot() != SellableType.LOTTERY_PRODUCT)
+                    .filter(BusinessDayService::isMerchandiseLine)
                     .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
                     .reduce(moneyZero(), BigDecimal::add);
             salesTax.taxableSales = salesTax.taxableSales.add(money(merchandiseTaxableBase));
@@ -1089,7 +1104,7 @@ public class BusinessDayService {
         sales.stream()
                 .filter(sale -> sale.getRegister().getType() != RegisterType.FOOD_SERVICE)
                 .flatMap(sale -> sale.getItems().stream())
-                .filter(item -> item.getSellableTypeSnapshot() != SellableType.LOTTERY_PRODUCT)
+                .filter(BusinessDayService::isMerchandiseLine)
                 .forEach(item -> {
                     CategorySalesAccumulator total = categoryTotal(totals, item);
                     total.hadActivity = true;
@@ -1139,20 +1154,29 @@ public class BusinessDayService {
                 ignored -> new CategorySalesAccumulator(categoryId, categoryName));
     }
 
-    EndOfDayLotteryValues lotteryValues(boolean enabled, List<Sale> postedSales, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements) {
+    EndOfDayLotteryValues lotteryValues(boolean enabled, List<Sale> postedSales, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements, List<LotteryPosActivity> posActivities) {
         BigDecimal barcodeSales = postedSales.stream().flatMap(sale -> sale.getItems().stream())
-                .filter(item -> item.getSellableTypeSnapshot() == SellableType.LOTTERY_PRODUCT)
-                .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
+                .filter(LotterySaleLineClassifier::isPhysicalTicket)
+                .map(LotterySaleLineClassifier::reportingAmount)
                 .reduce(moneyZero(), BigDecimal::add);
-        BigDecimal salesTotal = money(sales.stream().filter(sale -> sale.getStatus() == LotterySaleStatus.RECORDED || sale.getStatus() == LotterySaleStatus.CANCELLED).map(LotterySale::getAmount).reduce(barcodeSales, BigDecimal::add));
-        BigDecimal payoutsTotal = money(payouts.stream().filter(payout -> payout.getStatus() == LotteryPayoutStatus.PAID || payout.getStatus() == LotteryPayoutStatus.REVERSED).map(LotteryPayout::getAmount).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal cartSold = postedSales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(LotterySaleLineClassifier::isManualSold)
+                .map(LotterySaleLineClassifier::reportingAmount).reduce(moneyZero(), BigDecimal::add);
+        BigDecimal cartWins = postedSales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(LotterySaleLineClassifier::isWin)
+                .map(LotterySaleLineClassifier::reportingAmount).reduce(moneyZero(), BigDecimal::add);
+        // Retain already-recorded V126 activities as legacy history; new POS actions are SaleItems.
+        BigDecimal manualSold = posActivities.stream().filter(activity -> activity.getType() == LotteryPosActivityType.SOLD).map(LotteryPosActivity::getAmount).reduce(cartSold, BigDecimal::add);
+        BigDecimal manualWins = posActivities.stream().filter(activity -> activity.getType() == LotteryPosActivityType.WIN).map(LotteryPosActivity::getAmount).reduce(cartWins, BigDecimal::add);
+        BigDecimal salesTotal = money(sales.stream().filter(sale -> sale.getStatus() == LotterySaleStatus.RECORDED || sale.getStatus() == LotterySaleStatus.CANCELLED).map(LotterySale::getAmount).reduce(barcodeSales.add(manualSold), BigDecimal::add));
+        BigDecimal payoutsTotal = money(payouts.stream().filter(payout -> payout.getStatus() == LotteryPayoutStatus.PAID || payout.getStatus() == LotteryPayoutStatus.REVERSED).map(LotteryPayout::getAmount).reduce(manualWins, BigDecimal::add));
         BigDecimal cancellationTotal = money(cancellations.stream().map(LotterySaleCancellation::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal reversalTotal = money(reversals.stream().map(LotteryPayoutReversal::getAmount).reduce(moneyZero(), BigDecimal::add));
-        BigDecimal cashSales = money(sales.stream().filter(sale -> sale.getPaymentMethod() == PaymentMethod.CASH).map(LotterySale::getAmount).reduce(moneyZero(), BigDecimal::add));
-        BigDecimal cashPayouts = money(payouts.stream().filter(payout -> payout.getPayoutMethod() == LotteryPayoutMethod.CASH).map(LotteryPayout::getAmount).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal cashSales = money(sales.stream().filter(sale -> sale.getPaymentMethod() == PaymentMethod.CASH).map(LotterySale::getAmount).reduce(manualSold, BigDecimal::add));
+        BigDecimal cashPayouts = money(payouts.stream().filter(payout -> payout.getPayoutMethod() == LotteryPayoutMethod.CASH).map(LotteryPayout::getAmount).reduce(manualWins, BigDecimal::add));
         BigDecimal commission = money(settlements.stream().map(LotterySettlement::getCommission).reduce(moneyZero(), BigDecimal::add));
         BigDecimal settlement = money(settlements.stream().map(LotterySettlement::getExpectedSettlement).reduce(moneyZero(), BigDecimal::add));
-        boolean hasLotteryActivity = barcodeSales.signum() != 0 || !sales.isEmpty() || !payouts.isEmpty()
+        boolean hasLotteryActivity = barcodeSales.signum() != 0 || cartSold.signum() != 0 || cartWins.signum() != 0 || !sales.isEmpty() || !payouts.isEmpty() || !posActivities.isEmpty()
                 || !cancellations.isEmpty() || !reversals.isEmpty() || !settlements.isEmpty();
         return new EndOfDayLotteryValues(
                 enabled || hasLotteryActivity,
@@ -1171,6 +1195,10 @@ public class BusinessDayService {
                 groupedTotals(sales, sale -> sale.getOperator().getCode(), LotterySale::getAmount),
                 groupedTotals(sales, sale -> sale.getRegister().getCode(), LotterySale::getAmount),
                 groupedTotals(sales, sale -> sale.getCashier().getEmail(), LotterySale::getAmount));
+    }
+
+    private static boolean isMerchandiseLine(SaleItem item) {
+        return !LotterySaleLineClassifier.isLottery(item);
     }
 
     private EndOfDayInventoryValues inventoryValues(List<InventoryTransaction> transactions, List<InventoryBalance> balances) {

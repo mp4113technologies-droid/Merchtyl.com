@@ -133,6 +133,7 @@ public final class PlatformDtos {
             MerchantProfileResponse merchantProfile,
             SubscriptionResponse subscription,
             OnboardingResponse onboarding,
+            String merchantCode,
             String merchantSlug,
             String portalUrl
     ) {

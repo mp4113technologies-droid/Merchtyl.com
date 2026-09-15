@@ -91,7 +91,7 @@ public record SaleResponse(
                 paidAmount,
                 balanceDue,
                 changeDue,
-                sale.getTotalAmount().signum() > 0 && balanceDue.signum() == 0,
+                sale.getTotalAmount().signum() <= 0 || balanceDue.signum() == 0,
                 sale.getCreatedAt(),
                 sale.getUpdatedAt(),
                 sale.getVersion());

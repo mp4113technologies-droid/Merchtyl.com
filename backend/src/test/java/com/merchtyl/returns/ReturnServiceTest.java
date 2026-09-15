@@ -186,6 +186,22 @@ class ReturnServiceTest {
     }
 
     @Test
+    void rejectsLotteryProductsFromOrdinaryMerchandiseReturns() throws Exception {
+        Sale sale = completedSale(product(SellableType.LOTTERY_PRODUCT, Set.of(ProductCapability.ALLOW_RETURN)));
+        SaleItem saleItem = sale.getItems().getFirst();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        assertThatThrownBy(() -> service.create(new ReturnCreateRequest(
+                sale.getId(),
+                "Lottery correction",
+                List.of(new ReturnItemRequest(saleItem.getId(), BigDecimal.ONE, null))), auth()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("LOTTERY_PRODUCT_RETURN_NOT_SUPPORTED");
+
+        verify(returnRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void requiresReasonAndCompletedOriginalSale() throws Exception {
         Sale draftSale = draftSale(returnableProduct());
         SaleItem saleItem = saleItem(draftSale, returnableProduct());
@@ -293,11 +309,15 @@ class ReturnServiceTest {
     }
 
     private Product product(Set<ProductCapability> capabilities) {
+        return product(SellableType.STANDARD_PRODUCT, capabilities);
+    }
+
+    private Product product(SellableType sellableType, Set<ProductCapability> capabilities) {
         return new Product(new ProductValues(
                 "SKU-1",
                 "Coffee",
                 null,
-                SellableType.STANDARD_PRODUCT,
+                sellableType,
                 null,
                 new BigDecimal("2.0000"),
                 new BigDecimal("5.0000"),

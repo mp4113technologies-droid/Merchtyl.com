@@ -107,6 +107,29 @@ class CatalogueReferenceControllerAuthorizationTest {
     }
 
     @Test
+    void productViewerCanResolveLotteryBySystemType() throws Exception {
+        CatalogueReferenceResponse lottery = new CatalogueReferenceResponse(
+                REFERENCE_ID,
+                "ADV01-CAT-004",
+                "Lottery",
+                null,
+                true,
+                true,
+                "LOTTERY",
+                Instant.parse("2026-07-22T12:00:00Z"),
+                Instant.parse("2026-07-22T12:00:00Z"),
+                0);
+        when(categoryService.getSystemCategory(any(), any())).thenReturn(lottery);
+
+        mockMvc.perform(get("/api/v1/categories/system/LOTTERY")
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(REFERENCE_ID.toString()))
+                .andExpect(jsonPath("$.code").value("ADV01-CAT-004"))
+                .andExpect(jsonPath("$.systemType").value("LOTTERY"));
+    }
+
+    @Test
     void statusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/categories/{id}/status", REFERENCE_ID)
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW")))
@@ -134,6 +157,7 @@ class CatalogueReferenceControllerAuthorizationTest {
                 "General grocery items",
                 true,
                 false,
+                null,
                 Instant.parse("2026-07-22T12:00:00Z"),
                 Instant.parse("2026-07-22T12:00:00Z"),
                 0);

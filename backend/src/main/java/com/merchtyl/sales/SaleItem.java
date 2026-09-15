@@ -191,6 +191,21 @@ public class SaleItem extends BaseUuidEntity {
         return item;
     }
 
+    static SaleItem lottery(Sale sale, SaleLineType type, BigDecimal quantity, BigDecimal unitPrice) {
+        if (type != SaleLineType.LOTTERY_SOLD && type != SaleLineType.LOTTERY_WIN) {
+            throw new IllegalArgumentException("Lottery line type required");
+        }
+        SaleItem item = new SaleItem();
+        item.sale = sale;
+        item.lineType = type;
+        item.productName = type == SaleLineType.LOTTERY_SOLD ? "Lottery Sold" : "Lottery Win";
+        item.updateInputs(quantity, unitPrice, BigDecimal.ZERO.setScale(2), false, false,
+                null, null, null, null);
+        item.setCalculatedAmounts(BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2));
+        item.initializeIdAndTimestamps();
+        return item;
+    }
+
     void assignLineNumber(int lineNumber) {
         this.lineNumber = lineNumber;
     }
@@ -271,7 +286,7 @@ public class SaleItem extends BaseUuidEntity {
     }
 
     void snapshotForCompletion() {
-        if (isCustomItem()) {
+        if (!isCatalogProduct()) {
             completedProductCost = BigDecimal.ZERO.setScale(4);
             completedProductPrice = unitPrice;
             completedProductCapabilities = null;
@@ -291,8 +306,8 @@ public class SaleItem extends BaseUuidEntity {
     }
 
     SaleItemRequest validationRequest() {
-        if (isCustomItem()) {
-            throw new IllegalStateException("Custom items do not use catalog item handlers");
+        if (!isCatalogProduct()) {
+            throw new IllegalStateException("Non-catalog items do not use catalog item handlers");
         }
         return new SaleItemRequest(
                 product,
@@ -317,6 +332,9 @@ public class SaleItem extends BaseUuidEntity {
 
     public SaleLineType getLineType() { return lineType; }
     public boolean isCustomItem() { return lineType == SaleLineType.CUSTOM_ITEM; }
+    public boolean isCatalogProduct() { return lineType == SaleLineType.CATALOG_PRODUCT; }
+    public boolean isLottery() { return lineType == SaleLineType.LOTTERY_SOLD || lineType == SaleLineType.LOTTERY_WIN; }
+    public boolean isLotteryWin() { return lineType == SaleLineType.LOTTERY_WIN; }
     public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
     public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
     public UUID getCategorySnapshotId() { return categorySnapshotId; }

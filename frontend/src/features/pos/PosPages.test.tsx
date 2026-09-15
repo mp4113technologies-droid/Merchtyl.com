@@ -557,7 +557,7 @@ describe('POS pages', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Non-Taxable' }));
     await userEvent.click(within(editDialog).getByRole('button', { name: 'Update Item' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', { name: 'Calculate Tax' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Calculate Tax' }));
     await waitFor(() => expect(checkoutBody).toBeDefined());
     expect(checkoutBody.items[0]).toEqual({ lineType: 'CUSTOM_ITEM', description: 'Grocery Item', unitPrice: 8.5, quantity: 1, taxTreatment: 'NON_TAXABLE' });
     expect(checkoutBody.items[0].productId).toBeUndefined();
@@ -570,8 +570,8 @@ describe('POS pages', () => {
     expect(screen.queryByRole('button', { name: 'Custom Item' })).not.toBeInTheDocument();
   });
 
-  it('shows compact lottery actions and records a manual cash sale through the existing lottery API', async () => {
-    let lotterySaleBody: any;
+  it('adds Lottery Sold to the cart without a device or immediate activity write', async () => {
+    let activityWrites = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
@@ -583,12 +583,10 @@ describe('POS pages', () => {
         definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: false, createdAt: '', updatedAt: '', version: 0 },
         enabled: true, source: 'STORE', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null
       }]);
-      if (url.pathname.endsWith('/api/v1/lottery/operators')) return jsonResponse(page([{
-        id: '00000000-0000-0000-0000-000000000777', code: 'ALC', name: 'Atlantic Lottery', jurisdictionId: 'jurisdiction', jurisdictionCode: 'NL', jurisdictionName: 'Newfoundland and Labrador', supportContact: null, settlementFrequency: 'DAILY', active: true, createdAt: '', updatedAt: '', version: 0
-      }]));
-      if (url.pathname.endsWith('/api/v1/lottery/sales') && init?.method === 'POST') {
-        lotterySaleBody = JSON.parse(String(init.body));
-        return jsonResponse({ id: 'lottery-sale-id' }, 201);
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse({ ...registerSession(), deviceId: null });
+      if (url.pathname.endsWith('/api/v1/lottery/pos-activities') && init?.method === 'POST') {
+        activityWrites += 1;
+        return jsonResponse({}, 500);
       }
       return commonApi(input) ?? jsonResponse({}, 404);
     });
@@ -599,28 +597,27 @@ describe('POS pages', () => {
     const dialog = screen.getByRole('dialog', { name: 'Lottery Sold' });
     expect(dialog).toBeVisible();
     await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Amount (USD)' }), '100');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-    await waitFor(() => expect(lotterySaleBody).toEqual(expect.objectContaining({ amount: 100, gameType: 'OTHER', paymentMethod: 'CASH', registerSessionId: sessionId })));
-    expect(await screen.findByText('Lottery Sold recorded: $100.00')).toBeVisible();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    expect(await screen.findByText('Lottery Sold added to cart.')).toBeVisible();
+    expect(screen.getByText('Lottery Sold', { selector: 'p' })).toBeVisible();
+    expect(activityWrites).toBe(0);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lottery Sold' })).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Lottery Win' })).toBeVisible();
   });
 
-  it('records an eligible Lottery Win through validation, authorization, and cash completion', async () => {
-    const calls: string[] = [];
+  it('adds Lottery Win as a negative cart offset without an immediate payout', async () => {
+    let activityWrites = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['LOTTERY_PAYOUT_RECORD'] });
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
       if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
       if (url.pathname.endsWith('/api/v1/features/resolution')) return jsonResponse([{ definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: false, createdAt: '', updatedAt: '', version: 0 }, enabled: true, source: 'STORE', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null }]);
-      if (url.pathname.endsWith('/api/v1/lottery/operators')) return jsonResponse(page([{ id: 'operator-id', code: 'ALC', name: 'Atlantic Lottery', jurisdictionId: 'jurisdiction', jurisdictionCode: 'NL', jurisdictionName: 'NL', supportContact: null, settlementFrequency: 'DAILY', active: true, createdAt: '', updatedAt: '', version: 0 }]));
-      if (url.pathname.endsWith('/api/v1/lottery/payouts/available-cash')) return jsonResponse({ registerSessionId: sessionId, policyId: 'policy-id', expectedDrawerCash: 200, protectedRegisterFloat: 50, reservedCashObligations: 0, availablePayoutCash: 150, currencyCode: 'USD' });
-      if (url.pathname.endsWith('/api/v1/lottery/payout-policies/policy-id')) return jsonResponse({ id: 'policy-id', requireTicketValidation: false, requireAgeVerification: false, requireCustomerIdentification: false });
-      if (url.pathname.endsWith('/api/v1/lottery/payouts') && init?.method === 'POST') { calls.push('create'); return jsonResponse({ id: 'payout-id', version: 0 }); }
-      if (url.pathname.endsWith('/payout-id/validate') && init?.method === 'POST') { calls.push('validate'); return jsonResponse({ id: 'payout-id', version: 1 }); }
-      if (url.pathname.endsWith('/payout-id/authorize') && init?.method === 'POST') { calls.push('authorize'); return jsonResponse({ id: 'payout-id', version: 2 }); }
-      if (url.pathname.endsWith('/payout-id/complete-cash') && init?.method === 'POST') { calls.push('complete'); return jsonResponse({ id: 'payout-id', version: 3, status: 'PAID' }); }
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse({ ...registerSession(), deviceId: null });
+      if (url.pathname.endsWith('/api/v1/lottery/pos-activities') && init?.method === 'POST') {
+        activityWrites += 1;
+        return jsonResponse({}, 500);
+      }
       return commonApi(input) ?? jsonResponse({}, 404);
     });
 
@@ -628,10 +625,65 @@ describe('POS pages', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Lottery Win' }));
     const dialog = screen.getByRole('dialog', { name: 'Lottery Win' });
     await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Payout Amount (USD)' }), '30');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Record Win' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
 
-    await waitFor(() => expect(calls).toEqual(['create', 'validate', 'authorize', 'complete']));
-    expect(await screen.findByText('Lottery Win recorded: $30.00')).toBeVisible();
+    expect(await screen.findByText('Lottery Win added to cart.')).toBeVisible();
+    expect(screen.getAllByText('-$30.00').length).toBeGreaterThan(0);
+    expect(activityWrites).toBe(0);
+  });
+
+  it('submits real Lottery line types and completes an exact offset without payment', async () => {
+    let checkoutBody: any;
+    let paymentWrites = 0;
+    let completionWrites = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD'] });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      if (url.pathname.endsWith('/api/v1/features/resolution')) return jsonResponse([{ definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: false, createdAt: '', updatedAt: '', version: 0 }, enabled: true, source: 'STORE', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null }]);
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse({ ...registerSession(), deviceId: null });
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutBody = JSON.parse(String(init.body));
+        const base = sale('PENDING_PAYMENT');
+        return jsonResponse({ ...base, subtotalAmount: 0, totalAmount: 0, balanceDue: 0, paymentComplete: true,
+          items: checkoutBody.items.map((item: any, index: number) => ({ ...base.items[0], id: `lottery-${index}`, productId: null,
+            productSku: null, productName: item.lineType === 'LOTTERY_WIN' ? 'Lottery Win' : 'Lottery Sold', lineType: item.lineType,
+            unitPrice: item.unitPrice, lineSubtotal: item.lineType === 'LOTTERY_WIN' ? -item.unitPrice : item.unitPrice,
+            lineTotal: item.lineType === 'LOTTERY_WIN' ? -item.unitPrice : item.unitPrice, estimatedTaxAmount: 0 })) });
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST') {
+        paymentWrites += 1;
+        return jsonResponse({}, 500);
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') {
+        completionWrites += 1;
+        return jsonResponse({ ...saleWithPayments([], 'COMPLETED'), totalAmount: 0, balanceDue: 0, paymentComplete: true });
+      }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lottery Sold' }));
+    let dialog = screen.getByRole('dialog', { name: 'Lottery Sold' });
+    await userEvent.type(within(dialog).getByRole('spinbutton'), '10');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lottery Sold' })).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Lottery Win' }));
+    dialog = screen.getByRole('dialog', { name: 'Lottery Win' });
+    await userEvent.type(within(dialog).getByRole('spinbutton'), '10');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lottery Win' })).not.toBeInTheDocument());
+    await userEvent.click(await screen.findByRole('button', { name: 'Calculate Tax' }));
+
+    await waitFor(() => expect(checkoutBody.items).toEqual([
+      { lineType: 'LOTTERY_SOLD', unitPrice: 10, quantity: 1 },
+      { lineType: 'LOTTERY_WIN', unitPrice: 10, quantity: 1 }
+    ]));
+    expect(screen.queryByRole('dialog', { name: /payment/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
+    await waitFor(() => expect(completionWrites).toBe(1));
+    expect(paymentWrites).toBe(0);
   });
 
   it('hides lottery actions when the store is enabled but the subscription is not', async () => {

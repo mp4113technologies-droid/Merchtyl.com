@@ -167,13 +167,18 @@ function mockReferenceEndpoints(url: URL) {
     const zeroRated: TaxCategory = { ...category, id: '00000000-0000-0000-0000-000000000902', code: 'ZERO', name: 'Zero Rated', treatment: 'ZERO_RATED' };
     return jsonResponse({ ...referencePage([]), content: [category, zeroRated], totalElements: 2 });
   }
-  if (url.pathname.endsWith('/api/v1/categories')) {
-    const lottery = reference({
+  const lottery = reference({
       id: '00000000-0000-0000-0000-000000000899',
-      code: 'LOTTERY',
-      name: 'Lottery'
-    });
-    return jsonResponse(referencePage(url.searchParams.get('code') === 'LOTTERY' ? [lottery] : [reference(), lottery]));
+      code: 'ADV01-CAT-004',
+      name: 'Lottery',
+      systemManaged: true,
+      systemType: 'LOTTERY'
+  });
+  if (url.pathname.endsWith('/api/v1/categories/system/LOTTERY')) {
+    return jsonResponse(lottery);
+  }
+  if (url.pathname.endsWith('/api/v1/categories')) {
+    return jsonResponse(referencePage([reference(), lottery]));
   }
   if (url.pathname.endsWith('/api/v1/brands')) {
     return jsonResponse(referencePage([reference({
@@ -483,7 +488,7 @@ describe('Product pages', () => {
     expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument();
   });
 
-  it('selects the system Lottery category for lottery products and clears it when returning to standard', async () => {
+  it('selects the persisted system Lottery category and keeps it manually selectable', async () => {
     storeSession(['OWNER']);
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);
@@ -499,13 +504,103 @@ describe('Product pages', () => {
 
     await userEvent.click(sellableType);
     await userEvent.click(await screen.findByRole('option', { name: 'LOTTERY PRODUCT' }));
-    await waitFor(() => expect(category).toHaveTextContent('Lottery (LOTTERY)'));
-    expect(category).toHaveAttribute('aria-disabled', 'true');
+    await waitFor(() => expect(category).toHaveTextContent('Lottery (ADV01-CAT-004)'));
+    expect(category).not.toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(category);
+    expect(await screen.findByRole('option', { name: 'Lottery (ADV01-CAT-004)' })).toBeVisible();
+    await userEvent.click(screen.getByRole('option', { name: 'Lottery (ADV01-CAT-004)' }));
 
     await userEvent.click(sellableType);
     await userEvent.click(await screen.findByRole('option', { name: 'STANDARD PRODUCT' }));
-    await waitFor(() => expect(category.textContent?.replaceAll('\u200b', '')).toBe(''));
+    await waitFor(() => expect(category).toHaveTextContent('Lottery (ADV01-CAT-004)'));
     expect(category).not.toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(category);
+    await userEvent.click(await screen.findByRole('option', { name: 'Beverages (BEV)' }));
+    expect(category).toHaveTextContent('Beverages (BEV)');
+  });
+
+  it('submits the persisted Lottery category UUID and restores it when editing', async () => {
+    storeSession(['OWNER']);
+    const lotteryCategoryId = '00000000-0000-0000-0000-000000000899';
+    const created = product({
+      id: '00000000-0000-0000-0000-000000001299',
+      name: 'Five Dollar Ticket',
+      sellableType: 'LOTTERY_PRODUCT',
+      categoryId: lotteryCategoryId,
+      taxCategoryId: null,
+      capabilities: [],
+      inventoryTrackingEnabled: false
+    });
+    let submittedBody: Record<string, unknown> | undefined;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      const referenceResponse = mockReferenceEndpoints(url);
+      if (referenceResponse) return referenceResponse;
+      if (url.pathname.endsWith('/api/v1/products') && init?.method === 'POST') {
+        submittedBody = JSON.parse(String(init.body));
+        return jsonResponse(created, 201);
+      }
+      if (url.pathname.endsWith(`/api/v1/products/${created.id}`)) return jsonResponse(created);
+      if (url.pathname.endsWith('/api/v1/products')) return jsonResponse(pageResponse([created]));
+      return apiError('Unexpected request');
+    });
+
+    const firstRender = render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    await userEvent.type(await screen.findByLabelText('Name'), 'Five Dollar Ticket');
+    await userEvent.type(screen.getByLabelText('Variant name'), 'Base');
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Sellable type' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'LOTTERY PRODUCT' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Category' })).toHaveTextContent('Lottery (ADV01-CAT-004)'));
+    await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
+
+    await waitFor(() => expect(submittedBody).toBeDefined());
+    expect(submittedBody).toMatchObject({
+      name: 'Five Dollar Ticket',
+      sellableType: 'LOTTERY_PRODUCT',
+      categoryId: lotteryCategoryId
+    });
+    expect(submittedBody?.categoryId).not.toBe('LOTTERY');
+
+    firstRender.unmount();
+    render(<App initialEntries={[`/products/${created.id}`]} />);
+    expect(await screen.findByRole('heading', { name: 'Five Dollar Ticket' })).toBeVisible();
+    expect(await screen.findByRole('combobox', { name: 'Sellable type' })).toHaveTextContent('LOTTERY PRODUCT');
+    expect(screen.getByRole('combobox', { name: 'Category' })).toHaveTextContent('Lottery (ADV01-CAT-004)');
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(`/products/${created.id}`))).toBe(true);
+  });
+
+  it('loads every active category page instead of truncating product options', async () => {
+    storeSession(['OWNER']);
+    const secondPageCategory = reference({
+      id: '00000000-0000-0000-0000-000000000898', code: 'LATE', name: 'Later Category'
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      if (url.pathname.endsWith('/api/v1/categories') && !url.searchParams.get('code')) {
+        const requestedPage = Number(url.searchParams.get('page') ?? 0);
+        return jsonResponse({
+          ...referencePage(requestedPage === 0 ? [reference()] : [secondPageCategory]),
+          page: requestedPage, totalPages: 2, totalElements: 2,
+          first: requestedPage === 0, last: requestedPage === 1
+        });
+      }
+      const referenceResponse = mockReferenceEndpoints(url);
+      return referenceResponse ?? apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Category' }));
+    expect(await screen.findByRole('option', { name: 'Later Category (LATE)' })).toBeVisible();
+    expect(fetchMock.mock.calls.some(([input]) => {
+      const url = new URL(String(input), window.location.origin);
+      return url.pathname.endsWith('/api/v1/categories') && url.searchParams.get('page') === '1';
+    })).toBe(true);
   });
 
   it('keeps batch scans temporary, discards them on cancel, and merges them locally on Add All', async () => {

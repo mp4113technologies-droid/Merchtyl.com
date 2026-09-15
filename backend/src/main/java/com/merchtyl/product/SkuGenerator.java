@@ -30,7 +30,9 @@ public class SkuGenerator {
     }
 
     public String generate(UUID tenantId, String productName, String variantName) {
-        String base = base(productName, variantName);
+        String namespace = identifiers.merchantCode(tenantId) + "-";
+        String readable = base(productName, variantName);
+        String base = namespace + readable.substring(0, Math.min(readable.length(), MAX_BASE_LENGTH - namespace.length()));
         for (int attempts = 0; attempts < 10_000; attempts++) {
             long sequence = identifiers.nextSkuSequence(tenantId, base);
             String suffix = "-%03d".formatted(sequence);
@@ -51,10 +53,12 @@ public class SkuGenerator {
         throw new IllegalStateException("Unable to allocate SKU");
     }
 
-    public String preserveProvided(String value) {
+    public String preserveProvided(UUID tenantId, String value) {
         String supplied = value == null ? "" : value.trim();
-        if (supplied.isBlank() || supplied.length() > 64) throw new IllegalArgumentException("INVALID_SKU");
-        return supplied;
+        String prefix = identifiers.merchantCode(tenantId) + "-";
+        if (supplied.regionMatches(true, 0, prefix, 0, prefix.length())) return supplied;
+        if (supplied.isBlank() || prefix.length() + supplied.length() > 64) throw new IllegalArgumentException("INVALID_SKU");
+        return prefix + supplied;
     }
 
     private boolean exists(UUID tenantId, String sku) {

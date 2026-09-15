@@ -1368,6 +1368,7 @@ function MerchantEditDialog({ open, tenant, saving, error, onClose, onSave }: {
           <Grid item xs={12} sm={6}><TextField fullWidth select required label="Industry Type" value={form.industryType} onChange={set('industryType')}><MenuItem value="" disabled>Select Industry Type</MenuItem>{industryTypeOptions.map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField></Grid>
           <Grid item xs={12} sm={6}><TextField fullWidth type="number" label="Estimated store count" value={form.estimatedStoreCount} onChange={set('estimatedStoreCount')} inputProps={{ min: 0 }} /></Grid>
           <Grid item xs={12} sm={6}><TextField fullWidth label="Merchant slug" value={tenant.merchantSlug ?? ''} InputProps={{ readOnly: true }} helperText="Stable portal address; it is not changed with the display name." /></Grid>
+          <Grid item xs={12} sm={6}><TextField fullWidth label="Merchant code" value={tenant.merchantCode} InputProps={{ readOnly: true }} helperText="Permanent namespace for generated catalogue identifiers." /></Grid>
         </Grid></Box>
         <Box><Typography variant="subtitle1" fontWeight={700}>Contact Details</Typography><Grid container spacing={2} sx={{ mt: 0 }}>
           <Grid item xs={12} sm={6}><TextField fullWidth required label="Contact name" value={form.contactName} onChange={set('contactName')} /></Grid>

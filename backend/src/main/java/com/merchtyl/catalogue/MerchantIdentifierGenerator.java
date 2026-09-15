@@ -15,11 +15,12 @@ public class MerchantIdentifierGenerator {
 
     public String nextCatalogueCode(UUID tenantId, String type) {
         Number sequence = next(tenantId, type, "");
-        String prefix = (String) entityManager.createNativeQuery(
-                        "select identifier_prefix from tenants where id = :tenantId")
-                .setParameter("tenantId", tenantId)
-                .getSingleResult();
-        return "%s%s%03d".formatted(prefix, type.equals("CATEGORY") ? "CAT" : "BR", sequence.longValue());
+        return "%s-%s-%03d".formatted(merchantCode(tenantId), type.equals("CATEGORY") ? "CAT" : "BR", sequence.longValue());
+    }
+
+    public String merchantCode(UUID tenantId) {
+        return (String) entityManager.createNativeQuery("select merchant_code from tenants where id = :tenantId")
+                .setParameter("tenantId", tenantId).getSingleResult();
     }
 
     public long nextSkuSequence(UUID tenantId, String base) {

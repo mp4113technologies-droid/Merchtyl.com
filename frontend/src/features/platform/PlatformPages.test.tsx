@@ -41,6 +41,7 @@ function currentUser(): CurrentUserResponse {
 
 function tenantDetail(): TenantDetail {
   return {
+    merchantCode: 'ACM01',
     tenant: {
       id: tenantId,
       tenantCode: 'ACME',

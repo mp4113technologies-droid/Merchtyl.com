@@ -54,14 +54,6 @@ import {
   completeSale,
   getCurrentRegisterSession,
   getEffectiveStoreCapability,
-  listLotteryOperators,
-  recordLotterySale,
-  getLotteryPayoutAvailableCash,
-  getLotteryPayoutPolicy,
-  createLotteryPayout,
-  validateLotteryPayout,
-  authorizeLotteryPayout,
-  completeLotteryCashPayout,
   getSale,
   holdSale,
   listDevices,
@@ -153,9 +145,9 @@ function completionKey() {
   return `complete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function LotteryAmountDialog({ open, mode, currencyCode, busy, error, onClose, onSubmit, onFullWorkflow }: {
+function LotteryAmountDialog({ open, mode, currencyCode, busy, error, onClose, onSubmit }: {
   open: boolean; mode: 'SOLD' | 'WIN'; currencyCode: string; busy: boolean; error?: string;
-  onClose: () => void; onSubmit: (amount: number) => void; onFullWorkflow: () => void;
+  onClose: () => void; onSubmit: (amount: number) => void;
 }) {
   const [amount, setAmount] = React.useState('');
   React.useEffect(() => { if (open) setAmount(''); }, [open, mode]);
@@ -169,9 +161,8 @@ function LotteryAmountDialog({ open, mode, currencyCode, busy, error, onClose, o
         {error ? <Alert severity="error">{error}</Alert> : null}
       </Stack></DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        {error ? <Button onClick={onFullWorkflow}>{mode === 'WIN' ? 'Open full payout' : 'Open full sale'}</Button> : null}
         <Button onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button type="submit" variant="contained" color={mode === 'WIN' ? 'warning' : 'primary'} disabled={!valid || busy}>{busy ? 'Recording…' : mode === 'SOLD' ? 'Add' : 'Record Win'}</Button>
+        <Button type="submit" variant="contained" color={mode === 'WIN' ? 'warning' : 'primary'} disabled={!valid || busy}>{busy ? 'Adding…' : 'Add to Cart'}</Button>
       </DialogActions>
     </Box>
   </Dialog>;
@@ -394,6 +385,8 @@ function CartLines({
               <Typography fontWeight={700} color="text.primary" noWrap title={item.productName}>{item.productName}</Typography>
               {item.lineType === 'CUSTOM_ITEM'
                 ? <Stack direction="row" spacing={0.5}><Chip size="small" label="Custom Item" variant="outlined" /><Typography variant="caption" color="text.secondary">{item.customItemTaxTreatment === 'TAXABLE' ? 'Taxable' : 'Non-Taxable'}</Typography></Stack>
+                : item.lineType === 'LOTTERY_SOLD' || item.lineType === 'LOTTERY_WIN'
+                  ? <Chip size="small" label={item.lineType === 'LOTTERY_WIN' ? 'Lottery offset' : 'Lottery'} color={item.lineType === 'LOTTERY_WIN' ? 'warning' : 'primary'} variant="outlined" />
                 : <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>{item.variantSku ?? item.productSku}</Typography>}
               {(item.depositTotal ?? 0) > 0 ? (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -449,8 +442,8 @@ function CartLines({
                 </Tooltip>
               </Stack>
             </TableCell>
-            <TableCell align="right">{money(item.unitPrice, currencyCode)}</TableCell>
-            <TableCell align="right">{item.estimatedTaxAmount ? money(item.estimatedTaxAmount, currencyCode) : 'At checkout'}</TableCell>
+            <TableCell align="right">{money(item.lineType === 'LOTTERY_WIN' ? -item.unitPrice : item.unitPrice, currencyCode)}</TableCell>
+            <TableCell align="right">{item.lineType?.startsWith('LOTTERY_') ? '—' : item.estimatedTaxAmount ? money(item.estimatedTaxAmount, currencyCode) : 'At checkout'}</TableCell>
             <TableCell align="right" sx={{ fontWeight: 700 }}>{money(item.lineTotal, currencyCode)}</TableCell>
             <TableCell align="right">
               {item.lineType === 'CUSTOM_ITEM' ? <Tooltip title={`Edit ${item.productName}`}><span><IconButton size="small" aria-label={`Edit ${item.productName}`} disabled={busy} onClick={() => onEdit(item)}><EditOutlinedIcon /></IconButton></span></Tooltip> : null}
@@ -1081,40 +1074,8 @@ export function PosCartPage() {
     staleTime: 30_000
   });
   const lotteryEnabled = lotteryEntitlement.data?.enabled === true;
-  const lotteryOperators = useQuery({
-    queryKey: ['lottery-operators', 'retail-pos-quick-actions'],
-    queryFn: async () => listLotteryOperators(await getValidAccessToken(), { active: true, size: 2 }),
-    enabled: lotteryEnabled && lotteryAction !== null
-  });
   const currencyCode = activeSale?.currencyCode ?? store?.currencyCode ?? 'USD';
-  const lotteryQuickMutation = useMutation({
-    mutationFn: async ({ mode, amount }: { mode: 'SOLD' | 'WIN'; amount: number }) => {
-      if (!current.data?.deviceId) throw new Error('An active Retail register device is required.');
-      const operators = lotteryOperators.data?.content ?? [];
-      if (operators.length !== 1) throw new Error('Quick entry requires exactly one active Lottery operator. Open the full Lottery workflow to select an operator.');
-      const token = await getValidAccessToken();
-      const operator = operators[0];
-      if (mode === 'SOLD') {
-        return recordLotterySale(token, { operatorId: operator.id, gameType: 'OTHER', amount, paymentMethod: 'CASH', storeId: current.data.storeId, registerId: current.data.registerId, deviceId: current.data.deviceId, registerSessionId: current.data.id }, completionKey());
-      }
-      const availability = await getLotteryPayoutAvailableCash(token, { registerSessionId: current.data.id, operatorId: operator.id });
-      const policy = await getLotteryPayoutPolicy(token, availability.policyId);
-      if (policy.requireTicketValidation || policy.requireAgeVerification || policy.requireCustomerIdentification) {
-        throw new Error('This payout requires ticket or customer verification. Use the full Lottery payout workflow.');
-      }
-      if (amount > availability.availablePayoutCash) throw new Error('Available payout cash is insufficient for this Lottery Win.');
-      const created = await createLotteryPayout(token, { operatorId: operator.id, storeId: current.data.storeId, registerId: current.data.registerId, deviceId: current.data.deviceId, registerSessionId: current.data.id, ticketNumber: `POS-WIN-${completionKey()}`, amount, payoutMethod: 'CASH', notes: 'Retail POS quick Lottery Win' });
-      const validated = await validateLotteryPayout(token, created.id, { version: created.version, ticketValidationState: 'NOT_REQUIRED', ageVerificationState: 'NOT_REQUIRED', identificationVerificationState: 'NOT_REQUIRED' });
-      const authorized = await authorizeLotteryPayout(token, validated.id, { version: validated.version, approvalNotes: 'Retail POS quick Lottery Win' });
-      return completeLotteryCashPayout(token, authorized.id, completionKey());
-    },
-    onSuccess: async (_, variables) => {
-      setLotteryAction(null);
-      setLotteryNotice(variables.mode === 'SOLD' ? `Lottery Sold recorded: ${money(variables.amount, currencyCode)}` : `Lottery Win recorded: ${money(variables.amount, currencyCode)}`);
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ['register-session-current'] }), queryClient.invalidateQueries({ queryKey: ['lottery'] })]);
-    }
-  });
-  const provisionalSubtotal = cartItems.reduce((sum, item) => sum + item.unitPrice * item.quantity - item.discountAmount, 0);
+  const provisionalSubtotal = cartItems.reduce((sum, item) => sum + (item.lineType === 'LOTTERY_WIN' ? -1 : 1) * item.unitPrice * item.quantity - item.discountAmount, 0);
   const automaticPromotion=bestMultiBuyPromotion(savedDiscounts.data??[],'RETAIL',cartItems.filter(item=>item.productId).map(item=>({id:item.id,quantity:item.quantity,unitPrice:item.unitPrice,targets:{PRODUCT:item.productId??undefined,PRODUCT_VARIANT:item.variantId??undefined}})));
 
   function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
@@ -1153,9 +1114,27 @@ export function PosCartPage() {
     setCustomItemOpen(false);
   }
 
+  function addLotteryItem(mode: 'SOLD' | 'WIN', amount: number) {
+    const win = mode === 'WIN';
+    addLocalItem({ id: `local:lottery:${crypto.randomUUID()}`, lineType: win ? 'LOTTERY_WIN' : 'LOTTERY_SOLD',
+      productId: null, variantId: null, lineNumber: cartItems.length + 1, productSku: null,
+      productName: win ? 'Lottery Win' : 'Lottery Sold', variantSku: null, variantName: null,
+      quantity: 1, unitPrice: amount, discountAmount: 0, completedProductCost: null,
+      completedProductPrice: null, completedProductCapabilities: null, priceOverride: false,
+      ageVerified: false, serialNumber: null, externalReference: null, customerId: null,
+      paymentMethodCode: null, lineSubtotal: win ? -amount : amount, estimatedTaxAmount: 0,
+      lineTotal: win ? -amount : amount, version: 0 });
+    setLotteryAction(null);
+    setLotteryNotice(`${win ? 'Lottery Win' : 'Lottery Sold'} added to cart.`);
+  }
+
   function addLocalItem(item: SaleItem) {
     changeCart(items => {
-      const existing = item.lineType === 'CUSTOM_ITEM' ? undefined : items.find(candidate => candidate.productId === item.productId && (candidate.variantId ?? undefined) === (item.variantId ?? undefined));
+      const existing = !item.lineType || item.lineType === 'CATALOG_PRODUCT'
+        ? items.find(candidate => (!candidate.lineType || candidate.lineType === 'CATALOG_PRODUCT')
+          && candidate.productId === item.productId
+          && (candidate.variantId ?? undefined) === (item.variantId ?? undefined))
+        : undefined;
       return existing ? items.map(candidate => candidate.id === existing.id
         ? { ...candidate, quantity: candidate.quantity + 1, lineSubtotal: candidate.lineSubtotal + candidate.unitPrice, lineTotal: candidate.lineTotal + candidate.unitPrice }
         : candidate) : [...items, item];
@@ -1341,6 +1320,8 @@ export function PosCartPage() {
         registerSessionId: current.data.id, saleChannel: 'POS',
         items: cartItems.map(item => item.lineType === 'CUSTOM_ITEM'
           ? { lineType: 'CUSTOM_ITEM' as const, description: item.productName, unitPrice: item.unitPrice, quantity: item.quantity, taxTreatment: item.customItemTaxTreatment ?? undefined }
+          : item.lineType === 'LOTTERY_SOLD' || item.lineType === 'LOTTERY_WIN'
+            ? { lineType: item.lineType, unitPrice: item.unitPrice, quantity: item.quantity }
           : { lineType: 'CATALOG_PRODUCT' as const, productId: item.productId ?? undefined, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified }),
         discount: discount ? (discount.definitionId ? {discountDefinitionId:discount.definitionId}:{type:discount.type,value:discount.value,reason:discount.reason||undefined}) : undefined
       });
@@ -1350,7 +1331,7 @@ export function PosCartPage() {
       if (revision !== cartRevisionRef.current) return;
       setCartItems(sale.items);
       rememberSale(sale);
-      if (openPayment) setPaymentDialogOpen(true);
+      if (openPayment && sale.totalAmount > 0) setPaymentDialogOpen(true);
     }
   });
 
@@ -1635,8 +1616,8 @@ export function PosCartPage() {
                 ) : null}
                 {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="text" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={{ alignSelf: 'flex-start' }} onClick={() => { setCustomItemDescription(''); setCustomItemOpen(true); }}>Custom Item</Button> : null}
                 {lotteryEnabled ? <Stack direction="row" spacing={0.75}>
-                  {currentUser?.permissions?.includes('LOTTERY_SALE_RECORD') ? <Button size="small" variant="outlined" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={cartLocked} onClick={() => { lotteryQuickMutation.reset(); setLotteryAction('SOLD'); }}>Lottery Sold</Button> : null}
-                  {currentUser?.permissions?.includes('LOTTERY_PAYOUT_RECORD') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} onClick={() => { lotteryQuickMutation.reset(); setLotteryAction('WIN'); }}>Lottery Win</Button> : null}
+                  {currentUser?.permissions?.includes('LOTTERY_SALE_RECORD') ? <Button size="small" variant="outlined" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={cartLocked} onClick={() => setLotteryAction('SOLD')}>Lottery Sold</Button> : null}
+                  {currentUser?.permissions?.includes('LOTTERY_PAYOUT_RECORD') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} onClick={() => setLotteryAction('WIN')}>Lottery Win</Button> : null}
                 </Stack> : null}
               </Stack>
             </Paper>
@@ -1647,7 +1628,7 @@ export function PosCartPage() {
                   items={cartItems}
                   currencyCode={currencyCode}
                   busy={cartLocked}
-                  onQuantity={(itemId, quantity) => changeCart(items => items.map(item => item.id === itemId ? { ...item, quantity, lineSubtotal: item.unitPrice * quantity, lineTotal: item.unitPrice * quantity, estimatedTaxAmount: 0 } : item))}
+                  onQuantity={(itemId, quantity) => changeCart(items => items.map(item => item.id === itemId ? { ...item, quantity, lineSubtotal: (item.lineType === 'LOTTERY_WIN' ? -1 : 1) * item.unitPrice * quantity, lineTotal: (item.lineType === 'LOTTERY_WIN' ? -1 : 1) * item.unitPrice * quantity, estimatedTaxAmount: 0 } : item))}
                   onRemove={(itemId) => changeCart(items => items.filter(item => item.id !== itemId))}
                   onEdit={(item) => { setEditingCustomItem(item); setCustomItemDescription(item.productName); setCustomItemOpen(true); }}
                 />
@@ -1677,7 +1658,7 @@ export function PosCartPage() {
               </Paper>
               <Paper variant="outlined" sx={{ p: 1.25, borderRadius: posTokens.radius.card }}>
                 <Stack spacing={0.75}>
-                  <Stack direction="row" justifyContent="space-between"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Payment</Typography><Typography variant="body2" fontWeight={700} color="primary.dark">Remaining {money(activeSale?.balanceDue ?? activeSale?.totalAmount ?? 0, currencyCode)}</Typography></Stack>
+                  <Stack direction="row" justifyContent="space-between"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Payment</Typography><Typography variant="body2" fontWeight={700} color="primary.dark">{(activeSale?.totalAmount ?? 0) < 0 ? `Payout Due ${money(Math.abs(activeSale?.totalAmount ?? 0), currencyCode)}` : `Remaining ${money(activeSale?.balanceDue ?? activeSale?.totalAmount ?? 0, currencyCode)}`}</Typography></Stack>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography color="text.secondary">Paid</Typography>
                     <Typography>{money(activeSale?.paidAmount ?? 0, currencyCode)}</Typography>
@@ -1723,11 +1704,9 @@ export function PosCartPage() {
         open={lotteryAction !== null}
         mode={lotteryAction ?? 'SOLD'}
         currencyCode={currencyCode}
-        busy={lotteryQuickMutation.isPending || lotteryOperators.isLoading}
-        error={lotteryQuickMutation.error ? posErrorMessage(lotteryQuickMutation.error) : undefined}
-        onClose={() => { lotteryQuickMutation.reset(); setLotteryAction(null); }}
-        onSubmit={(amount) => lotteryAction && lotteryQuickMutation.mutate({ mode: lotteryAction, amount })}
-        onFullWorkflow={() => navigate(lotteryAction === 'WIN' ? '/lottery/payout' : '/lottery/sale')}
+        busy={false}
+        onClose={() => setLotteryAction(null)}
+        onSubmit={(amount) => lotteryAction && addLotteryItem(lotteryAction, amount)}
       />
       <Dialog
         open={Boolean(pendingAgeVerification)}

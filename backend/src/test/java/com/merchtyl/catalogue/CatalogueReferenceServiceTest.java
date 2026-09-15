@@ -122,4 +122,21 @@ class CatalogueReferenceServiceTest {
 
         verify(categoryRepository, never()).saveAndFlush(any());
     }
+
+    @Test
+    void resolvesLotteryByStableSystemTypeInsteadOfGeneratedCode() {
+        Category lottery = new Category("ADV01-CAT-004", "Lottery", null, true);
+        lottery.assignTenant(tenantId);
+        ReflectionTestUtils.setField(lottery, "systemManaged", true);
+        ReflectionTestUtils.setField(lottery, "systemType", "LOTTERY");
+        Authentication authentication = mock(Authentication.class);
+        when(storeAccessService.currentTenantId(authentication)).thenReturn(tenantId);
+        when(categoryRepository.findByTenantIdAndSystemType(tenantId, "LOTTERY")).thenReturn(Optional.of(lottery));
+
+        CatalogueReferenceResponse response = service.getSystemCategory("lottery", authentication);
+
+        assertThat(response.id()).isEqualTo(lottery.getId());
+        assertThat(response.code()).isEqualTo("ADV01-CAT-004");
+        assertThat(response.systemType()).isEqualTo("LOTTERY");
+    }
 }

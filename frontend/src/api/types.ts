@@ -130,6 +130,7 @@ export type TenantDetail = {
   merchantProfile: MerchantProfile;
   subscription: TenantSubscription;
   onboarding: TenantOnboarding;
+  merchantCode: string;
   merchantSlug?: string;
   portalUrl?: string;
 };
@@ -1851,7 +1852,7 @@ export type Payment = {
 
 export type SaleItem = {
   id: string;
-  lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM';
+  lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM' | 'LOTTERY_SOLD' | 'LOTTERY_WIN';
   productId: string | null;
   variantId?: string | null;
   lineNumber: number;
@@ -1894,6 +1895,35 @@ export type SaleItem = {
   depositQuantity?: number;
   depositTotal?: number;
   version: number;
+};
+
+export type LotterySalesActivity = {
+  occurredAt: string;
+  register: string;
+  cashier: string;
+  type: 'SOLD' | 'WIN';
+  source: 'PHYSICAL_TICKET' | 'MANUAL';
+  description: string;
+  amount: number;
+  receiptNumber: string | null;
+};
+
+export type LotterySalesReport = {
+  storeId: string | null;
+  registerId: string | null;
+  cashierId: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  type: 'ALL' | 'SOLD' | 'WIN';
+  source: 'ALL' | 'PHYSICAL_TICKET' | 'MANUAL';
+  physicalTicketSales: number;
+  manualLotterySold: number;
+  totalLotterySold: number;
+  lotteryWins: number;
+  netLottery: number;
+  currencyCode: string;
+  activities: LotterySalesActivity[];
+  generatedAt: string;
 };
 
 export type PosBarcodeLookup = {
@@ -2248,6 +2278,7 @@ export type CatalogueReference = {
   description: string | null;
   active: boolean;
   systemManaged?: boolean;
+  systemType?: string | null;
   createdAt: string;
   updatedAt: string;
   version: number;

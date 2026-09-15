@@ -222,8 +222,9 @@ class ProductServiceTest {
         UUID tenantId = new UUID(0L, 1L);
         Category lottery = new Category("LOTTERY", "Lottery", null, true);
         lottery.assignTenant(tenantId);
+        org.springframework.test.util.ReflectionTestUtils.setField(lottery, "systemType", "LOTTERY");
         UUID unrelatedCategoryId = UUID.randomUUID();
-        when(categoryRepository.findByTenantIdAndCodeIgnoreCase(tenantId, "LOTTERY"))
+        when(categoryRepository.findByTenantIdAndSystemType(tenantId, "LOTTERY"))
                 .thenReturn(Optional.of(lottery));
 
         ProductResponse response = productService.create(new ProductRequest(

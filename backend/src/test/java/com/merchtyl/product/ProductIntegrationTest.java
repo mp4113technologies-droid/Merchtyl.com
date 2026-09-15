@@ -195,15 +195,16 @@ class ProductIntegrationTest {
     @Test
     void newTenantReceivesOneLotteryCategoryAndLotteryProductUsesItAuthoritatively() throws Exception {
         String token = registerAndGetToken("owner-lottery-category@products.test", "Lottery Owner");
-        String categoriesBody = mockMvc.perform(get("/api/v1/categories")
-                        .param("code", "LOTTERY")
-                        .param("active", "true")
+        String categoryBody = mockMvc.perform(get("/api/v1/categories/system/LOTTERY")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(1))
-                .andExpect(jsonPath("$.content[0].name").value("Lottery"))
+                .andExpect(jsonPath("$.name").value("Lottery"))
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.systemManaged").value(true))
+                .andExpect(jsonPath("$.systemType").value("LOTTERY"))
+                .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern("[A-Z0-9]{3}\\d{2}-CAT-\\d{3}")))
                 .andReturn().getResponse().getContentAsString();
-        String lotteryCategoryId = objectMapper.readTree(categoriesBody).path("content").get(0).path("id").asText();
+        String lotteryCategoryId = objectMapper.readTree(categoryBody).path("id").asText();
 
         mockMvc.perform(post("/api/v1/products")
                         .header("Authorization", "Bearer " + token)

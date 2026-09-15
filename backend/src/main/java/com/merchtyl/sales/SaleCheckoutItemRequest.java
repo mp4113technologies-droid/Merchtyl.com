@@ -36,7 +36,7 @@ public record SaleCheckoutItemRequest(
 
     @AssertTrue(message = "INVALID_CHECKOUT_ITEM")
     public boolean isValidShape() {
-        if (resolvedLineType() == SaleLineType.CUSTOM_ITEM) {
+        if (resolvedLineType() != SaleLineType.CATALOG_PRODUCT) {
             return productId == null && variantId == null && foodMenuItemId == null && foodMenuItemVariantId == null;
         }
         return productId != null || foodMenuItemId != null;

@@ -9,6 +9,7 @@ import com.merchtyl.common.ForbiddenOperationException;
 import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.product.ProductCapability;
+import com.merchtyl.product.SellableType;
 import com.merchtyl.sales.Sale;
 import com.merchtyl.sales.SaleItem;
 import com.merchtyl.sales.SaleRepository;
@@ -200,6 +201,9 @@ public class ReturnService {
 
     private static void requireReturnable(SaleItem saleItem) {
         if (saleItem.isCustomItem()) return;
+        if (saleItem.getSellableTypeSnapshot() == SellableType.LOTTERY_PRODUCT) {
+            throw new ConflictException("LOTTERY_PRODUCT_RETURN_NOT_SUPPORTED");
+        }
         String capabilities = saleItem.getCompletedProductCapabilities();
         if (capabilities != null && !capabilities.isBlank()) {
             Set<String> snapshotCapabilities = Set.of(capabilities.split(","));

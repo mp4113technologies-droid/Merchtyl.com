@@ -107,14 +107,6 @@ import { PosDeviceGuard } from '../features/pos/PosDeviceGuard';
 import { DiscountDefinitionsPage } from '../features/discounts/DiscountDefinitionsPage';
 import { FoodMenuPage } from '../features/foodmenu/FoodMenuPage';
 import { NewReturnPage, ReturnDetailPage, ReturnsPage } from '../features/returns/ReturnPages';
-import { LotteryOperatorDetailPage, LotteryOperatorsPage, NewLotteryOperatorPage } from '../features/lottery/LotteryOperatorPages';
-import { LotteryPayoutPoliciesPage, LotteryPayoutPolicyDetailPage, NewLotteryPayoutPolicyPage } from '../features/lottery/LotteryPayoutPolicyPages';
-import { LotterySalePage } from '../features/lottery/LotterySalePage';
-import { LotteryPayoutPage } from '../features/lottery/LotteryPayoutPage';
-import { LotteryManagementPage } from '../features/lottery/LotteryManagementPage';
-import { LotteryHistoryPage } from '../features/lottery/LotteryHistoryPage';
-import { LotteryCommissionRulePage } from '../features/lottery/LotteryCommissionRulePage';
-import { LotterySettlementPage } from '../features/lottery/LotterySettlementPage';
 import { RegisterReportsPage } from '../features/reports/RegisterReportsPage';
 import { SalesReportsPage } from '../features/reports/SalesReportsPage';
 import { LotteryReportsPage } from '../features/reports/LotteryReportsPage';
@@ -505,8 +497,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const canViewTax = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
   const canViewReports = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
   const canViewFeatures = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
-  const canRecordLottery = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER' || role === 'CASHIER');
-  const canViewLottery = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const activeRegister = useQuery({
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
@@ -522,6 +512,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const permissions = currentUser?.permissions ?? [];
   const activeRegisterType = activeRegister.data?.status === 'OPEN' ? activeRegister.data.registerType : null;
   const foodServiceEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('FOOD_SERVICE')));
+  const lotteryReportingEnabled = Boolean(accessibleStores.data?.content.some((store) => store.capabilities?.includes('LOTTERY')));
   const retailPosVisible = canViewRegisters && activeSessionAllowsPos(activeRegisterType, 'RETAIL');
   const foodPosVisible = foodServiceEnabled && permissions.includes('FOOD_POS_ACCESS') && activeSessionAllowsPos(activeRegisterType, 'FOOD_SERVICE');
   const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
@@ -573,17 +564,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       { label: 'Sales Reports', to: '/reports/sales', icon: <AssessmentOutlinedIcon />, visible: canViewReports },
       { label: 'Register Reports', to: '/reports/registers', icon: <AssessmentOutlinedIcon />, visible: canViewReports },
       { label: 'EOD Reports', to: '/end-of-day-reports', icon: <AssessmentOutlinedIcon />, visible: canViewReports },
-      { label: 'Lottery Reports', to: '/reports/lottery', icon: <AssessmentOutlinedIcon />, visible: canViewReports }
-    ] },
-    { id: 'lottery', label: 'Lottery', items: [
-      { label: 'Lottery Sale', to: '/lottery/sale', icon: <ConfirmationNumberOutlinedIcon />, visible: canRecordLottery },
-      { label: 'Lottery Payout', to: '/lottery/payout', icon: <PaymentsOutlinedIcon />, visible: canRecordLottery },
-      { label: 'Lottery History', to: '/lottery/history', icon: <HistoryOutlinedIcon />, visible: canRecordLottery },
-      { label: 'Lottery Management', to: '/lottery/management', icon: <HistoryOutlinedIcon />, visible: canRecordLottery },
-      { label: 'Lottery Operators', to: '/lottery/operators', icon: <ConfirmationNumberOutlinedIcon />, visible: canViewLottery },
-      { label: 'Payout Policies', to: '/lottery/payout-policies', icon: <PaymentsOutlinedIcon />, visible: canViewLottery },
-      { label: 'Commission Rules', to: '/lottery/commission-rules', icon: <CalculateOutlinedIcon />, visible: canViewLottery },
-      { label: 'Settlements', to: '/lottery/settlements', icon: <CalculateOutlinedIcon />, visible: canViewLottery }
+      { label: 'Lottery Sales', to: '/reports/lottery', icon: <AssessmentOutlinedIcon />, visible: canViewReports && lotteryReportingEnabled }
     ] },
     { id: 'configuration', label: 'Configuration', items: [
       { label: 'Tax', to: '/tax/rules', icon: <PublicOutlinedIcon />, visible: canViewTax },
@@ -900,18 +881,6 @@ function AppRoutes() {
           <Route path="/returns" element={<ReturnsPage />} />
           <Route path="/returns/new" element={<NewReturnPage />} />
           <Route path="/returns/:id" element={<ReturnDetailPage />} />
-          <Route path="/lottery/operators" element={<LotteryOperatorsPage />} />
-          <Route path="/lottery/sale" element={<LotterySalePage />} />
-          <Route path="/lottery/payout" element={<LotteryPayoutPage />} />
-          <Route path="/lottery/history" element={<LotteryHistoryPage />} />
-          <Route path="/lottery/management" element={<LotteryManagementPage />} />
-          <Route path="/lottery/operators/new" element={<NewLotteryOperatorPage />} />
-          <Route path="/lottery/operators/:id" element={<LotteryOperatorDetailPage />} />
-          <Route path="/lottery/payout-policies" element={<LotteryPayoutPoliciesPage />} />
-          <Route path="/lottery/payout-policies/new" element={<NewLotteryPayoutPolicyPage />} />
-          <Route path="/lottery/payout-policies/:id" element={<LotteryPayoutPolicyDetailPage />} />
-          <Route path="/lottery/commission-rules" element={<LotteryCommissionRulePage />} />
-          <Route path="/lottery/settlements" element={<LotterySettlementPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
           <Route path="/users/:id" element={<UserDetailPage />} />

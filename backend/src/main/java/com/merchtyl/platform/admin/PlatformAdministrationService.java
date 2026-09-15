@@ -503,6 +503,7 @@ public class PlatformAdministrationService {
                 merchantProfile(tenantId),
                 subscription(tenantId),
                 onboarding(tenantId),
+                (String) portal.get("merchant_code"),
                 merchantSlug,
                 merchantPortalService.portalUrl(merchantSlug));
     }

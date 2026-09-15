@@ -47,6 +47,7 @@ import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
+import com.merchtyl.store.StoreCapability;
 import com.merchtyl.tax.IncludedPriceBehavior;
 import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
@@ -208,6 +209,71 @@ class SaleServiceTest {
     }
 
     @Test
+    void checkoutNetsPositiveLotteryAmountsWithoutTaxOrNegativeStoredMoney() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_SOLD, null, null, null, null,
+                        new BigDecimal("30.00"), null, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_WIN, null, null, null, null,
+                        new BigDecimal("5.00"), null, BigDecimal.ONE, false))), lotteryAuth());
+
+        assertThat(response.totalAmount()).isEqualByComparingTo("25.00");
+        assertThat(response.estimatedTaxAmount()).isEqualByComparingTo("0.00");
+        assertThat(response.items()).extracting(SaleItemResponse::lineType)
+                .containsExactly(SaleLineType.LOTTERY_SOLD, SaleLineType.LOTTERY_WIN);
+        assertThat(response.items().get(1).unitPrice()).isEqualByComparingTo("5.00");
+        assertThat(response.items().get(1).lineTotal()).isEqualByComparingTo("-5.00");
+    }
+
+    @Test
+    void exactLotteryOffsetCompletesWithoutPaymentOrCashLedgerEntry() {
+        Sale sale = checkoutLotterySale("10.00", "10.00");
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse completed = service.complete(sale.getId(), cashier, lotteryAuth());
+
+        assertThat(completed.status()).isEqualTo(SaleStatus.COMPLETED);
+        assertThat(completed.totalAmount()).isEqualByComparingTo("0.00");
+        assertThat(completed.paidAmount()).isEqualByComparingTo("0.00");
+        assertThat(completed.paymentComplete()).isTrue();
+        assertThat(completed.payments()).isEmpty();
+        verify(cashLedgerService, never()).append(any());
+        verify(inventoryService, never()).recordStockChange(any(), any());
+    }
+
+    @Test
+    void negativeLotteryNetCompletesAsOneCashPayoutWithoutNegativePayment() {
+        Sale sale = checkoutLotterySale("10.00", "20.00");
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse completed = service.complete(sale.getId(), cashier, lotteryAuth());
+
+        assertThat(completed.totalAmount()).isEqualByComparingTo("-10.00");
+        assertThat(completed.payments()).isEmpty();
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.LOTTERY_PAYOUT_CASH);
+        assertThat(ledger.getValue().direction()).isEqualTo(CashLedgerDirection.OUT);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("10.00");
+        verify(inventoryService, never()).recordStockChange(any(), any());
+    }
+
+    private Sale checkoutLotterySale(String sold, String won) {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_SOLD, null, null, null, null,
+                        new BigDecimal(sold), null, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_WIN, null, null, null, null,
+                        new BigDecimal(won), null, BigDecimal.ONE, false))), lotteryAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        return saved.getValue();
+    }
+
+    @Test
     void checkoutCreatesRestaurantCustomItemWithFixedSnapshotNameAndAuthoritativeTaxCategory() {
         when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
         TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
@@ -277,6 +343,29 @@ class SaleServiceTest {
         assertThat(response.items().getFirst().unitPrice()).isEqualByComparingTo(product.getPrice());
         verify(storeProductRepository, never())
                 .findByTenantIdAndStore_IdAndProduct_IdAndActiveTrueAndSellableTrue(any(), any(), any());
+    }
+
+    @Test
+    void checkoutRejectsLotteryProductWithoutLotterySalePermission() {
+        UUID tenantId = UUID.randomUUID();
+        Product lotteryProduct = new Product(new ProductValues(
+                "LOT-5", "Five Dollar Ticket", null, SellableType.LOTTERY_PRODUCT, null,
+                BigDecimal.ZERO, new BigDecimal("5.0000"), null, null, true, false, false,
+                null, null, List.of(), List.of(), Set.of()));
+        lotteryProduct.assignTenant(tenantId);
+        lotteryProduct.setAvailabilityScope(ProductAvailabilityScope.ALL_STORES);
+        ReflectionTestUtils.setField(service, "storeProductRepository", storeProductRepository);
+        when(store.getTenantId()).thenReturn(tenantId);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        when(productRepository.findByIdAndTenantId(lotteryProduct.getId(), tenantId))
+                .thenReturn(Optional.of(lotteryProduct));
+
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(lotteryProduct.getId(), null, null, BigDecimal.ONE, false))), cashierAuth()))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("LOTTERY_SALE_NOT_ALLOWED");
+
+        verify(saleRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -1125,5 +1214,13 @@ class SaleServiceTest {
     private static UsernamePasswordAuthenticationToken customItemAuth() {
         return new UsernamePasswordAuthenticationToken("cashier@example.test", "n/a",
                 List.of(new SimpleGrantedAuthority("ROLE_CASHIER"), new SimpleGrantedAuthority("POS_CUSTOM_ITEM")));
+    }
+
+
+    private static UsernamePasswordAuthenticationToken lotteryAuth() {
+        return new UsernamePasswordAuthenticationToken("cashier@example.test", "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_CASHIER"),
+                        new SimpleGrantedAuthority("LOTTERY_SALE_RECORD"),
+                        new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")));
     }
 }

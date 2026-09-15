@@ -49,21 +49,37 @@ class MerchantIdentifierGenerationIntegrationTest {
     }
 
     @Test
-    void prefixesAndEntitySequencesAreStableScopedAndNeverRewind() {
+    void merchantNamespacesAndEntitySequencesAreStableScopedAndNeverRewind() {
         assertThat(prefix(SWEET_SHOP)).isEqualTo("SS");
         String deletedCode = code(SWEET_SHOP, "CATEGORY", "CAT");
-        assertThat(deletedCode).isEqualTo("SSCAT001");
+        assertThat(deletedCode).isEqualTo(merchantCode(SWEET_SHOP) + "-CAT-001");
         UUID deletedCategory = UUID.randomUUID();
         jdbc.update("insert into categories(id, tenant_id, code, name) values (?, ?, ?, 'Deleted')",
                 deletedCategory, SWEET_SHOP, deletedCode);
         jdbc.update("delete from categories where id = ?", deletedCategory);
-        assertThat(code(SWEET_SHOP, "CATEGORY", "CAT")).isEqualTo("SSCAT002");
-        assertThat(code(SWEET_SHOP, "BRAND", "BR")).isEqualTo("SSBR001");
-        assertThat(code(OTHER_MERCHANT, "CATEGORY", "CAT")).isEqualTo("OMCAT001");
+        assertThat(code(SWEET_SHOP, "CATEGORY", "CAT")).isEqualTo(merchantCode(SWEET_SHOP) + "-CAT-002");
+        assertThat(code(SWEET_SHOP, "BRAND", "BR")).isEqualTo(merchantCode(SWEET_SHOP) + "-BR-001");
+        assertThat(code(OTHER_MERCHANT, "CATEGORY", "CAT")).isEqualTo(merchantCode(OTHER_MERCHANT) + "-CAT-001");
 
         jdbc.update("update tenants set display_name = 'Sweet Shop Renamed' where id = ?", SWEET_SHOP);
         assertThat(prefix(SWEET_SHOP)).isEqualTo("SS");
-        assertThat(code(SWEET_SHOP, "CATEGORY", "CAT")).isEqualTo("SSCAT003");
+        assertThat(code(SWEET_SHOP, "CATEGORY", "CAT")).isEqualTo(merchantCode(SWEET_SHOP) + "-CAT-003");
+    }
+
+    @Test
+    void concurrentSameBaseMerchantCodeAllocationsAreUnique() throws Exception {
+        int allocations = 16;
+        var executor = Executors.newFixedThreadPool(allocations);
+        try {
+            List<Callable<String>> work = java.util.stream.IntStream.range(0, allocations)
+                    .mapToObj(ignored -> (Callable<String>) () -> jdbc.queryForObject(
+                            "select next_merchant_code('Advanced Retail')", String.class)).toList();
+            Set<String> codes = new HashSet<>();
+            for (var future : work.stream().map(executor::submit).toList()) codes.add(future.get(10, TimeUnit.SECONDS));
+            assertThat(codes).hasSize(allocations).allMatch(code -> code.matches("ADV[0-9]{2,}"));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -107,7 +123,11 @@ class MerchantIdentifierGenerationIntegrationTest {
     }
 
     private String code(UUID tenantId, String namespace, String marker) {
-        return prefix(tenantId) + marker + "%03d".formatted(nextSequence(tenantId, namespace, ""));
+        return merchantCode(tenantId) + "-" + marker + "-%03d".formatted(nextSequence(tenantId, namespace, ""));
+    }
+
+    private String merchantCode(UUID tenantId) {
+        return jdbc.queryForObject("select merchant_code from tenants where id = ?", String.class, tenantId);
     }
 
     private long nextSequence(UUID tenantId, String namespace, String key) {

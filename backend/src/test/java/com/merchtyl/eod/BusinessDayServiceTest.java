@@ -11,6 +11,9 @@ import com.merchtyl.features.FeatureService;
 import com.merchtyl.inventory.InventoryBalanceRepository;
 import com.merchtyl.inventory.InventoryTransactionRepository;
 import com.merchtyl.lottery.LotteryPayoutRepository;
+import com.merchtyl.lottery.LotteryPosActivity;
+import com.merchtyl.lottery.LotteryPosActivityType;
+import com.merchtyl.lottery.LotteryPosActivityRepository;
 import com.merchtyl.lottery.LotteryPayout;
 import com.merchtyl.lottery.LotteryPayoutMethod;
 import com.merchtyl.lottery.LotteryPayoutStatus;
@@ -86,6 +89,7 @@ class BusinessDayServiceTest {
     @Mock private LotterySaleCancellationRepository lotterySaleCancellations;
     @Mock private LotteryPayoutReversalRepository lotteryPayoutReversals;
     @Mock private LotterySettlementRepository lotterySettlements;
+    @Mock private LotteryPosActivityRepository lotteryPosActivities;
     @Mock private CashLedgerService cashLedger;
     @Mock private FeatureService features;
     @Mock private AuditService audit;
@@ -105,7 +109,7 @@ class BusinessDayServiceTest {
         service = new BusinessDayService(
                 businessDays, reports, configurations, stores, users, registerSessions, sales, refunds,
                 cashMovements, inventoryTransactions, inventoryBalances, lotterySales, lotteryPayouts,
-                lotterySaleCancellations, lotteryPayoutReversals, lotterySettlements, cashLedger, features,
+                lotterySaleCancellations, lotteryPayoutReversals, lotterySettlements, lotteryPosActivities, cashLedger, features,
                 audit, new ObjectMapper(), Clock.fixed(Instant.parse("2026-08-31T22:10:00Z"), ZoneOffset.UTC));
         ReflectionTestUtils.setField(service, "storeAccessService", storeAccess);
         authentication = mock(Authentication.class);
@@ -208,12 +212,78 @@ class BusinessDayServiceTest {
                 List.of(),
                 List.of(registerOneSold, registerTwoSold),
                 List.of(registerOneWin, registerTwoWin),
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of());
 
         assertThat(result.enabled()).isTrue();
         assertThat(result.lotterySales()).isEqualByComparingTo("500.00");
         assertThat(result.lotteryPayouts()).isEqualByComparingTo("180.00");
         assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("320.00");
+    }
+
+    @Test
+    void lotterySectionUnifiesScannedProductsAndManualActivityAcrossRegisters() {
+        SaleItem registerOneTicket = saleItem(null, null, "2.0000", "10.00", "0.00", false);
+        when(registerOneTicket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
+        SaleItem registerTwoTicket = saleItem(null, null, "5.0000", "50.00", "0.00", false);
+        when(registerTwoTicket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
+        Sale registerOneSale = sale(RegisterType.RETAIL, registerOneTicket);
+        Sale registerTwoSale = sale(RegisterType.RETAIL, registerTwoTicket);
+
+        BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
+                true,
+                List.of(registerOneSale, registerTwoSale),
+                List.of(lotterySale("R1", "90.00"), lotterySale("R2", "150.00")),
+                List.of(lotteryPayout("25.00"), lotteryPayout("75.00")),
+                List.of(), List.of(), List.of(), List.of());
+
+        assertThat(result.lotterySales()).isEqualByComparingTo("300.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("100.00");
+        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("200.00");
+        assertThat(service.categorySalesValues(
+                List.of(registerOneSale, registerTwoSale),
+                List.of())).isEmpty();
+    }
+
+    @Test
+    void simplePosActivitiesJoinScannedTicketsInTheSameLotteryTotals() {
+        SaleItem ticket = saleItem(null, null, "2.0000", "10.00", "0.00", false);
+        when(ticket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
+        LotteryPosActivity sold = mock(LotteryPosActivity.class);
+        when(sold.getType()).thenReturn(LotteryPosActivityType.SOLD);
+        when(sold.getAmount()).thenReturn(new BigDecimal("100.00"));
+        LotteryPosActivity win = mock(LotteryPosActivity.class);
+        when(win.getType()).thenReturn(LotteryPosActivityType.WIN);
+        when(win.getAmount()).thenReturn(new BigDecimal("25.00"));
+
+        Sale scannedSale = mock(Sale.class);
+        when(scannedSale.getItems()).thenReturn(List.of(ticket));
+        BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
+                true, List.of(scannedSale), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(sold, win));
+
+        assertThat(result.lotterySales()).isEqualByComparingTo("110.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("25.00");
+        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("85.00");
+    }
+
+    @Test
+    void completedLotteryCartLinesJoinScannedTicketsAndStayOutOfMerchandiseCategories() {
+        SaleItem ticket = saleItem(null, null, "2.0000", "10.00", "0.00", false);
+        when(ticket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
+        SaleItem sold = saleItem(null, null, "1.0000", "90.00", "0.00", false);
+        when(sold.getLineType()).thenReturn(com.merchtyl.sales.SaleLineType.LOTTERY_SOLD);
+        SaleItem win = saleItem(null, null, "1.0000", "-25.00", "0.00", false);
+        when(win.getLineType()).thenReturn(com.merchtyl.sales.SaleLineType.LOTTERY_WIN);
+        Sale completed = sale(RegisterType.RETAIL, ticket, sold, win);
+
+        BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
+                true, List.of(completed), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of());
+
+        assertThat(result.lotterySales()).isEqualByComparingTo("100.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("25.00");
+        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("75.00");
+        assertThat(service.categorySalesValues(List.of(completed), List.of())).isEmpty();
     }
 
     @Test
@@ -223,7 +293,7 @@ class BusinessDayServiceTest {
         Sale scannedSale = sale(RegisterType.RETAIL, scannedTicket);
 
         BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
-                false, List.of(scannedSale), List.of(), List.of(), List.of(), List.of(), List.of());
+                false, List.of(scannedSale), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
 
         assertThat(result.enabled()).isTrue();
         assertThat(result.lotterySales()).isEqualByComparingTo("10.00");
@@ -652,7 +722,7 @@ class BusinessDayServiceTest {
         service = new BusinessDayService(
                 businessDays, reports, configurations, stores, users, registerSessions, sales, refunds,
                 cashMovements, inventoryTransactions, inventoryBalances, lotterySales, lotteryPayouts,
-                lotterySaleCancellations, lotteryPayoutReversals, lotterySettlements, cashLedger, features,
+                lotterySaleCancellations, lotteryPayoutReversals, lotterySettlements, lotteryPosActivities, cashLedger, features,
                 audit, new ObjectMapper(), clock);
     }
 }

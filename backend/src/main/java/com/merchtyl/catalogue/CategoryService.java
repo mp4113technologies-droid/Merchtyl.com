@@ -56,6 +56,14 @@ public class CategoryService extends CatalogueReferenceService<Category> {
         return super.updateStatus(id, request, authentication);
     }
 
+    @Transactional(readOnly = true)
+    public CatalogueReferenceResponse getSystemCategory(String systemType, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        return repository.findByTenantIdAndSystemType(tenantId, systemType.toUpperCase(java.util.Locale.ROOT))
+                .map(CatalogueReferenceResponse::from)
+                .orElseThrow(() -> new NotFoundException("System category not found"));
+    }
+
     private void requireMutable(UUID id, Authentication authentication) {
         if (category(id, authentication).isSystemManaged()) {
             throw new ConflictException("SYSTEM_CATEGORY_PROTECTED");

@@ -204,6 +204,19 @@ public class SaleService {
         List<DiscountEngine.PromotionLine> promotionLines=new java.util.ArrayList<>();
         for (SaleCheckoutItemRequest line : request.items()) {
             if (!line.isValidShape()) throw new BadRequestException("INVALID_CHECKOUT_ITEM");
+            if (line.resolvedLineType() == SaleLineType.LOTTERY_SOLD || line.resolvedLineType() == SaleLineType.LOTTERY_WIN) {
+                if (line.resolvedLineType() == SaleLineType.LOTTERY_WIN) requireLotteryPayoutPermission(authentication);
+                else requireLotterySalePermission(authentication);
+                if (session.getRegister().getType() != RegisterType.RETAIL) throw new BadRequestException("LOTTERY_REQUIRES_RETAIL_REGISTER");
+                if (!session.getStore().getCapabilities().contains(com.merchtyl.store.StoreCapability.LOTTERY)) throw new BadRequestException("LOTTERY_NOT_ENABLED_FOR_STORE");
+                if (featureService != null) featureService.requireEnabled(com.merchtyl.features.FeatureCode.LOTTERY_SALES,
+                        session.getStore().getId(), session.getRegister().getId());
+                if (line.unitPrice() == null) throw new BadRequestException("LOTTERY_AMOUNT_REQUIRED");
+                BigDecimal amount = normalizeMoney(line.unitPrice(), "unitPrice");
+                if (amount.signum() <= 0) throw new BadRequestException("LOTTERY_AMOUNT_INVALID");
+                sale.addItem(SaleItem.lottery(sale, line.resolvedLineType(), normalizeQuantity(line.quantity()), amount));
+                continue;
+            }
             if (line.resolvedLineType() == SaleLineType.CUSTOM_ITEM) {
                 requireCustomItemPermission(authentication);
                 String description = session.getRegister().getType() == RegisterType.FOOD_SERVICE
@@ -233,9 +246,12 @@ public class SaleService {
                     && !session.getStore().getCapabilities().contains(com.merchtyl.store.StoreCapability.LOTTERY)) {
                 throw new BadRequestException("LOTTERY_NOT_ENABLED_FOR_STORE");
             }
-            if (product.getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT && featureService != null) {
-                featureService.requireEnabled(com.merchtyl.features.FeatureCode.LOTTERY_SALES,
-                        session.getStore().getId(), session.getRegister().getId());
+            if (product.getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT) {
+                requireLotterySalePermission(authentication);
+                if (featureService != null) {
+                    featureService.requireEnabled(com.merchtyl.features.FeatureCode.LOTTERY_SALES,
+                            session.getStore().getId(), session.getRegister().getId());
+                }
             }
             BigDecimal unitPrice = resolved.unitPrice();
             SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
@@ -655,7 +671,7 @@ public class SaleService {
             throw new ConflictException("Sale must have at least one item before completion");
         }
 
-        sale.getItems().stream().filter(item -> !item.isCustomItem())
+        sale.getItems().stream().filter(SaleItem::isCatalogProduct)
                 .forEach(item -> saleItemHandlerRegistry.validate(item.validationRequest()));
         requireSufficientPayments(sale);
 
@@ -663,7 +679,7 @@ public class SaleService {
         List<SaleItem> items = sale.getItems();
         for (SaleItem item : items) {
             item.snapshotForCompletion();
-            deductInventory(sale, item, completedAt, authentication);
+            if (item.isCatalogProduct()) deductInventory(sale, item, completedAt, authentication);
         }
         appendCashLedgerEntries(sale, actor, completedAt);
         if (foodOrderTokenService != null
@@ -753,7 +769,15 @@ public class SaleService {
         BigDecimal tax = moneyZero();
         BigDecimal total = moneyZero();
         for (SaleItem item : sale.getItems()) {
-            if (!item.isCustomItem()) saleItemHandlerRegistry.validate(item.validationRequest());
+            if (item.isLottery()) {
+                BigDecimal amount = money(item.getUnitPrice().multiply(item.getQuantity()));
+                BigDecimal signed = item.isLotteryWin() ? amount.negate() : amount;
+                item.setCalculatedAmounts(signed, moneyZero(), signed);
+                subtotal = subtotal.add(signed);
+                total = total.add(signed);
+                continue;
+            }
+            if (item.isCatalogProduct()) saleItemHandlerRegistry.validate(item.validationRequest());
             TaxCalculationResponse taxResponse = taxEngine.calculate(new TaxCalculationRequest(
                     sale.getStore().getId(),
                     null,
@@ -884,6 +908,7 @@ public class SaleService {
     }
 
     private static void requireSufficientPayments(Sale sale) {
+        if (sale.getTotalAmount().signum() <= 0) return;
         if (paidAmount(sale).compareTo(sale.getTotalAmount()) < 0) {
             throw new ConflictException("Sale has insufficient payments");
         }
@@ -924,6 +949,13 @@ public class SaleService {
     }
 
     private void appendCashLedgerEntries(Sale sale, User actor, Instant completedAt) {
+        if (sale.getTotalAmount().signum() < 0) {
+            cashLedgerService.append(new CashLedgerEntryCommand(
+                    sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
+                    CashLedgerSourceType.LOTTERY_PAYOUT_CASH, sale.getId(), CashLedgerDirection.OUT,
+                    sale.getTotalAmount().abs(), sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
+                    operationId(sale.getId(), "lottery-net-payout", sale.getId()), "Net Lottery payout"));
+        }
         for (Payment payment : sale.getPayments()) {
             if (payment.getMethod() != PaymentMethod.CASH) {
                 continue;
@@ -1033,6 +1065,18 @@ public class SaleService {
     private static void requireCustomItemPermission(Authentication authentication) {
         if (!hasAuthority(authentication, PermissionCode.POS_CUSTOM_ITEM.name())) {
             throw new ForbiddenOperationException("CUSTOM_ITEM_NOT_ALLOWED");
+        }
+    }
+
+    private static void requireLotterySalePermission(Authentication authentication) {
+        if (!hasAuthority(authentication, PermissionCode.LOTTERY_SALE_RECORD.name())) {
+            throw new ForbiddenOperationException("LOTTERY_SALE_NOT_ALLOWED");
+        }
+    }
+
+    private static void requireLotteryPayoutPermission(Authentication authentication) {
+        if (!hasAuthority(authentication, PermissionCode.LOTTERY_PAYOUT_RECORD.name())) {
+            throw new ForbiddenOperationException("LOTTERY_PAYOUT_NOT_ALLOWED");
         }
     }
 

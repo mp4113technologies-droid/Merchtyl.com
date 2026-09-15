@@ -60,7 +60,7 @@ import {
   type ProductUpdatePayload
   ,type BarcodeOwnership
 } from '../../api/client';
-import type { AssignedStore, CatalogueReference, Product, ProductCapability, SellableType, TaxCategory, UserRole } from '../../api/types';
+import type { AssignedStore, CatalogueReference, CatalogueReferenceListResponse, Product, ProductCapability, SellableType, TaxCategory, UserRole } from '../../api/types';
 import { compactFilterBarSx } from '../../app/responsive';
 import { useSession } from '../../app/session';
 
@@ -234,16 +234,28 @@ function DeleteProductDialog({product,open,loading,error,onClose,onConfirm}:{pro
   </Dialog>;
 }
 
+async function listAllActiveCategories(token: string): Promise<CatalogueReferenceListResponse> {
+  const content: CatalogueReference[] = [];
+  let page = 0;
+  let response: CatalogueReferenceListResponse;
+  do {
+    response = await catalogueReferenceApi.categories.list(token, { page, size: 100, active: true });
+    content.push(...response.content);
+    page += 1;
+  } while (!response.last && page < response.totalPages);
+  return { ...response, content, page: 0, totalElements: content.length, first: true, last: true };
+}
+
 function useReferenceOptions(enabled: boolean) {
   const { getValidAccessToken } = useSession();
   const categories = useQuery({
     queryKey: ['categories', 'product-options'],
-    queryFn: async () => catalogueReferenceApi.categories.list(await getValidAccessToken(), { page: 0, size: 100, active: true }),
+    queryFn: async () => listAllActiveCategories(await getValidAccessToken()),
     enabled
   });
   const lotteryCategory = useQuery({
     queryKey: ['categories', 'product-options', 'LOTTERY'],
-    queryFn: async () => catalogueReferenceApi.categories.list(await getValidAccessToken(), { page: 0, size: 1, active: true, code: 'LOTTERY' }),
+    queryFn: async () => catalogueReferenceApi.categories.getSystem(await getValidAccessToken(), 'LOTTERY'),
     enabled
   });
   const brands = useQuery({
@@ -263,9 +275,9 @@ function useReferenceOptions(enabled: boolean) {
   });
   const categoryOptions = React.useMemo(() => {
     const values = categories.data?.content ?? [];
-    const lottery = lotteryCategory.data?.content[0];
+    const lottery = lotteryCategory.data;
     return lottery && !values.some((category) => category.id === lottery.id) ? [...values, lottery] : values;
-  }, [categories.data?.content, lotteryCategory.data?.content]);
+  }, [categories.data?.content, lotteryCategory.data]);
   return { categories, categoryOptions, brands, units, taxCategories };
 }
 
@@ -446,7 +458,7 @@ function ProductForm({
   const watchedSellableType = useWatch({ control: form.control, name: 'sellableType' });
   const watchedCategoryId = useWatch({ control: form.control, name: 'categoryId' });
   const lotteryCategory = React.useMemo(
-    () => categories.find((category) => category.code.toUpperCase() === 'LOTTERY'),
+    () => categories.find((category) => category.systemType === 'LOTTERY' || category.code.toUpperCase() === 'LOTTERY'),
     [categories]
   );
 
@@ -454,8 +466,6 @@ function ProductForm({
     if (!lotteryCategory) return;
     if (watchedSellableType === 'LOTTERY_PRODUCT' && watchedCategoryId !== lotteryCategory.id) {
       form.setValue('categoryId', lotteryCategory.id, { shouldDirty: true, shouldValidate: true });
-    } else if (watchedSellableType !== 'LOTTERY_PRODUCT' && watchedCategoryId === lotteryCategory.id) {
-      form.setValue('categoryId', '', { shouldDirty: true, shouldValidate: true });
     }
   }, [form, lotteryCategory, watchedCategoryId, watchedSellableType]);
 
@@ -511,7 +521,7 @@ function ProductForm({
               />
             </Grid>
             <Grid item xs={12} md={6} xl={4}>
-              <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled || watchedSellableType === 'LOTTERY_PRODUCT'} />
+              <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled} />
             </Grid>
             <Grid item xs={12} md={6} xl={4}>
               <ReferenceSelect control={form.control} name="brandId" label="Brand" options={brands} disabled={disabled} />

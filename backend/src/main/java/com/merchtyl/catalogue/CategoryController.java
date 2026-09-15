@@ -52,6 +52,12 @@ public class CategoryController {
         return service.get(id, authentication);
     }
 
+    @GetMapping("/system/{systemType}")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_VIEW)")
+    CatalogueReferenceResponse getSystemCategory(@PathVariable String systemType, Authentication authentication) {
+        return service.getSystemCategory(systemType, authentication);
+    }
+
     @PutMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_MANAGE)")
     CatalogueReferenceResponse update(@PathVariable UUID id, @Valid @RequestBody CatalogueReferenceUpdateRequest request, Authentication authentication) {

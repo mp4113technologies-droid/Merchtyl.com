@@ -379,7 +379,7 @@ public class ProductService {
 
     private Category category(SellableType type, UUID requestedCategoryId, UUID tenantId) {
         if (type == SellableType.LOTTERY_PRODUCT) {
-            Category lottery = categoryRepository.findByTenantIdAndCodeIgnoreCase(tenantId, LOTTERY_CATEGORY_CODE)
+            Category lottery = categoryRepository.findByTenantIdAndSystemType(tenantId, LOTTERY_CATEGORY_CODE)
                     .orElseThrow(() -> new BadRequestException("LOTTERY_CATEGORY_NOT_CONFIGURED"));
             if (!lottery.isActive()) throw new BadRequestException("LOTTERY_CATEGORY_NOT_CONFIGURED");
             return lottery;
