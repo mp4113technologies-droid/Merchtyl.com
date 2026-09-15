@@ -146,15 +146,16 @@ const productSchema = z.object({
   inventoryTrackingEnabled: z.boolean(),
   decimalQuantityAllowed: z.boolean(),
   imageUrl: z.string().max(1000, 'Image URL must be 1000 characters or fewer').optional(),
-  taxCategoryId: z.string().trim()
-    .min(1, 'Select a tax category')
-    .regex(uuidPattern, 'Select a valid tax category'),
+  taxCategoryId: z.string().trim(),
   variants: z.array(variantSchema),
   capabilities: z.array(z.enum(productCapabilities)),
   minimumAge: z.number().int().min(1, 'Minimum age must be at least 1').max(99, 'Minimum age must be 99 or less').optional()
   ,availabilityScope:z.enum(['ALL_STORES','SELECTED_STORES']),
   storeIds:z.array(z.string().regex(uuidPattern))
 }).superRefine((values, context) => {
+  if (values.sellableType !== 'LOTTERY_PRODUCT' && !uuidPattern.test(values.taxCategoryId)) {
+    context.addIssue({ code: 'custom', path: ['taxCategoryId'], message: 'Select a valid tax category' });
+  }
   if(values.availabilityScope==='SELECTED_STORES'&&!values.storeIds.length)context.addIssue({code:'custom',path:['storeIds'],message:'Select at least one Store'});
   if (values.capabilities.includes('REQUIRE_AGE_VERIFICATION') && values.minimumAge == null) {
     context.addIssue({ code: 'custom', path: ['minimumAge'], message: 'Enter the required minimum age' });
@@ -240,6 +241,11 @@ function useReferenceOptions(enabled: boolean) {
     queryFn: async () => catalogueReferenceApi.categories.list(await getValidAccessToken(), { page: 0, size: 100, active: true }),
     enabled
   });
+  const lotteryCategory = useQuery({
+    queryKey: ['categories', 'product-options', 'LOTTERY'],
+    queryFn: async () => catalogueReferenceApi.categories.list(await getValidAccessToken(), { page: 0, size: 1, active: true, code: 'LOTTERY' }),
+    enabled
+  });
   const brands = useQuery({
     queryKey: ['brands', 'product-options'],
     queryFn: async () => catalogueReferenceApi.brands.list(await getValidAccessToken(), { page: 0, size: 100, active: true }),
@@ -255,7 +261,12 @@ function useReferenceOptions(enabled: boolean) {
     queryFn: async () => listTaxCategories(await getValidAccessToken(), { page: 0, size: 100, active: true }),
     enabled
   });
-  return { categories, brands, units, taxCategories };
+  const categoryOptions = React.useMemo(() => {
+    const values = categories.data?.content ?? [];
+    const lottery = lotteryCategory.data?.content[0];
+    return lottery && !values.some((category) => category.id === lottery.id) ? [...values, lottery] : values;
+  }, [categories.data?.content, lotteryCategory.data?.content]);
+  return { categories, categoryOptions, brands, units, taxCategories };
 }
 
 function referenceLabel(reference?: CatalogueReference) {
@@ -314,6 +325,14 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
   } else {
     capabilities.delete('ALLOW_DECIMAL_QUANTITY');
   }
+  if (values.sellableType === 'LOTTERY_PRODUCT') {
+    capabilities.delete('ALLOW_DECIMAL_QUANTITY');
+    capabilities.delete('ALLOW_DISCOUNT');
+    capabilities.delete('ALLOW_RETURN');
+    capabilities.delete('ALLOW_REFUND');
+    capabilities.delete('ALLOW_PRICE_OVERRIDE');
+    capabilities.add('NON_REFUNDABLE');
+  }
   return {
     sku: optionalText(values.sku)?.toUpperCase(),
     name: values.name.trim(),
@@ -326,9 +345,9 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
     brandId: optionalText(values.brandId),
     active: values.active,
     inventoryTrackingEnabled: values.inventoryTrackingEnabled,
-    decimalQuantityAllowed: values.decimalQuantityAllowed,
+    decimalQuantityAllowed: values.sellableType === 'LOTTERY_PRODUCT' ? false : values.decimalQuantityAllowed,
     imageUrl: optionalText(values.imageUrl),
-    taxCategoryId: optionalText(values.taxCategoryId),
+    taxCategoryId: values.sellableType === 'LOTTERY_PRODUCT' ? undefined : optionalText(values.taxCategoryId),
     variants: values.variants.map((variant) => ({
       id: variant.id,
       sku: optionalText(variant.sku)?.toUpperCase(),
@@ -424,6 +443,21 @@ function ProductForm({
   });
   const variants = useFieldArray({ control: form.control, name: 'variants', keyName: 'fieldKey' });
   const watchedVariants = useWatch({ control: form.control, name: 'variants' }) ?? [];
+  const watchedSellableType = useWatch({ control: form.control, name: 'sellableType' });
+  const watchedCategoryId = useWatch({ control: form.control, name: 'categoryId' });
+  const lotteryCategory = React.useMemo(
+    () => categories.find((category) => category.code.toUpperCase() === 'LOTTERY'),
+    [categories]
+  );
+
+  React.useEffect(() => {
+    if (!lotteryCategory) return;
+    if (watchedSellableType === 'LOTTERY_PRODUCT' && watchedCategoryId !== lotteryCategory.id) {
+      form.setValue('categoryId', lotteryCategory.id, { shouldDirty: true, shouldValidate: true });
+    } else if (watchedSellableType !== 'LOTTERY_PRODUCT' && watchedCategoryId === lotteryCategory.id) {
+      form.setValue('categoryId', '', { shouldDirty: true, shouldValidate: true });
+    }
+  }, [form, lotteryCategory, watchedCategoryId, watchedSellableType]);
 
   return (
     <Stack
@@ -470,14 +504,14 @@ function ProductForm({
                 name="sellableType"
                 control={form.control}
                 render={({ field, fieldState }) => (
-                  <TextField {...field} select label="Sellable type" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth SelectProps={{ MenuProps: productSelectMenuProps }}>
+                  <TextField {...field} onChange={(event) => { field.onChange(event); if (event.target.value === 'LOTTERY_PRODUCT') { form.setValue('taxCategoryId', ''); form.setValue('decimalQuantityAllowed', false); } }} select label="Sellable type" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth SelectProps={{ MenuProps: productSelectMenuProps }}>
                     {sellableTypes.map((type) => <MenuItem key={type} value={type}>{type.replaceAll('_', ' ')}</MenuItem>)}
                   </TextField>
                 )}
               />
             </Grid>
             <Grid item xs={12} md={6} xl={4}>
-              <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled} />
+              <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled || watchedSellableType === 'LOTTERY_PRODUCT'} />
             </Grid>
             <Grid item xs={12} md={6} xl={4}>
               <ReferenceSelect control={form.control} name="brandId" label="Brand" options={brands} disabled={disabled} />
@@ -503,11 +537,13 @@ function ProductForm({
                     {...field}
                     select
                     label="Tax Category"
-                    required
-                    disabled={disabled || taxCategoriesLoading || Boolean(taxCategoriesError) || taxCategories.length === 0}
+                    required={form.watch('sellableType') !== 'LOTTERY_PRODUCT'}
+                    disabled={disabled || form.watch('sellableType') === 'LOTTERY_PRODUCT' || taxCategoriesLoading || Boolean(taxCategoriesError) || taxCategories.length === 0}
                     error={Boolean(fieldState.error) || Boolean(taxCategoriesError)}
                     helperText={taxCategoriesLoading
                       ? 'Loading tax categories...'
+                      : form.watch('sellableType') === 'LOTTERY_PRODUCT'
+                        ? 'Lottery products are outside normal merchandise tax.'
                       : taxCategoriesError
                         ? 'Unable to load tax categories.'
                         : taxCategories.length === 0
@@ -527,7 +563,7 @@ function ProductForm({
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <SwitchInput control={form.control} name="active" label="Active" disabled={disabled} />
             <SwitchInput control={form.control} name="inventoryTrackingEnabled" label="Track inventory" disabled={disabled} />
-            <SwitchInput control={form.control} name="decimalQuantityAllowed" label="Decimal quantity" disabled={disabled} />
+            <SwitchInput control={form.control} name="decimalQuantityAllowed" label="Decimal quantity" disabled={disabled || form.watch('sellableType') === 'LOTTERY_PRODUCT'} />
           </Stack>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
             <Controller
@@ -1061,7 +1097,7 @@ export function ProductsPage() {
   const [includeInactive, setIncludeInactive] = React.useState(false);
   const [deleteTarget,setDeleteTarget]=React.useState<Product|null>(null);
 
-  const categoryMap = React.useMemo(() => new Map((references.categories.data?.content ?? []).map((item) => [item.id, item])), [references.categories.data?.content]);
+  const categoryMap = React.useMemo(() => new Map(references.categoryOptions.map((item) => [item.id, item])), [references.categoryOptions]);
   const brandMap = React.useMemo(() => new Map((references.brands.data?.content ?? []).map((item) => [item.id, item])), [references.brands.data?.content]);
 
   const params = React.useMemo<ProductSearchParams>(() => ({
@@ -1135,7 +1171,7 @@ export function ProductsPage() {
           <TextField label="Barcode" value={filters.barcode} onChange={(event) => setFilters((value) => ({ ...value, barcode: event.target.value }))} fullWidth />
           <TextField select label="Category" value={filters.categoryId} onChange={(event) => setFilters((value) => ({ ...value, categoryId: event.target.value }))} fullWidth>
             <MenuItem value="">All categories</MenuItem>
-            {(references.categories.data?.content ?? []).map((category) => <MenuItem key={category.id} value={category.id}>{referenceLabel(category)}</MenuItem>)}
+            {references.categoryOptions.map((category) => <MenuItem key={category.id} value={category.id}>{referenceLabel(category)}</MenuItem>)}
           </TextField>
           <TextField select label="Brand" value={filters.brandId} onChange={(event) => setFilters((value) => ({ ...value, brandId: event.target.value }))} fullWidth>
             <MenuItem value="">All brands</MenuItem>
@@ -1301,7 +1337,7 @@ export function NewProductPage() {
       {!loadingOptions ? (
         <ProductForm
           key="new-product"
-          categories={references.categories.data?.content ?? []}
+          categories={references.categoryOptions}
           brands={references.brands.data?.content ?? []}
           units={references.units.data?.content ?? []}
           taxCategories={references.taxCategories.data?.content ?? []}
@@ -1438,7 +1474,7 @@ export function ProductDetailPage() {
 
       <ProductForm
         key={`${product.data.id}:${product.data.version}`}
-        categories={references.categories.data?.content ?? []}
+        categories={references.categoryOptions}
         brands={references.brands.data?.content ?? []}
         units={references.units.data?.content ?? []}
         taxCategories={references.taxCategories.data?.content ?? []}

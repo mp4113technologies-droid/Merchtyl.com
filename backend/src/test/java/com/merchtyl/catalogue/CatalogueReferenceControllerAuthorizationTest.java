@@ -133,6 +133,7 @@ class CatalogueReferenceControllerAuthorizationTest {
                 "Grocery",
                 "General grocery items",
                 true,
+                false,
                 Instant.parse("2026-07-22T12:00:00Z"),
                 Instant.parse("2026-07-22T12:00:00Z"),
                 0);

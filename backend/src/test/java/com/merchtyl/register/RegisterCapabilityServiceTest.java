@@ -26,7 +26,7 @@ class RegisterCapabilityServiceTest {
 
         service.requireEnabled(store, RegisterType.FOOD_SERVICE);
 
-        verify(entitlements).requireActive(store.getTenantId(), CommercialCapability.FOOD_SERVICE);
+        verify(entitlements).requireActiveOrOpenRegisterSession(store.getTenantId(), store.getId(), CommercialCapability.FOOD_SERVICE);
     }
 
     @Test
@@ -36,7 +36,7 @@ class RegisterCapabilityServiceTest {
         assertThatThrownBy(() -> service.requireEnabled(store, RegisterType.FOOD_SERVICE))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessage("STORE_CAPABILITY_NOT_ENABLED: Food service is not enabled for this store.");
-        verify(entitlements, never()).requireActive(store.getTenantId(), CommercialCapability.FOOD_SERVICE);
+        verify(entitlements, never()).requireActiveOrOpenRegisterSession(store.getTenantId(), store.getId(), CommercialCapability.FOOD_SERVICE);
     }
 
     @Test
@@ -46,15 +46,16 @@ class RegisterCapabilityServiceTest {
         service.requireEnabled(store, RegisterType.RETAIL);
         service.requireEnabled(store, RegisterType.FOOD_SERVICE);
 
-        verify(entitlements).requireActive(store.getTenantId(), CommercialCapability.FOOD_SERVICE);
+        verify(entitlements).requireActiveOrOpenRegisterSession(store.getTenantId(), store.getId(), CommercialCapability.FOOD_SERVICE);
     }
 
     @Test
     void subscriptionDenialIsNotBypassedForFoodServiceStore() {
         Store store = store(Set.of(StoreCapability.FOOD_SERVICE));
         UUID tenantId = store.getTenantId();
+        UUID storeId = store.getId();
         org.mockito.Mockito.doThrow(new ForbiddenOperationException("MERCHANT_CAPABILITY_NOT_ENABLED"))
-                .when(entitlements).requireActive(tenantId, CommercialCapability.FOOD_SERVICE);
+                .when(entitlements).requireActiveOrOpenRegisterSession(tenantId, storeId, CommercialCapability.FOOD_SERVICE);
 
         assertThatThrownBy(() -> service.requireEnabled(store, RegisterType.FOOD_SERVICE))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -64,6 +65,7 @@ class RegisterCapabilityServiceTest {
     private Store store(Set<StoreCapability> capabilities) {
         Store store = mock(Store.class);
         when(store.getTenantId()).thenReturn(UUID.randomUUID());
+        when(store.getId()).thenReturn(UUID.randomUUID());
         when(store.getCapabilities()).thenReturn(capabilities);
         return store;
     }

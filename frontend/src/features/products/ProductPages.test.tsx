@@ -168,7 +168,12 @@ function mockReferenceEndpoints(url: URL) {
     return jsonResponse({ ...referencePage([]), content: [category, zeroRated], totalElements: 2 });
   }
   if (url.pathname.endsWith('/api/v1/categories')) {
-    return jsonResponse(referencePage([reference()]));
+    const lottery = reference({
+      id: '00000000-0000-0000-0000-000000000899',
+      code: 'LOTTERY',
+      name: 'Lottery'
+    });
+    return jsonResponse(referencePage(url.searchParams.get('code') === 'LOTTERY' ? [lottery] : [reference(), lottery]));
   }
   if (url.pathname.endsWith('/api/v1/brands')) {
     return jsonResponse(referencePage([reference({
@@ -476,6 +481,31 @@ describe('Product pages', () => {
     expect(screen.getByRole('heading', { name: 'New product' })).toBeVisible();
     expect(screen.getByLabelText('Name')).toHaveValue('Duplicate Tea');
     expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument();
+  });
+
+  it('selects the system Lottery category for lottery products and clears it when returning to standard', async () => {
+    storeSession(['OWNER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      return mockReferenceEndpoints(url) ?? apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    await screen.findByRole('heading', { name: 'New product' });
+    const sellableType = await screen.findByRole('combobox', { name: 'Sellable type' });
+    const category = screen.getByRole('combobox', { name: 'Category' });
+
+    await userEvent.click(sellableType);
+    await userEvent.click(await screen.findByRole('option', { name: 'LOTTERY PRODUCT' }));
+    await waitFor(() => expect(category).toHaveTextContent('Lottery (LOTTERY)'));
+    expect(category).toHaveAttribute('aria-disabled', 'true');
+
+    await userEvent.click(sellableType);
+    await userEvent.click(await screen.findByRole('option', { name: 'STANDARD PRODUCT' }));
+    await waitFor(() => expect(category.textContent?.replaceAll('\u200b', '')).toBe(''));
+    expect(category).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   it('keeps batch scans temporary, discards them on cancel, and merges them locally on Add All', async () => {

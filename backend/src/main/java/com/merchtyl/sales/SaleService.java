@@ -113,6 +113,8 @@ public class SaleService {
     private DiscountEngine discountEngine;
     @Autowired
     private TaxCategoryRepository taxCategoryRepository;
+    @Autowired(required = false)
+    private com.merchtyl.features.FeatureService featureService;
 
     @Autowired
     public SaleService(
@@ -227,6 +229,14 @@ public class SaleService {
             ResolvedCheckoutItem resolved = resolveCheckoutItem(session, sale, line);
             Product product = resolved.product();
             ProductVariant variant = resolved.variant();
+            if (product.getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT
+                    && !session.getStore().getCapabilities().contains(com.merchtyl.store.StoreCapability.LOTTERY)) {
+                throw new BadRequestException("LOTTERY_NOT_ENABLED_FOR_STORE");
+            }
+            if (product.getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT && featureService != null) {
+                featureService.requireEnabled(com.merchtyl.features.FeatureCode.LOTTERY_SALES,
+                        session.getStore().getId(), session.getRegister().getId());
+            }
             BigDecimal unitPrice = resolved.unitPrice();
             SaleItem item = new SaleItem(sale, product, variant, normalizeQuantity(line.quantity()),
                     normalizeMoney(unitPrice, "unitPrice"), moneyZero(), false,

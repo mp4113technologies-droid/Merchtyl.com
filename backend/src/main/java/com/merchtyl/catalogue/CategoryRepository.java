@@ -7,5 +7,6 @@ import java.util.UUID;
 
 public interface CategoryRepository extends JpaRepository<Category, UUID>, JpaSpecificationExecutor<Category>, CatalogueReferenceRepository<Category>, TenantCatalogueReferenceRepository<Category> {
     java.util.Optional<Category> findByIdAndTenantId(UUID id, UUID tenantId);
+    java.util.Optional<Category> findByTenantIdAndCodeIgnoreCase(UUID tenantId, String code);
     java.util.List<Category> findAllByTenantId(UUID tenantId);
 }

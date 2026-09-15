@@ -8,6 +8,8 @@ import PointOfSaleOutlinedIcon from '@mui/icons-material/PointOfSaleOutlined';
 import PaymentOutlinedIcon from '@mui/icons-material/PaymentOutlined';
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import ConfirmationNumberOutlinedIcon from '@mui/icons-material/ConfirmationNumberOutlined';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
@@ -51,6 +53,15 @@ import {
   checkoutSaleCart,
   completeSale,
   getCurrentRegisterSession,
+  getEffectiveStoreCapability,
+  listLotteryOperators,
+  recordLotterySale,
+  getLotteryPayoutAvailableCash,
+  getLotteryPayoutPolicy,
+  createLotteryPayout,
+  validateLotteryPayout,
+  authorizeLotteryPayout,
+  completeLotteryCashPayout,
   getSale,
   holdSale,
   listDevices,
@@ -140,6 +151,30 @@ function completionKey() {
     return globalThis.crypto.randomUUID();
   }
   return `complete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function LotteryAmountDialog({ open, mode, currencyCode, busy, error, onClose, onSubmit, onFullWorkflow }: {
+  open: boolean; mode: 'SOLD' | 'WIN'; currencyCode: string; busy: boolean; error?: string;
+  onClose: () => void; onSubmit: (amount: number) => void; onFullWorkflow: () => void;
+}) {
+  const [amount, setAmount] = React.useState('');
+  React.useEffect(() => { if (open) setAmount(''); }, [open, mode]);
+  const numericAmount = Number(amount);
+  const valid = Number.isFinite(numericAmount) && numericAmount > 0 && Math.round(numericAmount * 100) === numericAmount * 100;
+  return <Dialog open={open} onClose={busy ? undefined : onClose} slotProps={{ paper: { sx: { width: 430, maxWidth: 'calc(100vw - 32px)', m: 2, height: 'auto', borderRadius: 2 } } }}>
+    <Box component="form" onSubmit={(event) => { event.preventDefault(); if (valid && !busy) onSubmit(numericAmount); }}>
+      <DialogTitle>{mode === 'SOLD' ? 'Lottery Sold' : 'Lottery Win'}</DialogTitle>
+      <DialogContent><Stack spacing={1.5} sx={{ pt: 1 }}>
+        <TextField autoFocus fullWidth required label={mode === 'SOLD' ? `Amount (${currencyCode})` : `Payout Amount (${currencyCode})`} value={amount} onChange={(event) => setAmount(event.target.value)} type="number" inputProps={{ min: 0.01, step: 0.01, inputMode: 'decimal' }} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} />
+        {error ? <Alert severity="error">{error}</Alert> : null}
+      </Stack></DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        {error ? <Button onClick={onFullWorkflow}>{mode === 'WIN' ? 'Open full payout' : 'Open full sale'}</Button> : null}
+        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button type="submit" variant="contained" color={mode === 'WIN' ? 'warning' : 'primary'} disabled={!valid || busy}>{busy ? 'Recording…' : mode === 'SOLD' ? 'Add' : 'Record Win'}</Button>
+      </DialogActions>
+    </Box>
+  </Dialog>;
 }
 
 function storeLabel(store?: Store) {
@@ -941,6 +976,8 @@ export function PosCartPage() {
   const [receiptPrintError, setReceiptPrintError] = React.useState<string | null>(null);
   const [draftRecovered, setDraftRecovered] = React.useState(false);
   const [printingReceipt, setPrintingReceipt] = React.useState(false);
+  const [lotteryAction, setLotteryAction] = React.useState<'SOLD' | 'WIN' | null>(null);
+  const [lotteryNotice, setLotteryNotice] = React.useState<string | null>(null);
   const completionKeyRef = React.useRef<string | null>(null);
   const automaticPrintSaleIdRef = React.useRef<string | null>(null);
   const autoPrintedReceiptRef = React.useRef<string | null>(null);
@@ -1018,7 +1055,6 @@ export function PosCartPage() {
     enabled: submittedSearch.trim().length > 0 && Boolean(current.data?.storeId)
   });
   const savedDiscounts=useQuery({queryKey:['active-pos-discounts',current.data?.storeId],queryFn:async()=>listActiveStoreDiscounts(await getValidAccessToken(),current.data?.storeId??''),enabled:Boolean(current.data?.storeId),staleTime:5*60_000});
-
   React.useEffect(() => {
     if (searchMode !== 'PRODUCT') return;
     const normalized = productSearch.trim();
@@ -1038,7 +1074,46 @@ export function PosCartPage() {
   const store = stores.data?.content.find((item) => item.id === current.data?.storeId);
   const register = registers.data?.content.find((item) => item.id === current.data?.registerId);
   const device = devices.data?.content.find((item) => item.id === current.data?.deviceId);
+  const lotteryEntitlement = useQuery({
+    queryKey: ['stores', current.data?.storeId, 'capabilities', 'LOTTERY', 'effective'],
+    queryFn: async () => getEffectiveStoreCapability(await getValidAccessToken(), current.data?.storeId ?? '', 'LOTTERY'),
+    enabled: Boolean(current.data?.storeId && store?.capabilities?.includes('LOTTERY')),
+    staleTime: 30_000
+  });
+  const lotteryEnabled = lotteryEntitlement.data?.enabled === true;
+  const lotteryOperators = useQuery({
+    queryKey: ['lottery-operators', 'retail-pos-quick-actions'],
+    queryFn: async () => listLotteryOperators(await getValidAccessToken(), { active: true, size: 2 }),
+    enabled: lotteryEnabled && lotteryAction !== null
+  });
   const currencyCode = activeSale?.currencyCode ?? store?.currencyCode ?? 'USD';
+  const lotteryQuickMutation = useMutation({
+    mutationFn: async ({ mode, amount }: { mode: 'SOLD' | 'WIN'; amount: number }) => {
+      if (!current.data?.deviceId) throw new Error('An active Retail register device is required.');
+      const operators = lotteryOperators.data?.content ?? [];
+      if (operators.length !== 1) throw new Error('Quick entry requires exactly one active Lottery operator. Open the full Lottery workflow to select an operator.');
+      const token = await getValidAccessToken();
+      const operator = operators[0];
+      if (mode === 'SOLD') {
+        return recordLotterySale(token, { operatorId: operator.id, gameType: 'OTHER', amount, paymentMethod: 'CASH', storeId: current.data.storeId, registerId: current.data.registerId, deviceId: current.data.deviceId, registerSessionId: current.data.id }, completionKey());
+      }
+      const availability = await getLotteryPayoutAvailableCash(token, { registerSessionId: current.data.id, operatorId: operator.id });
+      const policy = await getLotteryPayoutPolicy(token, availability.policyId);
+      if (policy.requireTicketValidation || policy.requireAgeVerification || policy.requireCustomerIdentification) {
+        throw new Error('This payout requires ticket or customer verification. Use the full Lottery payout workflow.');
+      }
+      if (amount > availability.availablePayoutCash) throw new Error('Available payout cash is insufficient for this Lottery Win.');
+      const created = await createLotteryPayout(token, { operatorId: operator.id, storeId: current.data.storeId, registerId: current.data.registerId, deviceId: current.data.deviceId, registerSessionId: current.data.id, ticketNumber: `POS-WIN-${completionKey()}`, amount, payoutMethod: 'CASH', notes: 'Retail POS quick Lottery Win' });
+      const validated = await validateLotteryPayout(token, created.id, { version: created.version, ticketValidationState: 'NOT_REQUIRED', ageVerificationState: 'NOT_REQUIRED', identificationVerificationState: 'NOT_REQUIRED' });
+      const authorized = await authorizeLotteryPayout(token, validated.id, { version: validated.version, approvalNotes: 'Retail POS quick Lottery Win' });
+      return completeLotteryCashPayout(token, authorized.id, completionKey());
+    },
+    onSuccess: async (_, variables) => {
+      setLotteryAction(null);
+      setLotteryNotice(variables.mode === 'SOLD' ? `Lottery Sold recorded: ${money(variables.amount, currencyCode)}` : `Lottery Win recorded: ${money(variables.amount, currencyCode)}`);
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ['register-session-current'] }), queryClient.invalidateQueries({ queryKey: ['lottery'] })]);
+    }
+  });
   const provisionalSubtotal = cartItems.reduce((sum, item) => sum + item.unitPrice * item.quantity - item.discountAmount, 0);
   const automaticPromotion=bestMultiBuyPromotion(savedDiscounts.data??[],'RETAIL',cartItems.filter(item=>item.productId).map(item=>({id:item.id,quantity:item.quantity,unitPrice:item.unitPrice,targets:{PRODUCT:item.productId??undefined,PRODUCT_VARIANT:item.variantId??undefined}})));
 
@@ -1450,6 +1525,7 @@ export function PosCartPage() {
           {!pageError && !inventoryWarning && !(draftRecovered && isPendingCheckoutStatus(activeSale?.status)) && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }} action={currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button onClick={() => { setCustomItemDescription(''); setEditingCustomItem(undefined); setCustomItemOpen(true); }}>Custom Item</Button> : undefined}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
         </Box>
       ) : null}
+      {lotteryNotice ? <Alert severity="success" onClose={() => setLotteryNotice(null)} sx={{ py: 0 }}>{lotteryNotice}</Alert> : null}
 
       {current.data ? (
         activeSale?.status === 'COMPLETED' ? (
@@ -1558,6 +1634,10 @@ export function PosCartPage() {
                   </Paper>
                 ) : null}
                 {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="text" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={{ alignSelf: 'flex-start' }} onClick={() => { setCustomItemDescription(''); setCustomItemOpen(true); }}>Custom Item</Button> : null}
+                {lotteryEnabled ? <Stack direction="row" spacing={0.75}>
+                  {currentUser?.permissions?.includes('LOTTERY_SALE_RECORD') ? <Button size="small" variant="outlined" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={cartLocked} onClick={() => { lotteryQuickMutation.reset(); setLotteryAction('SOLD'); }}>Lottery Sold</Button> : null}
+                  {currentUser?.permissions?.includes('LOTTERY_PAYOUT_RECORD') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} onClick={() => { lotteryQuickMutation.reset(); setLotteryAction('WIN'); }}>Lottery Win</Button> : null}
+                </Stack> : null}
               </Stack>
             </Paper>
 
@@ -1639,6 +1719,16 @@ export function PosCartPage() {
         onSubmit={(payment) => paymentMutation.mutate(payment)}
       />
       <DiscountDialog open={discountOpen} initial={discount} currencyCode={currencyCode} onClose={()=>setDiscountOpen(false)} onApply={value=>{setDiscount(value);setDiscountOpen(false);cartRevisionRef.current+=1;setActiveSale(null);setPaymentDialogOpen(false);recalculateMutation.reset();}}/>
+      <LotteryAmountDialog
+        open={lotteryAction !== null}
+        mode={lotteryAction ?? 'SOLD'}
+        currencyCode={currencyCode}
+        busy={lotteryQuickMutation.isPending || lotteryOperators.isLoading}
+        error={lotteryQuickMutation.error ? posErrorMessage(lotteryQuickMutation.error) : undefined}
+        onClose={() => { lotteryQuickMutation.reset(); setLotteryAction(null); }}
+        onSubmit={(amount) => lotteryAction && lotteryQuickMutation.mutate({ mode: lotteryAction, amount })}
+        onFullWorkflow={() => navigate(lotteryAction === 'WIN' ? '/lottery/payout' : '/lottery/sale')}
+      />
       <Dialog
         open={Boolean(pendingAgeVerification)}
         onClose={() => {

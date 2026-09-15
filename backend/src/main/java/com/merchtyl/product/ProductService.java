@@ -49,6 +49,7 @@ import java.util.stream.Collectors;
 @Service
 public class ProductService {
     private static final int MAX_PAGE_SIZE = 100;
+    static final String LOTTERY_CATEGORY_CODE = "LOTTERY";
     private static final Logger log = LoggerFactory.getLogger(ProductService.class);
 
     private final ProductRepository productRepository;
@@ -211,6 +212,7 @@ public class ProductService {
                 product.getId(), variant == null ? null : variant.getId(), product.getName(),
                 variant == null ? null : variant.getName(), mapping.getBarcode(),
                 variant == null ? product.getSku() : variant.getSku(),
+                product.getSellableType(),
                 product.getUnitOfMeasure() == null ? null : product.getUnitOfMeasure().getId(),
                 variant == null ? storeProduct==null?product.getPrice():storeProduct.getSellingPrice() : variant.getPrice(),
                 product.getTaxCategoryId(), taxCategory == null ? null : taxCategory.getName(), quantity, true,
@@ -313,6 +315,7 @@ public class ProductService {
     }
 
     private ProductValues values(ProductRequest request, UUID tenantId) {
+        validateLotteryConfiguration(request.sellableType(), request.taxCategoryId(), request.decimalQuantityAllowed());
         requireActiveTaxCategory(request.taxCategoryId());
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = generatedVariantValues(tenantId, productName, request.variants());
@@ -324,7 +327,7 @@ public class ProductService {
                 findActiveUnit(request.unitOfMeasureId()),
                 request.cost(),
                 request.price(),
-                findOptional(request.categoryId(), id -> categoryRepository.findByIdAndTenantId(id, tenantId), "Category not found"),
+                category(request.sellableType(), request.categoryId(), tenantId),
                 findOptional(request.brandId(), id -> brandRepository.findByIdAndTenantId(id, tenantId), "Brand not found"),
                 request.active(),
                 request.inventoryTrackingEnabled(),
@@ -333,10 +336,11 @@ public class ProductService {
                 request.taxCategoryId(),
                 variants,
                 barcodeValues(request.variants(), variants),
-                capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
+                capabilities(request.sellableType(), request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
     private ProductValues values(Product product, ProductUpdateRequest request, UUID tenantId) {
+        validateLotteryConfiguration(request.sellableType(), request.taxCategoryId(), request.decimalQuantityAllowed());
         requireActiveTaxCategory(request.taxCategoryId());
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = updateVariantValues(product, tenantId, productName, request.variants());
@@ -348,7 +352,7 @@ public class ProductService {
                 findActiveUnit(request.unitOfMeasureId()),
                 request.cost(),
                 request.price(),
-                findOptional(request.categoryId(), id -> categoryRepository.findByIdAndTenantId(id, tenantId), "Category not found"),
+                category(request.sellableType(), request.categoryId(), tenantId),
                 findOptional(request.brandId(), id -> brandRepository.findByIdAndTenantId(id, tenantId), "Brand not found"),
                 request.active(),
                 request.inventoryTrackingEnabled(),
@@ -357,7 +361,7 @@ public class ProductService {
                 request.taxCategoryId(),
                 variants,
                 barcodeValues(request.variants(), variants),
-                capabilities(request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
+                capabilities(request.sellableType(), request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
     private void requireActiveTaxCategory(UUID taxCategoryId) {
@@ -365,6 +369,23 @@ public class ProductService {
         var category = taxCategoryRepository.findById(taxCategoryId)
                 .orElseThrow(() -> new BadRequestException("Invalid tax category"));
         if (!category.isActive()) throw new BadRequestException("Tax category is inactive");
+    }
+
+    private static void validateLotteryConfiguration(SellableType type, UUID taxCategoryId, boolean decimalQuantityAllowed) {
+        if (type != SellableType.LOTTERY_PRODUCT) return;
+        if (taxCategoryId != null) throw new BadRequestException("LOTTERY_PRODUCT_MUST_BE_NON_TAXABLE");
+        if (decimalQuantityAllowed) throw new BadRequestException("LOTTERY_PRODUCT_REQUIRES_WHOLE_QUANTITY");
+    }
+
+    private Category category(SellableType type, UUID requestedCategoryId, UUID tenantId) {
+        if (type == SellableType.LOTTERY_PRODUCT) {
+            Category lottery = categoryRepository.findByTenantIdAndCodeIgnoreCase(tenantId, LOTTERY_CATEGORY_CODE)
+                    .orElseThrow(() -> new BadRequestException("LOTTERY_CATEGORY_NOT_CONFIGURED"));
+            if (!lottery.isActive()) throw new BadRequestException("LOTTERY_CATEGORY_NOT_CONFIGURED");
+            return lottery;
+        }
+        return findOptional(requestedCategoryId,
+                id -> categoryRepository.findByIdAndTenantId(id, tenantId), "Category not found");
     }
 
     private Integer validatedMinimumAge(Set<ProductCapability> capabilities, Integer minimumAge) {
@@ -543,7 +564,7 @@ public class ProductService {
         }
     }
 
-    private Set<ProductCapability> capabilities(Set<ProductCapability> requestedCapabilities, boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed) {
+    private Set<ProductCapability> capabilities(SellableType type, Set<ProductCapability> requestedCapabilities, boolean inventoryTrackingEnabled, boolean decimalQuantityAllowed) {
         Set<ProductCapability> capabilities = requestedCapabilities == null || requestedCapabilities.isEmpty()
                 ? new HashSet<>()
                 : new HashSet<>(requestedCapabilities);
@@ -556,6 +577,14 @@ public class ProductService {
             capabilities.add(ProductCapability.ALLOW_DECIMAL_QUANTITY);
         } else {
             capabilities.remove(ProductCapability.ALLOW_DECIMAL_QUANTITY);
+        }
+        if (type == SellableType.LOTTERY_PRODUCT) {
+            capabilities.remove(ProductCapability.ALLOW_DECIMAL_QUANTITY);
+            capabilities.remove(ProductCapability.ALLOW_DISCOUNT);
+            capabilities.remove(ProductCapability.ALLOW_RETURN);
+            capabilities.remove(ProductCapability.ALLOW_REFUND);
+            capabilities.remove(ProductCapability.ALLOW_PRICE_OVERRIDE);
+            capabilities.add(ProductCapability.NON_REFUNDABLE);
         }
         return capabilities;
     }

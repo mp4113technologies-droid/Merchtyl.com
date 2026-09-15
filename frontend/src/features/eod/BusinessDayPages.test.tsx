@@ -781,4 +781,36 @@ describe('Business day pages', () => {
     expect(await screen.findByText('CLOSED')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reopen Business Day' })).not.toBeInTheDocument();
   });
+
+  it('does not let an owner force-close the business day while a register session is still closing', async () => {
+    storeSession(['OWNER']);
+    window.history.pushState({}, '', '/business-day/close?force=true');
+    const closingSession = {
+      ...reconciliation('C', 'CLOSING'),
+      registerCode: 'KITCHEN',
+      registerName: 'Kitchen Register'
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER'], ['BUSINESS_DAY_VIEW', 'BUSINESS_DAY_CLOSE', 'BUSINESS_DAY_FORCE_CLOSE']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(pageResponse<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/business-days/current')) return jsonResponse(businessDay({ status: 'CLOSING' }));
+      if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/validation`)) return jsonResponse({
+        businessDayId: dayId,
+        closable: false,
+        blockers: [{ code: 'OPEN_REGISTER_SESSION', message: 'Register Kitchen (KITCHEN, FOOD_SERVICE) is CLOSING and must be closed and reconciled. Operator: Manager One', relatedId: closingSession.registerSessionId }],
+        registerSessions: [closingSession]
+      });
+      if (url.pathname.endsWith(`/api/v1/business-days/${dayId}/preview`)) return jsonResponse(closingPreview());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/business-day/close?force=true']} />);
+
+    const button = await screen.findByRole('button', { name: 'Force close and generate report' });
+    await userEvent.type(screen.getByRole('textbox', { name: 'Force-close reason' }), 'Manager recovery attempt');
+    await userEvent.click(screen.getByRole('checkbox'));
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/Kitchen.*FOOD_SERVICE.*CLOSING/)).toBeInTheDocument();
+  });
 });

@@ -1514,6 +1514,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   PRICING_PLAN_CODE_ALREADY_EXISTS: 'A pricing plan with this code already exists.',
   PRICING_PLAN_NOT_FOUND: "We couldn't find this pricing plan.",
   PRICING_PLAN_NOT_ACTIVE: "This pricing plan isn't active.",
+  PRICING_PLAN_VERSION_CONFLICT: 'A pricing change already exists for this effective date. Cancel the existing scheduled change or choose a different date.',
+  PRICING_PLAN_VERSION_NOT_CANCELLABLE: 'Only a scheduled pricing change can be cancelled. This version is already active, superseded, or cancelled.',
+  PRICING_PLAN_VERSION_STATE_CHANGED: 'This pricing version changed while the request was being processed. Refresh pricing history and try again.',
+  PRICING_PLAN_EFFECTIVE_DATE_INVALID: 'Choose today or a future effective date. Past dates cannot be used because completed billing periods are not recalculated.',
+  PRICING_PLAN_MODIFIED: 'This pricing plan was updated by someone else. Refresh it before scheduling another change.',
   TENANT_CODE_ALREADY_EXISTS: 'A merchant with this code already exists.',
   BUSINESS_NUMBER_ALREADY_EXISTS: 'This business number is already associated with another merchant.',
   PAYMENT_AMOUNT_INVALID: 'Enter a valid payment amount.',
@@ -2043,6 +2048,10 @@ export function listStores(token: string, params: StoreSearchParams = {}) {
 
 export function getStore(token: string, id: string) {
   return request<Store>(`/stores/${id}`, undefined, token);
+}
+
+export function getEffectiveStoreCapability(token: string, storeId: string, capability: import('./types').StoreCapability) {
+  return request<import('./types').EffectiveStoreCapability>(`/stores/${storeId}/capabilities/${capability}/effective`, undefined, token);
 }
 
 export function getFoodServiceConfiguration(token: string, storeId: string) {

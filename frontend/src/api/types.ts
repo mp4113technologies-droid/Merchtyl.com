@@ -16,7 +16,7 @@ export type CapabilityBillingUnit = 'PER_MERCHANT' | 'PER_STORE' | 'PER_USER' | 
 export type CapabilityPrice = { capability: CommercialCapability; inclusionType: CapabilityInclusionType; billingUnit: CapabilityBillingUnit | null; monthlyPricePerStore: number | null };
 export type CapabilityCharge = { capability: CommercialCapability; description: string; billingUnit: CapabilityBillingUnit; storeCount: number; monthlyPricePerStore: number; monthlyTotal: number };
 export type CapabilityDefinition = { capability: CommercialCapability; displayName: string; supportedBillingUnits: CapabilityBillingUnit[] };
-export type PricingVersion = { id: string; pricingPlanId: string; versionNumber: number; status: 'ACTIVE' | 'SCHEDULED' | 'SUPERSEDED' | 'CANCELLED'; effectiveFrom: string; effectiveTo: string | null; subscriberPolicy: 'NEW_SUBSCRIPTIONS_ONLY' | 'APPLY_NEXT_BILLING_CYCLE'; pricing: Omit<PricingPlan, 'id' | 'activeMerchants' | 'createdAt' | 'updatedAt' | 'version'>; usedForBilling: boolean; createdAt: string; version: number };
+export type PricingVersion = { id: string; pricingPlanId: string; versionNumber: number; status: 'ACTIVE' | 'SCHEDULED' | 'SUPERSEDED' | 'CANCELLED'; effectiveFrom: string; effectiveTo: string | null; subscriberPolicy: 'NEW_SUBSCRIPTIONS_ONLY' | 'APPLY_NEXT_BILLING_CYCLE' | 'APPLY_IMMEDIATELY'; pricing: Omit<PricingPlan, 'id' | 'activeMerchants' | 'createdAt' | 'updatedAt' | 'version'>; usedForBilling: boolean; createdAt: string; version: number };
 export type PricingPreview = { currency: string; baseSubscription: number; storeCount: number; includedStores: number; additionalStoreCount: number; additionalStoreMonthlyPrice: number; includedRegistersPerStore:number|null; additionalRegisterMonthlyPrice:number|null; activeRegisterCount:number; additionalRegisterCount:number; registerUsage:Array<{storeId:string;storeName:string;activeRegisters:number;includedRegisters:number;additionalRegisters:number}>; additionalRegisterMonthlyTotal:number; capabilityCharges: CapabilityCharge[]; estimatedMonthlySubscription: number };
 export type BillingSubscription = {
   id: string; tenantId: string; merchantName: string; pricingPlanId: string; planCode: string; planName: string;
@@ -682,6 +682,7 @@ export type EndOfDayLotterySummary = {
   enabled: boolean;
   lotterySales: number;
   lotteryPayouts: number;
+  netLottery: number;
   saleCancellations: number;
   payoutReversals: number;
   cashLotteryActivity: number;
@@ -837,6 +838,15 @@ export type Store = {
 };
 
 export type StoreCapability = 'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY';
+
+export type EffectiveStoreCapability = {
+  capability: StoreCapability;
+  subscriptionEnabled: boolean;
+  storeEnabled: boolean;
+  deploymentEnabled: boolean;
+  userAuthorized: boolean;
+  enabled: boolean;
+};
 
 export type StoreListResponse = PageResponse<Store>;
 
@@ -1893,6 +1903,7 @@ export type PosBarcodeLookup = {
   variantName: string | null;
   barcode: string;
   sku: string;
+  sellableType: SellableType;
   unitOfMeasureId: string | null;
   price: number;
   taxCategoryId: string | null;
@@ -2236,6 +2247,7 @@ export type CatalogueReference = {
   name: string;
   description: string | null;
   active: boolean;
+  systemManaged?: boolean;
   createdAt: string;
   updatedAt: string;
   version: number;

@@ -11,10 +11,16 @@ import com.merchtyl.features.FeatureService;
 import com.merchtyl.inventory.InventoryBalanceRepository;
 import com.merchtyl.inventory.InventoryTransactionRepository;
 import com.merchtyl.lottery.LotteryPayoutRepository;
+import com.merchtyl.lottery.LotteryPayout;
+import com.merchtyl.lottery.LotteryPayoutMethod;
+import com.merchtyl.lottery.LotteryPayoutStatus;
 import com.merchtyl.lottery.LotteryPayoutReversalRepository;
 import com.merchtyl.lottery.LotterySaleCancellationRepository;
+import com.merchtyl.lottery.LotterySale;
 import com.merchtyl.lottery.LotterySaleRepository;
+import com.merchtyl.lottery.LotterySaleStatus;
 import com.merchtyl.lottery.LotterySettlementRepository;
+import com.merchtyl.product.SellableType;
 import com.merchtyl.refunds.RefundRepository;
 import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterType;
@@ -24,6 +30,7 @@ import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.Sale;
 import com.merchtyl.sales.SaleItem;
+import com.merchtyl.sales.PaymentMethod;
 import com.merchtyl.refunds.Refund;
 import com.merchtyl.returns.ReturnItem;
 import com.merchtyl.security.User;
@@ -189,6 +196,77 @@ class BusinessDayServiceTest {
         });
     }
 
+    @Test
+    void lotterySectionAggregatesSoldAndWinsAcrossRegisters() {
+        LotterySale registerOneSold = lotterySale("R1", "200.00");
+        LotterySale registerTwoSold = lotterySale("R2", "300.00");
+        LotteryPayout registerOneWin = lotteryPayout("50.00");
+        LotteryPayout registerTwoWin = lotteryPayout("130.00");
+
+        BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
+                false,
+                List.of(),
+                List.of(registerOneSold, registerTwoSold),
+                List.of(registerOneWin, registerTwoWin),
+                List.of(), List.of(), List.of());
+
+        assertThat(result.enabled()).isTrue();
+        assertThat(result.lotterySales()).isEqualByComparingTo("500.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("180.00");
+        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("320.00");
+    }
+
+    @Test
+    void scannedLotteryProductUsesSnapshotClassificationAndIsNotDoubleCountedAsMerchandise() {
+        SaleItem scannedTicket = saleItem(null, null, "2.0000", "10.00", "0.00", false);
+        when(scannedTicket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
+        Sale scannedSale = sale(RegisterType.RETAIL, scannedTicket);
+
+        BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
+                false, List.of(scannedSale), List.of(), List.of(), List.of(), List.of(), List.of());
+
+        assertThat(result.enabled()).isTrue();
+        assertThat(result.lotterySales()).isEqualByComparingTo("10.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("0.00");
+        ReturnItem historicalReturn = mock(ReturnItem.class);
+        when(historicalReturn.getOriginalSaleItem()).thenReturn(scannedTicket);
+        com.merchtyl.returns.Return returnRecord = mock(com.merchtyl.returns.Return.class);
+        when(returnRecord.getItems()).thenReturn(List.of(historicalReturn));
+        Refund refund = mock(Refund.class);
+        Register refundRegister = mock(Register.class);
+        when(refundRegister.getType()).thenReturn(RegisterType.RETAIL);
+        when(refund.getRegister()).thenReturn(refundRegister);
+        when(refund.getReturnRecord()).thenReturn(returnRecord);
+
+        assertThat(service.categorySalesValues(List.of(scannedSale), List.of(refund))).isEmpty();
+    }
+
+    private static LotterySale lotterySale(String registerCode, String amount) {
+        LotterySale sale = mock(LotterySale.class);
+        Register register = mock(Register.class);
+        User cashier = mock(User.class);
+        com.merchtyl.lottery.LotteryOperator operator = mock(com.merchtyl.lottery.LotteryOperator.class);
+        when(sale.getAmount()).thenReturn(new BigDecimal(amount));
+        when(sale.getStatus()).thenReturn(LotterySaleStatus.RECORDED);
+        when(sale.getPaymentMethod()).thenReturn(PaymentMethod.CASH);
+        when(sale.getRegister()).thenReturn(register);
+        when(register.getCode()).thenReturn(registerCode);
+        when(sale.getCashier()).thenReturn(cashier);
+        when(cashier.getEmail()).thenReturn(registerCode.toLowerCase() + "@example.test");
+        when(sale.getOperator()).thenReturn(operator);
+        when(operator.getCode()).thenReturn("ATLANTIC");
+        return sale;
+    }
+
+    private static LotteryPayout lotteryPayout(String amount) {
+        LotteryPayout payout = mock(LotteryPayout.class);
+        when(payout.getAmount()).thenReturn(new BigDecimal(amount));
+        when(payout.getStatus()).thenReturn(LotteryPayoutStatus.PAID);
+        when(payout.getPayoutMethod()).thenReturn(LotteryPayoutMethod.CASH);
+        when(payout.getApprovals()).thenReturn(List.of());
+        return payout;
+    }
+
     private static Sale sale(RegisterType type, SaleItem... items) {
         Sale sale = mock(Sale.class);
         Register register = mock(Register.class);
@@ -286,6 +364,26 @@ class BusinessDayServiceTest {
     }
 
     @Test
+    void managerForceCloseCannotBypassClosingRegisterSession() {
+        RegisterSession session = session("KITCHEN", RegisterSessionStatus.CLOSING, null, null);
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(day.getTimezone()).thenReturn("America/Moncton");
+        when(configurations.findByStore_Id(storeId)).thenReturn(Optional.empty());
+        when(registerSessions.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(session));
+
+        assertThatThrownBy(() -> service.forceClose(
+                dayId,
+                new BusinessDayForceCloseRequest(3L, "Emergency close", null, null, true),
+                authentication))
+                .isInstanceOf(ClosingValidationException.class)
+                .hasMessage("All registers must be closed before closing the business day.");
+
+        verify(storeAccess).requireStoreManagement(authentication, storeId);
+        verify(day, never()).close(any(User.class), any(Instant.class), any(String.class));
+    }
+
+    @Test
     void closingValidationIdentifiesEveryRegisterAndReconciliationPermission() {
         RegisterSession reconciled = session("A", RegisterSessionStatus.FORCE_CLOSED, "100.00", "100.00");
         RegisterSession closing = session("B", RegisterSessionStatus.CLOSING, null, null);
@@ -309,6 +407,9 @@ class BusinessDayServiceTest {
         assertThat(result.registerSessions()).filteredOn(RegisterReconciliationResponse::canReconcile)
                 .hasSize(3);
         assertThat(result.closable()).isFalse();
+        assertThat(result.blockers()).filteredOn(blocker -> "OPEN_REGISTER_SESSION".equals(blocker.code()))
+                .extracting(ClosingBlockerResponse::relatedId)
+                .containsExactly(closing.getId(), open.getId());
         verify(storeAccess).requireStoreAccess(authentication, storeId);
     }
 

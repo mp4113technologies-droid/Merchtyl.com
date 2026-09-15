@@ -3,6 +3,8 @@ package com.merchtyl.features;
 import com.merchtyl.audit.AuditAction;
 import com.merchtyl.audit.AuditService;
 import com.merchtyl.audit.CreateAuditRecordCommand;
+import com.merchtyl.platform.billing.CommercialCapability;
+import com.merchtyl.platform.billing.SubscriptionEntitlementService;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.ConflictException;
 import com.merchtyl.common.ForbiddenOperationException;
@@ -14,6 +16,7 @@ import com.merchtyl.security.UserRepository;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
 import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,7 @@ public class FeatureService {
     private final RegisterRepository registerRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private SubscriptionEntitlementService subscriptionEntitlements;
 
     public FeatureService(
             FeatureDefinitionRepository featureDefinitionRepository,
@@ -52,6 +56,11 @@ public class FeatureService {
         this.registerRepository = registerRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+    }
+
+    @Autowired
+    void setSubscriptionEntitlements(SubscriptionEntitlementService subscriptionEntitlements) {
+        this.subscriptionEntitlements = subscriptionEntitlements;
     }
 
     @Transactional(readOnly = true)
@@ -101,6 +110,13 @@ public class FeatureService {
     public void requireEnabled(FeatureCode code, UUID storeId, UUID registerId) {
         if (!isEnabled(code, storeId, registerId)) {
             throw new ForbiddenOperationException("Feature is disabled: " + code.name());
+        }
+        if (code == FeatureCode.LOTTERY_SALES && storeId != null) {
+            Store store = store(storeId);
+            if (!store.getCapabilities().contains(com.merchtyl.store.StoreCapability.LOTTERY)) {
+                throw new ForbiddenOperationException("STORE_CAPABILITY_NOT_ENABLED: LOTTERY is not enabled for this store.");
+            }
+            subscriptionEntitlements.requireActive(store.getTenantId(), CommercialCapability.LOTTERY);
         }
     }
 

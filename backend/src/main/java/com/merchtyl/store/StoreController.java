@@ -25,9 +25,11 @@ import java.util.UUID;
 @Tag(name = "Store Geography", description = "Tenant-authorized store setup with country, division, currency, timezone, and tax-region validation.")
 public class StoreController {
     private final StoreService storeService;
+    private final StoreCapabilityService storeCapabilityService;
 
-    public StoreController(StoreService storeService) {
+    public StoreController(StoreService storeService, StoreCapabilityService storeCapabilityService) {
         this.storeService = storeService;
+        this.storeCapabilityService = storeCapabilityService;
     }
 
     @PostMapping
@@ -78,6 +80,16 @@ public class StoreController {
     @PreAuthorize("@authorizationService.hasTenantPermission(authentication, T(com.merchtyl.security.PermissionCode).STORE_VIEW) || @authorizationService.hasTenantPermission(authentication, T(com.merchtyl.security.PermissionCode).STORE_ACCESS)")
     StoreResponse get(@PathVariable UUID id, Authentication authentication) {
         return storeService.get(id, authentication);
+    }
+
+    @GetMapping("/{id}/capabilities/{capability}/effective")
+    @Operation(summary = "Resolve an effective store capability", description = "Returns subscription and store capability inputs independently and their effective conjunction.")
+    @PreAuthorize("@authorizationService.hasTenantPermission(authentication, T(com.merchtyl.security.PermissionCode).STORE_VIEW) || @authorizationService.hasTenantPermission(authentication, T(com.merchtyl.security.PermissionCode).STORE_ACCESS)")
+    EffectiveStoreCapabilityResponse effectiveCapability(
+            @PathVariable UUID id,
+            @PathVariable StoreCapability capability,
+            Authentication authentication) {
+        return storeCapabilityService.effective(id, capability, authentication);
     }
 
     @PutMapping("/{id}")

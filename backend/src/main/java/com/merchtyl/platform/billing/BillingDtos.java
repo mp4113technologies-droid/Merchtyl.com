@@ -99,7 +99,8 @@ public final class BillingDtos {
                                  List<CapabilityCharge> capabilityCharges, BigDecimal estimatedMonthlySubscription) {}
     public record PricingVersionRequest(@NotNull PlanRequest pricing, @NotBlank String effectivePolicy,
                                         LocalDate effectiveDate, @NotBlank String existingSubscriberPolicy,
-                                        boolean confirmCapabilityRemoval, long expectedPlanVersion) {}
+                                        boolean confirmCapabilityRemoval, long expectedPlanVersion,
+                                        String applicationMode) {}
     public record PricingVersionResponse(UUID id, UUID pricingPlanId, int versionNumber, String status,
                                          LocalDate effectiveFrom, LocalDate effectiveTo, String subscriberPolicy,
                                          PlanRequest pricing, boolean usedForBilling, Instant createdAt, long version) {}

@@ -78,6 +78,7 @@ public class EndOfDayLotterySummary extends BaseUuidEntity {
     public boolean isEnabled() { return enabled; }
     public BigDecimal getLotterySales() { return lotterySales; }
     public BigDecimal getLotteryPayouts() { return lotteryPayouts; }
+    public BigDecimal getNetLottery() { return lotterySales.subtract(lotteryPayouts); }
     public BigDecimal getSaleCancellations() { return saleCancellations; }
     public BigDecimal getPayoutReversals() { return payoutReversals; }
     public BigDecimal getCashLotteryActivity() { return cashLotteryActivity; }

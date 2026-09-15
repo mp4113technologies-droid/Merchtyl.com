@@ -10,6 +10,7 @@ public record PosBarcodeLookupResponse(
         String variantName,
         String barcode,
         String sku,
+        SellableType sellableType,
         UUID unitOfMeasureId,
         BigDecimal price,
         UUID taxCategoryId,

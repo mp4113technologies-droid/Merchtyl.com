@@ -25,6 +25,10 @@ public class SubscriptionEntitlementService {
     }
 
     @Transactional(readOnly = true) public void requireActive(UUID tenantId, CommercialCapability capability) {
+        if (!isActive(tenantId, capability)) throw new ForbiddenOperationException("MERCHANT_CAPABILITY_NOT_ENABLED: The merchant subscription does not enable " + capability.name() + ".");
+    }
+
+    @Transactional(readOnly = true) public boolean isActive(UUID tenantId, CommercialCapability capability) {
         Integer active = jdbc.queryForObject("""
                 select count(*)
                 from tenant_subscriptions subscription
@@ -47,6 +51,17 @@ public class SubscriptionEntitlementService {
                     )
                   )
                 """, Integer.class, tenantId, capability.name(), capability.name());
-        if (active == null || active == 0) throw new ForbiddenOperationException("MERCHANT_CAPABILITY_NOT_ENABLED: The merchant subscription does not enable " + capability.name() + ".");
+        return active != null && active > 0;
+    }
+
+    @Transactional(readOnly = true) public void requireActiveOrOpenRegisterSession(UUID tenantId, UUID storeId, CommercialCapability capability) {
+        try {
+            requireActive(tenantId, capability);
+            return;
+        } catch (ForbiddenOperationException removed) {
+            String registerType = capability == CommercialCapability.FOOD_SERVICE ? "FOOD_SERVICE" : "RETAIL";
+            Integer open = jdbc.queryForObject("select count(*) from register_sessions session join registers register on register.id=session.register_id join stores store on store.id=register.store_id where store.tenant_id=? and store.id=? and session.status='OPEN' and register.register_type=?", Integer.class, tenantId, storeId, registerType);
+            if (open == null || open == 0) throw removed;
+        }
     }
 }

@@ -27,7 +27,7 @@ public class RegisterCapabilityService {
             throw new ForbiddenOperationException("STORE_CAPABILITY_NOT_ENABLED: " + message);
         }
         if (required == StoreCapability.FOOD_SERVICE) {
-            entitlements.requireActive(store.getTenantId(), CommercialCapability.FOOD_SERVICE);
+            entitlements.requireActiveOrOpenRegisterSession(store.getTenantId(), store.getId(), CommercialCapability.FOOD_SERVICE);
         }
     }
 }

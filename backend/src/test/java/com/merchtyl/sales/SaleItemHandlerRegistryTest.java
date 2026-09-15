@@ -20,6 +20,7 @@ class SaleItemHandlerRegistryTest {
     private final StandardProductSaleItemHandler standardHandler = new StandardProductSaleItemHandler();
     private final WeightedProductSaleItemHandler weightedHandler = new WeightedProductSaleItemHandler();
     private final ServiceSaleItemHandler serviceHandler = new ServiceSaleItemHandler();
+    private final LotteryProductSaleItemHandler lotteryHandler = new LotteryProductSaleItemHandler();
 
     @Test
     void registryLooksUpHandlersBySellableType() {
@@ -28,6 +29,7 @@ class SaleItemHandlerRegistryTest {
         assertThat(registry.handlerFor(SellableType.STANDARD_PRODUCT)).isSameAs(standardHandler);
         assertThat(registry.handlerFor(SellableType.WEIGHTED_PRODUCT)).isSameAs(weightedHandler);
         assertThat(registry.handlerFor(SellableType.SERVICE)).isSameAs(serviceHandler);
+        assertThat(registry.handlerFor(SellableType.LOTTERY_PRODUCT)).isSameAs(lotteryHandler);
     }
 
     @Test
@@ -117,6 +119,19 @@ class SaleItemHandlerRegistryTest {
     }
 
     @Test
+    void lotteryProductAcceptsConfiguredPriceButRejectsDiscountsAndOverrides() {
+        Product product = product(SellableType.LOTTERY_PRODUCT, true, false,
+                Set.of(ProductCapability.ALLOW_DISCOUNT, ProductCapability.ALLOW_PRICE_OVERRIDE));
+
+        assertThatCode(() -> lotteryHandler.validate(request(product, BigDecimal.ONE, BigDecimal.ZERO, false)))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> lotteryHandler.validate(request(product, BigDecimal.ONE, new BigDecimal("0.50"), false)))
+                .isInstanceOf(BadRequestException.class).hasMessage("LOTTERY_DISCOUNT_NOT_ALLOWED");
+        assertThatThrownBy(() -> lotteryHandler.validate(request(product, BigDecimal.ONE, BigDecimal.ZERO, true)))
+                .isInstanceOf(BadRequestException.class).hasMessage("LOTTERY_PRICE_OVERRIDE_NOT_ALLOWED");
+    }
+
+    @Test
     void registryValidateRoutesToMatchingHandler() {
         Product product = product(SellableType.SERVICE, true, false, Set.of());
         SaleItemHandlerRegistry registry = registry();
@@ -142,7 +157,7 @@ class SaleItemHandlerRegistryTest {
     }
 
     private SaleItemHandlerRegistry registry() {
-        return new SaleItemHandlerRegistry(List.of(standardHandler, weightedHandler, serviceHandler));
+        return new SaleItemHandlerRegistry(List.of(standardHandler, weightedHandler, serviceHandler, lotteryHandler));
     }
 
     private SaleItemRequest request(Product product, BigDecimal quantity, BigDecimal discountAmount, boolean priceOverride) {

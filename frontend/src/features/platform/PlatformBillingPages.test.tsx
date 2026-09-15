@@ -70,12 +70,18 @@ describe('platform billing pages', () => {
     expect(await screen.findByText('Add-on · CA$15.00 / store / month')).toBeInTheDocument();
     await userEvent.click(screen.getAllByText('Growth')[0]);
     expect(await screen.findByText('Pricing History')).toBeInTheDocument();
-    const selects=screen.getByRole('dialog').querySelectorAll('[role="combobox"]');
-    const migration=selects[selects.length-1] as HTMLElement;
-    await userEvent.click(migration);
-    await userEvent.click(await screen.findByRole('option',{name:'APPLY_NEXT_BILLING_CYCLE'}));
-    await userEvent.click(screen.getByRole('button',{name:'Save Pricing Changes'}));
-    expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({effectivePolicy:'NEXT_BILLING_CYCLE',existingSubscriberPolicy:'APPLY_NEXT_BILLING_CYCLE',confirmCapabilityRemoval:false}));
+    await userEvent.click(screen.getByRole('button',{name:'Publish Changes'}));
+    expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({applicationMode:'NEXT_BILLING_CYCLE',effectivePolicy:'NEXT_BILLING_CYCLE',existingSubscriberPolicy:'APPLY_NEXT_BILLING_CYCLE',confirmCapabilityRemoval:false}));
+  });
+
+  it('confirms and publishes an immediate pricing version explicitly', async () => {
+    renderPage(<PlatformPricingPlansPage />);
+    await userEvent.click((await screen.findAllByText('Growth'))[0]);
+    await userEvent.click(screen.getByRole('radio', { name: /Apply immediately/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Publish Changes' }));
+    expect(screen.getByRole('dialog', { name: 'Apply Pricing Changes Immediately?' })).toHaveTextContent('25 active merchant subscriptions');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Immediately' }));
+    expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({applicationMode:'IMMEDIATE',effectiveDate:null}));
   });
 
   it('offers every billing unit and preserves then versions the selected canonical value', async () => {
@@ -88,7 +94,7 @@ describe('platform billing pages', () => {
     await userEvent.click(perStore);
     for(const label of ['Per Merchant','Per Store','Per User','Per Register'])expect(await screen.findByRole('option',{name:label})).toBeInTheDocument();
     await userEvent.click(screen.getByRole('option',{name:'Per User'}));
-    await userEvent.click(screen.getByRole('button',{name:'Save Pricing Changes'}));
+    await userEvent.click(screen.getByRole('button',{name:'Publish Changes'}));
     expect(api.schedule).toHaveBeenCalledWith('token','plan',expect.objectContaining({pricing:expect.objectContaining({capabilityPrices:expect.arrayContaining([expect.objectContaining({capability:'FOOD_SERVICE',billingUnit:'PER_USER'})])})}));
     expect(api.history.mock.results[0].value).toBeTruthy();
   });
@@ -114,7 +120,7 @@ describe('platform billing pages', () => {
     await userEvent.click((await screen.findAllByText('Draft Plan'))[0]);
     await userEvent.click(screen.getByRole('combobox', { name: 'Status' }));
     await userEvent.click(await screen.findByRole('option', { name: 'ACTIVE' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save Pricing Changes' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Publish Changes' }));
     expect(api.updatePlan).toHaveBeenCalledWith('token', 'draft-plan', expect.objectContaining({ status: 'ACTIVE' }));
     expect(api.schedule).not.toHaveBeenCalled();
   });

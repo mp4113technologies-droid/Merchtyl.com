@@ -12,6 +12,9 @@ public class Category extends CatalogueReference implements TenantCatalogueRefer
     @Column(name = "tenant_id", updatable = false)
     private UUID tenantId;
 
+    @Column(name = "system_managed", nullable = false)
+    private boolean systemManaged;
+
     protected Category() {
     }
 
@@ -20,6 +23,8 @@ public class Category extends CatalogueReference implements TenantCatalogueRefer
     }
 
     public UUID getTenantId() { return tenantId; }
+
+    public boolean isSystemManaged() { return systemManaged; }
 
     public void assignTenant(UUID tenantId) {
         if (this.tenantId != null && !this.tenantId.equals(tenantId)) throw new IllegalStateException("Category tenant is immutable");

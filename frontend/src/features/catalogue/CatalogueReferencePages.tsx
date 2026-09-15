@@ -393,7 +393,7 @@ function CatalogueReferencePage({ config }: { config: ReferenceConfig }) {
                     <TableCell>{reference.description ?? '-'}</TableCell>
                     <TableCell><ReferenceStatusChip active={reference.active} /></TableCell>
                     <TableCell align="right">
-                      {canManage ? (
+                      {canManage && !reference.systemManaged ? (
                         <>
                           <Tooltip title={`Edit ${reference.name}`}>
                             <IconButton
@@ -416,7 +416,7 @@ function CatalogueReferencePage({ config }: { config: ReferenceConfig }) {
                             </IconButton>
                           </Tooltip>
                         </>
-                      ) : null}
+                      ) : reference.systemManaged ? <Chip label="System" size="small" /> : null}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -570,6 +570,91 @@ describe('POS pages', () => {
     expect(screen.queryByRole('button', { name: 'Custom Item' })).not.toBeInTheDocument();
   });
 
+  it('shows compact lottery actions and records a manual cash sale through the existing lottery API', async () => {
+    let lotterySaleBody: any;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(), permissions: ['LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      if (url.pathname.endsWith('/api/v1/features/resolution')) return jsonResponse([{
+        definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: false, createdAt: '', updatedAt: '', version: 0 },
+        enabled: true, source: 'STORE', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null
+      }]);
+      if (url.pathname.endsWith('/api/v1/lottery/operators')) return jsonResponse(page([{
+        id: '00000000-0000-0000-0000-000000000777', code: 'ALC', name: 'Atlantic Lottery', jurisdictionId: 'jurisdiction', jurisdictionCode: 'NL', jurisdictionName: 'Newfoundland and Labrador', supportContact: null, settlementFrequency: 'DAILY', active: true, createdAt: '', updatedAt: '', version: 0
+      }]));
+      if (url.pathname.endsWith('/api/v1/lottery/sales') && init?.method === 'POST') {
+        lotterySaleBody = JSON.parse(String(init.body));
+        return jsonResponse({ id: 'lottery-sale-id' }, 201);
+      }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Lottery Sold' }));
+    const dialog = screen.getByRole('dialog', { name: 'Lottery Sold' });
+    expect(dialog).toBeVisible();
+    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Amount (USD)' }), '100');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(lotterySaleBody).toEqual(expect.objectContaining({ amount: 100, gameType: 'OTHER', paymentMethod: 'CASH', registerSessionId: sessionId })));
+    expect(await screen.findByText('Lottery Sold recorded: $100.00')).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lottery Sold' })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Lottery Win' })).toBeVisible();
+  });
+
+  it('records an eligible Lottery Win through validation, authorization, and cash completion', async () => {
+    const calls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['LOTTERY_PAYOUT_RECORD'] });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      if (url.pathname.endsWith('/api/v1/features/resolution')) return jsonResponse([{ definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: false, createdAt: '', updatedAt: '', version: 0 }, enabled: true, source: 'STORE', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null }]);
+      if (url.pathname.endsWith('/api/v1/lottery/operators')) return jsonResponse(page([{ id: 'operator-id', code: 'ALC', name: 'Atlantic Lottery', jurisdictionId: 'jurisdiction', jurisdictionCode: 'NL', jurisdictionName: 'NL', supportContact: null, settlementFrequency: 'DAILY', active: true, createdAt: '', updatedAt: '', version: 0 }]));
+      if (url.pathname.endsWith('/api/v1/lottery/payouts/available-cash')) return jsonResponse({ registerSessionId: sessionId, policyId: 'policy-id', expectedDrawerCash: 200, protectedRegisterFloat: 50, reservedCashObligations: 0, availablePayoutCash: 150, currencyCode: 'USD' });
+      if (url.pathname.endsWith('/api/v1/lottery/payout-policies/policy-id')) return jsonResponse({ id: 'policy-id', requireTicketValidation: false, requireAgeVerification: false, requireCustomerIdentification: false });
+      if (url.pathname.endsWith('/api/v1/lottery/payouts') && init?.method === 'POST') { calls.push('create'); return jsonResponse({ id: 'payout-id', version: 0 }); }
+      if (url.pathname.endsWith('/payout-id/validate') && init?.method === 'POST') { calls.push('validate'); return jsonResponse({ id: 'payout-id', version: 1 }); }
+      if (url.pathname.endsWith('/payout-id/authorize') && init?.method === 'POST') { calls.push('authorize'); return jsonResponse({ id: 'payout-id', version: 2 }); }
+      if (url.pathname.endsWith('/payout-id/complete-cash') && init?.method === 'POST') { calls.push('complete'); return jsonResponse({ id: 'payout-id', version: 3, status: 'PAID' }); }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lottery Win' }));
+    const dialog = screen.getByRole('dialog', { name: 'Lottery Win' });
+    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Payout Amount (USD)' }), '30');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Record Win' }));
+
+    await waitFor(() => expect(calls).toEqual(['create', 'validate', 'authorize', 'complete']));
+    expect(await screen.findByText('Lottery Win recorded: $30.00')).toBeVisible();
+  });
+
+  it('hides lottery actions when the store is enabled but the subscription is not', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(), permissions: ['LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: false, storeEnabled: true, enabled: false });
+      if (url.pathname.endsWith('/api/v1/features/resolution')) return jsonResponse([{
+        definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: true, createdAt: '', updatedAt: '', version: 1 },
+        enabled: true, source: 'DEFAULT', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null
+      }]);
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await screen.findByRole('heading', { name: 'Checkout' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Lottery Sold' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Lottery Win' })).not.toBeInTheDocument();
+  });
+
   it('keeps checkout controls visible while a long recovered cart stays in the internal cart scroller', async () => {
     const baseSale = sale('DRAFT');
     await saveDraftCartRecovery({

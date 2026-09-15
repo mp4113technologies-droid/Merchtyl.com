@@ -69,6 +69,9 @@ class StoreControllerAuthorizationTest {
     @MockBean
     StoreService storeService;
 
+    @MockBean
+    StoreCapabilityService storeCapabilityService;
+
     @Test
     void storeViewerCannotCreateStore() throws Exception {
         mockMvc.perform(post("/api/v1/stores")

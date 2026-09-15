@@ -505,7 +505,7 @@ export function BusinessDayClosePage() {
   const [varianceExplanation, setVarianceExplanation] = React.useState('');
   const [confirmationAccepted, setConfirmationAccepted] = React.useState(false);
   const [forceReason, setForceReason] = React.useState('');
-  const forceMode = new URLSearchParams(window.location.search).get('force') === 'true';
+  const forceMode = searchParams.get('force') === 'true';
 
   const stores = useQuery({
     queryKey: ['stores', 'business-day-close'],
@@ -570,6 +570,7 @@ export function BusinessDayClosePage() {
 
   const day = current.data;
   const blockers = validation.data?.blockers ?? [];
+  const hasBlockingRegisterSession = blockers.some((blocker) => blocker.code === 'OPEN_REGISTER_SESSION');
   const varianceExplanationRequired = preview.data?.varianceExplanationRequired ?? false;
   const selectedStore = stores.data?.content.find((store) => store.id === storeId);
   const refreshAfterReconciliation = async () => {
@@ -630,7 +631,7 @@ export function BusinessDayClosePage() {
                 <Button
                   variant="contained"
                   color={forceMode ? 'warning' : 'primary'}
-                  disabled={!confirmationAccepted || close.isPending || (!forceMode && blockers.length > 0) || (forceMode && !forceReason.trim()) || (varianceExplanationRequired && !varianceExplanation.trim())}
+                  disabled={!confirmationAccepted || close.isPending || hasBlockingRegisterSession || (!forceMode && blockers.length > 0) || (forceMode && !forceReason.trim()) || (varianceExplanationRequired && !varianceExplanation.trim())}
                   onClick={() => close.mutate(day)}
                 >
                   {forceMode ? 'Force close and generate report' : 'Close and generate report'}
@@ -870,6 +871,7 @@ export function EndOfDayReportDetailPage() {
       <ReportTable title="Retail Category Sales Distribution" rows={<SimpleTable headers={['Category', 'Qty Sold', 'Net Sales', 'Share']} rows={categoryRows(data)} emptyMessage="No retail merchandise sales." />} />
       <ReportTable title="Cashiers" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Refunds', 'Cash handled']} rows={data.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, data.currencyCode), money(row.refundTotal, data.currencyCode), money(row.cashHandled, data.currencyCode)])} />} />
       <ReportTable title="Exceptions" rows={<SimpleTable headers={['Type', 'Count', 'Amount', 'Details']} rows={data.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, data.currencyCode), row.details ?? ''])} />} />
+      {data.lottery?.enabled ? <ReportTable title="Lottery" rows={<SimpleTable headers={['Lottery Sold', 'Lottery Wins', 'Net Lottery']} rows={[[money(data.lottery.lotterySales, data.currencyCode), money(data.lottery.lotteryPayouts, data.currencyCode), money(data.lottery.netLottery, data.currencyCode)]]} />} /> : null}
       {canReopen ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
           <Stack spacing={2}>

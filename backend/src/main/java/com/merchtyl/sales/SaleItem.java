@@ -4,6 +4,7 @@ import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductVariant;
 import com.merchtyl.product.DepositType;
+import com.merchtyl.product.SellableType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -63,6 +64,10 @@ public class SaleItem extends BaseUuidEntity {
 
     @Column(nullable = false, length = 180)
     private String productName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sellable_type_snapshot", length = 32)
+    private SellableType sellableTypeSnapshot;
 
     @Column(nullable = false, precision = 12, scale = 4)
     private BigDecimal quantity;
@@ -156,6 +161,7 @@ public class SaleItem extends BaseUuidEntity {
         this.variantName = variant == null ? null : variant.getName();
         this.productSku = variant == null ? product.getSku() : variant.getSku();
         this.productName = variant == null ? product.getName() : product.getName() + " — " + variant.getName();
+        this.sellableTypeSnapshot = product.getSellableType();
         updateInputs(quantity, unitPrice, discountAmount, priceOverride, ageVerified, serialNumber, externalReference, customerId, paymentMethodCode);
         setCalculatedAmounts(BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2));
         initializeIdAndTimestamps();
@@ -277,6 +283,7 @@ public class SaleItem extends BaseUuidEntity {
                 .sorted(Comparator.comparing(Enum::name))
                 .map(Enum::name)
                 .collect(Collectors.joining(","));
+        this.sellableTypeSnapshot = product.getSellableType();
         if (product.getCategory() != null) {
             this.categorySnapshotId = product.getCategory().getId();
             this.categoryNameSnapshot = product.getCategory().getName();
@@ -332,6 +339,8 @@ public class SaleItem extends BaseUuidEntity {
     public String getProductName() {
         return productName;
     }
+
+    public SellableType getSellableTypeSnapshot() { return sellableTypeSnapshot; }
 
     public BigDecimal getQuantity() {
         return quantity;

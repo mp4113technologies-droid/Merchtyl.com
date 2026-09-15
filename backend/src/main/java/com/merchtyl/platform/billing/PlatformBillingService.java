@@ -195,20 +195,28 @@ public class PlatformBillingService {
         PlanResponse current=plan(planId);validatePlan(request.pricing());
         if(current.version()!=request.expectedPlanVersion())throw new ConflictException("PRICING_PLAN_MODIFIED");
         requireCapabilityRemovalConfirmation(planId,current.capabilityPrices(),request.pricing().capabilityPrices(),request.confirmCapabilityRemoval());
-        LocalDate effective=effectiveDate(planId,request);
-        Integer conflict=jdbc.queryForObject("select count(*) from platform_pricing_plan_versions where pricing_plan_id=? and status in ('SCHEDULED','ACTIVE') and effective_from::date=?",Integer.class,planId,Date.valueOf(effective));
+        String applicationMode=applicationMode(request);
+        LocalDate effective=effectiveDate(planId,request,applicationMode);
+        Integer conflict=jdbc.queryForObject("select count(*) from platform_pricing_plan_versions where pricing_plan_id=? and status='SCHEDULED' and effective_from::date=?",Integer.class,planId,Date.valueOf(effective));
         if(conflict!=null&&conflict>0)throw new ConflictException("PRICING_PLAN_VERSION_CONFLICT");
         validateCapabilities(request.pricing().capabilityPrices());
         UUID actor=platformActor(authentication);int number=Objects.requireNonNull(jdbc.queryForObject("select coalesce(max(version_number),0)+1 from platform_pricing_plan_versions where pricing_plan_id=?",Integer.class,planId));UUID versionId=UUID.randomUUID();
-        insertPricingVersion(versionId,planId,number,request.pricing(),effective,"SCHEDULED",subscriberPolicy(request.existingSubscriberPolicy()),actor);
-        jdbc.update("update platform_pricing_plans set version=version+1,updated_at=now() where id=? and version=?",planId,request.expectedPlanVersion());
-        PricingVersionResponse response=pricingVersion(versionId);audit(actor,AuditAction.PRICING_PLAN_PRICE_CHANGE_SCHEDULED,"PLATFORM_PRICING_PLAN_VERSION",versionId,current,response,"effective="+effective+",policy="+request.existingSubscriberPolicy());return response;
+        String rolloutPolicy="NEXT_BILLING_CYCLE".equals(applicationMode)?"APPLY_NEXT_BILLING_CYCLE":"APPLY_IMMEDIATELY";
+        insertPricingVersion(versionId,planId,number,request.pricing(),effective,"SCHEDULED",rolloutPolicy,actor);
+        int updated=jdbc.update("update platform_pricing_plans set version=version+1,updated_at=now() where id=? and version=?",planId,request.expectedPlanVersion());
+        if(updated==0)throw new ConflictException("PRICING_PLAN_MODIFIED");
+        if(!effective.isAfter(LocalDate.now()))activatePricingVersion(versionId,actor);
+        PricingVersionResponse response=pricingVersion(versionId);audit(actor,AuditAction.PRICING_PLAN_PRICE_CHANGE_SCHEDULED,"PLATFORM_PRICING_PLAN_VERSION",versionId,current,response,"mode="+applicationMode+",effective="+effective+",affectedMerchants="+current.activeMerchants());return response;
     }
 
     @Transactional
     public void cancelPricingVersion(UUID planId,UUID versionId,Authentication authentication){
-        PricingVersionResponse before=pricingVersion(versionId);if(!before.pricingPlanId().equals(planId))throw new NotFoundException("PRICING_PLAN_NOT_FOUND");if(!"SCHEDULED".equals(before.status()))throw new ConflictException("Only scheduled pricing can be cancelled");
-        jdbc.update("update platform_pricing_plan_versions set status='CANCELLED',cancelled_at=now(),version=version+1 where id=? and status='SCHEDULED'",versionId);audit(platformActor(authentication),AuditAction.PRICING_PLAN_PRICE_CHANGE_CANCELLED,"PLATFORM_PRICING_PLAN_VERSION",versionId,before,pricingVersion(versionId),"Scheduled pricing cancelled");
+        PricingVersionResponse before=pricingVersion(versionId);
+        if(!before.pricingPlanId().equals(planId))throw new NotFoundException("PRICING_PLAN_NOT_FOUND");
+        if(!"SCHEDULED".equals(before.status()))throw new ConflictException("PRICING_PLAN_VERSION_NOT_CANCELLABLE");
+        int cancelled=jdbc.update("update platform_pricing_plan_versions set status='CANCELLED',cancelled_at=now(),version=version+1 where id=? and status='SCHEDULED'",versionId);
+        if(cancelled==0)throw new ConflictException("PRICING_PLAN_VERSION_STATE_CHANGED");
+        audit(platformActor(authentication),AuditAction.PRICING_PLAN_PRICE_CHANGE_CANCELLED,"PLATFORM_PRICING_PLAN_VERSION",versionId,before,pricingVersion(versionId),"Scheduled pricing cancelled");
     }
 
     @Transactional
@@ -222,10 +230,8 @@ public class PlatformBillingService {
         SubscriptionResponse subscription=subscription(tenantId);
         List<UUID> applicable=jdbc.query("select id from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE' and subscriber_policy='APPLY_NEXT_BILLING_CYCLE' and effective_from::date<=? order by version_number desc limit 1",(rs,row)->rs.getObject(1,UUID.class),subscription.pricingPlanId(),Date.valueOf(subscription.nextBillingDate()));
         if(applicable.isEmpty()||applicable.getFirst().equals(jdbc.queryForObject("select pricing_plan_version_id from tenant_subscriptions where id=?",UUID.class,subscription.id())))return;
-        if(jdbc.queryForObject("select count(*) from tenant_subscriptions where id=? and (custom_base_price is not null or custom_additional_store_price is not null)",Integer.class,subscription.id())>0)return;
         PricingVersionResponse version=pricingVersion(applicable.getFirst());PlanRequest price=version.pricing();
-        jdbc.update("update tenant_subscriptions set pricing_plan_version_id=?,base_price_snapshot=?,included_stores_snapshot=?,additional_store_price_snapshot=?,included_registers_per_store_snapshot=?,additional_register_price_snapshot=?,onboarding_fee_snapshot=?,updated_at=now(),version=version+1 where id=?",version.id(),price.basePrice(),price.includedStores(),price.additionalStorePrice(),price.includedRegisters(),price.additionalRegisterPrice(),price.oneTimeOnboardingFee(),subscription.id());
-        replaceSubscriptionCapabilitySnapshots(subscription.id(),price.capabilityPrices());syncSubscriptionEntitlements(subscription.id(),price.capabilityPrices(),subscription.nextBillingDate());
+        applyPricingVersionToSubscription(subscription.id(),version,subscription.nextBillingDate());
     }
 
     @Transactional
@@ -601,12 +607,25 @@ public class PlatformBillingService {
         return new PricingVersionResponse(id,rs.getObject("pricing_plan_id",UUID.class),rs.getInt("version_number"),rs.getString("status"),localDate(rs,"effective_from"),localDate(rs,"effective_to"),rs.getString("subscriber_policy"),pricing,used!=null&&used>0,instant(rs,"created_at"),rs.getLong("version"));
     }
 
-    private void activatePricingVersion(UUID versionId){
+    private void activatePricingVersion(UUID versionId){activatePricingVersion(versionId,null);}
+    private void activatePricingVersion(UUID versionId,UUID actor){
         PricingVersionResponse version=pricingVersion(versionId);PlanRequest price=version.pricing();
         jdbc.update("update platform_pricing_plan_versions set status='SUPERSEDED',effective_to=? where pricing_plan_id=? and status='ACTIVE' and id<>?",timestamp(version.effectiveFrom().minusDays(1)),version.pricingPlanId(),versionId);
         jdbc.update("update platform_pricing_plan_versions set status='ACTIVE',activated_at=now(),version=version+1 where id=?",versionId);
         jdbc.update("update platform_pricing_plans set billing_interval=?,base_price=?,one_time_onboarding_fee=?,currency_code=?,trial_days=?,included_stores=?,additional_store_price=?,included_registers=?,additional_register_price=?,included_users=?,additional_user_price=?,effective_from=?,updated_at=now(),version=version+1 where id=?",price.billingInterval(),price.basePrice(),price.oneTimeOnboardingFee(),price.currency(),price.trialDays(),price.includedStores(),price.additionalStorePrice(),price.includedRegisters(),price.additionalRegisterPrice(),price.includedUsers(),price.additionalUserPrice(),Date.valueOf(version.effectiveFrom()),version.pricingPlanId());
         replacePlanCapabilityPrices(version.pricingPlanId(),price.capabilityPrices());
+        if("APPLY_IMMEDIATELY".equals(version.subscriberPolicy())){
+            List<UUID> subscriptions=jdbc.query("select id from tenant_subscriptions where pricing_plan_id=? and status in ('TRIAL','ACTIVE','PAST_DUE') order by id for update",(rs,row)->rs.getObject(1,UUID.class),version.pricingPlanId());
+            subscriptions.forEach(subscriptionId->applyPricingVersionToSubscription(subscriptionId,pricingVersion(versionId),LocalDate.now()));
+        }
+        audit(actor,AuditAction.PRICING_PLAN_VERSION_APPLIED,"PLATFORM_PRICING_PLAN_VERSION",versionId,version,pricingVersion(versionId),"policy="+version.subscriberPolicy());
+    }
+
+    private void applyPricingVersionToSubscription(UUID subscriptionId,PricingVersionResponse version,LocalDate effective){
+        PlanRequest price=version.pricing();
+        jdbc.update("update tenant_subscriptions set pricing_plan_version_id=?,base_price_snapshot=?,included_stores_snapshot=?,additional_store_price_snapshot=?,included_registers_per_store_snapshot=?,additional_register_price_snapshot=?,included_users_snapshot=?,additional_user_price_snapshot=?,onboarding_fee_snapshot=?,pricing_effective_from=?,updated_at=now(),version=version+1 where id=?",version.id(),price.basePrice(),price.includedStores(),price.additionalStorePrice(),price.includedRegisters(),price.additionalRegisterPrice(),price.includedUsers(),price.additionalUserPrice(),price.oneTimeOnboardingFee(),Date.valueOf(effective),subscriptionId);
+        replaceSubscriptionCapabilitySnapshots(subscriptionId,price.capabilityPrices());
+        syncSubscriptionEntitlements(subscriptionId,price.capabilityPrices(),effective);
     }
 
     private void syncSubscriptionEntitlements(UUID subscriptionId,List<CapabilityPrice> capabilities,LocalDate effective){
@@ -621,10 +640,15 @@ public class PlatformBillingService {
     }
 
     private static CapabilityDefinition definition(CommercialCapability capability,BillingUnit... units){return new CapabilityDefinition(capability,capability.name().replace('_',' '),List.of(units));}
-    private LocalDate effectiveDate(UUID planId,PricingVersionRequest request){
+    private LocalDate effectiveDate(UUID planId,PricingVersionRequest request,String applicationMode){
+        if("IMMEDIATE".equals(applicationMode)||"NEXT_BILLING_CYCLE".equals(applicationMode))return LocalDate.now();
         LocalDate value=request.effectiveDate();
-        if("NEXT_BILLING_CYCLE".equalsIgnoreCase(request.effectivePolicy()))value=jdbc.query("select min(next_billing_date) from tenant_subscriptions where pricing_plan_id=? and status in ('TRIAL','ACTIVE','PAST_DUE')",rs->{rs.next();Date date=rs.getDate(1);return date==null?LocalDate.now().plusDays(1):date.toLocalDate();},planId);
         if(value==null||!value.isAfter(LocalDate.now()))throw new BadRequestException("PRICING_PLAN_EFFECTIVE_DATE_INVALID");return value;
+    }
+    private static String applicationMode(PricingVersionRequest request){
+        if(request.applicationMode()!=null&&!request.applicationMode().isBlank())return allowed(request.applicationMode(),List.of("IMMEDIATE","NEXT_BILLING_CYCLE","SCHEDULED"),"application mode");
+        if("NEXT_BILLING_CYCLE".equalsIgnoreCase(request.effectivePolicy()))return "NEXT_BILLING_CYCLE";
+        return "SCHEDULED";
     }
     private void requireCapabilityRemovalConfirmation(UUID planId,List<CapabilityPrice> current,List<CapabilityPrice> proposed,boolean confirmed){
         if(confirmed)return;

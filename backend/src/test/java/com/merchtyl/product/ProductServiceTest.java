@@ -5,6 +5,7 @@ import com.merchtyl.audit.AuditService;
 import com.merchtyl.audit.CreateAuditRecordCommand;
 import com.merchtyl.catalogue.BrandRepository;
 import com.merchtyl.catalogue.CategoryRepository;
+import com.merchtyl.catalogue.Category;
 import com.merchtyl.catalogue.UnitOfMeasureRepository;
 import com.merchtyl.catalogue.UnitOfMeasure;
 import com.merchtyl.common.BadRequestException;
@@ -214,6 +215,24 @@ class ProductServiceTest {
         assertThatThrownBy(() -> productService.create(requestWithTaxCategory(taxCategoryId), null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Invalid tax category");
+    }
+
+    @Test
+    void lotteryProductAlwaysUsesTenantLotteryCategory() {
+        UUID tenantId = new UUID(0L, 1L);
+        Category lottery = new Category("LOTTERY", "Lottery", null, true);
+        lottery.assignTenant(tenantId);
+        UUID unrelatedCategoryId = UUID.randomUUID();
+        when(categoryRepository.findByTenantIdAndCodeIgnoreCase(tenantId, "LOTTERY"))
+                .thenReturn(Optional.of(lottery));
+
+        ProductResponse response = productService.create(new ProductRequest(
+                null, "Five Dollar Ticket", null, SellableType.LOTTERY_PRODUCT, null,
+                BigDecimal.ZERO, new BigDecimal("5.00"), unrelatedCategoryId, null,
+                true, false, false, null, null, List.of(), Set.of()), null);
+
+        assertThat(response.categoryId()).isEqualTo(lottery.getId());
+        verify(categoryRepository, never()).findByIdAndTenantId(unrelatedCategoryId, tenantId);
     }
 
     @Test

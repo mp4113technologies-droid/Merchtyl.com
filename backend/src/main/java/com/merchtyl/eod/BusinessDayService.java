@@ -36,6 +36,7 @@ import com.merchtyl.lottery.LotterySaleStatus;
 import com.merchtyl.lottery.LotterySettlement;
 import com.merchtyl.lottery.LotterySettlementRepository;
 import com.merchtyl.lottery.LotterySettlementStatus;
+import com.merchtyl.product.SellableType;
 import com.merchtyl.refunds.Refund;
 import com.merchtyl.refunds.RefundPayment;
 import com.merchtyl.refunds.RefundRepository;
@@ -506,6 +507,11 @@ public class BusinessDayService {
                     .map(EndOfDayReportResponse::from)
                     .orElseThrow(() -> new ConflictException("Business day is closed but no report exists"));
         }
+        ClosingValidationResponse validation = validate(day, true, actor, authentication);
+        if (hasClosingBlocker(validation.blockers(), "OPEN_REGISTER_SESSION")) {
+            audit(actor, AuditAction.BUSINESS_DAY_CLOSING_VALIDATION_FAILED, day, null, validation, reason);
+            throw new ClosingValidationException(validation);
+        }
         return generateAndClose(day, actor, request.managerNotes(), request.varianceExplanation(), request.confirmationAccepted(), reason);
     }
 
@@ -570,7 +576,7 @@ public class BusinessDayService {
         LocalTime localTime = Instant.now(clock).atZone(ZoneId.of(store.getTimezone())).toLocalTime();
         BusinessDay currentDay = day(current.id());
         long openRegisters = registerSessions(currentDay).stream()
-                .filter(session -> session.getStatus() == RegisterSessionStatus.OPEN)
+                .filter(BusinessDayService::isBlockingRegisterSession)
                 .count();
         boolean past = !localTime.isBefore(configuration.getClosingReminderTime());
         boolean ready = past && openRegisters == 0 && configuration.isAutomaticallyGenerateReportAfterFinalRegisterCloses();
@@ -789,6 +795,7 @@ public class BusinessDayService {
                 lottery.enabled(),
                 lottery.lotterySales(),
                 lottery.lotteryPayouts(),
+                money(lottery.lotterySales().subtract(lottery.lotteryPayouts())),
                 lottery.saleCancellations(),
                 lottery.payoutReversals(),
                 lottery.cashLotteryActivity(),
@@ -858,11 +865,13 @@ public class BusinessDayService {
         List<InventoryTransaction> inventoryTransactions = inventoryTransactionRepository.findAll(inventoryTransactionSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("occurredAt").and(Sort.by("id")));
         List<InventoryBalance> balances = inventoryBalanceRepository.findAll(balanceSpec(day.getStore().getId()), Sort.by("product.sku").and(Sort.by("id")));
         boolean lotteryEnabled = featureService.isEnabled(FeatureCode.LOTTERY_SALES, day.getStore().getId(), null);
-        List<LotterySale> lotterySales = lotteryEnabled ? lotterySaleRepository.findAll(lotterySaleSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("occurredAt").and(Sort.by("id"))) : List.of();
-        List<LotteryPayout> lotteryPayouts = lotteryEnabled ? lotteryPayoutRepository.findAll(lotteryPayoutSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("occurredAt").and(Sort.by("id"))) : List.of();
-        List<LotterySaleCancellation> cancellations = lotteryEnabled ? lotterySaleCancellationRepository.findAll(lotteryCancellationSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("cancelledAt").and(Sort.by("id"))) : List.of();
-        List<LotteryPayoutReversal> reversals = lotteryEnabled ? lotteryPayoutReversalRepository.findAll(lotteryReversalSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("reversedAt").and(Sort.by("id"))) : List.of();
-        List<LotterySettlement> settlements = lotteryEnabled ? lotterySettlementRepository.findAll(lotterySettlementSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("periodEnd").and(Sort.by("id"))) : List.of();
+        // Reporting is historical and must not disappear when a plan or Store capability changes later.
+        // Operational feature checks remain in the Lottery write services; EOD always reads posted activity.
+        List<LotterySale> lotterySales = lotterySaleRepository.findAll(lotterySaleSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("occurredAt").and(Sort.by("id")));
+        List<LotteryPayout> lotteryPayouts = lotteryPayoutRepository.findAll(lotteryPayoutSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("occurredAt").and(Sort.by("id")));
+        List<LotterySaleCancellation> cancellations = lotterySaleCancellationRepository.findAll(lotteryCancellationSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("cancelledAt").and(Sort.by("id")));
+        List<LotteryPayoutReversal> reversals = lotteryPayoutReversalRepository.findAll(lotteryReversalSpec(day.getStore().getId(), day.getBusinessDate(), day.getTimezone()), Sort.by("reversedAt").and(Sort.by("id")));
+        List<LotterySettlement> settlements = lotterySettlementRepository.findAll(lotterySettlementSpec(day.getStore().getId(), day.getBusinessDate()), Sort.by("periodEnd").and(Sort.by("id")));
 
         BigDecimal grossSales = money(sum(sales, Sale::getSubtotalAmount));
         BigDecimal discounts = money(sum(sales, Sale::getDiscountAmount));
@@ -890,7 +899,7 @@ public class BusinessDayService {
         List<EndOfDayPaymentValues> paymentValues = paymentValues(sales, refunds);
         List<EndOfDayTaxValues> taxValues = taxValues(sales, refunds);
         List<EndOfDayCategorySalesSummaryResponse> categoryValues = categorySalesValues(sales, refunds);
-        EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, lotterySales, lotteryPayouts, cancellations, reversals, settlements);
+        EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, sales, lotterySales, lotteryPayouts, cancellations, reversals, settlements);
         EndOfDayInventoryValues inventoryValues = inventoryValues(inventoryTransactions, balances);
         List<EndOfDayCashierValues> cashierValues = cashierValues(sales, refunds, lotterySales, lotteryPayouts);
         List<EndOfDayExceptionValues> exceptionValues = exceptionValues(day, sales, voidedSales, refunds, sessions, cashMovements, lotteryPayouts, reversals, variance);
@@ -909,8 +918,15 @@ public class BusinessDayService {
         }
         List<RegisterSession> sessions = registerSessions(day);
         for (RegisterSession session : sessions) {
-            if (session.getStatus() == RegisterSessionStatus.OPEN) {
-                blockers.add(blocker("OPEN_REGISTER_SESSION", "Register session remains open: " + session.getRegister().getCode(), session.getId()));
+            if (isBlockingRegisterSession(session)) {
+                User operator = session.getAssignedCashier() == null ? session.getOpenedBy() : session.getAssignedCashier();
+                blockers.add(blocker(
+                        "OPEN_REGISTER_SESSION",
+                        "Register " + session.getRegister().getName()
+                                + " (" + session.getRegister().getCode() + ", " + session.getRegister().getType() + ")"
+                                + " is " + session.getStatus()
+                                + " and must be closed and reconciled. Operator: " + (operator == null ? "Unassigned" : display(operator)),
+                        session.getId()));
             }
             if (session.getCountedCash() == null) {
                 blockers.add(blocker("MISSING_COUNTED_CASH", "Counted cash is missing for register: " + session.getRegister().getCode(), session.getId()));
@@ -951,6 +967,15 @@ public class BusinessDayService {
             return new ClosingValidationResponse(day.getId(), true, blockers, reconciliationResponses(sessions, actor, authentication));
         }
         return new ClosingValidationResponse(day.getId(), blockers.isEmpty(), blockers, reconciliationResponses(sessions, actor, authentication));
+    }
+
+    private static boolean isBlockingRegisterSession(RegisterSession session) {
+        return isBlockingRegisterSessionStatus(session.getStatus());
+    }
+
+    static boolean isBlockingRegisterSessionStatus(RegisterSessionStatus status) {
+        return status != RegisterSessionStatus.CLOSED
+                && status != RegisterSessionStatus.FORCE_CLOSED;
     }
 
     private List<RegisterReconciliationResponse> reconciliationResponses(
@@ -1043,7 +1068,11 @@ public class BusinessDayService {
         Map<String, TaxAccumulator> taxes = new LinkedHashMap<>();
         TaxAccumulator salesTax = taxes.computeIfAbsent("SALES_TAX", ignored -> new TaxAccumulator("SALES_TAX", "Posted sales tax"));
         sales.forEach(sale -> {
-            salesTax.taxableSales = salesTax.taxableSales.add(money(sale.getSubtotalAmount().subtract(sale.getDiscountAmount())));
+            BigDecimal merchandiseTaxableBase = sale.getItems().stream()
+                    .filter(item -> item.getSellableTypeSnapshot() != SellableType.LOTTERY_PRODUCT)
+                    .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
+                    .reduce(moneyZero(), BigDecimal::add);
+            salesTax.taxableSales = salesTax.taxableSales.add(money(merchandiseTaxableBase));
             salesTax.taxCollected = salesTax.taxCollected.add(money(sale.getEstimatedTaxAmount()));
         });
         refunds.forEach(refund -> refund.getItemTaxes().forEach(tax -> {
@@ -1060,6 +1089,7 @@ public class BusinessDayService {
         sales.stream()
                 .filter(sale -> sale.getRegister().getType() != RegisterType.FOOD_SERVICE)
                 .flatMap(sale -> sale.getItems().stream())
+                .filter(item -> item.getSellableTypeSnapshot() != SellableType.LOTTERY_PRODUCT)
                 .forEach(item -> {
                     CategorySalesAccumulator total = categoryTotal(totals, item);
                     total.hadActivity = true;
@@ -1069,6 +1099,7 @@ public class BusinessDayService {
         refunds.stream()
                 .filter(refund -> refund.getRegister().getType() != RegisterType.FOOD_SERVICE)
                 .flatMap(refund -> refund.getReturnRecord().getItems().stream())
+                .filter(item -> item.getOriginalSaleItem().getSellableTypeSnapshot() != SellableType.LOTTERY_PRODUCT)
                 .forEach(item -> {
                     CategorySalesAccumulator total = categoryTotal(totals, item.getOriginalSaleItem());
                     total.hadActivity = true;
@@ -1108,11 +1139,12 @@ public class BusinessDayService {
                 ignored -> new CategorySalesAccumulator(categoryId, categoryName));
     }
 
-    private EndOfDayLotteryValues lotteryValues(boolean enabled, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements) {
-        if (!enabled) {
-            return EndOfDayLotteryValues.empty(false);
-        }
-        BigDecimal salesTotal = money(sales.stream().filter(sale -> sale.getStatus() == LotterySaleStatus.RECORDED || sale.getStatus() == LotterySaleStatus.CANCELLED).map(LotterySale::getAmount).reduce(moneyZero(), BigDecimal::add));
+    EndOfDayLotteryValues lotteryValues(boolean enabled, List<Sale> postedSales, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements) {
+        BigDecimal barcodeSales = postedSales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(item -> item.getSellableTypeSnapshot() == SellableType.LOTTERY_PRODUCT)
+                .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
+                .reduce(moneyZero(), BigDecimal::add);
+        BigDecimal salesTotal = money(sales.stream().filter(sale -> sale.getStatus() == LotterySaleStatus.RECORDED || sale.getStatus() == LotterySaleStatus.CANCELLED).map(LotterySale::getAmount).reduce(barcodeSales, BigDecimal::add));
         BigDecimal payoutsTotal = money(payouts.stream().filter(payout -> payout.getStatus() == LotteryPayoutStatus.PAID || payout.getStatus() == LotteryPayoutStatus.REVERSED).map(LotteryPayout::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal cancellationTotal = money(cancellations.stream().map(LotterySaleCancellation::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal reversalTotal = money(reversals.stream().map(LotteryPayoutReversal::getAmount).reduce(moneyZero(), BigDecimal::add));
@@ -1120,8 +1152,10 @@ public class BusinessDayService {
         BigDecimal cashPayouts = money(payouts.stream().filter(payout -> payout.getPayoutMethod() == LotteryPayoutMethod.CASH).map(LotteryPayout::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal commission = money(settlements.stream().map(LotterySettlement::getCommission).reduce(moneyZero(), BigDecimal::add));
         BigDecimal settlement = money(settlements.stream().map(LotterySettlement::getExpectedSettlement).reduce(moneyZero(), BigDecimal::add));
+        boolean hasLotteryActivity = barcodeSales.signum() != 0 || !sales.isEmpty() || !payouts.isEmpty()
+                || !cancellations.isEmpty() || !reversals.isEmpty() || !settlements.isEmpty();
         return new EndOfDayLotteryValues(
-                true,
+                enabled || hasLotteryActivity,
                 salesTotal,
                 payoutsTotal,
                 cancellationTotal,
@@ -1699,7 +1733,7 @@ public class BusinessDayService {
     private record EndOfDayTaxValues(String componentCode, String componentName, BigDecimal taxableSales, BigDecimal exemptSales, BigDecimal zeroRatedSales, BigDecimal outOfScopeSales, BigDecimal taxCollected, BigDecimal taxRefunded, BigDecimal roundingAdjustment) {
     }
 
-    private record EndOfDayLotteryValues(boolean enabled, BigDecimal lotterySales, BigDecimal lotteryPayouts, BigDecimal saleCancellations, BigDecimal payoutReversals, BigDecimal cashLotteryActivity, BigDecimal nonCashLotteryActivity, BigDecimal commissionEarned, BigDecimal settlementAmount, long operatorReferrals, long pendingReferrals, long approvalCount, long rejectedPayouts, String operatorTotals, String registerTotals, String cashierTotals) {
+    record EndOfDayLotteryValues(boolean enabled, BigDecimal lotterySales, BigDecimal lotteryPayouts, BigDecimal saleCancellations, BigDecimal payoutReversals, BigDecimal cashLotteryActivity, BigDecimal nonCashLotteryActivity, BigDecimal commissionEarned, BigDecimal settlementAmount, long operatorReferrals, long pendingReferrals, long approvalCount, long rejectedPayouts, String operatorTotals, String registerTotals, String cashierTotals) {
         static EndOfDayLotteryValues empty(boolean enabled) {
             return new EndOfDayLotteryValues(enabled, moneyZero(), moneyZero(), moneyZero(), moneyZero(), moneyZero(), moneyZero(), moneyZero(), moneyZero(), 0, 0, 0, 0, "", "", "");
         }
@@ -1758,6 +1792,7 @@ public class BusinessDayService {
                     row("Enabled", report.lottery().enabled() ? "Yes" : "No"),
                     row("Sales", report.lottery().lotterySales()),
                     row("Payouts", report.lottery().lotteryPayouts()),
+                    row("Net Lottery", report.lottery().netLottery()),
                     row("Settlement", report.lottery().settlementAmount()))));
         }
         if (report.inventory() != null) {
@@ -1810,6 +1845,7 @@ public class BusinessDayService {
                     List.of("enabled", String.valueOf(report.lottery().enabled())),
                     List.of("lotterySales", fmt(report.lottery().lotterySales())),
                     List.of("lotteryPayouts", fmt(report.lottery().lotteryPayouts())),
+                    List.of("netLottery", fmt(report.lottery().netLottery())),
                     List.of("saleCancellations", fmt(report.lottery().saleCancellations())),
                     List.of("payoutReversals", fmt(report.lottery().payoutReversals())),
                     List.of("settlementAmount", fmt(report.lottery().settlementAmount()))));
@@ -1848,7 +1884,7 @@ public class BusinessDayService {
         lines.add("Retail Category Sales Distribution");
         report.categorySalesDistribution().forEach(category -> lines.add("  " + category.categoryName() + " qty " + fmtQuantity(category.quantitySold()) + " net " + fmt(category.netSales()) + " share " + fmtPercent(category.percentage())));
         if (report.lottery() != null) {
-            lines.add("Lottery sales: " + fmt(report.lottery().lotterySales()) + " payouts: " + fmt(report.lottery().lotteryPayouts()) + " settlement: " + fmt(report.lottery().settlementAmount()));
+            lines.add("Lottery sales: " + fmt(report.lottery().lotterySales()) + " payouts: " + fmt(report.lottery().lotteryPayouts()) + " net: " + fmt(report.lottery().netLottery()) + " settlement: " + fmt(report.lottery().settlementAmount()));
         }
         if (report.inventory() != null) {
             lines.add("Inventory deducted: " + fmt(report.inventory().deductedBySales()) + " restored: " + fmt(report.inventory().restoredByReturns()) + " value movement: " + fmt(report.inventory().inventoryValueMovement()));

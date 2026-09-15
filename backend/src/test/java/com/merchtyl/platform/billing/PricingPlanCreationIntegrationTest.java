@@ -27,6 +27,7 @@ import java.util.Set;
 import static com.merchtyl.platform.billing.BillingDtos.CapabilityPrice;
 import static com.merchtyl.platform.billing.BillingDtos.PlanRequest;
 import static com.merchtyl.platform.billing.BillingDtos.PlanResponse;
+import static com.merchtyl.platform.billing.BillingDtos.PricingVersionRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -138,6 +139,25 @@ class PricingPlanCreationIntegrationTest {
         assertThatThrownBy(() -> billing.updatePlan(created.id(), withStatus(future, "ACTIVE"), authentication()))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("PRICING_PLAN_NO_EFFECTIVE_VERSION");
+    }
+
+    @Test
+    void activatesSameDayPricingChangeImmediatelyWithoutRewritingHistory() {
+        PlanResponse created = billing.createPlan(productionRequest("SAME_DAY_PRICE"), authentication());
+        PlanRequest changed = new PlanRequest(created.code(), created.name(), created.description(), created.status(),
+                created.billingInterval(), new BigDecimal("125"), created.oneTimeOnboardingFee(), created.currency(),
+                created.trialDays(), created.includedStores(), created.includedRegisters(), created.includedUsers(),
+                created.additionalStorePrice(), created.additionalRegisterPrice(), created.additionalUserPrice(),
+                created.capabilityPrices(), created.taxBehavior(), created.effectiveFrom(), created.effectiveTo());
+
+        var activated = billing.schedulePricingVersion(created.id(), new PricingVersionRequest(changed,
+                "SPECIFIC_FUTURE_DATE", LocalDate.now(), "NEW_SUBSCRIPTIONS_ONLY", false, created.version(), "IMMEDIATE"), authentication());
+
+        assertThat(activated.status()).isEqualTo("ACTIVE");
+        assertThat(activated.effectiveFrom()).isEqualTo(LocalDate.now());
+        assertThat(reload(created.id()).basePrice()).isEqualByComparingTo("125");
+        assertThat(jdbc.queryForObject("select count(*) from platform_pricing_plan_versions where pricing_plan_id=? and status='SUPERSEDED'", Integer.class, created.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from platform_pricing_plan_versions where pricing_plan_id=? and status='ACTIVE'", Integer.class, created.id())).isEqualTo(1);
     }
 
     @Test

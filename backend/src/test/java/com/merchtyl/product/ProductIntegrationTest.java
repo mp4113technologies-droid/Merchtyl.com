@@ -193,6 +193,41 @@ class ProductIntegrationTest {
     }
 
     @Test
+    void newTenantReceivesOneLotteryCategoryAndLotteryProductUsesItAuthoritatively() throws Exception {
+        String token = registerAndGetToken("owner-lottery-category@products.test", "Lottery Owner");
+        String categoriesBody = mockMvc.perform(get("/api/v1/categories")
+                        .param("code", "LOTTERY")
+                        .param("active", "true")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].name").value("Lottery"))
+                .andReturn().getResponse().getContentAsString();
+        String lotteryCategoryId = objectMapper.readTree(categoriesBody).path("content").get(0).path("id").asText();
+
+        mockMvc.perform(post("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"Five Dollar Ticket",
+                                  "sellableType":"LOTTERY_PRODUCT",
+                                  "cost":0,
+                                  "price":5,
+                                  "categoryId":"00000000-0000-0000-0000-000000000099",
+                                  "active":true,
+                                  "inventoryTrackingEnabled":false,
+                                  "decimalQuantityAllowed":false,
+                                  "variants":[],
+                                  "capabilities":[]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sellableType").value("LOTTERY_PRODUCT"))
+                .andExpect(jsonPath("$.categoryId").value(lotteryCategoryId));
+    }
+
+    @Test
     void updateCanAddNewVariantWithDepositWithoutMergingItAsDetached() throws Exception {
         String token = registerAndGetToken("owner-add-variant@products.test", "Owner");
         JsonNode created = createProduct(token, "cola", "Cola", "111111111111", true);

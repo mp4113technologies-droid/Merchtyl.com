@@ -10,6 +10,7 @@ import com.merchtyl.security.StoreAccessService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -99,5 +100,26 @@ class CatalogueReferenceServiceTest {
 
         verify(categoryRepository, never()).saveAndFlush(any());
         verify(auditService, never()).record(any());
+    }
+
+    @Test
+    void systemLotteryCategoryCannotBeRenamedOrDeactivated() {
+        Category lottery = new Category("LOTTERY", "Lottery", null, true);
+        lottery.assignTenant(tenantId);
+        ReflectionTestUtils.setField(lottery, "systemManaged", true);
+        Authentication authentication = mock(Authentication.class);
+        when(storeAccessService.currentTenantId(authentication)).thenReturn(tenantId);
+        when(categoryRepository.findById(lottery.getId())).thenReturn(Optional.of(lottery));
+
+        assertThatThrownBy(() -> service.update(lottery.getId(), new CatalogueReferenceUpdateRequest(
+                "LOTTERY", "Tickets", null, true, lottery.getVersion()), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("SYSTEM_CATEGORY_PROTECTED");
+        assertThatThrownBy(() -> service.updateStatus(lottery.getId(), new CatalogueReferenceStatusRequest(
+                false, lottery.getVersion()), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("SYSTEM_CATEGORY_PROTECTED");
+
+        verify(categoryRepository, never()).saveAndFlush(any());
     }
 }
