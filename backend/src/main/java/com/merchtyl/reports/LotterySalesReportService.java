@@ -12,6 +12,7 @@ import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.User;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
@@ -34,6 +35,7 @@ public class LotterySalesReportService {
     private final FeatureService features;
     private final Clock clock;
 
+    @Autowired
     public LotterySalesReportService(SaleRepository sales, ReceiptRepository receipts, StoreAccessService storeAccess,
                                      FeatureService features) {
         this(sales, receipts, storeAccess, features, Clock.systemUTC());

@@ -971,6 +971,7 @@ export function PosCartPage() {
   const [printingReceipt, setPrintingReceipt] = React.useState(false);
   const [lotteryAction, setLotteryAction] = React.useState<'SOLD' | 'WIN' | null>(null);
   const [lotteryNotice, setLotteryNotice] = React.useState<string | null>(null);
+  const [payoutConfirmationOpen, setPayoutConfirmationOpen] = React.useState(false);
   const completionKeyRef = React.useRef<string | null>(null);
   const automaticPrintSaleIdRef = React.useRef<string | null>(null);
   const autoPrintedReceiptRef = React.useRef<string | null>(null);
@@ -1385,6 +1386,7 @@ export function PosCartPage() {
       completionKeyRef.current = null;
       automaticPrintSaleIdRef.current = sale.id;
       setPaymentDialogOpen(false);
+      setPayoutConfirmationOpen(false);
       rememberSale(sale);
       void queryClient.invalidateQueries({ queryKey: ['sales'] });
     },
@@ -1685,7 +1687,7 @@ export function PosCartPage() {
             </Box>
             <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
               <Button fullWidth size="small" variant="outlined" disabled={!activeSale || cartLocked} onClick={() => cancelMutation.mutate()} sx={{ bgcolor: posTokens.colors.card }}>Cancel draft</Button>
-              <Button fullWidth size="small" variant="contained" disabled={!activeSale?.paymentComplete || completeMutation.isPending || busy} onClick={() => { if (!completeMutation.isPending) completeMutation.mutate(); }}>{completeMutation.isPending ? 'Completing sale...' : 'Complete sale'}</Button>
+              <Button fullWidth size="small" variant="contained" color={activeSale && activeSale.totalAmount < 0 ? 'warning' : 'primary'} disabled={!activeSale?.paymentComplete || completeMutation.isPending || busy} onClick={() => { if (completeMutation.isPending) return; if (activeSale && activeSale.totalAmount < 0) setPayoutConfirmationOpen(true); else completeMutation.mutate(); }}>{completeMutation.isPending ? 'Completing sale...' : activeSale && activeSale.totalAmount < 0 ? `Pay out ${money(Math.abs(activeSale.totalAmount), currencyCode)} cash` : 'Complete sale'}</Button>
             </Stack>
           </Stack>
         </Box>
@@ -1708,6 +1710,19 @@ export function PosCartPage() {
         onClose={() => setLotteryAction(null)}
         onSubmit={(amount) => lotteryAction && addLotteryItem(lotteryAction, amount)}
       />
+      <Dialog open={payoutConfirmationOpen} onClose={completeMutation.isPending ? undefined : () => setPayoutConfirmationOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Confirm lottery cash payout</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1} sx={{ pt: 1 }}>
+            <Typography>Pay the customer {money(Math.abs(activeSale?.totalAmount ?? 0), currencyCode)} in cash?</Typography>
+            <Alert severity="warning">Confirm the cash has been handed to the customer. This will complete the transaction and record the drawer payout.</Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={completeMutation.isPending} onClick={() => setPayoutConfirmationOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="warning" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate()}>{completeMutation.isPending ? 'Recording payout…' : 'Confirm cash payout'}</Button>
+        </DialogActions>
+      </Dialog>
       <Dialog
         open={Boolean(pendingAgeVerification)}
         onClose={() => {

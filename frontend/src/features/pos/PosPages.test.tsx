@@ -686,6 +686,49 @@ describe('POS pages', () => {
     expect(paymentWrites).toBe(0);
   });
 
+  it('offers and confirms a cash payout when lottery wins exceed lottery sales', async () => {
+    let completionWrites = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD'] });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      if (url.pathname.endsWith('/api/v1/features/resolution')) return jsonResponse([{ definition: { id: 'feature-lottery', code: 'LOTTERY_SALES', name: 'Lottery Sales', description: '', defaultEnabled: false, createdAt: '', updatedAt: '', version: 0 }, enabled: true, source: 'STORE', storeId, registerId, tenantOverride: null, storeOverride: null, registerOverride: null }]);
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse({ ...registerSession(), deviceId: null });
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        return jsonResponse({ ...sale('PENDING_PAYMENT'), subtotalAmount: -11, totalAmount: -11, balanceDue: 0, paymentComplete: true });
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') {
+        completionWrites += 1;
+        return jsonResponse({ ...saleWithPayments([], 'COMPLETED'), subtotalAmount: -11, totalAmount: -11, balanceDue: 0, paymentComplete: true });
+      }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lottery Win' }));
+    let dialog = screen.getByRole('dialog', { name: 'Lottery Win' });
+    await userEvent.type(within(dialog).getByRole('spinbutton'), '14');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lottery Win' })).not.toBeInTheDocument());
+    if (!screen.queryByRole('dialog', { name: 'Lottery Sold' })) {
+      await userEvent.click(await screen.findByRole('button', { name: 'Lottery Sold' }));
+    }
+    dialog = await screen.findByRole('dialog', { name: 'Lottery Sold' });
+    await userEvent.type(within(dialog).getByRole('spinbutton'), '3');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lottery Sold' })).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Calculate Tax' }));
+
+    const payoutButton = await screen.findByRole('button', { name: 'Pay out $11.00 cash' });
+    await userEvent.click(payoutButton);
+    const confirmation = screen.getByRole('dialog', { name: 'Confirm lottery cash payout' });
+    expect(within(confirmation).getByText('Pay the customer $11.00 in cash?')).toBeVisible();
+    expect(completionWrites).toBe(0);
+    await userEvent.click(within(confirmation).getByRole('button', { name: 'Confirm cash payout' }));
+    await waitFor(() => expect(completionWrites).toBe(1));
+  });
+
   it('hides lottery actions when the store is enabled but the subscription is not', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);

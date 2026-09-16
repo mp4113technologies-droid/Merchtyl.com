@@ -209,7 +209,7 @@ class SaleServiceTest {
     }
 
     @Test
-    void checkoutNetsPositiveLotteryAmountsWithoutTaxOrNegativeStoredMoney() {
+    void checkoutNetsLotteryWinsAsNegativeLineAmountsWithoutTax() {
         when(register.getType()).thenReturn(RegisterType.RETAIL);
         when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
 
