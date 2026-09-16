@@ -808,9 +808,13 @@ function SuccessfulSaleScreen({
   onNewSale: () => void;
 }) {
   return (
-    <Paper variant="outlined" sx={{ p: 3 }}>
-      <Stack spacing={2}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}>
+    <Paper
+      data-testid="completed-sale"
+      variant="outlined"
+      sx={{ p: { xs: 1.5, md: 2 }, height: '100%', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+    >
+      <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ flexShrink: 0 }}>
           <Box>
             <Typography variant="h5" component="h2">Sale complete</Typography>
             <Typography color="text.secondary">Final total {money(sale.totalAmount, sale.currencyCode)}</Typography>
@@ -818,7 +822,7 @@ function SuccessfulSaleScreen({
           <Chip color="success" label="COMPLETED" />
         </Stack>
         <Divider />
-        <Grid container spacing={2}>
+        <Grid container spacing={1.5} sx={{ flexShrink: 0 }}>
           <Grid item xs={12} sm={4}>
             <Typography color="text.secondary">Paid</Typography>
             <Typography variant="h6">{money(sale.paidAmount, sale.currencyCode)}</Typography>
@@ -833,8 +837,8 @@ function SuccessfulSaleScreen({
           </Grid>
         </Grid>
         <Divider />
-        <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2}>
+        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ flexShrink: 0 }}>
             <Box>
               <Typography variant="h6" component="h3">Receipt</Typography>
               <Typography color="text.secondary">{receipt?.receiptNumber ?? 'Generating receipt'}</Typography>
@@ -881,11 +885,18 @@ function SuccessfulSaleScreen({
               />
             </Stack>
           </Stack>
-          {receiptLoading ? <LoadingPanel label="Loading receipt" /> : null}
-          {receiptError ? <Alert severity="warning">{errorMessage(receiptError)}</Alert> : null}
-          {printError ? <Alert severity="warning">{printError}</Alert> : null}
-          {receipt ? <ReceiptPreview receipt={receipt.document} widthMm={preferences.widthMm} /> : null}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+          <Box
+            data-testid="completed-sale-content"
+            sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', pr: { xs: 0, sm: 0.5 } }}
+          >
+            <Stack spacing={1.5}>
+              {receiptLoading ? <LoadingPanel label="Loading receipt" /> : null}
+              {receiptError ? <Alert severity="warning">{errorMessage(receiptError)}</Alert> : null}
+              {printError ? <Alert severity="warning">{printError}</Alert> : null}
+              {receipt ? <ReceiptPreview receipt={receipt.document} widthMm={preferences.widthMm} /> : null}
+            </Stack>
+          </Box>
+          <Stack data-testid="completed-sale-actions" direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ flexShrink: 0 }}>
             <Button
               variant="contained"
               startIcon={<PrintOutlinedIcon />}
@@ -1466,7 +1477,7 @@ export function PosCartPage() {
   }, [barcodeMutation, cartLocked, current.data, paymentDialogOpen, pendingAgeVerification]);
 
   return (
-    <Stack data-testid="retail-checkout-shell" spacing={1} sx={{ height: activeSale?.status === 'COMPLETED' ? 'auto' : 'calc(100dvh - 88px)', minHeight: 0, minWidth: 0, overflow: activeSale?.status === 'COMPLETED' ? 'visible' : 'hidden', color: posTokens.colors.text }}>
+    <Stack data-testid="retail-checkout-shell" spacing={1} sx={{ height: 'calc(100dvh - 88px)', minHeight: 0, minWidth: 0, overflow: 'hidden', color: posTokens.colors.text }}>
       <CustomItemDialog open={customItemOpen} initialItem={editingCustomItem} initialDescription={customItemDescription} currencyCode={currencyCode} onClose={() => { setCustomItemOpen(false); setEditingCustomItem(undefined); }} onAdd={addCustomItem} />
       <GlobalStyles styles={receiptPrintStyles} />
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ minHeight: 48, flexShrink: 0 }}>

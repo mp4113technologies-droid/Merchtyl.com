@@ -1220,6 +1220,45 @@ describe('POS pages', () => {
     })).toBe(false);
   });
 
+  it('keeps completed-sale actions outside the scrollable long-receipt region and starts the next sale', async () => {
+    const completed = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)], 'COMPLETED');
+    const longReceipt = receipt();
+    longReceipt.document.items = Array.from({ length: 40 }, (_, index) => ({
+      ...longReceipt.document.items[0],
+      id: `receipt-item-${index}`,
+      lineNumber: index + 1,
+      productName: `Receipt item ${index + 1}`
+    }));
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(completed);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`) && init?.method === undefined) return jsonResponse(longReceipt);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
+        return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+
+    expect(await screen.findByText('Receipt item 40')).toBeInTheDocument();
+    expect(screen.getByTestId('retail-checkout-shell')).toHaveStyle({ overflow: 'hidden' });
+    expect(screen.getByTestId('completed-sale')).toHaveStyle({ height: '100%', minHeight: 0, overflow: 'hidden' });
+    expect(screen.getByTestId('completed-sale-content')).toHaveStyle({ flex: '1', minHeight: 0, overflowY: 'auto' });
+    expect(screen.getByTestId('completed-sale-actions')).toHaveStyle({ flexShrink: 0 });
+    const newSale = screen.getByRole('button', { name: 'New sale' });
+    expect(newSale).toBeVisible();
+
+    await userEvent.click(newSale);
+    const barcode = await screen.findByRole('textbox', { name: 'Barcode' });
+    expect(screen.getByText('Cart is empty')).toBeVisible();
+    expect(screen.getByText('● OPEN')).toBeVisible();
+    await userEvent.type(barcode, '12345{enter}');
+    expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
+  });
+
   it('reports auto-print failure without reversing a completed sale', async () => {
     window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
       receiptPrintMode: 'KIOSK_AUTO_PRINT',
