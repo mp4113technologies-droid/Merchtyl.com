@@ -168,6 +168,27 @@ function LotteryAmountDialog({ open, mode, currencyCode, busy, error, onClose, o
   </Dialog>;
 }
 
+function DepositPayoutDialog({ open, currencyCode, onClose, onSubmit }: {
+  open: boolean; currencyCode: string; onClose: () => void; onSubmit: (amount: number) => void;
+}) {
+  const [amount, setAmount] = React.useState('');
+  React.useEffect(() => { if (open) setAmount(''); }, [open]);
+  const numericAmount = Number(amount);
+  const valid = Number.isFinite(numericAmount) && numericAmount > 0 && Math.round(numericAmount * 100) === numericAmount * 100;
+  return <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+    <Box component="form" onSubmit={(event) => { event.preventDefault(); if (valid) onSubmit(numericAmount); }}>
+      <DialogTitle>Deposit Payout</DialogTitle>
+      <DialogContent sx={{ pt: '8px !important' }}>
+        <TextField autoFocus fullWidth required label={`Amount (${currencyCode})`} value={amount} onChange={(event) => setAmount(event.target.value)} type="number" inputProps={{ min: 0.01, step: 0.01, inputMode: 'decimal' }} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} />
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button type="submit" variant="contained" color="warning" disabled={!valid}>Add to Cart</Button>
+      </DialogActions>
+    </Box>
+  </Dialog>;
+}
+
 function storeLabel(store?: Store) {
   return store ? `${store.name} (${store.code})` : 'Unknown store';
 }
@@ -387,6 +408,8 @@ function CartLines({
                 ? <Stack direction="row" spacing={0.5}><Chip size="small" label="Custom Item" variant="outlined" /><Typography variant="caption" color="text.secondary">{item.customItemTaxTreatment === 'TAXABLE' ? 'Taxable' : 'Non-Taxable'}</Typography></Stack>
                 : item.lineType === 'LOTTERY_SOLD' || item.lineType === 'LOTTERY_WIN'
                   ? <Chip size="small" label={item.lineType === 'LOTTERY_WIN' ? 'Lottery offset' : 'Lottery'} color={item.lineType === 'LOTTERY_WIN' ? 'warning' : 'primary'} variant="outlined" />
+                : item.lineType === 'DEPOSIT_PAYOUT'
+                  ? <Chip size="small" label="Deposit payout" color="warning" variant="outlined" />
                 : <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>{item.variantSku ?? item.productSku}</Typography>}
               {(item.depositTotal ?? 0) > 0 ? (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -397,7 +420,7 @@ function CartLines({
               ) : null}
             </TableCell>
             <TableCell align="center">
-              <Stack direction="row" spacing={0.25} justifyContent="center" alignItems="center">
+              {item.lineType === 'DEPOSIT_PAYOUT' ? <Typography>1</Typography> : <Stack direction="row" spacing={0.25} justifyContent="center" alignItems="center">
                 <Tooltip title={`Decrease ${item.productName}`}>
                   <span>
                     <IconButton
@@ -440,10 +463,10 @@ function CartLines({
                     </IconButton>
                   </span>
                 </Tooltip>
-              </Stack>
+              </Stack>}
             </TableCell>
-            <TableCell align="right">{money(item.lineType === 'LOTTERY_WIN' ? -item.unitPrice : item.unitPrice, currencyCode)}</TableCell>
-            <TableCell align="right">{item.lineType?.startsWith('LOTTERY_') ? '—' : item.estimatedTaxAmount ? money(item.estimatedTaxAmount, currencyCode) : 'At checkout'}</TableCell>
+            <TableCell align="right">{money(item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT' ? -item.unitPrice : item.unitPrice, currencyCode)}</TableCell>
+            <TableCell align="right">{item.lineType?.startsWith('LOTTERY_') || item.lineType === 'DEPOSIT_PAYOUT' ? '—' : item.estimatedTaxAmount ? money(item.estimatedTaxAmount, currencyCode) : 'At checkout'}</TableCell>
             <TableCell align="right" sx={{ fontWeight: 700 }}>{money(item.lineTotal, currencyCode)}</TableCell>
             <TableCell align="right">
               {item.lineType === 'CUSTOM_ITEM' ? <Tooltip title={`Edit ${item.productName}`}><span><IconButton size="small" aria-label={`Edit ${item.productName}`} disabled={busy} onClick={() => onEdit(item)}><EditOutlinedIcon /></IconButton></span></Tooltip> : null}
@@ -771,6 +794,12 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
           <Typography variant="body2">Change</Typography>
           <Typography variant="body2">{money(receipt.changeDue, receipt.currencyCode)}</Typography>
         </Stack>
+        {(receipt.cashDueToCustomer ?? 0) > 0 ? (
+          <Stack direction="row" justifyContent="space-between">
+            <Typography fontWeight={700}>Cash due to customer</Typography>
+            <Typography fontWeight={700}>{money(receipt.cashDueToCustomer ?? 0, receipt.currencyCode)}</Typography>
+          </Stack>
+        ) : null}
         <Typography textAlign="center" variant="body2">Thank you</Typography>
         <CustomerReceiptFooter />
       </Stack>
@@ -981,6 +1010,7 @@ export function PosCartPage() {
   const [draftRecovered, setDraftRecovered] = React.useState(false);
   const [printingReceipt, setPrintingReceipt] = React.useState(false);
   const [lotteryAction, setLotteryAction] = React.useState<'SOLD' | 'WIN' | null>(null);
+  const [depositPayoutOpen, setDepositPayoutOpen] = React.useState(false);
   const [lotteryNotice, setLotteryNotice] = React.useState<string | null>(null);
   const [payoutConfirmationOpen, setPayoutConfirmationOpen] = React.useState(false);
   const completionKeyRef = React.useRef<string | null>(null);
@@ -1087,7 +1117,7 @@ export function PosCartPage() {
   });
   const lotteryEnabled = lotteryEntitlement.data?.enabled === true;
   const currencyCode = activeSale?.currencyCode ?? store?.currencyCode ?? 'USD';
-  const provisionalSubtotal = cartItems.reduce((sum, item) => sum + (item.lineType === 'LOTTERY_WIN' ? -1 : 1) * item.unitPrice * item.quantity - item.discountAmount, 0);
+  const provisionalSubtotal = cartItems.reduce((sum, item) => sum + (item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT' ? -1 : 1) * item.unitPrice * item.quantity - item.discountAmount, 0);
   const automaticPromotion=bestMultiBuyPromotion(savedDiscounts.data??[],'RETAIL',cartItems.filter(item=>item.productId).map(item=>({id:item.id,quantity:item.quantity,unitPrice:item.unitPrice,targets:{PRODUCT:item.productId??undefined,PRODUCT_VARIANT:item.variantId??undefined}})));
 
   function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
@@ -1138,6 +1168,17 @@ export function PosCartPage() {
       lineTotal: win ? -amount : amount, version: 0 });
     setLotteryAction(null);
     setLotteryNotice(`${win ? 'Lottery Win' : 'Lottery Sold'} added to cart.`);
+  }
+
+  function addDepositPayout(amount: number) {
+    addLocalItem({ id: `local:deposit-payout:${crypto.randomUUID()}`, lineType: 'DEPOSIT_PAYOUT',
+      productId: null, variantId: null, lineNumber: cartItems.length + 1, productSku: null,
+      productName: 'Deposit Payout', variantSku: null, variantName: null, quantity: 1,
+      unitPrice: amount, discountAmount: 0, completedProductCost: null, completedProductPrice: null,
+      completedProductCapabilities: null, priceOverride: false, ageVerified: false, serialNumber: null,
+      externalReference: null, customerId: null, paymentMethodCode: null, lineSubtotal: -amount,
+      estimatedTaxAmount: 0, lineTotal: -amount, version: 0 });
+    setDepositPayoutOpen(false);
   }
 
   function addLocalItem(item: SaleItem) {
@@ -1332,7 +1373,7 @@ export function PosCartPage() {
         registerSessionId: current.data.id, saleChannel: 'POS',
         items: cartItems.map(item => item.lineType === 'CUSTOM_ITEM'
           ? { lineType: 'CUSTOM_ITEM' as const, description: item.productName, unitPrice: item.unitPrice, quantity: item.quantity, taxTreatment: item.customItemTaxTreatment ?? undefined }
-          : item.lineType === 'LOTTERY_SOLD' || item.lineType === 'LOTTERY_WIN'
+          : item.lineType === 'LOTTERY_SOLD' || item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT'
             ? { lineType: item.lineType, unitPrice: item.unitPrice, quantity: item.quantity }
           : { lineType: 'CATALOG_PRODUCT' as const, productId: item.productId ?? undefined, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified }),
         discount: discount ? (discount.definitionId ? {discountDefinitionId:discount.definitionId}:{type:discount.type,value:discount.value,reason:discount.reason||undefined}) : undefined
@@ -1628,6 +1669,7 @@ export function PosCartPage() {
                   </Paper>
                 ) : null}
                 {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="text" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={{ alignSelf: 'flex-start' }} onClick={() => { setCustomItemDescription(''); setCustomItemOpen(true); }}>Custom Item</Button> : null}
+                {currentUser?.permissions?.includes('POS_DEPOSIT_PAYOUT') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} sx={{ alignSelf: 'flex-start' }} onClick={() => setDepositPayoutOpen(true)}>Deposit Payout</Button> : null}
                 {lotteryEnabled ? <Stack direction="row" spacing={0.75}>
                   {currentUser?.permissions?.includes('LOTTERY_SALE_RECORD') ? <Button size="small" variant="outlined" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={cartLocked} onClick={() => setLotteryAction('SOLD')}>Lottery Sold</Button> : null}
                   {currentUser?.permissions?.includes('LOTTERY_PAYOUT_RECORD') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} onClick={() => setLotteryAction('WIN')}>Lottery Win</Button> : null}
@@ -1641,7 +1683,7 @@ export function PosCartPage() {
                   items={cartItems}
                   currencyCode={currencyCode}
                   busy={cartLocked}
-                  onQuantity={(itemId, quantity) => changeCart(items => items.map(item => item.id === itemId ? { ...item, quantity, lineSubtotal: (item.lineType === 'LOTTERY_WIN' ? -1 : 1) * item.unitPrice * quantity, lineTotal: (item.lineType === 'LOTTERY_WIN' ? -1 : 1) * item.unitPrice * quantity, estimatedTaxAmount: 0 } : item))}
+                  onQuantity={(itemId, quantity) => changeCart(items => items.map(item => item.id === itemId ? { ...item, quantity, lineSubtotal: (item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT' ? -1 : 1) * item.unitPrice * quantity, lineTotal: (item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT' ? -1 : 1) * item.unitPrice * quantity, estimatedTaxAmount: 0 } : item))}
                   onRemove={(itemId) => changeCart(items => items.filter(item => item.id !== itemId))}
                   onEdit={(item) => { setEditingCustomItem(item); setCustomItemDescription(item.productName); setCustomItemOpen(true); }}
                 />
@@ -1721,8 +1763,9 @@ export function PosCartPage() {
         onClose={() => setLotteryAction(null)}
         onSubmit={(amount) => lotteryAction && addLotteryItem(lotteryAction, amount)}
       />
+      <DepositPayoutDialog open={depositPayoutOpen} currencyCode={currencyCode} onClose={() => setDepositPayoutOpen(false)} onSubmit={addDepositPayout} />
       <Dialog open={payoutConfirmationOpen} onClose={completeMutation.isPending ? undefined : () => setPayoutConfirmationOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Confirm lottery cash payout</DialogTitle>
+        <DialogTitle>{activeSale?.items.some(item => item.lineType === 'DEPOSIT_PAYOUT') ? 'Confirm deposit cash payout' : 'Confirm lottery cash payout'}</DialogTitle>
         <DialogContent>
           <Stack spacing={1} sx={{ pt: 1 }}>
             <Typography>Pay the customer {money(Math.abs(activeSale?.totalAmount ?? 0), currencyCode)} in cash?</Typography>

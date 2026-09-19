@@ -112,6 +112,8 @@ function reportCsvRows(report: SalesReport) {
     ['Discounts', report.discounts],
     ['Refunds', report.refunds],
     ['Container deposits', report.containerDeposits ?? 0],
+    ['Deposit payouts', report.depositPayouts ?? 0],
+    ['Net deposits', report.netDeposits ?? 0],
     ['Refunded container deposits', report.refundedContainerDeposits ?? 0],
     ['Taxes', report.taxes],
     ['Payments', report.payments],
@@ -346,6 +348,12 @@ export function SalesReportsPage() {
             </Grid>
             <Grid item xs={12} sm={6} md={4}>
               <MetricTile label="Container deposits" value={money(data.containerDeposits ?? 0)} />
+            </Grid>
+            <Grid item xs={12} sm={6} md={4}>
+              <MetricTile label="Deposit payouts" value={money(data.depositPayouts ?? 0)} tone="warning" />
+            </Grid>
+            <Grid item xs={12} sm={6} md={4}>
+              <MetricTile label="Net deposits" value={money(data.netDeposits ?? 0)} />
             </Grid>
             <Grid item xs={12} sm={6} md={4}>
               <MetricTile label="Refunded container deposits" value={money(data.refundedContainerDeposits ?? 0)} tone="warning" />

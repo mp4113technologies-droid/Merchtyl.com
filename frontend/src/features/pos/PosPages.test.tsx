@@ -729,6 +729,54 @@ describe('POS pages', () => {
     await waitFor(() => expect(completionWrites).toBe(1));
   });
 
+  it('adds a semantic deposit payout and completes a payout-only transaction without payment', async () => {
+    let checkoutBody: any;
+    let paymentWrites = 0;
+    let completionWrites = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['POS_DEPOSIT_PAYOUT'] });
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse({ ...registerSession(), deviceId: null });
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutBody = JSON.parse(String(init.body));
+        const base = sale('PENDING_PAYMENT');
+        return jsonResponse({ ...base, subtotalAmount: -15, totalAmount: -15, balanceDue: 0, paymentComplete: true,
+          items: [{ ...base.items[0], id: 'deposit-payout-line', productId: null, productSku: null,
+            productName: 'Deposit Payout', lineType: 'DEPOSIT_PAYOUT', quantity: 1, unitPrice: 15,
+            lineSubtotal: -15, lineTotal: -15, estimatedTaxAmount: 0 }] });
+      }
+      if (url.pathname.includes('/payments') && init?.method === 'POST') {
+        paymentWrites += 1;
+        return jsonResponse({}, 500);
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') {
+        completionWrites += 1;
+        return jsonResponse({ ...saleWithPayments([], 'COMPLETED'), subtotalAmount: -15, totalAmount: -15, balanceDue: 0, paymentComplete: true });
+      }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Deposit Payout' }));
+    const dialog = screen.getByRole('dialog', { name: 'Deposit Payout' });
+    const amount = within(dialog).getByRole('spinbutton', { name: 'Amount (USD)' });
+    expect(amount).toHaveFocus();
+    await userEvent.type(amount, '15{Enter}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Deposit Payout' })).not.toBeInTheDocument());
+    expect(screen.getAllByText('-$15.00').length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Calculate Tax' }));
+    await waitFor(() => expect(checkoutBody.items).toEqual([
+      { lineType: 'DEPOSIT_PAYOUT', unitPrice: 15, quantity: 1 }
+    ]));
+    expect(paymentWrites).toBe(0);
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay out $15.00 cash' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Confirm deposit cash payout' });
+    await userEvent.click(within(confirmation).getByRole('button', { name: 'Confirm cash payout' }));
+    await waitFor(() => expect(completionWrites).toBe(1));
+    expect(paymentWrites).toBe(0);
+  });
+
   it('hides lottery actions when the store is enabled but the subscription is not', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);

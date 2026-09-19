@@ -206,6 +206,18 @@ public class SaleItem extends BaseUuidEntity {
         return item;
     }
 
+    static SaleItem depositPayout(Sale sale, BigDecimal amount) {
+        SaleItem item = new SaleItem();
+        item.sale = sale;
+        item.lineType = SaleLineType.DEPOSIT_PAYOUT;
+        item.productName = "Deposit Payout";
+        item.updateInputs(BigDecimal.ONE.setScale(4), amount, BigDecimal.ZERO.setScale(2), false, false,
+                null, null, null, null);
+        item.setCalculatedAmounts(BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2));
+        item.initializeIdAndTimestamps();
+        return item;
+    }
+
     void assignLineNumber(int lineNumber) {
         this.lineNumber = lineNumber;
     }
@@ -335,6 +347,7 @@ public class SaleItem extends BaseUuidEntity {
     public boolean isCatalogProduct() { return lineType == SaleLineType.CATALOG_PRODUCT; }
     public boolean isLottery() { return lineType == SaleLineType.LOTTERY_SOLD || lineType == SaleLineType.LOTTERY_WIN; }
     public boolean isLotteryWin() { return lineType == SaleLineType.LOTTERY_WIN; }
+    public boolean isDepositPayout() { return lineType == SaleLineType.DEPOSIT_PAYOUT; }
     public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
     public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
     public UUID getCategorySnapshotId() { return categorySnapshotId; }

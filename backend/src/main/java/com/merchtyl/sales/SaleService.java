@@ -204,6 +204,20 @@ public class SaleService {
         List<DiscountEngine.PromotionLine> promotionLines=new java.util.ArrayList<>();
         for (SaleCheckoutItemRequest line : request.items()) {
             if (!line.isValidShape()) throw new BadRequestException("INVALID_CHECKOUT_ITEM");
+            if (line.resolvedLineType() == SaleLineType.DEPOSIT_PAYOUT) {
+                requireDepositPayoutPermission(authentication);
+                if (session.getRegister().getType() != RegisterType.RETAIL) {
+                    throw new BadRequestException("DEPOSIT_PAYOUT_REQUIRES_RETAIL_REGISTER");
+                }
+                if (line.unitPrice() == null) throw new BadRequestException("DEPOSIT_PAYOUT_AMOUNT_REQUIRED");
+                BigDecimal amount = normalizeMoney(line.unitPrice(), "unitPrice");
+                if (amount.signum() <= 0) throw new BadRequestException("DEPOSIT_PAYOUT_AMOUNT_INVALID");
+                if (normalizeQuantity(line.quantity()).compareTo(BigDecimal.ONE.setScale(QUANTITY_SCALE)) != 0) {
+                    throw new BadRequestException("DEPOSIT_PAYOUT_QUANTITY_INVALID");
+                }
+                sale.addItem(SaleItem.depositPayout(sale, amount));
+                continue;
+            }
             if (line.resolvedLineType() == SaleLineType.LOTTERY_SOLD || line.resolvedLineType() == SaleLineType.LOTTERY_WIN) {
                 if (line.resolvedLineType() == SaleLineType.LOTTERY_WIN) requireLotteryPayoutPermission(authentication);
                 else requireLotterySalePermission(authentication);
@@ -769,6 +783,14 @@ public class SaleService {
         BigDecimal tax = moneyZero();
         BigDecimal total = moneyZero();
         for (SaleItem item : sale.getItems()) {
+            if (item.isDepositPayout()) {
+                BigDecimal payout = money(item.getUnitPrice());
+                BigDecimal signed = payout.negate();
+                item.setCalculatedAmounts(signed, moneyZero(), signed);
+                subtotal = subtotal.add(signed);
+                total = total.add(signed);
+                continue;
+            }
             if (item.isLottery()) {
                 BigDecimal amount = money(item.getUnitPrice().multiply(item.getQuantity()));
                 BigDecimal signed = item.isLotteryWin() ? amount.negate() : amount;
@@ -950,11 +972,7 @@ public class SaleService {
 
     private void appendCashLedgerEntries(Sale sale, User actor, Instant completedAt) {
         if (sale.getTotalAmount().signum() < 0) {
-            cashLedgerService.append(new CashLedgerEntryCommand(
-                    sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
-                    CashLedgerSourceType.LOTTERY_PAYOUT_CASH, sale.getId(), CashLedgerDirection.OUT,
-                    sale.getTotalAmount().abs(), sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
-                    operationId(sale.getId(), "lottery-net-payout", sale.getId()), "Net Lottery payout"));
+            appendNetCashPayout(sale, actor, completedAt);
         }
         for (Payment payment : sale.getPayments()) {
             if (payment.getMethod() != PaymentMethod.CASH) {
@@ -981,6 +999,37 @@ public class SaleService {
                         payment.getChangeDue(), sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
                         operationId(sale.getId(), "cash-change", payment.getId()), "Sale change given"));
             }
+        }
+    }
+
+    private void appendNetCashPayout(Sale sale, User actor, Instant completedAt) {
+        BigDecimal cashDue = money(sale.getTotalAmount().abs());
+        BigDecimal depositPayouts = money(sale.getItems().stream()
+                .filter(SaleItem::isDepositPayout)
+                .map(item -> item.getUnitPrice().multiply(item.getQuantity()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal lotteryWins = money(sale.getItems().stream()
+                .filter(SaleItem::isLotteryWin)
+                .map(item -> item.getUnitPrice().multiply(item.getQuantity()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal negativeLines = depositPayouts.add(lotteryWins);
+        BigDecimal depositCash = depositPayouts.signum() == 0 ? moneyZero()
+                : lotteryWins.signum() == 0 ? cashDue
+                : money(cashDue.multiply(depositPayouts).divide(negativeLines, 8, RoundingMode.HALF_UP));
+        BigDecimal lotteryCash = money(cashDue.subtract(depositCash));
+        if (depositCash.signum() > 0) {
+            cashLedgerService.append(new CashLedgerEntryCommand(
+                    sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
+                    CashLedgerSourceType.DEPOSIT_PAYOUT, sale.getId(), CashLedgerDirection.OUT,
+                    depositCash, sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
+                    operationId(sale.getId(), "deposit-net-payout", sale.getId()), "Net deposit payout"));
+        }
+        if (lotteryCash.signum() > 0) {
+            cashLedgerService.append(new CashLedgerEntryCommand(
+                    sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
+                    CashLedgerSourceType.LOTTERY_PAYOUT_CASH, sale.getId(), CashLedgerDirection.OUT,
+                    lotteryCash, sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
+                    operationId(sale.getId(), "lottery-net-payout", sale.getId()), "Net Lottery payout"));
         }
     }
 
@@ -1077,6 +1126,12 @@ public class SaleService {
     private static void requireLotteryPayoutPermission(Authentication authentication) {
         if (!hasAuthority(authentication, PermissionCode.LOTTERY_PAYOUT_RECORD.name())) {
             throw new ForbiddenOperationException("LOTTERY_PAYOUT_NOT_ALLOWED");
+        }
+    }
+
+    private static void requireDepositPayoutPermission(Authentication authentication) {
+        if (!hasAuthority(authentication, PermissionCode.POS_DEPOSIT_PAYOUT.name())) {
+            throw new ForbiddenOperationException("DEPOSIT_PAYOUT_NOT_ALLOWED");
         }
     }
 

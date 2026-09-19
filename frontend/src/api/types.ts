@@ -769,6 +769,9 @@ export type EndOfDayReport = {
   refundTotal: number;
   voidTotal: number;
   taxTotal: number;
+  depositsCollected: number;
+  depositPayouts: number;
+  netDeposits: number;
   transactionCount: number;
   averageTransactionValue: number;
   highestTransactionValue: number;
@@ -1613,6 +1616,8 @@ export type SalesReport = {
   taxes: number;
   payments: number;
   containerDeposits?: number;
+  depositPayouts?: number;
+  netDeposits?: number;
   refundedContainerDeposits?: number;
   saleCount: number;
   refundCount: number;
@@ -1691,6 +1696,7 @@ export type CashLedgerSourceType =
   | 'SALE_CHANGE_GIVEN'
   | 'LOTTERY_SALE_CASH'
   | 'LOTTERY_PAYOUT_CASH'
+  | 'DEPOSIT_PAYOUT'
   | 'LOTTERY_PAYOUT_REVERSAL'
   | 'LOTTERY_SALE_CANCELLATION_CASH'
   | 'CASH_REFUND'
@@ -1708,6 +1714,7 @@ export type CashLedgerBreakdown = {
   retailCashReceived: number;
   retailChange: number;
   retailRefunds: number;
+  depositPayouts: number;
   lotteryCashSales: number;
   lotteryPayouts: number;
   payoutReversals: number;
@@ -1852,7 +1859,7 @@ export type Payment = {
 
 export type SaleItem = {
   id: string;
-  lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM' | 'LOTTERY_SOLD' | 'LOTTERY_WIN';
+  lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM' | 'LOTTERY_SOLD' | 'LOTTERY_WIN' | 'DEPOSIT_PAYOUT';
   productId: string | null;
   variantId?: string | null;
   lineNumber: number;
@@ -2177,6 +2184,7 @@ export type ReceiptDocument = {
   payments: ReceiptPayment[];
   cashTendered: number;
   changeDue: number;
+  cashDueToCustomer?: number;
   tokenNumber?: string | null;
   discountName?: string | null;
 };

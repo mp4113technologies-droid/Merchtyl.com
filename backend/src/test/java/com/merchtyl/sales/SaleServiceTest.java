@@ -260,6 +260,107 @@ class SaleServiceTest {
         verify(inventoryService, never()).recordStockChange(any(), any());
     }
 
+    @Test
+    void checkoutAppliesDepositPayoutAfterTaxWithoutReducingTaxableBase() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Merchandise",
+                        new BigDecimal("10.00"), CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.DEPOSIT_PAYOUT, null, null, null, null,
+                        new BigDecimal("5.00"), null, BigDecimal.ONE, false))), depositPayoutAuth());
+
+        assertThat(response.estimatedTaxAmount()).isEqualByComparingTo("1.50");
+        assertThat(response.totalAmount()).isEqualByComparingTo("6.50");
+        assertThat(response.items().get(1).unitPrice()).isEqualByComparingTo("5.00");
+        assertThat(response.items().get(1).lineTotal()).isEqualByComparingTo("-5.00");
+        verify(taxEngine).calculate(any(TaxCalculationRequest.class), any());
+    }
+
+    @Test
+    void payoutOnlyCompletesWithoutPaymentAndRecordsCashLeavingDrawer() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.DEPOSIT_PAYOUT, null, null, null, null,
+                        new BigDecimal("15.00"), null, BigDecimal.ONE, false))), depositPayoutAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse completed = service.complete(sale.getId(), cashier, depositPayoutAuth());
+
+        assertThat(completed.totalAmount()).isEqualByComparingTo("-15.00");
+        assertThat(completed.payments()).isEmpty();
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.DEPOSIT_PAYOUT);
+        assertThat(ledger.getValue().direction()).isEqualTo(CashLedgerDirection.OUT);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("15.00");
+    }
+
+    @Test
+    void depositPayoutCanExactlyOffsetMerchandiseWithoutFakePayment() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any()))
+                .thenReturn(taxResponse(new BigDecimal("10.00"), BigDecimal.ZERO.setScale(2), new BigDecimal("10.00")));
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Merchandise",
+                        new BigDecimal("10.00"), CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.DEPOSIT_PAYOUT, null, null, null, null,
+                        new BigDecimal("10.00"), null, BigDecimal.ONE, false))), depositPayoutAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse completed = service.complete(sale.getId(), cashier, depositPayoutAuth());
+
+        assertThat(completed.totalAmount()).isZero();
+        assertThat(completed.payments()).isEmpty();
+        verify(cashLedgerService, never()).append(any());
+    }
+
+    @Test
+    void holdAndResumePreserveDepositPayoutLineWithoutLedgerActivity() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.DEPOSIT_PAYOUT, null, null, null, null,
+                        new BigDecimal("8.00"), null, BigDecimal.ONE, false))), depositPayoutAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+
+        service.hold(sale.getId(), depositPayoutAuth());
+        SaleResponse resumed = service.resume(sale.getId(), depositPayoutAuth());
+
+        assertThat(resumed.items()).singleElement().satisfies(item -> {
+            assertThat(item.lineType()).isEqualTo(SaleLineType.DEPOSIT_PAYOUT);
+            assertThat(item.lineTotal()).isEqualByComparingTo("-8.00");
+        });
+        verify(cashLedgerService, never()).append(any());
+    }
+
+    @Test
+    void checkoutRejectsInvalidDepositPayoutAndNonRetailRegister() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        SaleCheckoutItemRequest zero = new SaleCheckoutItemRequest(SaleLineType.DEPOSIT_PAYOUT, null, null, null,
+                null, BigDecimal.ZERO, null, BigDecimal.ONE, false);
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(zero)), depositPayoutAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("DEPOSIT_PAYOUT_AMOUNT_INVALID");
+
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        SaleCheckoutItemRequest payout = new SaleCheckoutItemRequest(SaleLineType.DEPOSIT_PAYOUT, null, null, null,
+                null, BigDecimal.ONE, null, BigDecimal.ONE, false);
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(payout)), depositPayoutAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("DEPOSIT_PAYOUT_REQUIRES_RETAIL_REGISTER");
+    }
+
     private Sale checkoutLotterySale(String sold, String won) {
         when(register.getType()).thenReturn(RegisterType.RETAIL);
         when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
@@ -1222,5 +1323,12 @@ class SaleServiceTest {
                 List.of(new SimpleGrantedAuthority("ROLE_CASHIER"),
                         new SimpleGrantedAuthority("LOTTERY_SALE_RECORD"),
                         new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")));
+    }
+
+    private static UsernamePasswordAuthenticationToken depositPayoutAuth() {
+        return new UsernamePasswordAuthenticationToken("cashier@example.test", "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_CASHIER"),
+                        new SimpleGrantedAuthority("POS_CUSTOM_ITEM"),
+                        new SimpleGrantedAuthority("POS_DEPOSIT_PAYOUT")));
     }
 }

@@ -80,6 +80,34 @@ class SalesReportServiceTest {
         assertThat(response.generatedAt()).isEqualTo(NOW);
     }
 
+    @Test
+    void reportsDepositPayoutSeparatelyFromMerchandiseDiscountRefundAndTaxTotals() {
+        Sale sale = mock(Sale.class);
+        SaleItem merchandise = saleItem(PRODUCT_ID, CATEGORY_ID, "10.00", "0.00", "1.50", "14.50");
+        when(merchandise.getDepositTotal()).thenReturn(new BigDecimal("3.00"));
+        SaleItem payout = mock(SaleItem.class);
+        when(payout.isDepositPayout()).thenReturn(true);
+        when(payout.getUnitPrice()).thenReturn(new BigDecimal("5.00"));
+        when(payout.getQuantity()).thenReturn(BigDecimal.ONE);
+        when(payout.getLineTotal()).thenReturn(new BigDecimal("-5.00"));
+        when(sale.getItems()).thenReturn(List.of(merchandise, payout));
+        when(sale.getPayments()).thenReturn(List.of());
+        when(sale.getTotalAmount()).thenReturn(new BigDecimal("9.50"));
+        when(saleRepository.findAll(any(Specification.class))).thenReturn(List.of(sale));
+        when(refundRepository.findAll(any(Specification.class))).thenReturn(List.of());
+
+        SalesReportResponse response = service.summarize(new SalesReportRequest(
+                null, null, null, null, null, LocalDate.parse("2026-07-01"), LocalDate.parse("2026-07-31")));
+
+        assertThat(response.grossSales()).isEqualByComparingTo("7.00");
+        assertThat(response.taxes()).isEqualByComparingTo("1.50");
+        assertThat(response.containerDeposits()).isEqualByComparingTo("3.00");
+        assertThat(response.depositPayouts()).isEqualByComparingTo("5.00");
+        assertThat(response.netDeposits()).isEqualByComparingTo("-2.00");
+        assertThat(response.discounts()).isZero();
+        assertThat(response.refunds()).isZero();
+    }
+
     private static Sale sale() {
         Sale sale = mock(Sale.class);
         SaleItem matchingItem = saleItem(PRODUCT_ID, CATEGORY_ID, "100.00", "10.00", "8.00", "96.00");

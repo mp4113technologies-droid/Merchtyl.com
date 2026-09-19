@@ -907,7 +907,7 @@ export type SaleCheckoutPayload = {
   registerSessionId: string;
   saleChannel?: string;
   items: Array<{
-    lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM' | 'LOTTERY_SOLD' | 'LOTTERY_WIN';
+    lineType?: 'CATALOG_PRODUCT' | 'CUSTOM_ITEM' | 'LOTTERY_SOLD' | 'LOTTERY_WIN' | 'DEPOSIT_PAYOUT';
     productId?: string;
     variantId?: string;
     foodMenuItemId?: string;

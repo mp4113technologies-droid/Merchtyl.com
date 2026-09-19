@@ -132,6 +132,7 @@ class CashLedgerServiceTest {
                         entry(CashLedgerSourceType.SALE_CASH_RECEIPT, CashLedgerDirection.IN, "50.00"),
                         entry(CashLedgerSourceType.SALE_CHANGE_GIVEN, CashLedgerDirection.OUT, "5.00"),
                         entry(CashLedgerSourceType.CASH_REFUND, CashLedgerDirection.OUT, "7.00"),
+                        entry(CashLedgerSourceType.DEPOSIT_PAYOUT, CashLedgerDirection.OUT, "9.00"),
                         entry(CashLedgerSourceType.LOTTERY_SALE_CASH, CashLedgerDirection.IN, "20.00"),
                         entry(CashLedgerSourceType.LOTTERY_PAYOUT_CASH, CashLedgerDirection.OUT, "30.00"),
                         entry(CashLedgerSourceType.LOTTERY_PAYOUT_REVERSAL, CashLedgerDirection.IN, "10.00"),
@@ -145,13 +146,14 @@ class CashLedgerServiceTest {
         assertThat(breakdown.retailCashReceived()).isEqualByComparingTo("50.00");
         assertThat(breakdown.retailChange()).isEqualByComparingTo("5.00");
         assertThat(breakdown.retailRefunds()).isEqualByComparingTo("7.00");
+        assertThat(breakdown.depositPayouts()).isEqualByComparingTo("9.00");
         assertThat(breakdown.lotteryCashSales()).isEqualByComparingTo("20.00");
         assertThat(breakdown.lotteryPayouts()).isEqualByComparingTo("30.00");
         assertThat(breakdown.payoutReversals()).isEqualByComparingTo("10.00");
         assertThat(breakdown.lotterySaleCancellations()).isEqualByComparingTo("8.00");
         assertThat(breakdown.otherCashIn()).isEqualByComparingTo("12.00");
         assertThat(breakdown.otherCashOut()).isEqualByComparingTo("6.00");
-        assertThat(breakdown.expectedCash()).isEqualByComparingTo("136.00");
+        assertThat(breakdown.expectedCash()).isEqualByComparingTo("127.00");
     }
 
     @Test

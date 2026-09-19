@@ -715,6 +715,9 @@ public class BusinessDayService {
                 totals.refundTotal(),
                 totals.voidTotal(),
                 totals.taxTotal(),
+                totals.depositsCollected(),
+                totals.depositPayouts(),
+                totals.netDeposits(),
                 totals.transactionCount(),
                 totals.averageTransactionValue(),
                 totals.highestTransactionValue(),
@@ -891,6 +894,13 @@ public class BusinessDayService {
                 .filter(BusinessDayService::isMerchandiseLine)
                 .map(SaleItem::getDiscountAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal saleTax = money(sum(sales, Sale::getEstimatedTaxAmount));
+        BigDecimal depositsCollected = money(sales.stream().flatMap(sale -> sale.getItems().stream())
+                .map(SaleItem::getDepositTotal).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal depositPayouts = money(sales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(SaleItem::isDepositPayout)
+                .map(item -> item.getUnitPrice().multiply(item.getQuantity()))
+                .reduce(moneyZero(), BigDecimal::add));
+        BigDecimal netDeposits = money(depositsCollected.subtract(depositPayouts));
         BigDecimal refundTotal = money(sum(refunds, Refund::getTotalAmount));
         BigDecimal refundSubtotal = money(sum(refunds, Refund::getSubtotalAmount));
         BigDecimal refundTax = money(sum(refunds, Refund::getTaxAmount));
@@ -899,7 +909,9 @@ public class BusinessDayService {
         BigDecimal averageTransaction = transactionCount == 0 ? moneyZero() : money(netSales.divide(BigDecimal.valueOf(transactionCount), MONEY_SCALE, RoundingMode.HALF_UP));
         BigDecimal highest = sales.stream().map(Sale::getTotalAmount).max(BigDecimal::compareTo).map(BusinessDayService::money).orElse(moneyZero());
         BigDecimal lowest = sales.stream().map(Sale::getTotalAmount).min(BigDecimal::compareTo).map(BusinessDayService::money).orElse(moneyZero());
-        BigDecimal itemsSold = quantity(sales.stream().flatMap(sale -> sale.getItems().stream()).map(SaleItem::getQuantity).reduce(quantityZero(), BigDecimal::add));
+        BigDecimal itemsSold = quantity(sales.stream().flatMap(sale -> sale.getItems().stream())
+                .filter(BusinessDayService::isMerchandiseLine)
+                .map(SaleItem::getQuantity).reduce(quantityZero(), BigDecimal::add));
         BigDecimal averageBasketSize = transactionCount == 0 ? quantityZero() : quantity(itemsSold.divide(BigDecimal.valueOf(transactionCount), QUANTITY_SCALE, RoundingMode.HALF_UP));
 
         List<RegisterValuesWithSession> registerValues = sessions.stream()
@@ -909,7 +921,10 @@ public class BusinessDayService {
         BigDecimal countedCash = money(registerValues.stream().map(value -> value.values().countedCash()).reduce(moneyZero(), BigDecimal::add));
         BigDecimal variance = money(countedCash.subtract(expectedCash));
         BigDecimal voidTotal = money(sum(voidedSales, Sale::getTotalAmount));
-        EndOfDayReportTotals totals = new EndOfDayReportTotals(grossSales, netSales, discounts, refundTotal, voidTotal, money(saleTax.subtract(refundTax)), transactionCount, averageTransaction, highest, lowest, itemsSold, averageBasketSize, expectedCash, countedCash, variance, day.getStore().getCurrencyCode());
+        EndOfDayReportTotals totals = new EndOfDayReportTotals(grossSales, netSales, discounts, refundTotal, voidTotal,
+                money(saleTax.subtract(refundTax)), depositsCollected, depositPayouts, netDeposits,
+                transactionCount, averageTransaction, highest, lowest, itemsSold, averageBasketSize,
+                expectedCash, countedCash, variance, day.getStore().getCurrencyCode());
 
         List<EndOfDayPaymentValues> paymentValues = paymentValues(sales, refunds);
         List<EndOfDayTaxValues> taxValues = taxValues(sales, refunds);
@@ -1198,7 +1213,7 @@ public class BusinessDayService {
     }
 
     private static boolean isMerchandiseLine(SaleItem item) {
-        return !LotterySaleLineClassifier.isLottery(item);
+        return !LotterySaleLineClassifier.isLottery(item) && !item.isDepositPayout();
     }
 
     private EndOfDayInventoryValues inventoryValues(List<InventoryTransaction> transactions, List<InventoryBalance> balances) {
@@ -1800,6 +1815,9 @@ public class BusinessDayService {
                 row("Discounts", report.discountTotal()),
                 row("Refunds", report.refundTotal()),
                 row("Tax", report.taxTotal()),
+                row("Deposits collected", report.depositsCollected()),
+                row("Deposit payouts", report.depositPayouts()),
+                row("Net deposits", report.netDeposits()),
                 row("Expected cash", report.expectedCash()),
                 row("Counted cash", report.countedCash()),
                 row("Cash variance", report.cashVariance()))));
@@ -1857,6 +1875,9 @@ public class BusinessDayService {
                 List.of("netSales", fmt(report.netSales())),
                 List.of("refundTotal", fmt(report.refundTotal())),
                 List.of("taxTotal", fmt(report.taxTotal())),
+                List.of("depositsCollected", fmt(report.depositsCollected())),
+                List.of("depositPayouts", fmt(report.depositPayouts())),
+                List.of("netDeposits", fmt(report.netDeposits())),
                 List.of("expectedCash", fmt(report.expectedCash())),
                 List.of("countedCash", fmt(report.countedCash())),
                 List.of("cashVariance", fmt(report.cashVariance()))));
@@ -1902,6 +1923,7 @@ public class BusinessDayService {
         lines.add("Report number: " + report.reportNumber() + " revision " + report.revision());
         lines.add("Generated: " + report.generatedAt() + " by " + report.generatedByName());
         lines.add("Gross sales: " + fmt(report.grossSales()) + " Net sales: " + fmt(report.netSales()) + " Tax: " + fmt(report.taxTotal()));
+        lines.add("Deposits collected: " + fmt(report.depositsCollected()) + " Deposit payouts: " + fmt(report.depositPayouts()) + " Net deposits: " + fmt(report.netDeposits()));
         lines.add("Expected cash: " + fmt(report.expectedCash()) + " Counted cash: " + fmt(report.countedCash()) + " Variance: " + fmt(report.cashVariance()));
         lines.add("Payments");
         report.payments().forEach(payment -> lines.add("  " + payment.paymentMethod() + " collected " + fmt(payment.collected()) + " refunded " + fmt(payment.refunded()) + " net " + fmt(payment.net())));

@@ -32,6 +32,7 @@ public record ReceiptDocumentDto(
         List<ReceiptPaymentDto> payments,
         BigDecimal cashTendered,
         BigDecimal changeDue,
+        BigDecimal cashDueToCustomer,
         String tokenNumber,
         String discountName
 ) {
@@ -44,7 +45,8 @@ public record ReceiptDocumentDto(
             BigDecimal cashTendered, BigDecimal changeDue) {
         this(brandName, brandTagline, store, register, cashier, receiptNumber, saleId, saleNumber,
                 businessDate, completedAt, currencyCode, items, subtotalAmount, BigDecimal.ZERO.setScale(2), discountAmount, taxSummaries,
-                taxAmount, totalAmount, BigDecimal.ZERO.setScale(2), totalAmount, payments, cashTendered, changeDue, null, null);
+                taxAmount, totalAmount, BigDecimal.ZERO.setScale(2), totalAmount, payments, cashTendered, changeDue,
+                BigDecimal.ZERO.setScale(2), null, null);
     }
     public ReceiptDocumentDto(String brandName,String brandTagline,ReceiptStoreDto store,ReceiptRegisterDto register,
             ReceiptCashierDto cashier,String receiptNumber,UUID saleId,String saleNumber,LocalDate businessDate,
@@ -52,6 +54,6 @@ public record ReceiptDocumentDto(
             BigDecimal discountAmount,List<ReceiptTaxSummaryDto> taxSummaries,BigDecimal taxAmount,BigDecimal totalAmount,
             List<ReceiptPaymentDto> payments,BigDecimal cashTendered,BigDecimal changeDue,String tokenNumber) {
         this(brandName,brandTagline,store,register,cashier,receiptNumber,saleId,saleNumber,businessDate,completedAt,
-                currencyCode,items,subtotalAmount,BigDecimal.ZERO.setScale(2),discountAmount,taxSummaries,taxAmount,totalAmount,BigDecimal.ZERO.setScale(2),totalAmount,payments,cashTendered,changeDue,tokenNumber,null);
+                currencyCode,items,subtotalAmount,BigDecimal.ZERO.setScale(2),discountAmount,taxSummaries,taxAmount,totalAmount,BigDecimal.ZERO.setScale(2),totalAmount,payments,cashTendered,changeDue,BigDecimal.ZERO.setScale(2),tokenNumber,null);
     }
 }

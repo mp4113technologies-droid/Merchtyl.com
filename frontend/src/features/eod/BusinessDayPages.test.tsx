@@ -113,7 +113,7 @@ function reconciliation(registerCode: string, status: 'OPEN' | 'CLOSING' | 'CLOS
     reconciliationComplete: complete,
     canReconcile: true,
     reconciliation: {
-      openingCash: 50, retailCashReceived: 75, retailChange: 0, retailRefunds: 0,
+      openingCash: 50, retailCashReceived: 75, retailChange: 0, retailRefunds: 0, depositPayouts: 0,
       lotteryCashSales: 0, lotteryPayouts: 0, payoutReversals: 0,
       lotterySaleCancellations: 0, otherCashIn: 0, otherCashOut: 0,
       totalIn: 75, totalOut: 0, expectedCash: 125, sourceBreakdown: []
@@ -141,7 +141,7 @@ function report(): EndOfDayReport {
     discountTotal: 5,
     refundTotal: 10,
     voidTotal: 0,
-    taxTotal: 6,
+    taxTotal: 6, depositsCollected: 0, depositPayouts: 0, netDeposits: 0,
     transactionCount: 2,
     averageTransactionValue: 40,
     highestTransactionValue: 60,
@@ -216,6 +216,9 @@ function closingPreview(): EndOfDayClosingPreview {
     refundTotal: finalReport.refundTotal,
     voidTotal: finalReport.voidTotal,
     taxTotal: finalReport.taxTotal,
+    depositsCollected: finalReport.depositsCollected,
+    depositPayouts: finalReport.depositPayouts,
+    netDeposits: finalReport.netDeposits,
     transactionCount: finalReport.transactionCount,
     averageTransactionValue: finalReport.averageTransactionValue,
     highestTransactionValue: finalReport.highestTransactionValue,

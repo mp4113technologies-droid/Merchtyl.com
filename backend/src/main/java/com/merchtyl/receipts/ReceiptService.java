@@ -195,6 +195,7 @@ public class ReceiptService {
                         .toList(),
                 cashTendered,
                 changeDue,
+                money(sale.getTotalAmount().min(BigDecimal.ZERO).abs()),
                 sale.getFoodOrderToken(),
                 sale.getDiscountName());
     }
@@ -210,7 +211,9 @@ public class ReceiptService {
                 item.getLineNumber(),
                 customerName,
                 item.getQuantity(),
-                item.getLineSubtotal().subtract(item.getDepositTotal()).divide(item.getQuantity(), 4, RoundingMode.HALF_UP),
+                item.isDepositPayout()
+                        ? item.getUnitPrice()
+                        : item.getLineSubtotal().subtract(item.getDepositTotal()).divide(item.getQuantity(), 4, RoundingMode.HALF_UP),
                 item.getCompletedProductCost(),
                 item.getCompletedProductPrice(),
                 item.getCompletedProductCapabilities(),

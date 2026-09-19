@@ -560,6 +560,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     ${paymentRows}
     <div class="row"><span>Cash tendered</span><strong>${formatMoney(receipt.cashTendered, receipt.currencyCode)}</strong></div>
     <div class="row"><span>Change</span><strong>${formatMoney(receipt.changeDue, receipt.currencyCode)}</strong></div>
+    ${(receipt.cashDueToCustomer ?? 0) > 0 ? `<div class="row total"><span>Cash due to customer</span><strong>${formatMoney(receipt.cashDueToCustomer ?? 0, receipt.currencyCode)}</strong></div>` : ''}
     <div class="rule"></div>
     ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="center">Thank you</div>

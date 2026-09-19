@@ -4,5 +4,6 @@ public enum SaleLineType {
     CATALOG_PRODUCT,
     CUSTOM_ITEM,
     LOTTERY_SOLD,
-    LOTTERY_WIN
+    LOTTERY_WIN,
+    DEPOSIT_PAYOUT
 }

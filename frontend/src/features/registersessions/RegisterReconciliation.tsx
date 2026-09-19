@@ -32,7 +32,7 @@ function reconciliationFor(session: ReconciliationSession): CashLedgerBreakdown 
   return session.reconciliation ?? {
     openingCash: session.openingCash,
     retailCashReceived: Math.max(0, session.expectedCash - session.openingCash), retailChange: 0,
-    retailRefunds: 0, lotteryCashSales: 0, lotteryPayouts: 0, payoutReversals: 0,
+    retailRefunds: 0, depositPayouts: 0, lotteryCashSales: 0, lotteryPayouts: 0, payoutReversals: 0,
     lotterySaleCancellations: 0, otherCashIn: 0, otherCashOut: 0,
     totalIn: Math.max(0, session.expectedCash - session.openingCash), totalOut: 0,
     expectedCash: session.expectedCash, sourceBreakdown: []
@@ -44,6 +44,7 @@ export function ReconciliationBreakdown({ session, currencyCode = 'USD' }: { ses
   const rows = [
     ['Opening cash', '+', reconciliation.openingCash], ['Retail cash received', '+', reconciliation.retailCashReceived],
     ['Retail change', '-', reconciliation.retailChange], ['Retail refunds', '-', reconciliation.retailRefunds],
+    ['Deposit payouts', '-', reconciliation.depositPayouts],
     ['Lottery cash sales', '+', reconciliation.lotteryCashSales], ['Lottery payouts', '-', reconciliation.lotteryPayouts],
     ['Payout reversals', '+', reconciliation.payoutReversals], ['Lottery sale cancellations', '-', reconciliation.lotterySaleCancellations],
     ['Other cash in', '+', reconciliation.otherCashIn], ['Other cash out', '-', reconciliation.otherCashOut]

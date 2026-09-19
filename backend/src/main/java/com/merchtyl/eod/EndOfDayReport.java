@@ -73,6 +73,15 @@ public class EndOfDayReport extends BaseUuidEntity {
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal taxTotal;
 
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal depositsCollected;
+
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal depositPayouts;
+
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal netDeposits;
+
     @Column(nullable = false, updatable = false)
     private long transactionCount;
 
@@ -163,6 +172,9 @@ public class EndOfDayReport extends BaseUuidEntity {
         this.refundTotal = totals.refundTotal();
         this.voidTotal = totals.voidTotal();
         this.taxTotal = totals.taxTotal();
+        this.depositsCollected = totals.depositsCollected();
+        this.depositPayouts = totals.depositPayouts();
+        this.netDeposits = totals.netDeposits();
         this.transactionCount = totals.transactionCount();
         this.averageTransactionValue = totals.averageTransactionValue();
         this.highestTransactionValue = totals.highestTransactionValue();
@@ -268,6 +280,12 @@ public class EndOfDayReport extends BaseUuidEntity {
     public BigDecimal getTaxTotal() {
         return taxTotal;
     }
+
+    public BigDecimal getDepositsCollected() { return depositsCollected; }
+
+    public BigDecimal getDepositPayouts() { return depositPayouts; }
+
+    public BigDecimal getNetDeposits() { return netDeposits; }
 
     public long getTransactionCount() {
         return transactionCount;

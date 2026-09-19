@@ -71,6 +71,11 @@ public class SalesReportService {
             }
             BigDecimal includedTotal = moneyZero();
             for (SaleItem item : matchingItems) {
+                if (item.isDepositPayout()) {
+                    totals.depositPayouts = totals.depositPayouts.add(money(item.getUnitPrice().multiply(item.getQuantity())));
+                    includedTotal = includedTotal.add(money(item.getLineTotal()));
+                    continue;
+                }
                 BigDecimal itemDeposit = item.getDepositTotal() == null ? moneyZero() : item.getDepositTotal();
                 totals.grossSales = totals.grossSales.add(money(item.getLineSubtotal().subtract(itemDeposit)));
                 totals.containerDeposits = totals.containerDeposits.add(money(itemDeposit));
@@ -143,6 +148,8 @@ public class SalesReportService {
                 money(netTaxes),
                 money(netPayments),
                 money(totals.containerDeposits),
+                money(totals.depositPayouts),
+                money(totals.containerDeposits.subtract(totals.depositPayouts)),
                 money(totals.refundedContainerDeposits),
                 sales.size(),
                 refundCount,
@@ -293,6 +300,7 @@ public class SalesReportService {
     private static final class Totals {
         private BigDecimal grossSales = moneyZero();
         private BigDecimal containerDeposits = moneyZero();
+        private BigDecimal depositPayouts = moneyZero();
         private BigDecimal refundedContainerDeposits = moneyZero();
         private BigDecimal discounts = moneyZero();
         private BigDecimal saleTax = moneyZero();
