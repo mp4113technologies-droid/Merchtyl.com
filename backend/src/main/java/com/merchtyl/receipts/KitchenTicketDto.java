@@ -16,6 +16,17 @@ public record KitchenTicketDto(
         String tableNumber,
         List<KitchenTicketItemDto> items,
         String orderNotes,
-        boolean reprint
+        boolean reprint,
+        String customerName,
+        Instant pickupAt,
+        boolean pickupAsap,
+        com.merchtyl.sales.KitchenOrderStatus kitchenStatus,
+        String storeTimezone
 ) {
+    public KitchenTicketDto(PrintDocumentType documentType, UUID saleId, String tokenNumber, String storeName,
+            String registerName, String cashierName, Instant orderTime, String orderType, String tableNumber,
+            List<KitchenTicketItemDto> items, String orderNotes, boolean reprint) {
+        this(documentType, saleId, tokenNumber, storeName, registerName, cashierName, orderTime, orderType,
+                tableNumber, items, orderNotes, reprint, null, null, false, null, null);
+    }
 }

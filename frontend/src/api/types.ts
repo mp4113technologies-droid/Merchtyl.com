@@ -1825,6 +1825,7 @@ export type RegisterReport = {
 export type SaleStatus =
   | 'DRAFT'
   | 'PENDING_PAYMENT'
+  | 'PHONE_CONFIRMED'
   | 'HELD'
   | 'COMPLETED'
   | 'VOIDED'
@@ -1983,7 +1984,16 @@ export type Sale = {
   paidAmount: number;
   balanceDue: number;
   changeDue: number;
+  phoneCustomerName?: string | null;
+  phoneNumber?: string | null;
+  pickupAt?: string | null;
+  pickupAsap?: boolean;
+  orderNotes?: string | null;
+  phoneConfirmedAt?: string | null;
+  kitchenStatus?: 'PENDING' | 'IN_PROGRESS' | 'READY' | 'COMPLETED' | 'CANCELLED' | null;
+  kitchenUpdatedAt?: string | null;
   paymentComplete: boolean;
+  paymentStatus?: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -2215,6 +2225,11 @@ export type KitchenTicket = {
   items: KitchenTicketItem[];
   orderNotes: string | null;
   reprint: boolean;
+  customerName?: string | null;
+  pickupAt?: string | null;
+  pickupAsap?: boolean;
+  kitchenStatus?: 'PENDING' | 'IN_PROGRESS' | 'READY' | 'COMPLETED' | 'CANCELLED' | null;
+  storeTimezone?: string | null;
 };
 
 export type Receipt = {

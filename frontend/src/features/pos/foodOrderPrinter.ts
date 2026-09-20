@@ -21,8 +21,8 @@ export function kitchenTicketHtml(ticket: KitchenTicket, widthMm = 80) {
     .rule{border-top:2px dashed #000;margin:3mm 0}.meta{font-size:12px}.item{margin:3mm 0;font-size:18px}.variant,.modifier,.modifier-group,.instruction,.component-removal,.component-extra{font-size:14px;margin-left:5mm}.variant,.modifier-group{margin-top:1mm}.variant div,.modifier-choice{margin-left:3mm;font-weight:700}.modifier-group-name{font-weight:800}.instruction{font-weight:700}.component-removal{font-weight:900;font-size:16px;margin-top:1mm}.component-extra{font-weight:800}
     .notes{font-size:16px;font-weight:700;white-space:pre-wrap}@media screen{body{background:#eee;padding:16px}main{margin:auto;background:#fff}}
   </style></head><body><main>
-    ${ticket.reprint ? '<div class="center reprint">*** REPRINT ***</div>' : ''}
-    <div class="center"><strong>KITCHEN ORDER</strong><div class="token">${escapeHtml(ticket.tokenNumber)}</div><div class="token">TOKEN ${escapeHtml(ticket.tokenNumber)}</div></div>
+    ${ticket.kitchenStatus === 'CANCELLED' ? '<div class="center reprint">*** CANCELLED ***</div>' : ticket.reprint ? '<div class="center reprint">*** REPRINT ***</div>' : ''}
+    <div class="center"><strong>${ticket.orderType === 'PHONE ORDER' ? 'PHONE ORDER' : 'KITCHEN ORDER'}</strong><div class="token">${ticket.orderType === 'PHONE ORDER' ? 'ORDER #' : 'TOKEN '}${escapeHtml(ticket.tokenNumber)}</div>${ticket.pickupAt ? `<div class="token">PICKUP: ${ticket.pickupAsap ? 'ASAP' : escapeHtml(new Date(ticket.pickupAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: ticket.storeTimezone ?? undefined }))}</div>` : ''}${ticket.customerName ? `<div><strong>Customer: ${escapeHtml(ticket.customerName)}</strong></div>` : ''}</div>
     <div class="rule"></div><div class="meta">Time: ${escapeHtml(new Date(ticket.orderTime).toLocaleTimeString())}</div>
     ${ticket.orderType ? `<div class="meta">Order Type: ${escapeHtml(ticket.orderType)}</div>` : ''}
     <div class="meta">Register: ${escapeHtml(ticket.registerName)}</div><div class="meta">Cashier: ${escapeHtml(ticket.cashierName)}</div>

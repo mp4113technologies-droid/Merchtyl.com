@@ -38,9 +38,18 @@ public record SaleResponse(
         BigDecimal balanceDue,
         BigDecimal changeDue,
         boolean paymentComplete,
+        PickupOrderPaymentStatus paymentStatus,
         Instant createdAt,
         Instant updatedAt,
-        long version
+        long version,
+        String phoneCustomerName,
+        String phoneNumber,
+        Instant pickupAt,
+        boolean pickupAsap,
+        String orderNotes,
+        Instant phoneConfirmedAt,
+        KitchenOrderStatus kitchenStatus,
+        Instant kitchenUpdatedAt
 ) {
     public SaleResponse(
             UUID id, UUID storeId, UUID registerId, UUID registerSessionId, UUID createdBy, UUID customerId,
@@ -53,7 +62,11 @@ public record SaleResponse(
         this(id, storeId, registerId, registerSessionId, createdBy, customerId, status, businessDate,
                 saleChannel, null, currencyCode, pricesIncludeTax, subtotalAmount, discountAmount, null, null, null, null, null,
                 estimatedTaxAmount, totalAmount, heldAt, cancelledAt, completedBy, completedAt, items,
-                payments, paidAmount, balanceDue, changeDue, paymentComplete, createdAt, updatedAt, version);
+                payments, paidAmount, balanceDue, changeDue, paymentComplete,
+                paymentComplete ? PickupOrderPaymentStatus.PAID : paidAmount.signum() > 0
+                        ? PickupOrderPaymentStatus.PARTIALLY_PAID : PickupOrderPaymentStatus.UNPAID,
+                createdAt, updatedAt, version,
+                null, null, null, false, null, null, null, null);
     }
 
     static SaleResponse from(Sale sale) {
@@ -92,9 +105,15 @@ public record SaleResponse(
                 balanceDue,
                 changeDue,
                 sale.getTotalAmount().signum() <= 0 || balanceDue.signum() == 0,
+                sale.getTotalAmount().signum() <= 0 || balanceDue.signum() == 0
+                        ? PickupOrderPaymentStatus.PAID
+                        : paidAmount.signum() > 0 ? PickupOrderPaymentStatus.PARTIALLY_PAID
+                        : PickupOrderPaymentStatus.UNPAID,
                 sale.getCreatedAt(),
                 sale.getUpdatedAt(),
-                sale.getVersion());
+                sale.getVersion(),
+                sale.getPhoneCustomerName(), sale.getPhoneNumber(), sale.getPickupAt(), sale.isPickupAsap(),
+                sale.getOrderNotes(), sale.getPhoneConfirmedAt(), sale.getKitchenStatus(), sale.getKitchenUpdatedAt());
     }
 
     private static BigDecimal money(BigDecimal value) {

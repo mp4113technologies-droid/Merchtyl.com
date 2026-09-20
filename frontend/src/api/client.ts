@@ -2764,6 +2764,30 @@ export function resumeSale(token: string, id: string) {
   }, token);
 }
 
+export function confirmPhoneOrder(token: string, id: string, payload: { customerName: string; phoneNumber?: string; asap: boolean; pickupLocalDateTime?: string; orderNotes?: string }) {
+  return request<Sale>(`/sales/${id}/phone-order/confirm`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function listPickupOrders(token: string, storeId: string) {
+  return request<Sale[]>(`/sales/phone-orders/pickup${queryString({ storeId })}`, undefined, token);
+}
+
+export function listPickupOrderHistory(token: string, registerSessionId: string) {
+  return request<Sale[]>(`/sales/phone-orders/history${queryString({ registerSessionId })}`, undefined, token);
+}
+
+export function claimPhoneOrder(token: string, id: string, registerSessionId: string) {
+  return request<Sale>(`/sales/${id}/phone-order/claim`, { method: 'POST', body: JSON.stringify({ registerSessionId }) }, token);
+}
+
+export function cancelPhoneOrder(token: string, id: string, registerSessionId: string) {
+  return request<Sale>(`/sales/${id}/phone-order/cancel`, { method: 'POST', body: JSON.stringify({ registerSessionId }) }, token);
+}
+
+export function updateKitchenOrderStatus(token: string, id: string, status: 'PENDING' | 'IN_PROGRESS' | 'READY' | 'COMPLETED') {
+  return request<Sale>(`/sales/${id}/kitchen-status`, { method: 'POST', body: JSON.stringify({ status }) }, token);
+}
+
 export function cancelSale(token: string, id: string) {
   return request<Sale>(`/sales/${id}/cancel`, {
     method: 'POST'

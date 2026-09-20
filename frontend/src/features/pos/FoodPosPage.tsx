@@ -7,18 +7,18 @@ import RestaurantIcon from '@mui/icons-material/Restaurant';
 import SearchIcon from '@mui/icons-material/Search';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import RestoreIcon from '@mui/icons-material/Restore';
-import { Alert, Box, Button, Card, CardActionArea, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, InputAdornment, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardActionArea, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, InputAdornment, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { checkoutSaleCart, completeSale, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, holdSale, listActiveStoreDiscounts, listFoodMenuCategories, listFoodMenuItems, listSales, listStores, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt, resumeSale } from '../../api/client';
+import { cancelPhoneOrder, checkoutSaleCart, claimPhoneOrder, completeSale, confirmPhoneOrder, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, holdSale, listActiveStoreDiscounts, listFoodMenuCategories, listFoodMenuItems, listPickupOrderHistory, listPickupOrders, listSales, listStores, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt, resumeSale, updateKitchenOrderStatus } from '../../api/client';
 import type { FoodComponentSelectionState, FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { posTokens } from '../../app/theme';
 import { PaymentDialog } from './PosPages';
 import { loadReceiptPrinterPreferences } from './receiptPrinter';
-import { printFoodDocuments, type FoodPrintDocument, type FoodPrintStatus } from './foodOrderPrinter';
+import { printFoodDocuments, printKitchenTicket, type FoodPrintDocument, type FoodPrintStatus } from './foodOrderPrinter';
 import { DiscountDialog, type OrderDiscount } from './DiscountDialog';
 import { SecureTill } from './SecureTill';
 import { bestMultiBuyPromotion } from './multiBuyPricing';
@@ -71,6 +71,15 @@ export function FoodPosPage() {
   const [search, setSearch] = React.useState('');
   const [selectedItemId, setSelectedItemId] = React.useState<string | null>(null);
   const [heldOrdersOpen, setHeldOrdersOpen] = React.useState(false);
+  const [phoneOrderOpen, setPhoneOrderOpen] = React.useState(false);
+  const [pickupOrdersOpen, setPickupOrdersOpen] = React.useState(false);
+  const [pickupOrdersView, setPickupOrdersView] = React.useState<'active' | 'history'>('active');
+  const [selectedPickupOrder, setSelectedPickupOrder] = React.useState<Sale | null>(null);
+  const [phoneCustomerName, setPhoneCustomerName] = React.useState('');
+  const [phoneNumber, setPhoneNumber] = React.useState('');
+  const [pickupAsap, setPickupAsap] = React.useState(true);
+  const [pickupLocalDateTime, setPickupLocalDateTime] = React.useState('');
+  const [orderNotes, setOrderNotes] = React.useState('');
   const [customTaxTreatment,setCustomTaxTreatment]=React.useState<CustomItemTaxTreatment|null>(null);
   const [customAmount,setCustomAmount]=React.useState('');
   const [customQuantity,setCustomQuantity]=React.useState(1);
@@ -88,6 +97,8 @@ export function FoodPosPage() {
   const products = useQuery({ queryKey: ['food-menu-items', current.data?.storeId], queryFn: async () => listFoodMenuItems(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && configuration.isSuccess && Boolean(current.data?.storeId) });
   const savedDiscounts = useQuery({ queryKey: ['active-pos-discounts', current.data?.storeId], queryFn: async () => listActiveStoreDiscounts(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && Boolean(current.data?.storeId), staleTime: 5 * 60_000 });
   const heldOrders = useQuery({ queryKey: ['sales', 'held', current.data?.id], queryFn: async () => listSales(await getValidAccessToken(), { registerSessionId: current.data?.id, status: 'HELD', size: 50 }), enabled: permitted && heldOrdersOpen && Boolean(current.data?.id) });
+  const pickupOrders = useQuery({ queryKey: ['sales', 'phone-pickup', current.data?.storeId], queryFn: async () => listPickupOrders(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && pickupOrdersOpen && Boolean(current.data?.storeId), refetchInterval: 15_000 });
+  const pickupHistory = useQuery({ queryKey: ['sales', 'phone-pickup-history', current.data?.id], queryFn: async () => listPickupOrderHistory(await getValidAccessToken(), current.data?.id ?? ''), enabled: permitted && pickupOrdersOpen && pickupOrdersView === 'history' && Boolean(current.data?.id) });
 
   React.useEffect(() => {
     if (current.data?.registerType === 'RETAIL') navigate('/pos', { replace: true });
@@ -217,11 +228,29 @@ export function FoodPosPage() {
       await queryClient.invalidateQueries({ queryKey: ['sales', 'held'] });
     }
   });
-  const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: (updated) => { setSale(updated); setPaymentOpen(!updated.paymentComplete); } });
-  const complete = useMutation({ mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()), onSuccess: setSale });
+  const payment = useMutation({ mutationFn: async (value: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => recordSalePayment(await getValidAccessToken(), sale?.id ?? '', value), onSuccess: async (updated) => { setSale(updated); setPaymentOpen(!updated.paymentComplete); await queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] }); } });
+  const complete = useMutation({ mutationFn: async () => completeSale(await getValidAccessToken(), sale?.id ?? '', completionKey()), onSuccess: async (updated) => { setSale(updated); await Promise.all([queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] }), queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup-history'] })]); } });
+  const confirmPhone = useMutation({
+    mutationFn: async () => {
+      const priced = sale ?? await calculateOrder();
+      const confirmed = await confirmPhoneOrder(await getValidAccessToken(), priced.id, { customerName: phoneCustomerName.trim(), phoneNumber: phoneNumber.trim() || undefined, asap: pickupAsap, pickupLocalDateTime: pickupAsap ? undefined : pickupLocalDateTime, orderNotes: orderNotes.trim() || undefined });
+      const ticket = await getKitchenTicket(await getValidAccessToken(), confirmed.id);
+      await printKitchenTicket(ticket, loadReceiptPrinterPreferences());
+      return confirmed;
+    },
+    onSuccess: async () => {
+      setPhoneOrderOpen(false);
+      startNewOrder();
+      await queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] });
+      setPickupOrdersOpen(true);
+    }
+  });
+  const claimPhone = useMutation({ mutationFn: async (order: Sale) => claimPhoneOrder(await getValidAccessToken(), order.id, current.data?.id ?? ''), onSuccess: (claimed) => { setSale(claimed); setCart([]); setSelectedPickupOrder(null); setPickupOrdersOpen(false); setPaymentOpen(true); } });
+  const cancelPhone = useMutation({ mutationFn: async ({ order, rebuild }: { order: Sale; rebuild: boolean }) => { const cancelled = await cancelPhoneOrder(await getValidAccessToken(), order.id, current.data?.id ?? ''); const ticket = await getKitchenTicket(await getValidAccessToken(), order.id); await printKitchenTicket(ticket, loadReceiptPrinterPreferences()); return { cancelled, order, rebuild }; }, onSuccess: async ({ order, rebuild }) => { setSelectedPickupOrder(null); if (rebuild) { startNewOrder(); setPhoneCustomerName(order.phoneCustomerName ?? ''); setPhoneNumber(order.phoneNumber ?? ''); setPickupAsap(order.pickupAsap ?? true); setPickupLocalDateTime(''); setOrderNotes(order.orderNotes ?? ''); setPickupOrdersOpen(false); } await queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] }); } });
+  const kitchenProgress = useMutation({ mutationFn: async ({ order, status }: { order: Sale; status: 'IN_PROGRESS' | 'READY' | 'COMPLETED' }) => updateKitchenOrderStatus(await getValidAccessToken(), order.id, status), onSuccess: async (updated) => { if (updated.kitchenStatus === 'COMPLETED') { setSelectedPickupOrder(null); setPickupOrdersView('history'); } else setSelectedPickupOrder(updated); await Promise.all([queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] }), queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup-history'] })]); } });
   const receipt = useQuery({ queryKey: ['food-pos-receipt', sale?.id], queryFn: async () => getSaleReceipt(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const kitchenTicket = useQuery({ queryKey: ['food-pos-kitchen-ticket', sale?.id], queryFn: async () => getKitchenTicket(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
-  const busy = checkout.isPending || payment.isPending || complete.isPending || hold.isPending || resume.isPending;
+  const busy = checkout.isPending || payment.isPending || complete.isPending || hold.isPending || resume.isPending || confirmPhone.isPending || claimPhone.isPending;
   const canManageMenu = currentUser?.permissions?.some(permission => permission === 'PRODUCT_MANAGE' || permission === 'FOOD_ORDER_UPDATE');
   const provisionalSubtotal = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
   const automaticPromotion=bestMultiBuyPromotion(savedDiscounts.data??[],'FOOD_SERVICE',cart.map(line=>({id:line.key,quantity:line.quantity,unitPrice:line.unitPrice,targets:{MENU_ITEM:line.item.id,MENU_ITEM_VARIANT:line.variantId,MENU_CATEGORY:line.item.categoryId}})));
@@ -362,7 +391,7 @@ export function FoodPosPage() {
 
         <Paper component="section" aria-label="Restaurant menu" variant="outlined" sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto auto minmax(0, 1fr)', borderRadius: 2 }}>
           <Box sx={{ px: 1.5, pt: 1.25, pb: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: '#fff' }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}><Box minWidth={0}><Typography variant="h5" fontWeight={850} noWrap>{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography variant="body2" color="text.secondary" noWrap>{store?.name} · {current.data?.assignedCashierDisplayName ?? currentUser?.displayName ?? 'Cashier'}</Typography></Box><Stack direction="row" spacing={1} alignItems="center"><Button variant="outlined" startIcon={<RestoreIcon />} onClick={() => setHeldOrdersOpen(true)} sx={{ minHeight: 44 }}>Held Orders</Button>{(current.isLoading || configuration.isLoading) ? <CircularProgress size={26} aria-label="Loading Food POS" /> : null}</Stack></Stack>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}><Box minWidth={0}><Typography variant="h5" fontWeight={850} noWrap>{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography variant="body2" color="text.secondary" noWrap>{store?.name} · {current.data?.assignedCashierDisplayName ?? currentUser?.displayName ?? 'Cashier'}</Typography></Box><Stack direction="row" spacing={1} alignItems="center"><Button variant="outlined" startIcon={<RestoreIcon />} onClick={() => setHeldOrdersOpen(true)} sx={{ minHeight: 44 }}>Held Orders</Button><Button variant="outlined" onClick={() => setPickupOrdersOpen(true)} sx={{ minHeight: 44 }}>Pickup Orders</Button><Button variant="contained" disabled={!cart.length || busy} onClick={() => setPhoneOrderOpen(true)} sx={{ minHeight: 44 }}>Phone Order</Button>{(current.isLoading || configuration.isLoading) ? <CircularProgress size={26} aria-label="Loading Food POS" /> : null}</Stack></Stack>
             <Stack direction="row" spacing={0.75} aria-label="Food categories" sx={{ overflowX: 'auto', pb: 0.5, scrollbarWidth: 'thin' }}>
               {activeCategories.map(category => <Button key={category.id} variant={categoryId === category.id ? 'contained' : 'outlined'} onClick={() => setCategoryId(category.id)} sx={{ minHeight: 48, minWidth: 112, flexShrink: 0, fontWeight: 800 }}>{category.name}</Button>)}
             </Stack>
@@ -406,6 +435,45 @@ export function FoodPosPage() {
       </Dialog>
       <PaymentDialog open={paymentOpen} sale={sale} busy={payment.isPending} onClose={() => setPaymentOpen(false)} onSubmit={(value) => payment.mutate(value)} />
       <DiscountDialog open={discountOpen} initial={discount} currencyCode={store?.currencyCode ?? 'USD'} onClose={() => setDiscountOpen(false)} onApply={(value) => { setDiscount(value); setDiscountOpen(false); setSale(null); setPaymentOpen(false); }} />
+      <Dialog open={phoneOrderOpen} onClose={confirmPhone.isPending ? undefined : () => setPhoneOrderOpen(false)} fullWidth maxWidth="xs">
+        <Box component="form" onSubmit={(event) => { event.preventDefault(); if (phoneCustomerName.trim() && (pickupAsap || pickupLocalDateTime)) confirmPhone.mutate(); }}>
+          <DialogTitle>Phone Order</DialogTitle>
+          <DialogContent><Stack spacing={1.5} sx={{ pt: 1 }}>
+            <TextField autoFocus required label="Customer Name" value={phoneCustomerName} onChange={(event) => setPhoneCustomerName(event.target.value)} inputProps={{ maxLength: 120 }} />
+            <TextField label="Phone Number" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} inputProps={{ maxLength: 40 }} />
+            <TextField select label="Pickup" value={pickupAsap ? 'ASAP' : 'SCHEDULED'} onChange={(event) => setPickupAsap(event.target.value === 'ASAP')}><MenuItem value="ASAP">ASAP</MenuItem><MenuItem value="SCHEDULED">Scheduled Time</MenuItem></TextField>
+            {!pickupAsap ? <TextField required label="Scheduled Pickup" type="datetime-local" value={pickupLocalDateTime} onChange={(event) => setPickupLocalDateTime(event.target.value)} InputLabelProps={{ shrink: true }} /> : null}
+            <TextField label="Order Notes" value={orderNotes} onChange={(event) => setOrderNotes(event.target.value)} multiline minRows={2} inputProps={{ maxLength: 1000 }} />
+            {confirmPhone.isError ? <Alert severity="error">The phone order could not be confirmed. Check the pickup time and try again.</Alert> : null}
+            <Alert severity="info">No payment will be recorded. The order will be sent to the kitchen immediately.</Alert>
+          </Stack></DialogContent>
+          <DialogActions><Button onClick={() => setPhoneOrderOpen(false)} disabled={confirmPhone.isPending}>Cancel</Button><Button type="submit" variant="contained" disabled={confirmPhone.isPending || !phoneCustomerName.trim() || (!pickupAsap && !pickupLocalDateTime)}>{confirmPhone.isPending ? 'Confirming…' : 'Confirm Phone Order'}</Button></DialogActions>
+        </Box>
+      </Dialog>
+      <Dialog open={pickupOrdersOpen} onClose={() => { if (!claimPhone.isPending) { setPickupOrdersOpen(false); setSelectedPickupOrder(null); } }} fullWidth maxWidth="md">
+        <DialogTitle>Pickup Orders</DialogTitle>
+        <Tabs value={pickupOrdersView} onChange={(_event, value: 'active' | 'history') => { setPickupOrdersView(value); setSelectedPickupOrder(null); }} aria-label="Pickup order views" sx={{ px: 3 }}>
+          <Tab value="active" label="Active" />
+          <Tab value="history" label="Today’s History" />
+        </Tabs>
+        <DialogContent dividers>
+          {!selectedPickupOrder ? <Stack spacing={1}>
+            {(pickupOrdersView === 'active' ? pickupOrders : pickupHistory).isLoading ? <CircularProgress aria-label="Loading pickup orders" /> : null}
+            {pickupOrdersView === 'active' && pickupOrders.isSuccess && pickupOrders.data.length === 0 ? <Alert severity="info">There are no active pickup orders.</Alert> : null}
+            {pickupOrdersView === 'history' && pickupHistory.isSuccess && pickupHistory.data.length === 0 ? <Alert severity="info">No pickup orders were completed during the current BusinessDay.</Alert> : null}
+            {(pickupOrdersView === 'active' ? pickupOrders.data ?? [] : pickupHistory.data ?? []).map((order) => <Paper key={order.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}><Box><Typography fontWeight={850}>{order.pickupAsap ? 'ASAP' : new Date(order.pickupAt ?? '').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: store?.timezone })} · {order.phoneCustomerName} · #{order.foodOrderToken}</Typography><Typography variant="body2">{money(order.totalAmount, order.currencyCode)} · <strong>{kitchenStatusLabel(order)}</strong> · {paymentStatusLabel(order)}</Typography></Box><Button variant={pickupOrdersView === 'active' ? 'contained' : 'outlined'} onClick={() => setSelectedPickupOrder(order)}>Open</Button></Stack></Paper>)}
+          </Stack> : <Stack spacing={2}>
+            <Box><Typography variant="h6" fontWeight={900}>Order #{selectedPickupOrder.foodOrderToken}</Typography><Typography>{selectedPickupOrder.phoneCustomerName}{selectedPickupOrder.phoneNumber ? ` · ${selectedPickupOrder.phoneNumber}` : ''}</Typography><Typography>Pickup: {selectedPickupOrder.pickupAsap ? 'ASAP' : new Date(selectedPickupOrder.pickupAt ?? '').toLocaleString([], { timeZone: store?.timezone })}</Typography><Typography>Kitchen: {kitchenStatusLabel(selectedPickupOrder)} · Payment: {paymentStatusLabel(selectedPickupOrder)}</Typography></Box>
+            <Divider />
+            {selectedPickupOrder.items.map(item => <Box key={item.id}><Stack direction="row" justifyContent="space-between"><Typography fontWeight={800}>{item.quantity} × {item.productName}{item.foodMenuItemVariantName ? ` — ${item.foodMenuItemVariantName}` : ''}</Typography><Typography>{money(item.lineTotal, selectedPickupOrder.currencyCode)}</Typography></Stack>{item.foodMenuModifiers?.map(value => <Typography key={value} variant="caption" display="block">{value}</Typography>)}{item.foodMenuComponents?.map(value => <Typography key={value.componentId} variant="caption" display="block">{value.state === 'REMOVED' ? 'NO' : 'EXTRA'} {value.name}</Typography>)}</Box>)}
+            <Divider /><MoneyRow label="Subtotal" value={money(selectedPickupOrder.subtotalAmount, selectedPickupOrder.currencyCode)} /><MoneyRow label="Discount" value={money(-selectedPickupOrder.discountAmount, selectedPickupOrder.currencyCode)} /><MoneyRow label="Tax" value={money(selectedPickupOrder.estimatedTaxAmount, selectedPickupOrder.currencyCode)} /><MoneyRow strong label="Total" value={money(selectedPickupOrder.totalAmount, selectedPickupOrder.currencyCode)} />
+            {selectedPickupOrder.orderNotes ? <Alert severity="info">Order Notes: {selectedPickupOrder.orderNotes}</Alert> : null}
+            {pickupOrdersView === 'active' ? <Alert severity="info">To change a confirmed order safely, cancel and rebuild it. The kitchen receives a cancellation ticket before the replacement is confirmed.</Alert> : null}
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap"><Button onClick={() => setSelectedPickupOrder(null)}>Back</Button>{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus === 'PENDING' ? <Button variant="outlined" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'IN_PROGRESS' })}>Start Preparing</Button> : null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus !== 'READY' ? <Button variant="outlined" color="success" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'READY' })}>Mark Ready</Button> : null}{pickupOrdersView === 'active' && paymentStatusLabel(selectedPickupOrder) !== 'PAID' ? <><Button color="error" onClick={() => cancelPhone.mutate({ order: selectedPickupOrder, rebuild: false })} disabled={cancelPhone.isPending}>Cancel Order</Button><Button color="warning" onClick={() => cancelPhone.mutate({ order: selectedPickupOrder, rebuild: true })} disabled={cancelPhone.isPending}>Cancel &amp; Rebuild</Button><Button variant="contained" onClick={() => claimPhone.mutate(selectedPickupOrder)} disabled={claimPhone.isPending}>Pay Order</Button></> : null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus === 'READY' && paymentStatusLabel(selectedPickupOrder) === 'PAID' ? <Button variant="contained" color="success" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'COMPLETED' })} disabled={kitchenProgress.isPending}>Mark Completed</Button> : null}</Stack>
+          </Stack>}
+        </DialogContent>
+        <DialogActions><Button onClick={() => { setPickupOrdersOpen(false); setSelectedPickupOrder(null); }}>Close</Button></DialogActions>
+      </Dialog>
       <Dialog open={heldOrdersOpen} onClose={() => !resume.isPending && setHeldOrdersOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Held Orders</DialogTitle>
         <DialogContent dividers><Stack spacing={1.25}>
@@ -423,6 +491,18 @@ export function FoodPosPage() {
 
 function MoneyRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return <Stack direction="row" justifyContent="space-between" spacing={2}><Typography fontWeight={strong ? 900 : 500} variant={strong ? 'h6' : 'body2'}>{label}</Typography><Typography fontWeight={strong ? 900 : 700} variant={strong ? 'h6' : 'body2'} noWrap>{value}</Typography></Stack>;
+}
+
+function paymentStatusLabel(order: Sale) {
+  if (order.paymentStatus) return order.paymentStatus.replace('_', ' ');
+  if (order.paymentComplete || order.balanceDue <= 0) return 'PAID';
+  return order.paidAmount > 0 ? 'PARTIALLY PAID' : 'UNPAID';
+}
+
+function kitchenStatusLabel(order: Sale) {
+  if (order.kitchenStatus === 'IN_PROGRESS') return 'PREPARING';
+  if (order.kitchenStatus === 'PENDING') return 'CONFIRMED';
+  return order.kitchenStatus ?? 'CONFIRMED';
 }
 
 function PrintState({ label, value }: { label: string; value: { status: FoodPrintStatus; error?: string } }) {

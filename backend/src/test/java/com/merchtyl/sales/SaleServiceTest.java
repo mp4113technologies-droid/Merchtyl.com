@@ -48,6 +48,7 @@ import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreCapability;
+import com.merchtyl.eod.BusinessDay;
 import com.merchtyl.tax.IncludedPriceBehavior;
 import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
@@ -108,6 +109,7 @@ class SaleServiceTest {
     private final FoodMenuItemRepository foodMenuItemRepository = mock(FoodMenuItemRepository.class);
     private final SaleAdjustmentRepository saleAdjustmentRepository = mock(SaleAdjustmentRepository.class);
     private final RegisterCapabilityService registerCapabilityService = mock(RegisterCapabilityService.class);
+    private final FoodOrderTokenService foodOrderTokenService = mock(FoodOrderTokenService.class);
     private final StoreAccessService storeAccessService = mock(StoreAccessService.class);
     private final DiscountDefinitionService discountDefinitionService = mock(DiscountDefinitionService.class);
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
@@ -164,6 +166,7 @@ class SaleServiceTest {
         ReflectionTestUtils.setField(service, "discountEngine", new DiscountEngine());
         ReflectionTestUtils.setField(service, "storeAccessService", storeAccessService);
         ReflectionTestUtils.setField(service, "taxCategoryRepository", taxCategoryRepository);
+        ReflectionTestUtils.setField(service, "foodOrderTokenService", foodOrderTokenService);
         when(store.getId()).thenReturn(STORE_ID);
         when(store.getTimezone()).thenReturn("America/Los_Angeles");
         when(store.getCurrencyCode()).thenReturn("USD");
@@ -183,6 +186,176 @@ class SaleServiceTest {
         when(userRepository.findByEmailIgnoreCase("other@example.test")).thenReturn(Optional.of(otherCashier));
         when(saleRepository.saveAndFlush(any(Sale.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenReturn(taxResponse(new BigDecimal("10.00"), new BigDecimal("1.50"), new BigDecimal("11.50")));
+        when(foodOrderTokenService.nextToken(registerSession)).thenReturn("1045");
+    }
+
+    @Test
+    void confirmsUnpaidPhoneOrderWithPickupAndKitchenTokenWithoutFinancialPosting() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Burger",
+                        new BigDecimal("10.00"), CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false))), customItemAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        SaleResponse confirmed = service.confirmPhoneOrder(sale.getId(), new PhoneOrderConfirmRequest(
+                "John Smith", "506-555-1234", false,
+                java.time.LocalDateTime.parse("2026-07-27T13:15:00"), "Call on arrival"), customItemAuth());
+
+        assertThat(confirmed.status()).isEqualTo(SaleStatus.PHONE_CONFIRMED);
+        assertThat(confirmed.foodOrderToken()).isEqualTo("1045");
+        assertThat(confirmed.phoneCustomerName()).isEqualTo("John Smith");
+        assertThat(confirmed.pickupAt()).isEqualTo(Instant.parse("2026-07-27T20:15:00Z"));
+        assertThat(confirmed.kitchenStatus()).isEqualTo(KitchenOrderStatus.PENDING);
+        assertThat(confirmed.payments()).isEmpty();
+        verify(cashLedgerService, never()).append(any());
+        verify(inventoryService, never()).recordStockChange(any(), any());
+    }
+
+    @Test
+    void phoneOrderPaymentCanMoveToAnotherSameStoreFoodSessionAndBusinessDay() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Wings",
+                        new BigDecimal("10.00"), CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false))), customItemAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale order = saved.getValue();
+        when(saleRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        service.confirmPhoneOrder(order.getId(), new PhoneOrderConfirmRequest(
+                "John", null, true, null, null), customItemAuth());
+
+        UUID pickupSessionId = UUID.fromString("00000000-0000-0000-0000-000000000999");
+        RegisterSession pickupSession = mock(RegisterSession.class);
+        Register pickupRegister = mock(Register.class);
+        BusinessDay pickupDay = mock(BusinessDay.class);
+        when(pickupSession.getId()).thenReturn(pickupSessionId);
+        when(pickupSession.getStore()).thenReturn(store);
+        when(pickupSession.getRegister()).thenReturn(pickupRegister);
+        when(pickupSession.getAssignedCashier()).thenReturn(cashier);
+        when(pickupSession.getStatus()).thenReturn(RegisterSessionStatus.OPEN);
+        when(pickupSession.getBusinessDay()).thenReturn(pickupDay);
+        when(pickupSession.isBusinessDayOperational()).thenReturn(true);
+        when(pickupRegister.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        when(pickupDay.getBusinessDate()).thenReturn(LocalDate.parse("2026-07-28"));
+        when(registerSessionRepository.findById(pickupSessionId)).thenReturn(Optional.of(pickupSession));
+
+        SaleResponse claimed = service.claimPhoneOrder(order.getId(), new PhoneOrderClaimRequest(pickupSessionId), customItemAuth());
+
+        assertThat(claimed.id()).isEqualTo(order.getId());
+        assertThat(claimed.registerSessionId()).isEqualTo(pickupSessionId);
+        assertThat(claimed.businessDate()).isEqualTo(LocalDate.parse("2026-07-28"));
+        assertThat(claimed.status()).isEqualTo(SaleStatus.PHONE_CONFIRMED);
+    }
+
+    @Test
+    void rejectsPastScheduledPhoneOrderUsingStoreLocalTime() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        Sale sale = payableSale();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        assertThatThrownBy(() -> service.confirmPhoneOrder(sale.getId(), new PhoneOrderConfirmRequest(
+                "John", null, false, java.time.LocalDateTime.parse("2026-07-27T04:59:00"), null),
+                customItemAuth()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("PICKUP_TIME_MUST_BE_FUTURE");
+
+        assertThat(sale.getStatus()).isEqualTo(SaleStatus.DRAFT);
+        verify(foodOrderTokenService, never()).nextToken(any());
+    }
+
+    @Test
+    void cancellingUnpaidPhoneOrderPreservesAuditStateWithoutFinancialActivity() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        Sale sale = payableSale();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.confirmPhoneOrder(sale.getId(), new PhoneOrderConfirmRequest(
+                "John", "506-555-1234", true, null, "No onions"), customItemAuth());
+
+        SaleResponse cancelled = service.cancelPhoneOrder(
+                sale.getId(), new PhoneOrderClaimRequest(SESSION_ID), customItemAuth());
+
+        assertThat(cancelled.status()).isEqualTo(SaleStatus.CANCELLED);
+        assertThat(cancelled.cancelledAt()).isEqualTo(NOW);
+        assertThat(cancelled.kitchenStatus()).isEqualTo(KitchenOrderStatus.CANCELLED);
+        assertThat(cancelled.phoneCustomerName()).isEqualTo("John");
+        assertThat(cancelled.foodOrderToken()).isEqualTo("1045");
+        assertThat(cancelled.payments()).isEmpty();
+        verify(cashLedgerService, never()).append(any());
+        verify(inventoryService, never()).recordStockChange(any(), any());
+    }
+
+    @Test
+    void phoneOrderRequiresFoodServiceRegister() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        Sale sale = payableSale();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        assertThatThrownBy(() -> service.confirmPhoneOrder(sale.getId(), new PhoneOrderConfirmRequest(
+                "John", null, true, null, null), customItemAuth()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("PHONE_ORDER_REQUIRES_FOOD_SERVICE_REGISTER");
+    }
+
+    @Test
+    void pickupPaymentStatusIsAuthoritativeAndOperationalCompletionIsSeparate() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        Sale sale = payableSale();
+        sale.confirmPhoneOrder("Neel", null, NOW, true, null, NOW);
+        sale.assignFoodOrderToken("A003");
+        when(saleRepository.findActivePhoneOrders(STORE_ID, List.of(
+                KitchenOrderStatus.PENDING, KitchenOrderStatus.IN_PROGRESS, KitchenOrderStatus.READY)))
+                .thenReturn(List.of(sale));
+
+        SaleResponse unpaid = service.pickupOrders(STORE_ID, customItemAuth()).getFirst();
+        assertThat(unpaid.paymentStatus()).isEqualTo(PickupOrderPaymentStatus.UNPAID);
+
+        sale.addPayment(new Payment(sale, PaymentMethod.CREDIT, new BigDecimal("5.00"), "USD",
+                null, BigDecimal.ZERO.setScale(2), null, null, cashier, NOW));
+        SaleResponse partial = service.pickupOrders(STORE_ID, customItemAuth()).getFirst();
+        assertThat(partial.paymentStatus()).isEqualTo(PickupOrderPaymentStatus.PARTIALLY_PAID);
+        assertThat(partial.paymentComplete()).isFalse();
+
+        sale.addPayment(new Payment(sale, PaymentMethod.CASH, new BigDecimal("6.50"), "USD",
+                new BigDecimal("6.50"), BigDecimal.ZERO.setScale(2), null, null, cashier, NOW));
+        sale.complete(cashier, NOW);
+        sale.updateKitchenStatus(KitchenOrderStatus.READY, NOW);
+        SaleResponse paidReady = service.pickupOrders(STORE_ID, customItemAuth()).getFirst();
+        assertThat(paidReady.status()).isEqualTo(SaleStatus.COMPLETED);
+        assertThat(paidReady.kitchenStatus()).isEqualTo(KitchenOrderStatus.READY);
+        assertThat(paidReady.paymentStatus()).isEqualTo(PickupOrderPaymentStatus.PAID);
+
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        SaleResponse operationallyCompleted = service.updateKitchenStatus(sale.getId(),
+                new KitchenStatusUpdateRequest(KitchenOrderStatus.COMPLETED), customItemAuth());
+        assertThat(operationallyCompleted.kitchenStatus()).isEqualTo(KitchenOrderStatus.COMPLETED);
+
+        when(saleRepository.findCompletedPhoneOrders(STORE_ID, LocalDate.parse("2026-07-27")))
+                .thenReturn(List.of(sale));
+        SaleResponse historical = service.pickupOrderHistory(SESSION_ID, customItemAuth()).getFirst();
+        assertThat(historical.id()).isEqualTo(sale.getId());
+        assertThat(historical.paymentStatus()).isEqualTo(PickupOrderPaymentStatus.PAID);
+        assertThat(historical.kitchenStatus()).isEqualTo(KitchenOrderStatus.COMPLETED);
+    }
+
+    @Test
+    void unpaidReadyPhoneOrderCannotBeOperationallyCompleted() {
+        when(register.getType()).thenReturn(RegisterType.FOOD_SERVICE);
+        Sale sale = payableSale();
+        sale.confirmPhoneOrder("Neel", null, NOW, true, null, NOW);
+        sale.updateKitchenStatus(KitchenOrderStatus.READY, NOW);
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        assertThatThrownBy(() -> service.updateKitchenStatus(sale.getId(),
+                new KitchenStatusUpdateRequest(KitchenOrderStatus.COMPLETED), customItemAuth()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("PHONE_ORDER_MUST_BE_PAID");
     }
 
     @Test

@@ -67,6 +67,7 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -627,6 +628,106 @@ public class SaleService {
     }
 
     @Transactional
+    public SaleResponse confirmPhoneOrder(UUID saleId, PhoneOrderConfirmRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        Sale sale = findSaleForUpdate(saleId);
+        validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
+        requireMutableCheckout(sale);
+        requireNoPayments(sale);
+        requireOpenRegisterSession(sale);
+        if (sale.getRegister().getType() != RegisterType.FOOD_SERVICE) {
+            throw new ConflictException("PHONE_ORDER_REQUIRES_FOOD_SERVICE_REGISTER");
+        }
+        if (sale.getItems().isEmpty()) throw new ConflictException("PHONE_ORDER_REQUIRES_ITEMS");
+        Instant now = Instant.now(clock);
+        Instant pickupAt = request.asap() ? now : request.pickupLocalDateTime() == null ? null
+                : request.pickupLocalDateTime().atZone(ZoneId.of(sale.getStore().getTimezone())).toInstant();
+        if (pickupAt == null) throw new BadRequestException("PICKUP_TIME_REQUIRED");
+        if (!request.asap() && !pickupAt.isAfter(now)) throw new BadRequestException("PICKUP_TIME_MUST_BE_FUTURE");
+        if (sale.getFoodOrderToken() == null) sale.assignFoodOrderToken(foodOrderTokenService.nextToken(sale.getRegisterSession()));
+        sale.confirmPhoneOrder(cleanRequired(request.customerName(), "customerName"), cleanOptional(request.phoneNumber()),
+                pickupAt, request.asap(), cleanOptional(request.orderNotes()), now);
+        return SaleResponse.from(save(sale));
+    }
+
+    @Transactional(readOnly = true)
+    public List<SaleResponse> pickupOrders(UUID storeId, Authentication authentication) {
+        if (storeId == null) throw new BadRequestException("storeId is required");
+        storeAccessService.requireStoreAccess(authentication, storeId);
+        return saleRepository.findActivePhoneOrders(storeId, List.of(
+                        KitchenOrderStatus.PENDING, KitchenOrderStatus.IN_PROGRESS, KitchenOrderStatus.READY))
+                .stream().map(SaleResponse::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<SaleResponse> pickupOrderHistory(UUID registerSessionId, Authentication authentication) {
+        User actor = actor(authentication);
+        RegisterSession session = findOpenSession(registerSessionId);
+        validateUserCanUseSession(actor, session, authentication);
+        if (session.getRegister().getType() != RegisterType.FOOD_SERVICE) {
+            throw new ConflictException("PHONE_ORDER_REQUIRES_FOOD_SERVICE_REGISTER");
+        }
+        LocalDate businessDate = session.getBusinessDay() == null
+                ? Instant.now(clock).atZone(ZoneId.of(session.getStore().getTimezone())).toLocalDate()
+                : session.getBusinessDay().getBusinessDate();
+        return saleRepository.findCompletedPhoneOrders(session.getStore().getId(), businessDate)
+                .stream().map(SaleResponse::from).toList();
+    }
+
+    @Transactional
+    public SaleResponse claimPhoneOrder(UUID saleId, PhoneOrderClaimRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        Sale sale = findSaleForUpdate(saleId);
+        if (sale.getStatus() != SaleStatus.PHONE_CONFIRMED) throw new ConflictException("PHONE_ORDER_NOT_AWAITING_PICKUP");
+        RegisterSession session = findOpenSession(request.registerSessionId());
+        validateUserCanUseSession(actor, session, authentication);
+        if (session.getRegister().getType() != RegisterType.FOOD_SERVICE) throw new ConflictException("PHONE_ORDER_REQUIRES_FOOD_SERVICE_REGISTER");
+        if (!session.getStore().getId().equals(sale.getStore().getId())) throw new ForbiddenOperationException("PHONE_ORDER_STORE_MISMATCH");
+        sale.assignSettlementSession(session);
+        return SaleResponse.from(save(sale));
+    }
+
+    @Transactional
+    public SaleResponse cancelPhoneOrder(UUID saleId, PhoneOrderClaimRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        Sale sale = findSaleForUpdate(saleId);
+        if (sale.getStatus() != SaleStatus.PHONE_CONFIRMED || !sale.getPayments().isEmpty()) {
+            throw new ConflictException("ONLY_UNPAID_PHONE_ORDER_CAN_BE_CANCELLED");
+        }
+        RegisterSession session = findOpenSession(request.registerSessionId());
+        validateUserCanUseSession(actor, session, authentication);
+        if (session.getRegister().getType() != RegisterType.FOOD_SERVICE) {
+            throw new ConflictException("PHONE_ORDER_REQUIRES_FOOD_SERVICE_REGISTER");
+        }
+        if (!session.getStore().getId().equals(sale.getStore().getId())) throw new ForbiddenOperationException("PHONE_ORDER_STORE_MISMATCH");
+        Instant now = Instant.now(clock);
+        sale.updateKitchenStatus(KitchenOrderStatus.CANCELLED, now);
+        sale.cancel(now);
+        return SaleResponse.from(save(sale));
+    }
+
+    @Transactional
+    public SaleResponse updateKitchenStatus(UUID saleId, KitchenStatusUpdateRequest request, Authentication authentication) {
+        Sale sale = findSaleForUpdate(saleId);
+        storeAccessService.requireStoreAccess(authentication, sale.getStore().getId());
+        if (sale.getPhoneConfirmedAt() == null || sale.getStatus() == SaleStatus.CANCELLED
+                || sale.getKitchenStatus() == KitchenOrderStatus.COMPLETED) {
+            throw new ConflictException("KITCHEN_STATUS_REQUIRES_ACTIVE_PHONE_ORDER");
+        }
+        if (request.status() == KitchenOrderStatus.CANCELLED) throw new BadRequestException("USE_PHONE_ORDER_CANCEL");
+        if (request.status() == KitchenOrderStatus.COMPLETED) {
+            if (sale.getKitchenStatus() != KitchenOrderStatus.READY) {
+                throw new ConflictException("PHONE_ORDER_MUST_BE_READY");
+            }
+            if (sale.getStatus() != SaleStatus.COMPLETED || balanceDue(sale).signum() > 0) {
+                throw new ConflictException("PHONE_ORDER_MUST_BE_PAID");
+            }
+        }
+        sale.updateKitchenStatus(request.status(), Instant.now(clock));
+        return SaleResponse.from(save(sale));
+    }
+
+    @Transactional
     public SaleResponse forceCloseDraft(UUID saleId, SaleForceCloseRequest request, Authentication authentication) {
         User actor = actor(authentication);
         Sale sale = findSaleForUpdate(saleId);
@@ -679,7 +780,7 @@ public class SaleService {
     SaleResponse complete(UUID saleId, User actor, Authentication authentication) {
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireMutableCheckout(sale);
+        requirePayableCheckout(sale);
         requireOpenRegisterSession(sale);
         if (sale.getItems().isEmpty()) {
             throw new ConflictException("Sale must have at least one item before completion");
@@ -712,7 +813,7 @@ public class SaleService {
         User actor = actor(authentication);
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
-        requireMutableCheckout(sale);
+        requirePayableCheckout(sale);
         if (sale.getItems().isEmpty() || sale.getTotalAmount().signum() <= 0) {
             throw new ConflictException("Sale must have a payable total before recording payment");
         }
@@ -913,6 +1014,12 @@ public class SaleService {
     private static void requireMutableCheckout(Sale sale) {
         if (!isMutableCheckout(sale)) {
             throw new ConflictException("Sale must be pending checkout");
+        }
+    }
+
+    private static void requirePayableCheckout(Sale sale) {
+        if (!isMutableCheckout(sale) && sale.getStatus() != SaleStatus.PHONE_CONFIRMED) {
+            throw new ConflictException("Sale must be pending payment");
         }
     }
 
