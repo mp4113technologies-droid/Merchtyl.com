@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/sales")
@@ -121,6 +122,46 @@ public class SaleController {
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
     SaleResponse resume(@PathVariable UUID id, Authentication authentication) {
         return saleService.resume(id, authentication);
+    }
+
+    @PostMapping("/{id}/phone-order/confirm")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
+    SaleResponse confirmPhoneOrder(@PathVariable UUID id, @Valid @RequestBody PhoneOrderConfirmRequest request,
+            Authentication authentication) {
+        return saleService.confirmPhoneOrder(id, request, authentication);
+    }
+
+    @GetMapping("/phone-orders/pickup")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_VIEW)")
+    List<SaleResponse> pickupOrders(@RequestParam UUID storeId, Authentication authentication) {
+        return saleService.pickupOrders(storeId, authentication);
+    }
+
+    @GetMapping("/phone-orders/history")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_VIEW)")
+    List<SaleResponse> pickupOrderHistory(@RequestParam UUID registerSessionId, Authentication authentication) {
+        return saleService.pickupOrderHistory(registerSessionId, authentication);
+    }
+
+    @PostMapping("/{id}/phone-order/claim")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
+    SaleResponse claimPhoneOrder(@PathVariable UUID id, @Valid @RequestBody PhoneOrderClaimRequest request,
+            Authentication authentication) {
+        return saleService.claimPhoneOrder(id, request, authentication);
+    }
+
+    @PostMapping("/{id}/phone-order/cancel")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
+    SaleResponse cancelPhoneOrder(@PathVariable UUID id, @Valid @RequestBody PhoneOrderClaimRequest request,
+            Authentication authentication) {
+        return saleService.cancelPhoneOrder(id, request, authentication);
+    }
+
+    @PostMapping("/{id}/kitchen-status")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).FOOD_POS_ACCESS)")
+    SaleResponse updateKitchenStatus(@PathVariable UUID id, @Valid @RequestBody KitchenStatusUpdateRequest request,
+            Authentication authentication) {
+        return saleService.updateKitchenStatus(id, request, authentication);
     }
 
     @PostMapping("/{id}/cancel")

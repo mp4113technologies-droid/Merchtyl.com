@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
+import type { Sale } from '../../api/types';
 import { testReceiptDocument } from './receiptPrinter';
 import * as receiptPrinter from './receiptPrinter';
 
@@ -394,5 +395,74 @@ describe('Food POS', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Held Orders' })).not.toBeInTheDocument());
     expect(screen.getAllByText('Pepperoni Pizza').length).toBeGreaterThan(1);
     expect(screen.getByRole('button', { name: 'Checkout' })).toHaveTextContent(/CA\$13\.80/);
+  });
+
+  it('confirms an unpaid scheduled phone order without printing early, marks ready, and pays the same order at pickup', async () => {
+    const print = vi.spyOn(receiptPrinter, 'printHtmlWithFallback').mockResolvedValue({ printer: 'BROWSER' });
+    const menuItem = { id: 'menu-item', storeId, productId, displayName: 'Burger', price: 12, categoryId: 'food', available: true, modifierGroups: [] };
+    const priced = { ...sale(1), status: 'PENDING_PAYMENT', items: [{ ...sale(1).items[0], productName: 'Burger', foodMenuItemId: 'menu-item', foodMenuItemName: 'Burger', foodMenuModifiers: [] }] };
+    let pickup = { ...priced, status: 'PHONE_CONFIRMED', foodOrderToken: '1045', phoneCustomerName: 'John', phoneNumber: '506-555-1234', pickupAt: '2027-01-15T16:30:00Z', pickupAsap: false, orderNotes: 'Call on arrival', phoneConfirmedAt: '2027-01-15T14:00:00Z', kitchenStatus: 'PENDING', paidAmount: 0, balanceDue: 13.8, paymentComplete: false } as Sale;
+    let paymentWrites = 0;
+    let completionWrites = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/auth/me')) return response({ userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'], permissions: ['FOOD_POS_ACCESS'] });
+      if (url.pathname.endsWith('/register-sessions/current')) return response({ id: sessionId, storeId, registerId: 'register-2', status: 'OPEN', registerType: 'FOOD_SERVICE' });
+      if (url.pathname.endsWith('/stores')) return response(page([{ id: storeId, name: 'Main', currencyCode: 'CAD', timezone: 'America/Moncton', capabilities: ['FOOD_SERVICE'] }]));
+      if (url.pathname.endsWith(`/stores/${storeId}/food-service/configuration`)) return response({ storeId, restaurantPosEnabled: true, kitchenDisplayName: "Joe's Kitchen" });
+      if (url.pathname.endsWith('/food-menu/categories')) return response([{ id: 'food', active: true, name: 'Food' }]);
+      if (url.pathname.endsWith('/food-menu/items')) return response([menuItem]);
+      if (url.pathname.endsWith(`/stores/${storeId}/discounts`)) return response([]);
+      if (url.pathname.endsWith('/sales/checkout')) return response(priced, 201);
+      if (url.pathname.endsWith(`/sales/${saleId}/phone-order/confirm`)) return response(pickup);
+      if (url.pathname.endsWith(`/sales/${saleId}/kitchen-ticket`)) return response({ documentType: 'KITCHEN_TICKET', saleId, tokenNumber: '1045', storeName: 'Main', registerName: 'Restaurant 1', cashierName: 'Kitchen', orderTime: pickup.phoneConfirmedAt, orderType: 'PHONE ORDER', tableNumber: null, customerName: 'John', pickupAt: pickup.pickupAt, pickupAsap: false, storeTimezone: 'America/Moncton', kitchenStatus: pickup.kitchenStatus, items: [{ saleItemId: itemId, name: 'Burger', quantity: 1, modifiers: [], preparationInstructions: null }], orderNotes: pickup.orderNotes, reprint: false });
+      if (url.pathname.endsWith('/sales/phone-orders/pickup')) return response(pickup.kitchenStatus === 'COMPLETED' ? [] : [pickup]);
+      if (url.pathname.endsWith('/sales/phone-orders/history')) return response(pickup.kitchenStatus === 'COMPLETED' ? [pickup] : []);
+      if (url.pathname.endsWith(`/sales/${saleId}/kitchen-status`)) { const status = JSON.parse(String(init?.body)).status; pickup = { ...pickup, kitchenStatus: status }; return response(pickup); }
+      if (url.pathname.endsWith(`/sales/${saleId}/phone-order/claim`)) return response({ ...pickup, registerId: 'register-2', registerSessionId: sessionId, businessDate: '2027-01-15' });
+      if (url.pathname.endsWith(`/sales/${saleId}/payments`)) { paymentWrites += 1; const paid = sale(1, true); pickup = { ...pickup, payments: paid.payments as Sale['payments'], paidAmount: 13.8, balanceDue: 0, paymentComplete: true, paymentStatus: 'PAID' }; return response(pickup); }
+      if (url.pathname.endsWith(`/sales/${saleId}/complete`)) { completionWrites += 1; pickup = { ...pickup, status: 'COMPLETED', paidAmount: 13.8, balanceDue: 0, paymentComplete: true, paymentStatus: 'PAID', completedAt: '2027-01-15T16:31:00Z' }; return response(pickup); }
+      if (url.pathname.endsWith(`/sales/${saleId}/receipt`)) return response({ receiptNumber: 'RCT-1045', document: testReceiptDocument() });
+      return response({}, 404);
+    });
+
+    render(<App initialEntries={['/pos/food']} />);
+    await userEvent.click(await screen.findByText('Burger'));
+    await userEvent.click(screen.getByRole('button', { name: 'Phone Order' }));
+    const phoneDialog = screen.getByRole('dialog', { name: 'Phone Order' });
+    await userEvent.type(within(phoneDialog).getByRole('textbox', { name: 'Customer Name' }), 'John');
+    await userEvent.type(within(phoneDialog).getByRole('textbox', { name: 'Phone Number' }), '506-555-1234');
+    await userEvent.click(within(phoneDialog).getByRole('combobox', { name: 'Pickup' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Scheduled Time' }));
+    fireEvent.change(await screen.findByLabelText(/Scheduled Pickup/), { target: { value: '2027-01-15T12:30' } });
+    await userEvent.click(within(phoneDialog).getByRole('button', { name: 'Confirm Phone Order' }));
+
+    const pickupDialog = await screen.findByRole('dialog', { name: 'Pickup Orders' });
+    expect(within(pickupDialog).getByText(/John · #1045/)).toBeVisible();
+    expect(within(pickupDialog).getByText(/UNPAID/)).toBeVisible();
+    expect(paymentWrites).toBe(0);
+    expect(print).not.toHaveBeenCalled();
+    await userEvent.click(within(pickupDialog).getByRole('button', { name: 'Open' }));
+    expect(within(pickupDialog).getByRole('button', { name: 'Cancel & Rebuild' })).toBeVisible();
+    await userEvent.click(within(pickupDialog).getByRole('button', { name: 'Mark Ready' }));
+    await waitFor(() => expect(within(pickupDialog).getByText(/Kitchen: READY/)).toBeVisible());
+    await userEvent.click(within(pickupDialog).getByRole('button', { name: 'Pay Order' }));
+    const paymentDialog = await screen.findByRole('dialog', { name: 'Take payment' });
+    await userEvent.click(within(paymentDialog).getByRole('button', { name: 'Exact' }));
+    await userEvent.click(within(paymentDialog).getByRole('button', { name: 'Record payment' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Complete order' }));
+    await waitFor(() => expect(completionWrites).toBe(1));
+    expect(paymentWrites).toBe(1);
+    expect(await screen.findByText('Order completed')).toBeVisible();
+    expect(screen.getByText('TOKEN 1045')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'New Order' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pickup Orders' }));
+    const paidPickupDialog = await screen.findByRole('dialog', { name: 'Pickup Orders' });
+    expect(within(paidPickupDialog).getByText(/CA\$13\.80/)).toHaveTextContent(/READY.*PAID/);
+    await userEvent.click(within(paidPickupDialog).getByRole('button', { name: 'Open' }));
+    await userEvent.click(within(paidPickupDialog).getByRole('button', { name: 'Mark Completed' }));
+    expect(await within(paidPickupDialog).findByText(/CA\$13\.80/)).toHaveTextContent(/COMPLETED.*PAID/);
+    await userEvent.click(within(paidPickupDialog).getByRole('tab', { name: 'Active' }));
+    await waitFor(() => expect(within(paidPickupDialog).getByText('There are no active pickup orders.')).toBeVisible());
   });
 });

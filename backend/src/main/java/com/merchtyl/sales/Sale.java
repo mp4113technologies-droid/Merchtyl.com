@@ -61,6 +61,31 @@ public class Sale extends BaseUuidEntity {
     @Column(name = "food_order_token", length = 16)
     private String foodOrderToken;
 
+    @Column(name = "phone_customer_name", length = 120)
+    private String phoneCustomerName;
+
+    @Column(name = "phone_number", length = 40)
+    private String phoneNumber;
+
+    @Column(name = "pickup_at")
+    private Instant pickupAt;
+
+    @Column(name = "pickup_asap", nullable = false)
+    private boolean pickupAsap;
+
+    @Column(name = "order_notes", length = 1000)
+    private String orderNotes;
+
+    @Column(name = "phone_confirmed_at")
+    private Instant phoneConfirmedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kitchen_status", length = 24)
+    private KitchenOrderStatus kitchenStatus;
+
+    @Column(name = "kitchen_updated_at")
+    private Instant kitchenUpdatedAt;
+
     @Column(nullable = false, length = 3)
     private String currencyCode;
 
@@ -213,6 +238,30 @@ public class Sale extends BaseUuidEntity {
         this.completedAt = completedAt;
     }
 
+    void confirmPhoneOrder(String customerName, String phoneNumber, Instant pickupAt, boolean asap,
+            String orderNotes, Instant confirmedAt) {
+        this.status = SaleStatus.PHONE_CONFIRMED;
+        this.phoneCustomerName = customerName;
+        this.phoneNumber = phoneNumber;
+        this.pickupAt = pickupAt;
+        this.pickupAsap = asap;
+        this.orderNotes = orderNotes;
+        this.phoneConfirmedAt = confirmedAt;
+        this.kitchenStatus = KitchenOrderStatus.PENDING;
+        this.kitchenUpdatedAt = confirmedAt;
+    }
+
+    void assignSettlementSession(RegisterSession session) {
+        this.registerSession = session;
+        this.register = session.getRegister();
+        if (session.getBusinessDay() != null) this.businessDate = session.getBusinessDay().getBusinessDate();
+    }
+
+    void updateKitchenStatus(KitchenOrderStatus status, Instant at) {
+        this.kitchenStatus = status;
+        this.kitchenUpdatedAt = at;
+    }
+
     void assignFoodOrderToken(String foodOrderToken) {
         if (this.foodOrderToken == null) {
             this.foodOrderToken = foodOrderToken;
@@ -264,6 +313,15 @@ public class Sale extends BaseUuidEntity {
     public String getFoodOrderToken() {
         return foodOrderToken;
     }
+
+    public String getPhoneCustomerName() { return phoneCustomerName; }
+    public String getPhoneNumber() { return phoneNumber; }
+    public Instant getPickupAt() { return pickupAt; }
+    public boolean isPickupAsap() { return pickupAsap; }
+    public String getOrderNotes() { return orderNotes; }
+    public Instant getPhoneConfirmedAt() { return phoneConfirmedAt; }
+    public KitchenOrderStatus getKitchenStatus() { return kitchenStatus; }
+    public Instant getKitchenUpdatedAt() { return kitchenUpdatedAt; }
 
     public String getCurrencyCode() {
         return currencyCode;

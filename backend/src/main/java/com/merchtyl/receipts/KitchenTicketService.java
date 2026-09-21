@@ -33,7 +33,9 @@ public class KitchenTicketService {
         if (sale.getRegister().getType() != RegisterType.FOOD_SERVICE) {
             throw new ConflictException("KITCHEN_TICKET_REQUIRES_FOOD_SERVICE_ORDER");
         }
-        if (sale.getStatus() != SaleStatus.COMPLETED
+        if (sale.getStatus() != SaleStatus.PHONE_CONFIRMED
+                && !(sale.getStatus() == SaleStatus.CANCELLED && sale.getPhoneConfirmedAt() != null)
+                && sale.getStatus() != SaleStatus.COMPLETED
                 && sale.getStatus() != SaleStatus.PARTIALLY_REFUNDED
                 && sale.getStatus() != SaleStatus.REFUNDED) {
             throw new ConflictException("KITCHEN_TICKET_REQUIRES_COMPLETED_ORDER");
@@ -47,13 +49,18 @@ public class KitchenTicketService {
                 sale.getFoodOrderToken(),
                 sale.getStore().getName(),
                 sale.getRegister().getName(),
-                sale.getCompletedBy().getDisplayName(),
-                sale.getCompletedAt(),
-                null,
+                (sale.getCompletedBy() == null ? sale.getCreatedBy() : sale.getCompletedBy()).getDisplayName(),
+                sale.getPhoneConfirmedAt() == null ? sale.getCompletedAt() : sale.getPhoneConfirmedAt(),
+                sale.getPhoneConfirmedAt() == null ? null : "PHONE ORDER",
                 null,
                 sale.getItems().stream().map(this::item).toList(),
-                null,
-                reprint);
+                sale.getOrderNotes(),
+                reprint,
+                sale.getPhoneCustomerName(),
+                sale.getPickupAt(),
+                sale.isPickupAsap(),
+                sale.getKitchenStatus(),
+                sale.getStore().getTimezone());
     }
 
     private KitchenTicketItemDto item(SaleItem item) {

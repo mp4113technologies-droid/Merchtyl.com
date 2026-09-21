@@ -96,6 +96,15 @@ public class Store extends BaseUuidEntity {
     @Column(name = "kitchen_display_name", length = 180)
     private String kitchenDisplayName;
 
+    @Column(name = "auto_print_asap_kitchen_tickets", nullable = false)
+    private boolean autoPrintAsapKitchenTickets;
+
+    @Column(name = "auto_print_scheduled_kitchen_tickets", nullable = false)
+    private boolean autoPrintScheduledKitchenTickets;
+
+    @Column(name = "scheduled_kitchen_print_lead_minutes", nullable = false)
+    private int scheduledKitchenPrintLeadMinutes = 10;
+
     protected Store() {
     }
 
@@ -221,6 +230,15 @@ public class Store extends BaseUuidEntity {
     public Set<StoreCapability> getCapabilities() { return Set.copyOf(capabilities); }
     public String getKitchenDisplayName() { return kitchenDisplayName; }
     public boolean isFoodServiceEnabled() { return capabilities.contains(StoreCapability.FOOD_SERVICE); }
+    public boolean isAutoPrintAsapKitchenTickets() { return autoPrintAsapKitchenTickets; }
+    public boolean isAutoPrintScheduledKitchenTickets() { return autoPrintScheduledKitchenTickets; }
+    public int getScheduledKitchenPrintLeadMinutes() { return scheduledKitchenPrintLeadMinutes; }
+
+    void configureKitchenPrinting(boolean autoPrintAsap, boolean autoPrintScheduled, int leadMinutes) {
+        this.autoPrintAsapKitchenTickets = autoPrintAsap;
+        this.autoPrintScheduledKitchenTickets = autoPrintScheduled;
+        this.scheduledKitchenPrintLeadMinutes = leadMinutes;
+    }
 
     public String getCode() {
         return code;

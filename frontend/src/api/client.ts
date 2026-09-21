@@ -2055,8 +2055,17 @@ export function getEffectiveStoreCapability(token: string, storeId: string, capa
 }
 
 export function getFoodServiceConfiguration(token: string, storeId: string) {
-  return request<{ storeId: string; restaurantPosEnabled: boolean; kitchenDisplayName: string }>(`/stores/${storeId}/food-service/configuration`, undefined, token);
+  return request<import('./types').FoodServiceConfiguration>(`/stores/${storeId}/food-service/configuration`, undefined, token);
 }
+
+export function updateFoodServiceConfiguration(token: string, storeId: string, payload: Pick<import('./types').FoodServiceConfiguration, 'autoPrintAsapKitchenTickets'|'autoPrintScheduledKitchenTickets'|'scheduledKitchenPrintLeadMinutes'>) {
+  return request<import('./types').FoodServiceConfiguration>(`/stores/${storeId}/food-service/configuration`, { method:'PUT', body:JSON.stringify(payload) }, token);
+}
+
+export function listKitchenPrintJobs(token:string, storeId:string) { return request<import('./types').KitchenPrintJob[]>(`/stores/${storeId}/kitchen-print-jobs`, undefined, token); }
+export function claimKitchenPrintJob(token:string, storeId:string, clientId:string) { return request<import('./types').KitchenPrintDispatch|undefined>(`/stores/${storeId}/kitchen-print-jobs/claim`, {method:'POST',body:JSON.stringify({clientId})}, token); }
+export function printKitchenJobNow(token:string, saleId:string, clientId:string) { return request<import('./types').KitchenPrintDispatch>(`/sales/${saleId}/kitchen-print-job/print-now`, {method:'POST',body:JSON.stringify({clientId})}, token); }
+export function acknowledgeKitchenPrintJob(token:string, jobId:string, clientId:string, success:boolean, error?:string) { return request<import('./types').KitchenPrintJob>(`/kitchen-print-jobs/${jobId}/acknowledge`, {method:'POST',body:JSON.stringify({clientId,success,error})}, token); }
 
 export function listFoodMenuCategories(token: string, storeId: string) { return request<import('./types').FoodMenuCategory[]>(`/stores/${storeId}/food-menu/categories`, undefined, token); }
 export function createFoodMenuCategory(token: string, storeId: string, payload: import('./types').FoodMenuCategoryPayload) { return request<import('./types').FoodMenuCategory>(`/stores/${storeId}/food-menu/categories`, { method: 'POST', body: JSON.stringify(payload) }, token); }
@@ -2762,6 +2771,30 @@ export function resumeSale(token: string, id: string) {
   return request<Sale>(`/sales/${id}/resume`, {
     method: 'POST'
   }, token);
+}
+
+export function confirmPhoneOrder(token: string, id: string, payload: { customerName: string; phoneNumber?: string; asap: boolean; pickupLocalDateTime?: string; orderNotes?: string }) {
+  return request<Sale>(`/sales/${id}/phone-order/confirm`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function listPickupOrders(token: string, storeId: string) {
+  return request<Sale[]>(`/sales/phone-orders/pickup${queryString({ storeId })}`, undefined, token);
+}
+
+export function listPickupOrderHistory(token: string, registerSessionId: string) {
+  return request<Sale[]>(`/sales/phone-orders/history${queryString({ registerSessionId })}`, undefined, token);
+}
+
+export function claimPhoneOrder(token: string, id: string, registerSessionId: string) {
+  return request<Sale>(`/sales/${id}/phone-order/claim`, { method: 'POST', body: JSON.stringify({ registerSessionId }) }, token);
+}
+
+export function cancelPhoneOrder(token: string, id: string, registerSessionId: string) {
+  return request<Sale>(`/sales/${id}/phone-order/cancel`, { method: 'POST', body: JSON.stringify({ registerSessionId }) }, token);
+}
+
+export function updateKitchenOrderStatus(token: string, id: string, status: 'PENDING' | 'IN_PROGRESS' | 'READY' | 'COMPLETED') {
+  return request<Sale>(`/sales/${id}/kitchen-status`, { method: 'POST', body: JSON.stringify({ status }) }, token);
 }
 
 export function cancelSale(token: string, id: string) {
