@@ -2232,6 +2232,25 @@ export type KitchenTicket = {
   storeTimezone?: string | null;
 };
 
+export type FoodServiceConfiguration = {
+  storeId: string;
+  restaurantPosEnabled: boolean;
+  kitchenDisplayName: string;
+  timezone: string;
+  autoPrintAsapKitchenTickets: boolean;
+  autoPrintScheduledKitchenTickets: boolean;
+  scheduledKitchenPrintLeadMinutes: number;
+};
+
+export type KitchenPrintJob = {
+  id: string; storeId: string; orderId: string; type: 'KITCHEN_TICKET'; scheduledAt: string;
+  status: 'SCHEDULED'|'DISPATCHED'|'PRINTED'|'FAILED'|'CANCELLED'; attemptCount: number;
+  origin: 'AUTOMATIC'|'MANUAL'; lastAttemptAt?: string|null; printedAt?: string|null;
+  lastError?: string|null; version: number;
+};
+
+export type KitchenPrintDispatch = { job: KitchenPrintJob; ticket: KitchenTicket; printerRole: 'KITCHEN'; copies: number };
+
 export type Receipt = {
   id: string;
   saleId: string;

@@ -2055,8 +2055,17 @@ export function getEffectiveStoreCapability(token: string, storeId: string, capa
 }
 
 export function getFoodServiceConfiguration(token: string, storeId: string) {
-  return request<{ storeId: string; restaurantPosEnabled: boolean; kitchenDisplayName: string }>(`/stores/${storeId}/food-service/configuration`, undefined, token);
+  return request<import('./types').FoodServiceConfiguration>(`/stores/${storeId}/food-service/configuration`, undefined, token);
 }
+
+export function updateFoodServiceConfiguration(token: string, storeId: string, payload: Pick<import('./types').FoodServiceConfiguration, 'autoPrintAsapKitchenTickets'|'autoPrintScheduledKitchenTickets'|'scheduledKitchenPrintLeadMinutes'>) {
+  return request<import('./types').FoodServiceConfiguration>(`/stores/${storeId}/food-service/configuration`, { method:'PUT', body:JSON.stringify(payload) }, token);
+}
+
+export function listKitchenPrintJobs(token:string, storeId:string) { return request<import('./types').KitchenPrintJob[]>(`/stores/${storeId}/kitchen-print-jobs`, undefined, token); }
+export function claimKitchenPrintJob(token:string, storeId:string, clientId:string) { return request<import('./types').KitchenPrintDispatch|undefined>(`/stores/${storeId}/kitchen-print-jobs/claim`, {method:'POST',body:JSON.stringify({clientId})}, token); }
+export function printKitchenJobNow(token:string, saleId:string, clientId:string) { return request<import('./types').KitchenPrintDispatch>(`/sales/${saleId}/kitchen-print-job/print-now`, {method:'POST',body:JSON.stringify({clientId})}, token); }
+export function acknowledgeKitchenPrintJob(token:string, jobId:string, clientId:string, success:boolean, error?:string) { return request<import('./types').KitchenPrintJob>(`/kitchen-print-jobs/${jobId}/acknowledge`, {method:'POST',body:JSON.stringify({clientId,success,error})}, token); }
 
 export function listFoodMenuCategories(token: string, storeId: string) { return request<import('./types').FoodMenuCategory[]>(`/stores/${storeId}/food-menu/categories`, undefined, token); }
 export function createFoodMenuCategory(token: string, storeId: string, payload: import('./types').FoodMenuCategoryPayload) { return request<import('./types').FoodMenuCategory>(`/stores/${storeId}/food-menu/categories`, { method: 'POST', body: JSON.stringify(payload) }, token); }

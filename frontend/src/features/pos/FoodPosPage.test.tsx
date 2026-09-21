@@ -397,7 +397,7 @@ describe('Food POS', () => {
     expect(screen.getByRole('button', { name: 'Checkout' })).toHaveTextContent(/CA\$13\.80/);
   });
 
-  it('confirms an unpaid scheduled phone order, sends it to kitchen, marks ready, and pays the same order at pickup', async () => {
+  it('confirms an unpaid scheduled phone order without printing early, marks ready, and pays the same order at pickup', async () => {
     const print = vi.spyOn(receiptPrinter, 'printHtmlWithFallback').mockResolvedValue({ printer: 'BROWSER' });
     const menuItem = { id: 'menu-item', storeId, productId, displayName: 'Burger', price: 12, categoryId: 'food', available: true, modifierGroups: [] };
     const priced = { ...sale(1), status: 'PENDING_PAYMENT', items: [{ ...sale(1).items[0], productName: 'Burger', foodMenuItemId: 'menu-item', foodMenuItemName: 'Burger', foodMenuModifiers: [] }] };
@@ -441,9 +441,7 @@ describe('Food POS', () => {
     expect(within(pickupDialog).getByText(/John · #1045/)).toBeVisible();
     expect(within(pickupDialog).getByText(/UNPAID/)).toBeVisible();
     expect(paymentWrites).toBe(0);
-    expect(print).toHaveBeenCalledTimes(1);
-    expect(String(print.mock.calls[0][0])).toContain('PHONE ORDER');
-    expect(String(print.mock.calls[0][0])).toContain('PICKUP: 12:30 PM');
+    expect(print).not.toHaveBeenCalled();
     await userEvent.click(within(pickupDialog).getByRole('button', { name: 'Open' }));
     expect(within(pickupDialog).getByRole('button', { name: 'Cancel & Rebuild' })).toBeVisible();
     await userEvent.click(within(pickupDialog).getByRole('button', { name: 'Mark Ready' }));

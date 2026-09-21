@@ -113,6 +113,8 @@ public class SaleService {
     @Autowired
     private DiscountEngine discountEngine;
     @Autowired
+    private com.merchtyl.receipts.KitchenPrintJobService kitchenPrintJobService;
+    @Autowired
     private TaxCategoryRepository taxCategoryRepository;
     @Autowired(required = false)
     private com.merchtyl.features.FeatureService featureService;
@@ -647,7 +649,9 @@ public class SaleService {
         if (sale.getFoodOrderToken() == null) sale.assignFoodOrderToken(foodOrderTokenService.nextToken(sale.getRegisterSession()));
         sale.confirmPhoneOrder(cleanRequired(request.customerName(), "customerName"), cleanOptional(request.phoneNumber()),
                 pickupAt, request.asap(), cleanOptional(request.orderNotes()), now);
-        return SaleResponse.from(save(sale));
+        Sale saved = save(sale);
+        if (kitchenPrintJobService != null) kitchenPrintJobService.scheduleForConfirmedOrder(saved);
+        return SaleResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
@@ -703,6 +707,7 @@ public class SaleService {
         Instant now = Instant.now(clock);
         sale.updateKitchenStatus(KitchenOrderStatus.CANCELLED, now);
         sale.cancel(now);
+        if (kitchenPrintJobService != null) kitchenPrintJobService.cancelForOrder(sale.getId());
         return SaleResponse.from(save(sale));
     }
 

@@ -11,8 +11,8 @@ import { Alert, Box, Button, Card, CardActionArea, CardContent, Checkbox, Chip, 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { cancelPhoneOrder, checkoutSaleCart, claimPhoneOrder, completeSale, confirmPhoneOrder, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, holdSale, listActiveStoreDiscounts, listFoodMenuCategories, listFoodMenuItems, listPickupOrderHistory, listPickupOrders, listSales, listStores, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt, resumeSale, updateKitchenOrderStatus } from '../../api/client';
-import type { FoodComponentSelectionState, FoodMenuItem, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
+import { acknowledgeKitchenPrintJob, cancelPhoneOrder, checkoutSaleCart, claimKitchenPrintJob, claimPhoneOrder, completeSale, confirmPhoneOrder, getCurrentRegisterSession, getFoodServiceConfiguration, getKitchenTicket, getSaleReceipt, holdSale, listActiveStoreDiscounts, listFoodMenuCategories, listFoodMenuItems, listKitchenPrintJobs, listPickupOrderHistory, listPickupOrders, listSales, listStores, printKitchenJobNow, recordSalePayment, reprintKitchenTicket, reprintSaleReceipt, resumeSale, updateFoodServiceConfiguration, updateKitchenOrderStatus } from '../../api/client';
+import type { FoodComponentSelectionState, FoodMenuItem, KitchenPrintDispatch, KitchenTicket, PaymentMethod, ReceiptDocument, Sale } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { posTokens } from '../../app/theme';
@@ -73,6 +73,10 @@ export function FoodPosPage() {
   const [heldOrdersOpen, setHeldOrdersOpen] = React.useState(false);
   const [phoneOrderOpen, setPhoneOrderOpen] = React.useState(false);
   const [pickupOrdersOpen, setPickupOrdersOpen] = React.useState(false);
+  const [printSettingsOpen,setPrintSettingsOpen]=React.useState(false);
+  const [autoPrintAsap,setAutoPrintAsap]=React.useState(false);
+  const [autoPrintScheduled,setAutoPrintScheduled]=React.useState(false);
+  const [printLeadMinutes,setPrintLeadMinutes]=React.useState(10);
   const [pickupOrdersView, setPickupOrdersView] = React.useState<'active' | 'history'>('active');
   const [selectedPickupOrder, setSelectedPickupOrder] = React.useState<Sale | null>(null);
   const [phoneCustomerName, setPhoneCustomerName] = React.useState('');
@@ -85,6 +89,7 @@ export function FoodPosPage() {
   const [customQuantity,setCustomQuantity]=React.useState(1);
   const [printStates, setPrintStates] = React.useState<FoodPrintStates>(freshPrintStates);
   const restoredSessionRef = React.useRef<string | null>(null);
+  const kitchenPrintInFlight = React.useRef(false);
   const deviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const permitted = currentUser?.permissions?.includes('FOOD_POS_ACCESS') ?? false;
   const current = useQuery({ queryKey: ['register-session', 'food-pos', deviceIdentifier], queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier }), enabled: permitted });
@@ -99,6 +104,38 @@ export function FoodPosPage() {
   const heldOrders = useQuery({ queryKey: ['sales', 'held', current.data?.id], queryFn: async () => listSales(await getValidAccessToken(), { registerSessionId: current.data?.id, status: 'HELD', size: 50 }), enabled: permitted && heldOrdersOpen && Boolean(current.data?.id) });
   const pickupOrders = useQuery({ queryKey: ['sales', 'phone-pickup', current.data?.storeId], queryFn: async () => listPickupOrders(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && pickupOrdersOpen && Boolean(current.data?.storeId), refetchInterval: 15_000 });
   const pickupHistory = useQuery({ queryKey: ['sales', 'phone-pickup-history', current.data?.id], queryFn: async () => listPickupOrderHistory(await getValidAccessToken(), current.data?.id ?? ''), enabled: permitted && pickupOrdersOpen && pickupOrdersView === 'history' && Boolean(current.data?.id) });
+  const kitchenPrintJobs = useQuery({ queryKey: ['kitchen-print-jobs', current.data?.storeId], queryFn: async () => listKitchenPrintJobs(await getValidAccessToken(), current.data?.storeId ?? ''), enabled: permitted && pickupOrdersOpen && Boolean(current.data?.storeId), refetchInterval: 15_000 });
+  React.useEffect(()=>{if(configuration.data){setAutoPrintAsap(configuration.data.autoPrintAsapKitchenTickets??false);setAutoPrintScheduled(configuration.data.autoPrintScheduledKitchenTickets??false);setPrintLeadMinutes(configuration.data.scheduledKitchenPrintLeadMinutes??10);}},[configuration.data]);
+  const savePrintSettings=useMutation({mutationFn:async()=>updateFoodServiceConfiguration(await getValidAccessToken(),current.data?.storeId??'',{autoPrintAsapKitchenTickets:autoPrintAsap,autoPrintScheduledKitchenTickets:autoPrintScheduled,scheduledKitchenPrintLeadMinutes:printLeadMinutes}),onSuccess:async()=>{setPrintSettingsOpen(false);await queryClient.invalidateQueries({queryKey:['food-service',current.data?.storeId]});}});
+
+  async function deliverKitchenDispatch(dispatch: KitchenPrintDispatch) {
+    const token=await getValidAccessToken();
+    try {
+      await printKitchenTicket(dispatch.ticket, loadReceiptPrinterPreferences());
+      await acknowledgeKitchenPrintJob(token, dispatch.job.id, deviceIdentifier, true);
+    } catch (error) {
+      const detail=error instanceof Error?error.message:String(error);
+      try { await acknowledgeKitchenPrintJob(token, dispatch.job.id, deviceIdentifier, false, detail); } catch { /* The stale-claim recovery job keeps this retryable. */ }
+      throw error;
+    } finally {
+      await queryClient.invalidateQueries({queryKey:['kitchen-print-jobs', current.data?.storeId]});
+    }
+  }
+
+  React.useEffect(() => {
+    if (!permitted || !current.data?.storeId || current.data.registerType !== 'FOOD_SERVICE') return;
+    let stopped=false;
+    const poll=async()=>{
+      if(stopped||kitchenPrintInFlight.current)return;
+      kitchenPrintInFlight.current=true;
+      try { const dispatch=await claimKitchenPrintJob(await getValidAccessToken(),current.data!.storeId,deviceIdentifier); if(dispatch)await deliverKitchenDispatch(dispatch); }
+      catch { /* Failed transport is persisted by acknowledgement and shown in Pickup Orders. */ }
+      finally { kitchenPrintInFlight.current=false; }
+    };
+    void poll();
+    const timer=window.setInterval(()=>void poll(),10_000);
+    return()=>{stopped=true;window.clearInterval(timer);};
+  },[permitted,current.data?.storeId,current.data?.registerType,deviceIdentifier]);
 
   React.useEffect(() => {
     if (current.data?.registerType === 'RETAIL') navigate('/pos', { replace: true });
@@ -234,8 +271,12 @@ export function FoodPosPage() {
     mutationFn: async () => {
       const priced = sale ?? await calculateOrder();
       const confirmed = await confirmPhoneOrder(await getValidAccessToken(), priced.id, { customerName: phoneCustomerName.trim(), phoneNumber: phoneNumber.trim() || undefined, asap: pickupAsap, pickupLocalDateTime: pickupAsap ? undefined : pickupLocalDateTime, orderNotes: orderNotes.trim() || undefined });
-      const ticket = await getKitchenTicket(await getValidAccessToken(), confirmed.id);
-      await printKitchenTicket(ticket, loadReceiptPrinterPreferences());
+      if(!kitchenPrintInFlight.current){
+        kitchenPrintInFlight.current=true;
+        try { const dispatch=await claimKitchenPrintJob(await getValidAccessToken(),confirmed.storeId,deviceIdentifier); if(dispatch)await deliverKitchenDispatch(dispatch); }
+        catch { /* Confirmation remains successful; the durable job remains visible and retryable. */ }
+        finally { kitchenPrintInFlight.current=false; }
+      }
       return confirmed;
     },
     onSuccess: async () => {
@@ -248,6 +289,7 @@ export function FoodPosPage() {
   const claimPhone = useMutation({ mutationFn: async (order: Sale) => claimPhoneOrder(await getValidAccessToken(), order.id, current.data?.id ?? ''), onSuccess: (claimed) => { setSale(claimed); setCart([]); setSelectedPickupOrder(null); setPickupOrdersOpen(false); setPaymentOpen(true); } });
   const cancelPhone = useMutation({ mutationFn: async ({ order, rebuild }: { order: Sale; rebuild: boolean }) => { const cancelled = await cancelPhoneOrder(await getValidAccessToken(), order.id, current.data?.id ?? ''); const ticket = await getKitchenTicket(await getValidAccessToken(), order.id); await printKitchenTicket(ticket, loadReceiptPrinterPreferences()); return { cancelled, order, rebuild }; }, onSuccess: async ({ order, rebuild }) => { setSelectedPickupOrder(null); if (rebuild) { startNewOrder(); setPhoneCustomerName(order.phoneCustomerName ?? ''); setPhoneNumber(order.phoneNumber ?? ''); setPickupAsap(order.pickupAsap ?? true); setPickupLocalDateTime(''); setOrderNotes(order.orderNotes ?? ''); setPickupOrdersOpen(false); } await queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] }); } });
   const kitchenProgress = useMutation({ mutationFn: async ({ order, status }: { order: Sale; status: 'IN_PROGRESS' | 'READY' | 'COMPLETED' }) => updateKitchenOrderStatus(await getValidAccessToken(), order.id, status), onSuccess: async (updated) => { if (updated.kitchenStatus === 'COMPLETED') { setSelectedPickupOrder(null); setPickupOrdersView('history'); } else setSelectedPickupOrder(updated); await Promise.all([queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup'] }), queryClient.invalidateQueries({ queryKey: ['sales', 'phone-pickup-history'] })]); } });
+  const printNow = useMutation({ mutationFn: async (order:Sale) => { const dispatch=await printKitchenJobNow(await getValidAccessToken(),order.id,deviceIdentifier); await deliverKitchenDispatch(dispatch); return dispatch.job; } });
   const receipt = useQuery({ queryKey: ['food-pos-receipt', sale?.id], queryFn: async () => getSaleReceipt(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const kitchenTicket = useQuery({ queryKey: ['food-pos-kitchen-ticket', sale?.id], queryFn: async () => getKitchenTicket(await getValidAccessToken(), sale?.id ?? ''), enabled: sale?.status === 'COMPLETED' });
   const busy = checkout.isPending || payment.isPending || complete.isPending || hold.isPending || resume.isPending || confirmPhone.isPending || claimPhone.isPending;
@@ -391,7 +433,7 @@ export function FoodPosPage() {
 
         <Paper component="section" aria-label="Restaurant menu" variant="outlined" sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto auto minmax(0, 1fr)', borderRadius: 2 }}>
           <Box sx={{ px: 1.5, pt: 1.25, pb: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: '#fff' }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}><Box minWidth={0}><Typography variant="h5" fontWeight={850} noWrap>{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography variant="body2" color="text.secondary" noWrap>{store?.name} · {current.data?.assignedCashierDisplayName ?? currentUser?.displayName ?? 'Cashier'}</Typography></Box><Stack direction="row" spacing={1} alignItems="center"><Button variant="outlined" startIcon={<RestoreIcon />} onClick={() => setHeldOrdersOpen(true)} sx={{ minHeight: 44 }}>Held Orders</Button><Button variant="outlined" onClick={() => setPickupOrdersOpen(true)} sx={{ minHeight: 44 }}>Pickup Orders</Button><Button variant="contained" disabled={!cart.length || busy} onClick={() => setPhoneOrderOpen(true)} sx={{ minHeight: 44 }}>Phone Order</Button>{(current.isLoading || configuration.isLoading) ? <CircularProgress size={26} aria-label="Loading Food POS" /> : null}</Stack></Stack>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}><Box minWidth={0}><Typography variant="h5" fontWeight={850} noWrap>{configuration.data?.kitchenDisplayName ?? 'Restaurant / Kitchen POS'}</Typography><Typography variant="body2" color="text.secondary" noWrap>{store?.name} · {current.data?.assignedCashierDisplayName ?? currentUser?.displayName ?? 'Cashier'}</Typography></Box><Stack direction="row" spacing={1} alignItems="center">{currentUser?.permissions?.includes('STORE_UPDATE')?<Button variant="text" onClick={()=>setPrintSettingsOpen(true)}>Print Settings</Button>:null}<Button variant="outlined" startIcon={<RestoreIcon />} onClick={() => setHeldOrdersOpen(true)} sx={{ minHeight: 44 }}>Held Orders</Button><Button variant="outlined" onClick={() => setPickupOrdersOpen(true)} sx={{ minHeight: 44 }}>Pickup Orders</Button><Button variant="contained" disabled={!cart.length || busy} onClick={() => setPhoneOrderOpen(true)} sx={{ minHeight: 44 }}>Phone Order</Button>{(current.isLoading || configuration.isLoading) ? <CircularProgress size={26} aria-label="Loading Food POS" /> : null}</Stack></Stack>
             <Stack direction="row" spacing={0.75} aria-label="Food categories" sx={{ overflowX: 'auto', pb: 0.5, scrollbarWidth: 'thin' }}>
               {activeCategories.map(category => <Button key={category.id} variant={categoryId === category.id ? 'contained' : 'outlined'} onClick={() => setCategoryId(category.id)} sx={{ minHeight: 48, minWidth: 112, flexShrink: 0, fontWeight: 800 }}>{category.name}</Button>)}
             </Stack>
@@ -461,18 +503,29 @@ export function FoodPosPage() {
             {(pickupOrdersView === 'active' ? pickupOrders : pickupHistory).isLoading ? <CircularProgress aria-label="Loading pickup orders" /> : null}
             {pickupOrdersView === 'active' && pickupOrders.isSuccess && pickupOrders.data.length === 0 ? <Alert severity="info">There are no active pickup orders.</Alert> : null}
             {pickupOrdersView === 'history' && pickupHistory.isSuccess && pickupHistory.data.length === 0 ? <Alert severity="info">No pickup orders were completed during the current BusinessDay.</Alert> : null}
-            {(pickupOrdersView === 'active' ? pickupOrders.data ?? [] : pickupHistory.data ?? []).map((order) => <Paper key={order.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}><Box><Typography fontWeight={850}>{order.pickupAsap ? 'ASAP' : new Date(order.pickupAt ?? '').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: store?.timezone })} · {order.phoneCustomerName} · #{order.foodOrderToken}</Typography><Typography variant="body2">{money(order.totalAmount, order.currencyCode)} · <strong>{kitchenStatusLabel(order)}</strong> · {paymentStatusLabel(order)}</Typography></Box><Button variant={pickupOrdersView === 'active' ? 'contained' : 'outlined'} onClick={() => setSelectedPickupOrder(order)}>Open</Button></Stack></Paper>)}
+            {(pickupOrdersView === 'active' ? pickupOrders.data ?? [] : pickupHistory.data ?? []).map((order) => { const job=kitchenPrintJobs.data?.find(value=>value.orderId===order.id); return <Paper key={order.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}><Box><Typography fontWeight={850}>{order.pickupAsap ? 'ASAP' : new Date(order.pickupAt ?? '').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: store?.timezone })} · {order.phoneCustomerName} · #{order.foodOrderToken}</Typography><Typography variant="body2">{money(order.totalAmount, order.currencyCode)} · <strong>{kitchenStatusLabel(order)}</strong> · {paymentStatusLabel(order)}</Typography>{job?<Typography variant="caption" color={job.status==='FAILED'?'error.main':'text.secondary'}>Kitchen print: {job.status==='SCHEDULED'?new Date(job.scheduledAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',timeZone:store?.timezone}):job.status==='PRINTED'?'Printed':job.status==='FAILED'?'Print failed':job.status==='DISPATCHED'?'Sending to kitchen':job.status}</Typography>:null}</Box><Button variant={pickupOrdersView === 'active' ? 'contained' : 'outlined'} onClick={() => setSelectedPickupOrder(order)}>Open</Button></Stack></Paper>; })}
           </Stack> : <Stack spacing={2}>
-            <Box><Typography variant="h6" fontWeight={900}>Order #{selectedPickupOrder.foodOrderToken}</Typography><Typography>{selectedPickupOrder.phoneCustomerName}{selectedPickupOrder.phoneNumber ? ` · ${selectedPickupOrder.phoneNumber}` : ''}</Typography><Typography>Pickup: {selectedPickupOrder.pickupAsap ? 'ASAP' : new Date(selectedPickupOrder.pickupAt ?? '').toLocaleString([], { timeZone: store?.timezone })}</Typography><Typography>Kitchen: {kitchenStatusLabel(selectedPickupOrder)} · Payment: {paymentStatusLabel(selectedPickupOrder)}</Typography></Box>
+            <Box><Typography variant="h6" fontWeight={900}>Order #{selectedPickupOrder.foodOrderToken}</Typography><Typography>{selectedPickupOrder.phoneCustomerName}{selectedPickupOrder.phoneNumber ? ` · ${selectedPickupOrder.phoneNumber}` : ''}</Typography><Typography>Pickup: {selectedPickupOrder.pickupAsap ? 'ASAP' : new Date(selectedPickupOrder.pickupAt ?? '').toLocaleString([], { timeZone: store?.timezone })}</Typography><Typography>Kitchen: {kitchenStatusLabel(selectedPickupOrder)} · Payment: {paymentStatusLabel(selectedPickupOrder)}</Typography>{(() => { const job=kitchenPrintJobs.data?.find(value=>value.orderId===selectedPickupOrder.id); return job?<Typography color={job.status==='FAILED'?'error.main':'text.secondary'}>Print: {job.status}{job.status==='SCHEDULED'?` at ${new Date(job.scheduledAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',timeZone:store?.timezone})}`:''}{job.lastError?` — ${job.lastError}`:''}</Typography>:null; })()}</Box>
             <Divider />
             {selectedPickupOrder.items.map(item => <Box key={item.id}><Stack direction="row" justifyContent="space-between"><Typography fontWeight={800}>{item.quantity} × {item.productName}{item.foodMenuItemVariantName ? ` — ${item.foodMenuItemVariantName}` : ''}</Typography><Typography>{money(item.lineTotal, selectedPickupOrder.currencyCode)}</Typography></Stack>{item.foodMenuModifiers?.map(value => <Typography key={value} variant="caption" display="block">{value}</Typography>)}{item.foodMenuComponents?.map(value => <Typography key={value.componentId} variant="caption" display="block">{value.state === 'REMOVED' ? 'NO' : 'EXTRA'} {value.name}</Typography>)}</Box>)}
             <Divider /><MoneyRow label="Subtotal" value={money(selectedPickupOrder.subtotalAmount, selectedPickupOrder.currencyCode)} /><MoneyRow label="Discount" value={money(-selectedPickupOrder.discountAmount, selectedPickupOrder.currencyCode)} /><MoneyRow label="Tax" value={money(selectedPickupOrder.estimatedTaxAmount, selectedPickupOrder.currencyCode)} /><MoneyRow strong label="Total" value={money(selectedPickupOrder.totalAmount, selectedPickupOrder.currencyCode)} />
             {selectedPickupOrder.orderNotes ? <Alert severity="info">Order Notes: {selectedPickupOrder.orderNotes}</Alert> : null}
             {pickupOrdersView === 'active' ? <Alert severity="info">To change a confirmed order safely, cancel and rebuild it. The kitchen receives a cancellation ticket before the replacement is confirmed.</Alert> : null}
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap"><Button onClick={() => setSelectedPickupOrder(null)}>Back</Button>{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus === 'PENDING' ? <Button variant="outlined" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'IN_PROGRESS' })}>Start Preparing</Button> : null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus !== 'READY' ? <Button variant="outlined" color="success" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'READY' })}>Mark Ready</Button> : null}{pickupOrdersView === 'active' && paymentStatusLabel(selectedPickupOrder) !== 'PAID' ? <><Button color="error" onClick={() => cancelPhone.mutate({ order: selectedPickupOrder, rebuild: false })} disabled={cancelPhone.isPending}>Cancel Order</Button><Button color="warning" onClick={() => cancelPhone.mutate({ order: selectedPickupOrder, rebuild: true })} disabled={cancelPhone.isPending}>Cancel &amp; Rebuild</Button><Button variant="contained" onClick={() => claimPhone.mutate(selectedPickupOrder)} disabled={claimPhone.isPending}>Pay Order</Button></> : null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus === 'READY' && paymentStatusLabel(selectedPickupOrder) === 'PAID' ? <Button variant="contained" color="success" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'COMPLETED' })} disabled={kitchenProgress.isPending}>Mark Completed</Button> : null}</Stack>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap"><Button onClick={() => setSelectedPickupOrder(null)}>Back</Button>{pickupOrdersView==='active'&&!kitchenPrintJobs.data?.some(value=>value.orderId===selectedPickupOrder.id&&['PRINTED','DISPATCHED','CANCELLED'].includes(value.status))?<Button variant="outlined" onClick={()=>printNow.mutate(selectedPickupOrder)} disabled={printNow.isPending}>{kitchenPrintJobs.data?.some(value=>value.orderId===selectedPickupOrder.id&&value.status==='FAILED')?'Retry Print':'Print Now'}</Button>:null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus === 'PENDING' ? <Button variant="outlined" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'IN_PROGRESS' })}>Start Preparing</Button> : null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus !== 'READY' ? <Button variant="outlined" color="success" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'READY' })}>Mark Ready</Button> : null}{pickupOrdersView === 'active' && paymentStatusLabel(selectedPickupOrder) !== 'PAID' ? <><Button color="error" onClick={() => cancelPhone.mutate({ order: selectedPickupOrder, rebuild: false })} disabled={cancelPhone.isPending}>Cancel Order</Button><Button color="warning" onClick={() => cancelPhone.mutate({ order: selectedPickupOrder, rebuild: true })} disabled={cancelPhone.isPending}>Cancel &amp; Rebuild</Button><Button variant="contained" onClick={() => claimPhone.mutate(selectedPickupOrder)} disabled={claimPhone.isPending}>Pay Order</Button></> : null}{pickupOrdersView === 'active' && selectedPickupOrder.kitchenStatus === 'READY' && paymentStatusLabel(selectedPickupOrder) === 'PAID' ? <Button variant="contained" color="success" onClick={() => kitchenProgress.mutate({ order: selectedPickupOrder, status: 'COMPLETED' })} disabled={kitchenProgress.isPending}>Mark Completed</Button> : null}</Stack>
           </Stack>}
         </DialogContent>
         <DialogActions><Button onClick={() => { setPickupOrdersOpen(false); setSelectedPickupOrder(null); }}>Close</Button></DialogActions>
+      </Dialog>
+      <Dialog open={printSettingsOpen} onClose={()=>!savePrintSettings.isPending&&setPrintSettingsOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Scheduled Kitchen Printing</DialogTitle>
+        <DialogContent dividers><Stack spacing={2}>
+          <FormControlLabel control={<Checkbox checked={autoPrintAsap} onChange={event=>setAutoPrintAsap(event.target.checked)}/>} label="ASAP orders: Print kitchen ticket immediately"/>
+          <FormControlLabel control={<Checkbox checked={autoPrintScheduled} onChange={event=>setAutoPrintScheduled(event.target.checked)}/>} label="Automatically print scheduled orders"/>
+          <TextField type="number" label="Print before pickup (minutes)" value={printLeadMinutes} disabled={!autoPrintScheduled} inputProps={{min:0,max:1440}} onChange={event=>setPrintLeadMinutes(Number(event.target.value))}/>
+          <Typography variant="caption" color="text.secondary">Times use the store timezone: {configuration.data?.timezone}. The server persists and releases due jobs; this screen does not control the schedule.</Typography>
+          {savePrintSettings.isError?<Alert severity="error">Kitchen print settings could not be saved.</Alert>:null}
+        </Stack></DialogContent>
+        <DialogActions><Button onClick={()=>setPrintSettingsOpen(false)}>Cancel</Button><Button variant="contained" disabled={savePrintSettings.isPending||printLeadMinutes<0||printLeadMinutes>1440||!Number.isInteger(printLeadMinutes)} onClick={()=>savePrintSettings.mutate()}>Save</Button></DialogActions>
       </Dialog>
       <Dialog open={heldOrdersOpen} onClose={() => !resume.isPending && setHeldOrdersOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Held Orders</DialogTitle>
