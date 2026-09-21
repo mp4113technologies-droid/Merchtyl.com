@@ -524,7 +524,7 @@ describe('POS pages', () => {
     expect(document.body).toHaveStyle({ overflow: 'auto' });
   });
 
-  it('adds a permitted custom item and sends its explicit non-catalog checkout shape', async () => {
+  it('uses dedicated custom-item actions and keeps their explicit tax treatments isolated', async () => {
     let checkoutBody: any;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
@@ -539,11 +539,106 @@ describe('POS pages', () => {
     });
 
     render(<App initialEntries={['/pos']} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Custom Item' }));
-    await userEvent.type(screen.getByRole('textbox', { name: 'Item Name / Description' }), 'Grocery Item');
+    expect(await screen.findByRole('button', { name: 'Taxable Custom Item' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Non-Taxable Custom Item' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Custom Item' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Taxable Custom Item' }));
+    let dialog = screen.getByRole('dialog', { name: 'Add Custom Item' });
+    expect(within(dialog).queryByRole('combobox', { name: 'Tax Treatment' })).not.toBeInTheDocument();
+    let description = within(dialog).getByRole('textbox', { name: 'Item Description' });
+    let price = within(dialog).getByRole('spinbutton', { name: 'Price (USD)' });
+    expect(description).toHaveValue('Custom Taxable Item');
+    expect(price).toHaveFocus();
+    expect(within(dialog).getByRole('spinbutton', { name: 'Quantity' })).toHaveValue(1);
+    await userEvent.clear(description);
+    await userEvent.type(description, 'Photocopy');
+    await userEvent.type(price, '4.25');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Custom Item' })).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Taxable Custom Item' }));
+    dialog = screen.getByRole('dialog', { name: 'Add Custom Item' });
+    description = within(dialog).getByRole('textbox', { name: 'Item Description' });
+    price = within(dialog).getByRole('spinbutton', { name: 'Price (USD)' });
+    expect(description).toHaveValue('Custom Taxable Item');
+    expect(price).toHaveValue(null);
+    expect(price).toHaveFocus();
+    await userEvent.type(price, '7.99');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Custom Item' })).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Non-Taxable Custom Item' }));
+    dialog = screen.getByRole('dialog', { name: 'Add Custom Item' });
+    description = within(dialog).getByRole('textbox', { name: 'Item Description' });
+    price = within(dialog).getByRole('spinbutton', { name: 'Price (USD)' });
+    expect(description).toHaveValue('Custom Non-Taxable Item');
+    expect(price).toHaveValue(null);
+    expect(price).toHaveFocus();
+    expect(within(dialog).getByRole('spinbutton', { name: 'Quantity' })).toHaveValue(1);
+    expect(within(dialog).queryByRole('combobox', { name: 'Tax Treatment' })).not.toBeInTheDocument();
+    await userEvent.clear(description);
+    await userEvent.type(description, 'Miscellaneous Merchandise');
+    await userEvent.type(price, '8.50');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Custom Item' })).not.toBeInTheDocument());
+
+    expect(await screen.findByText('Custom Taxable Item')).toBeInTheDocument();
+    expect(await screen.findByText('Miscellaneous Merchandise')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Calculate Tax' }));
+    await waitFor(() => expect(checkoutBody).toBeDefined());
+    expect(checkoutBody.items).toEqual([
+      { lineType: 'CUSTOM_ITEM', description: 'Custom Taxable Item', unitPrice: 7.99, quantity: 1, taxTreatment: 'TAXABLE' },
+      { lineType: 'CUSTOM_ITEM', description: 'Miscellaneous Merchandise', unitPrice: 8.5, quantity: 1, taxTreatment: 'NON_TAXABLE' }
+    ]);
+    expect(checkoutBody.items.every((item: any) => item.productId === undefined)).toBe(true);
+  });
+
+  it('orders all five permitted POS actions in the shared action grid', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(),
+        permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+
+    const actionGrid = await screen.findByTestId('pos-action-grid');
+    await waitFor(() => expect(within(actionGrid).getAllByRole('button')).toHaveLength(5));
+    expect(within(actionGrid).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Taxable Custom Item',
+      'Non-Taxable Custom Item',
+      'Deposit Payout',
+      'Lottery Sold',
+      'Lottery Win'
+    ]);
+  });
+
+  it('preserves a custom item tax treatment while editing its other fields', async () => {
+    let checkoutBody: any;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['POS_CUSTOM_ITEM'] });
+      const common = commonApi(input);
+      if (common) return common;
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutBody = JSON.parse(String(init.body));
+        return jsonResponse(sale());
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Non-Taxable Custom Item' }));
+    const description = screen.getByRole('textbox', { name: 'Item Description' });
+    await userEvent.clear(description);
+    await userEvent.type(description, 'Grocery Item');
     await userEvent.type(screen.getByRole('spinbutton', { name: 'Price (USD)' }), '7.99');
-    await userEvent.click(screen.getByRole('combobox', { name: 'Tax Treatment' }));
-    await userEvent.click(screen.getByRole('option', { name: 'Taxable' }));
     await userEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
     expect(await screen.findByText('Grocery Item')).toBeInTheDocument();
     expect(screen.getAllByText('Custom Item').length).toBeGreaterThan(0);
@@ -551,10 +646,9 @@ describe('POS pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Edit Grocery Item' }));
     const editDialog = screen.getByRole('dialog', { name: 'Edit Custom Item' });
     const editPrice = within(editDialog).getByRole('spinbutton', { name: 'Price (USD)' });
+    expect(within(editDialog).queryByRole('combobox', { name: 'Tax Treatment' })).not.toBeInTheDocument();
     await userEvent.clear(editPrice);
     await userEvent.type(editPrice, '8.50');
-    await userEvent.click(within(editDialog).getByRole('combobox', { name: 'Tax Treatment' }));
-    await userEvent.click(screen.getByRole('option', { name: 'Non-Taxable' }));
     await userEvent.click(within(editDialog).getByRole('button', { name: 'Update Item' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await userEvent.click(await screen.findByRole('button', { name: 'Calculate Tax' }));
@@ -568,6 +662,8 @@ describe('POS pages', () => {
     render(<App initialEntries={['/pos']} />);
     await screen.findByRole('heading', { name: 'Checkout' });
     expect(screen.queryByRole('button', { name: 'Custom Item' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Taxable Custom Item' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Non-Taxable Custom Item' })).not.toBeInTheDocument();
   });
 
   it('adds Lottery Sold to the cart without a device or immediate activity write', async () => {
