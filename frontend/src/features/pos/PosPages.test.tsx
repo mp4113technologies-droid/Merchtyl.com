@@ -763,7 +763,8 @@ describe('POS pages', () => {
     expect(checkoutBody.items.every((item: any) => item.productId === undefined)).toBe(true);
   });
 
-  it('reports checkout cart validation without claiming nonexistent highlighted fields', async () => {
+  it('recovers from checkout validation, permits cart edits, and checks out successfully', async () => {
+    let checkoutAttempts = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) return common;
@@ -772,12 +773,16 @@ describe('POS pages', () => {
         return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 2, active: true });
       }
       if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
-        return jsonResponse({
-          code: 'VALIDATION_FAILED',
-          message: 'Validation failed',
-          correlationId: 'corr-checkout-1',
-          violations: [{ field: 'items[0].quantity', code: 'NotNull', message: 'must not be null' }]
-        }, 400);
+        checkoutAttempts += 1;
+        if (checkoutAttempts === 1) {
+          return jsonResponse({
+            code: 'VALIDATION_FAILED',
+            message: 'Validation failed',
+            correlationId: 'corr-checkout-1',
+            violations: [{ field: 'items[0].quantity', code: 'NotNull', message: 'must not be null' }]
+          }, 400);
+        }
+        return jsonResponse(sale('DRAFT', 2));
       }
       return jsonResponse({}, 404);
     });
@@ -789,6 +794,14 @@ describe('POS pages', () => {
 
     expect(await screen.findByText('One or more cart items is missing required checkout information. Review the cart and try again.')).toBeInTheDocument();
     expect(screen.queryByText('Please review the highlighted fields and correct the information.')).not.toBeInTheDocument();
+    const barcode = screen.getByRole('textbox', { name: 'Barcode' });
+    expect(barcode).toBeEnabled();
+    await userEvent.type(barcode, '12345{enter}');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Decrease Coffee' })).toBeEnabled());
+    expect(screen.queryByText('One or more cart items is missing required checkout information. Review the cart and try again.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+    expect(await screen.findByRole('heading', { name: 'Take payment' })).toBeInTheDocument();
+    expect(screen.queryByText('One or more cart items is missing required checkout information. Review the cart and try again.')).not.toBeInTheDocument();
   });
 
   it('checks out a mixed retail cart with lottery and an explicitly non-taxable custom line', async () => {
@@ -1649,6 +1662,57 @@ describe('POS pages', () => {
     await userEvent.type(barcode, '12345{enter}');
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
   });
+
+  it('resets transaction state and accepts a product immediately after each of 25 completed sales', async () => {
+    let checkoutCount = 0;
+    let barcodeCalls = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
+        barcodeCalls += 1;
+        return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      }
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutCount += 1;
+        const id = `00000000-0000-0000-0002-${String(checkoutCount).padStart(12, '0')}`;
+        return jsonResponse({ ...sale(), id });
+      }
+      const paymentMatch = url.pathname.match(/\/api\/v1\/sales\/([^/]+)\/payments$/);
+      if (paymentMatch && init?.method === 'POST') {
+        return jsonResponse({ ...saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]), id: paymentMatch[1] });
+      }
+      const completeMatch = url.pathname.match(/\/api\/v1\/sales\/([^/]+)\/complete$/);
+      if (completeMatch && init?.method === 'POST') {
+        return jsonResponse({ ...saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)], 'COMPLETED'), id: completeMatch[1] });
+      }
+      const receiptMatch = url.pathname.match(/\/api\/v1\/sales\/([^/]+)\/receipt$/);
+      if (receiptMatch && init?.method === undefined) {
+        const response = receipt();
+        return jsonResponse({ ...response, saleId: receiptMatch[1], document: { ...response.document, saleId: receiptMatch[1] } });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    for (let order = 1; order <= 25; order += 1) {
+      const barcode = await screen.findByRole('textbox', { name: 'Barcode' });
+      expect(barcode).toBeEnabled();
+      await userEvent.type(barcode, '12345{enter}');
+      await waitFor(() => expect(barcodeCalls).toBe(order));
+      expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
+      await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Exact' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'New sale' }));
+      expect(await screen.findByText('Cart is empty')).toBeVisible();
+      expect(screen.queryByText('The checkout request is incomplete. Review the cart and try again.')).not.toBeInTheDocument();
+    }
+    expect(checkoutCount).toBe(25);
+  }, 120_000);
 
   it('reports auto-print failure without reversing a completed sale', async () => {
     window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({

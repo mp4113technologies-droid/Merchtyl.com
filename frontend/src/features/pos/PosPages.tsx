@@ -1022,6 +1022,7 @@ export function PosCartPage() {
   const saleId = searchParams.get('saleId');
   const [activeSale, setActiveSale] = React.useState<Sale | null>(null);
   const [cartItems, setCartItems] = React.useState<SaleItem[]>([]);
+  const transactionEpochRef = React.useRef(0);
   const cartRevisionRef = React.useRef(0);
   const openPaymentAfterQuoteRef = React.useRef(false);
   const checkoutClickStartedAtRef = React.useRef<number | null>(null);
@@ -1113,11 +1114,11 @@ export function PosCartPage() {
   });
 
   React.useEffect(() => {
-    if (saleQuery.data) {
+    if (saleId && saleQuery.data?.id === saleId) {
       setCartItems(saleQuery.data.items);
       rememberSale(saleQuery.data);
     }
-  }, [saleQuery.data]);
+  }, [saleId, saleQuery.data]);
 
   const productResults = useQuery({
     queryKey: ['products', 'pos-search', current.data?.storeId, submittedSearch],
@@ -1158,6 +1159,7 @@ export function PosCartPage() {
   function changeCart(update: (items: SaleItem[]) => SaleItem[]) {
     cartRevisionRef.current += 1;
     openPaymentAfterQuoteRef.current = false;
+    recalculateMutation.reset();
     setCartItems(update);
     if (activeSale && isPendingCheckoutStatus(activeSale.status) && activeSale.payments.length === 0) {
       void getValidAccessToken().then(token => cancelSale(token, activeSale.id)).catch(() => undefined);
@@ -1265,7 +1267,20 @@ export function PosCartPage() {
 
   function startNewSale() {
     const startedAt = performance.now();
+    transactionEpochRef.current += 1;
     cartRevisionRef.current += 1;
+    openPaymentAfterQuoteRef.current = false;
+    checkoutClickStartedAtRef.current = null;
+    paymentStartedAtRef.current = null;
+    completionStartedAtRef.current = null;
+    barcodeStartedAtRef.current = null;
+    barcodeMutation.reset();
+    recalculateMutation.reset();
+    holdMutation.reset();
+    cancelMutation.reset();
+    paymentMutation.reset();
+    completeMutation.reset();
+    reprintReceiptMutation.reset();
     setCartItems([]);
     setDiscount(null);
     setDiscountOpen(false);
@@ -1278,6 +1293,11 @@ export function PosCartPage() {
     setUnknownBarcode(null);
     setInventoryWarning(null);
     setPendingAgeVerification(null);
+    closeCustomItem();
+    setLotteryAction(null);
+    setDepositPayoutOpen(false);
+    setLotteryNotice(null);
+    setPayoutConfirmationOpen(false);
     setReceiptPrintError(null);
     setDraftRecovered(false);
     completionKeyRef.current = null;
@@ -1376,15 +1396,17 @@ export function PosCartPage() {
 
   const barcodeMutation = useMutation({
     mutationFn: async (value: string) => {
+      const epoch = transactionEpochRef.current;
       barcodeStartedAtRef.current = performance.now();
       const token = await getValidAccessToken();
       const normalized = value.trim();
       posScanDebug('BARCODE_LOOKUP_STARTED', { barcode: normalized });
       if (!current.data?.storeId) throw new Error('Open a register before scanning products');
       const product = await lookupPosBarcode(token, normalized, current.data.storeId);
-      return product;
+      return { product, epoch };
     },
-    onSuccess: (product: PosBarcodeLookup) => {
+    onSuccess: ({ product, epoch }: { product: PosBarcodeLookup; epoch: number }) => {
+      if (epoch !== transactionEpochRef.current) return;
       posScanDebug('BARCODE_LOOKUP_RESPONSE', {
         productId: product.productId,
         variantId: product.variantId,
@@ -1431,6 +1453,7 @@ export function PosCartPage() {
   const recalculateMutation = useMutation({
     mutationFn: async () => {
       if (!current.data || cartItems.length === 0) throw new Error('Cart is empty');
+      const epoch = transactionEpochRef.current;
       const revision = cartRevisionRef.current;
       const sale = await checkoutSaleCart(await getValidAccessToken(), {
         registerSessionId: current.data.id, saleChannel: 'POS',
@@ -1441,10 +1464,10 @@ export function PosCartPage() {
           : { lineType: 'CATALOG_PRODUCT' as const, productId: item.productId ?? undefined, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified }),
         discount: discount ? (discount.definitionId ? {discountDefinitionId:discount.definitionId}:{type:discount.type,value:discount.value,reason:discount.reason||undefined}) : undefined
       });
-      return { sale, revision };
+      return { sale, revision, epoch };
     },
-    onSuccess: ({ sale, revision }) => {
-      if (revision !== cartRevisionRef.current) return;
+    onSuccess: ({ sale, revision, epoch }) => {
+      if (epoch !== transactionEpochRef.current || revision !== cartRevisionRef.current) return;
       setCartItems(sale.items);
       rememberSale(sale);
       if (openPaymentAfterQuoteRef.current && sale.totalAmount > 0) {
@@ -1496,9 +1519,13 @@ export function PosCartPage() {
       if (!activeSale) {
         throw new Error('No active sale');
       }
-      return recordSalePayment(await getValidAccessToken(), activeSale.id, payment);
+      const epoch = transactionEpochRef.current;
+      const requestedSaleId = activeSale.id;
+      const sale = await recordSalePayment(await getValidAccessToken(), requestedSaleId, payment);
+      return { sale, epoch, requestedSaleId };
     },
-    onSuccess: (sale) => {
+    onSuccess: ({ sale, epoch, requestedSaleId }) => {
+      if (epoch !== transactionEpochRef.current || sale.id !== requestedSaleId) return;
       rememberSale(sale);
       setPaymentDialogOpen(!sale.paymentComplete);
       if (paymentStartedAtRef.current !== null) {
@@ -1515,9 +1542,13 @@ export function PosCartPage() {
       }
       const key = completionKeyRef.current ?? completionKey();
       completionKeyRef.current = key;
-      return completeSale(await getValidAccessToken(), activeSale.id, key);
+      const epoch = transactionEpochRef.current;
+      const requestedSaleId = activeSale.id;
+      const sale = await completeSale(await getValidAccessToken(), requestedSaleId, key);
+      return { sale, epoch, requestedSaleId };
     },
-    onSuccess: (sale) => {
+    onSuccess: ({ sale, epoch, requestedSaleId }) => {
+      if (epoch !== transactionEpochRef.current || sale.id !== requestedSaleId) return;
       completionKeyRef.current = null;
       automaticPrintSaleIdRef.current = sale.id;
       setPaymentDialogOpen(false);
