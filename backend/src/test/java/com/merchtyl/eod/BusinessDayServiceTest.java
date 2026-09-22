@@ -653,6 +653,7 @@ class BusinessDayServiceTest {
         BusinessDayOperationalStateResponse response = service.operationalState(storeId, authentication);
 
         assertThat(response.currentBusinessDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(response.nextBusinessDateAt()).isEqualTo(Instant.parse("2026-09-02T03:00:00Z"));
         assertThat(response.currentBusinessDay()).isNull();
         assertThat(response.previousBusinessDay().id()).isEqualTo(dayId);
         assertThat(response.state()).isEqualTo(BusinessDayOperationalState.HISTORICAL_CLOSED);
@@ -697,6 +698,26 @@ class BusinessDayServiceTest {
         assertThat(response.currentBusinessDay().id()).isEqualTo(dayId);
         assertThat(response.state()).isEqualTo(BusinessDayOperationalState.CLOSED_TODAY);
         assertThat(response.availableAction()).isEqualTo(BusinessDayAvailableAction.REOPEN);
+    }
+
+    @Test
+    void openCurrentDayIsResolvedOnlyForTheStoreLocalDate() {
+        useClock(Clock.fixed(Instant.parse("2026-09-21T03:01:00Z"), ZoneOffset.UTC));
+        when(stores.findById(storeId)).thenReturn(Optional.of(store));
+        when(store.getTimezone()).thenReturn("America/Moncton");
+        when(day.getBusinessDate()).thenReturn(LocalDate.of(2026, 9, 21));
+        when(day.getStatus()).thenReturn(BusinessDayStatus.OPEN);
+        when(businessDays.findByStore_IdAndBusinessDate(storeId, LocalDate.of(2026, 9, 21))).thenReturn(Optional.of(day));
+        when(businessDays.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId)).thenReturn(Optional.of(day));
+        stubResponseFields();
+
+        BusinessDayOperationalStateResponse response = service.operationalState(storeId, authentication);
+
+        assertThat(response.currentBusinessDate()).isEqualTo(LocalDate.of(2026, 9, 21));
+        assertThat(response.nextBusinessDateAt()).isEqualTo(Instant.parse("2026-09-22T03:00:00Z"));
+        assertThat(response.currentBusinessDay().businessDate()).isEqualTo(LocalDate.of(2026, 9, 21));
+        assertThat(response.state()).isEqualTo(BusinessDayOperationalState.OPEN);
+        verify(businessDays).findByStore_IdAndBusinessDate(storeId, LocalDate.of(2026, 9, 21));
     }
 
     @Test

@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class TaxEngineTest {
@@ -91,6 +92,28 @@ class TaxEngineTest {
         assertThat(contextCaptor.getValue().pricesIncludeTax()).isTrue();
         assertThat(contextCaptor.getValue().currencyCode()).isEqualTo("CAD");
         assertThat(contextCaptor.getValue().discountAmount()).isEqualByComparingTo("3.00");
+    }
+
+    @Test
+    void calculateDoesNotReloadProductWhenCheckoutSuppliesResolvedTaxCategory() {
+        UUID storeId = UUID.fromString("00000000-0000-0000-0000-000000000601");
+        UUID productId = UUID.fromString("00000000-0000-0000-0000-000000000602");
+        UUID categoryId = UUID.fromString("00000000-0000-0000-0000-000000000701");
+        Store store = mock(Store.class);
+        TaxRuleEvaluationResponse evaluation = new TaxRuleEvaluationResponse(List.of(), List.of(), List.of(), false, false, false,
+                IncludedPriceBehavior.USE_RATE_SETTING, TaxRoundingStrategy.HALF_UP, List.of());
+        TaxCalculationResponse calculated = response(storeId, productId, categoryId, null, null);
+        when(storeRepository.findById(storeId)).thenReturn(Optional.of(store));
+        when(taxCategoryRepository.existsById(categoryId)).thenReturn(true);
+        when(taxRuleEvaluator.evaluate(any())).thenReturn(evaluation);
+        when(taxCalculator.calculate(any(), any())).thenReturn(calculated);
+
+        TaxCalculationResponse result = taxEngine.calculate(new TaxCalculationRequest(
+                storeId, null, null, productId, categoryId, false, LocalDate.of(2026, 7, 22), "POS",
+                new BigDecimal("10.00"), BigDecimal.ONE, BigDecimal.ZERO, false, "CAD"), null);
+
+        assertThat(result).isEqualTo(calculated);
+        verify(productRepository, never()).findById(any());
     }
 
     private static Product product(UUID taxCategoryId) {

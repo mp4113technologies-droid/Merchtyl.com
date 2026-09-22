@@ -141,6 +141,7 @@ import { MobileManagementRouteGuard, MobilePortalGuard } from './MobileAccessGua
 import { PublicComingSoonPage } from '../features/public/PublicComingSoonPage';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import { activeSessionAllowsPos, posRouteForRegisterType, type PosRegisterType } from '../features/pos/posRouting';
+import { useBusinessDayBoundaryRefresh } from '../features/eod/useBusinessDayBoundaryRefresh';
 import {
   NewPlatformMerchantPage,
   PlatformAuditPage,
@@ -284,7 +285,7 @@ function PosLayout() {
 
   return (
     <ThemeProvider theme={posTheme}>
-      <Box sx={{ width: '100%', minWidth: 0, minHeight: '100dvh', bgcolor: 'background.default' }}>
+      <Box data-testid="pos-viewport" sx={{ width: '100%', minWidth: 0, height: '100dvh', minHeight: 0, overflow: 'hidden', bgcolor: 'background.default' }}>
         <Box component="header" sx={{ height: 56, px: { xs: 1, sm: 2 }, background: `linear-gradient(100deg, ${posTokens.colors.navyDark}, ${posTokens.colors.navy})`, color: '#fff', display: 'flex', gap: { xs: 0.75, sm: 1.5 }, alignItems: 'center', overflow: 'hidden' }}>
           <Button component={Link} to="/store-menu" color="inherit" size="small" startIcon={<ArrowBackIcon />} sx={{ flexShrink: 0, '&:hover': { bgcolor: 'rgba(255,255,255,.1)' } }}>
             Back to Store Menu
@@ -308,7 +309,7 @@ function PosLayout() {
             <Typography variant="caption" noWrap sx={{ display: { xs: 'none', lg: 'block' }, color: 'rgba(255,255,255,.75)' }}>{currentUser?.displayName ?? session?.displayName}</Typography>
           </Stack>
         </Box>
-        <Box component="main" sx={{ p: { xs: 1, md: 2 }, minWidth: 0, minHeight: 'calc(100dvh - 56px)' }}>
+        <Box component="main" sx={{ p: { xs: 1, md: 2 }, minWidth: 0, height: 'calc(100dvh - 56px)', minHeight: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
           <Outlet />
         </Box>
       </Box>
@@ -371,8 +372,11 @@ function StoreMenuPage() {
   const businessDay = useQuery({
     queryKey: ['business-day', 'operational-state', selectedStoreId],
     queryFn: async () => getBusinessDayOperationalState(await getValidAccessToken(), selectedStoreId),
-    enabled: canViewBusinessDay && Boolean(selectedStoreId)
+    enabled: canViewBusinessDay && Boolean(selectedStoreId),
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always'
   });
+  useBusinessDayBoundaryRefresh(businessDay.data?.nextBusinessDateAt, businessDay.refetch);
   const startBusinessDay = useMutation({
     mutationFn: async () => openBusinessDay(await getValidAccessToken(), { storeId: selectedStoreId }),
     onSuccess: async () => {

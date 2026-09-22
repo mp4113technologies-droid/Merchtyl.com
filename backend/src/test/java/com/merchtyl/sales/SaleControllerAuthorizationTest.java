@@ -87,6 +87,36 @@ class SaleControllerAuthorizationTest {
               }]
             }
             """;
+    private static final String MIXED_RETAIL_CHECKOUT_JSON = """
+            {
+              "registerSessionId": "00000000-0000-0000-0000-000000000903",
+              "saleChannel": "POS",
+              "items": [
+                {
+                  "lineType": "CATALOG_PRODUCT",
+                  "productId": "00000000-0000-0000-0000-000000000906",
+                  "quantity": 1
+                },
+                {
+                  "lineType": "CATALOG_PRODUCT",
+                  "productId": "00000000-0000-0000-0000-000000000908",
+                  "quantity": 1
+                },
+                {
+                  "lineType": "LOTTERY_SOLD",
+                  "unitPrice": 5.00,
+                  "quantity": 1
+                },
+                {
+                  "lineType": "CUSTOM_ITEM",
+                  "description": "Custom Non-Taxable Item",
+                  "unitPrice": 4.25,
+                  "taxTreatment": "NON_TAXABLE",
+                  "quantity": 1
+                }
+              ]
+            }
+            """;
 
     @Autowired
     MockMvc mockMvc;
@@ -129,6 +159,26 @@ class SaleControllerAuthorizationTest {
         verify(saleService).checkout(request.capture(), any());
         org.assertj.core.api.Assertions.assertThat(request.getValue().items().getFirst().productId()).isNull();
         org.assertj.core.api.Assertions.assertThat(request.getValue().items().getFirst().foodMenuItemId()).isEqualTo(ITEM_ID);
+    }
+
+    @Test
+    void mixedRetailCheckoutRequestPreservesEveryLineClassification() throws Exception {
+        when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.PENDING_PAYMENT));
+
+        mockMvc.perform(post("/api/v1/sales/checkout")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(MIXED_RETAIL_CHECKOUT_JSON))
+                .andExpect(status().isCreated());
+
+        var request = org.mockito.ArgumentCaptor.forClass(SaleCheckoutRequest.class);
+        verify(saleService).checkout(request.capture(), any());
+        org.assertj.core.api.Assertions.assertThat(request.getValue().items())
+                .extracting(SaleCheckoutItemRequest::resolvedLineType)
+                .containsExactly(SaleLineType.CATALOG_PRODUCT, SaleLineType.CATALOG_PRODUCT,
+                        SaleLineType.LOTTERY_SOLD, SaleLineType.CUSTOM_ITEM);
+        org.assertj.core.api.Assertions.assertThat(request.getValue().items().getLast().taxTreatment())
+                .isEqualTo(CustomItemTaxTreatment.NON_TAXABLE);
     }
 
     @Test

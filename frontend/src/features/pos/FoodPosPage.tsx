@@ -351,7 +351,7 @@ export function FoodPosPage() {
       (candidate, status, error) => setPrintStates((states) => ({ ...states, [candidate]: { status, error } })));
   }
 
-  if (sale?.status === 'COMPLETED') return <Stack spacing={3} sx={{ maxWidth: 700 }}>
+  if (sale?.status === 'COMPLETED') return <Stack spacing={3} sx={{ maxWidth: 700, height: '100%', minHeight: 0, overflowY: 'auto' }}>
     <Typography variant="h4">Order completed</Typography>
     <Alert severity="success">Order {sale.foodOrderToken ?? ''} completed successfully. Printing does not affect payment or inventory.</Alert>
     <Typography variant="h3" fontWeight={900}>TOKEN {sale.foodOrderToken ?? '…'}</Typography>
@@ -367,7 +367,7 @@ export function FoodPosPage() {
   </Stack>;
 
   return (
-    <Box data-testid="restaurant-pos-shell" sx={{ height: 'calc(100dvh - 88px)', minHeight: 0, minWidth: 0, overflow: 'hidden', color: posTokens.colors.text }}>
+    <Box data-testid="restaurant-pos-shell" sx={{ height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden', color: posTokens.colors.text }}>
       <Box sx={{ height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: { xs: 'minmax(340px, 38%) minmax(0, 1fr)' }, gap: 1.25 }}>
         <Paper component="section" aria-label="Current order" variant="outlined" sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr) auto', borderRadius: 2 }}>
           <Box sx={{ px: 1.75, py: 1.25, bgcolor: posTokens.colors.navy, color: '#fff' }}>

@@ -59,8 +59,12 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.slf4j.MDC;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -74,6 +78,7 @@ import java.util.UUID;
 
 @Service
 public class SaleService {
+    private static final Logger log = LoggerFactory.getLogger(SaleService.class);
     private static final int MONEY_SCALE = 2;
     private static final int QUANTITY_SCALE = 4;
     private static final int MAX_PAGE_SIZE = 100;
@@ -192,9 +197,11 @@ public class SaleService {
 
     @Transactional
     public SaleResponse checkout(SaleCheckoutRequest request, Authentication authentication) {
+        long started = System.nanoTime();
         User actor = actor(authentication);
         RegisterSession session = findOpenSession(request.registerSessionId());
         validateUserCanUseSession(actor, session, authentication);
+        long contextResolved = System.nanoTime();
         Sale sale = new Sale(
                 session.getStore(), session.getRegister(), session, actor, null,
                 session.getBusinessDay() == null
@@ -282,12 +289,15 @@ public class SaleService {
                     resolved.productCategoryId(), resolved.menuItemId(), resolved.menuItemVariantId(), resolved.menuCategoryId(), item.getQuantity(), unitPrice,
                     product.hasCapability(com.merchtyl.product.ProductCapability.ALLOW_DISCOUNT)));
         }
+        long linesResolved = System.nanoTime();
         ResolvedDiscount resolvedDiscount = resolveCheckoutDiscount(sale, request.discount());
         BigDecimal automaticDiscount=applyAutomaticMultiBuy(sale, session, promotionLines, actor,resolvedDiscount!=null);
         BigDecimal checkoutDiscount = automaticDiscount.add(applyCheckoutDiscount(sale, resolvedDiscount, discountLines, authentication));
         if (resolvedDiscount != null) sale.applyDiscountSnapshot(resolvedDiscount.definitionId(), resolvedDiscount.name(), resolvedDiscount.type(), resolvedDiscount.value(), resolvedDiscount.reason());
         recalculate(sale, authentication);
+        long totalsCalculated = System.nanoTime();
         Sale saved = save(sale);
+        long persisted = System.nanoTime();
         if (request.discount() != null) {
             BigDecimal subtotal = saved.getSubtotalAmount();
             saleAdjustmentRepository.save(new SaleAdjustment(saved, null, resolvedDiscount.type(), subtotal,
@@ -300,6 +310,12 @@ public class SaleService {
         }
         SaleResponse response = SaleResponse.from(saved);
         audit(actor, AuditAction.SALE_CHECKOUT_STARTED, response, "checkout cart items=" + request.items().size());
+        long finished = System.nanoTime();
+        log.debug("pos_checkout_timing sale={} lines={} context_ms={} resolve_lines_ms={} totals_ms={} persist_ms={} response_audit_ms={} total_ms={}",
+                response.id(), request.items().size(), elapsedMs(started, contextResolved), elapsedMs(contextResolved, linesResolved),
+                elapsedMs(linesResolved, totalsCalculated), elapsedMs(totalsCalculated, persisted), elapsedMs(persisted, finished),
+                elapsedMs(started, finished));
+        logAfterCommit("checkout", response.id(), started);
         return response;
     }
 
@@ -783,6 +799,7 @@ public class SaleService {
 
     @Transactional
     SaleResponse complete(UUID saleId, User actor, Authentication authentication) {
+        long started = System.nanoTime();
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
         requirePayableCheckout(sale);
@@ -794,6 +811,7 @@ public class SaleService {
         sale.getItems().stream().filter(SaleItem::isCatalogProduct)
                 .forEach(item -> saleItemHandlerRegistry.validate(item.validationRequest()));
         requireSufficientPayments(sale);
+        long validated = System.nanoTime();
 
         Instant completedAt = Instant.now(clock);
         List<SaleItem> items = sale.getItems();
@@ -802,6 +820,7 @@ public class SaleService {
             if (item.isCatalogProduct()) deductInventory(sale, item, completedAt, authentication);
         }
         appendCashLedgerEntries(sale, actor, completedAt);
+        long financialPostingFinished = System.nanoTime();
         if (foodOrderTokenService != null
                 && sale.getRegister().getType() == RegisterType.FOOD_SERVICE
                 && sale.getFoodOrderToken() == null) {
@@ -809,12 +828,19 @@ public class SaleService {
         }
         sale.complete(actor, completedAt);
         SaleResponse response = SaleResponse.from(save(sale));
+        long persisted = System.nanoTime();
         audit(actor, AuditAction.SALE_COMPLETED, response, null);
+        long finished = System.nanoTime();
+        log.debug("pos_complete_timing sale={} lines={} validate_ms={} inventory_ledger_ms={} persist_ms={} audit_ms={} total_ms={}",
+                saleId, items.size(), elapsedMs(started, validated), elapsedMs(validated, financialPostingFinished),
+                elapsedMs(financialPostingFinished, persisted), elapsedMs(persisted, finished), elapsedMs(started, finished));
+        logAfterCommit("complete", saleId, started);
         return response;
     }
 
     @Transactional
     public SaleResponse recordPayment(UUID saleId, SalePaymentRequest request, Authentication authentication) {
+        long started = System.nanoTime();
         User actor = actor(authentication);
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
@@ -839,6 +865,7 @@ public class SaleService {
         if (method == null) {
             throw new BadRequestException("method is required");
         }
+        long validated = System.nanoTime();
         BigDecimal cashTendered = null;
         BigDecimal cashRoundingAdjustment = moneyZero();
         BigDecimal cashSettlementAmount = null;
@@ -879,7 +906,13 @@ public class SaleService {
                 Instant.now(clock));
         sale.addPayment(payment);
         SaleResponse response = SaleResponse.from(save(sale));
+        long persisted = System.nanoTime();
         audit(actor, AuditAction.SALE_PAYMENT_RECORDED, response, method.name());
+        long finished = System.nanoTime();
+        log.debug("pos_payment_timing sale={} method={} validate_ms={} persist_ms={} audit_ms={} total_ms={}",
+                saleId, method, elapsedMs(started, validated), elapsedMs(validated, persisted),
+                elapsedMs(persisted, finished), elapsedMs(started, finished));
+        logAfterCommit("payment", saleId, started);
         return response;
     }
 
@@ -1181,6 +1214,21 @@ public class SaleService {
         } catch (ArithmeticException exception) {
             throw new BadRequestException("quantity may include no more than 4 decimal places");
         }
+    }
+
+    private static long elapsedMs(long started, long finished) {
+        return (finished - started) / 1_000_000;
+    }
+
+    private static void logAfterCommit(String operation, UUID saleId, long started) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                log.debug("pos_{}_commit_timing sale={} total_to_commit_ms={}", operation, saleId,
+                        elapsedMs(started, System.nanoTime()));
+            }
+        });
     }
 
     private static BigDecimal normalizeMoney(BigDecimal value, String fieldName) {

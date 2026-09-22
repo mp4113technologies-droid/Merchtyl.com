@@ -55,7 +55,8 @@ describe('Food POS', () => {
     render(<App initialEntries={['/pos']} />);
 
     expect(await screen.findByText("Joe's Kitchen")).toBeInTheDocument();
-    expect(screen.getByTestId('restaurant-pos-shell')).toBeInTheDocument();
+    expect(screen.getByTestId('pos-viewport')).toHaveStyle({ height: '100dvh', overflow: 'hidden' });
+    expect(screen.getByTestId('restaurant-pos-shell')).toHaveStyle({ height: '100%', overflow: 'hidden' });
   });
 
   it('loads tiles and completes a taxed sale through shared checkout', async () => {

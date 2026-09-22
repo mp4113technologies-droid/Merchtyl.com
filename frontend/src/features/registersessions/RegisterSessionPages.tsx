@@ -59,6 +59,7 @@ import type { CashLedgerDirection, CashMovement, CashMovementType, Device, Regis
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { resolveBusinessDayAccess } from '../eod/businessDayAccess';
+import { useBusinessDayBoundaryRefresh } from '../eod/useBusinessDayBoundaryRefresh';
 import { posRouteForRegisterType } from '../pos/posRouting';
 
 export function registerDeviceEnforcementEnabled() {
@@ -880,8 +881,11 @@ export function RegisterOpenPage() {
   const businessDay = useQuery({
     queryKey: ['business-day', 'operational-state', selectedStoreId],
     queryFn: async () => getBusinessDayOperationalState(await getValidAccessToken(), selectedStoreId),
-    enabled: canUse && businessDayAccess.canView && Boolean(selectedStoreId)
+    enabled: canUse && businessDayAccess.canView && Boolean(selectedStoreId),
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always'
   });
+  useBusinessDayBoundaryRefresh(businessDay.data?.nextBusinessDateAt, businessDay.refetch);
   const startBusinessDay = useMutation({
     mutationFn: async () => openBusinessDay(await getValidAccessToken(), { storeId: selectedStoreId }),
     onSuccess: async () => {

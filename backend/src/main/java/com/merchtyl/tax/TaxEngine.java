@@ -71,8 +71,12 @@ public class TaxEngine {
 
         Store store = request.storeId() == null ? null : storeRepository.findById(request.storeId())
                 .orElseThrow(() -> new NotFoundException("Store not found"));
-        Product product = request.productId() == null ? null : productRepository.findById(request.productId())
-                .orElseThrow(() -> new NotFoundException("Product not found"));
+        // Checkout already supplies the resolved category snapshot. Avoid reloading the same
+        // catalog product for every line merely to rediscover that category.
+        Product product = request.productId() == null || request.productTaxCategoryId() != null
+                ? null
+                : productRepository.findById(request.productId())
+                        .orElseThrow(() -> new NotFoundException("Product not found"));
         UUID productTaxCategoryId = request.productTaxCategoryId() != null
                 ? request.productTaxCategoryId()
                 : product == null ? null : product.getTaxCategoryId();

@@ -288,14 +288,21 @@ public class BusinessDayService {
         requireStoreAccess(authentication, storeId);
         Store store = store(storeId);
         LocalDate currentBusinessDate = currentBusinessDate(store);
+        Instant nextBusinessDateAt = currentBusinessDate.plusDays(1)
+                .atStartOfDay(ZoneId.of(store.getTimezone()))
+                .toInstant();
         BusinessDay currentDay = businessDayRepository.findByStore_IdAndBusinessDate(storeId, currentBusinessDate).orElse(null);
         BusinessDay latestDay = businessDayRepository.findFirstByStore_IdOrderByBusinessDateDescOpenedAtDesc(storeId).orElse(null);
 
         if (currentDay != null) {
             boolean closed = currentDay.getStatus() == BusinessDayStatus.CLOSED;
+            log.debug("business_day_resolved store_id={} requested_date={} business_day_id={} business_day_date={} status={} state={}",
+                    storeId, currentBusinessDate, currentDay.getId(), currentDay.getBusinessDate(), currentDay.getStatus(),
+                    closed ? BusinessDayOperationalState.CLOSED_TODAY : BusinessDayOperationalState.OPEN);
             return new BusinessDayOperationalStateResponse(
                     storeId,
                     currentBusinessDate,
+                    nextBusinessDateAt,
                     BusinessDayResponse.from(currentDay),
                     latestDay != null && !latestDay.getId().equals(currentDay.getId()) ? BusinessDayResponse.from(latestDay) : null,
                     closed ? BusinessDayOperationalState.CLOSED_TODAY : BusinessDayOperationalState.OPEN,
@@ -306,20 +313,31 @@ public class BusinessDayService {
                 .findFirstByStore_IdAndStatusInOrderByBusinessDateDescOpenedAtDesc(storeId, ACTIVE_DAY_STATUSES)
                 .orElse(null);
         if (previousOpenDay != null) {
+            log.debug("business_day_resolved store_id={} requested_date={} business_day_id={} business_day_date={} status={} state={}",
+                    storeId, currentBusinessDate, previousOpenDay.getId(), previousOpenDay.getBusinessDate(), previousOpenDay.getStatus(),
+                    BusinessDayOperationalState.PREVIOUS_DAY_STILL_OPEN);
             return new BusinessDayOperationalStateResponse(
                     storeId,
                     currentBusinessDate,
+                    nextBusinessDateAt,
                     null,
                     BusinessDayResponse.from(previousOpenDay),
                     BusinessDayOperationalState.PREVIOUS_DAY_STILL_OPEN,
                     BusinessDayAvailableAction.NONE);
         }
+        BusinessDayOperationalState resolvedState = latestDay == null
+                ? BusinessDayOperationalState.NO_BUSINESS_DAY_TODAY
+                : BusinessDayOperationalState.HISTORICAL_CLOSED;
+        log.debug("business_day_resolved store_id={} requested_date={} business_day_id={} business_day_date={} status={} state={}",
+                storeId, currentBusinessDate, latestDay == null ? null : latestDay.getId(),
+                latestDay == null ? null : latestDay.getBusinessDate(), latestDay == null ? null : latestDay.getStatus(), resolvedState);
         return new BusinessDayOperationalStateResponse(
                 storeId,
                 currentBusinessDate,
+                nextBusinessDateAt,
                 null,
                 latestDay == null ? null : BusinessDayResponse.from(latestDay),
-                    latestDay == null ? BusinessDayOperationalState.NO_BUSINESS_DAY_TODAY : BusinessDayOperationalState.HISTORICAL_CLOSED,
+                    resolvedState,
                     BusinessDayAvailableAction.OPEN);
     }
 

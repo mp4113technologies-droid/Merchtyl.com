@@ -572,6 +572,7 @@ export type BusinessDay = {
 export type BusinessDayOperationalState = {
   storeId: string;
   currentBusinessDate: string;
+  nextBusinessDateAt: string;
   currentBusinessDay: BusinessDay | null;
   previousBusinessDay: BusinessDay | null;
   state: 'NO_BUSINESS_DAY_TODAY' | 'OPEN' | 'CLOSED_TODAY' | 'HISTORICAL_CLOSED' | 'PREVIOUS_DAY_STILL_OPEN';

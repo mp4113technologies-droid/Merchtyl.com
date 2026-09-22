@@ -140,6 +140,7 @@ enum BusinessDayAvailableAction {
 record BusinessDayOperationalStateResponse(
         UUID storeId,
         LocalDate currentBusinessDate,
+        Instant nextBusinessDateAt,
         BusinessDayResponse currentBusinessDay,
         BusinessDayResponse previousBusinessDay,
         BusinessDayOperationalState state,

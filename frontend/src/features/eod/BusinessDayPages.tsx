@@ -67,6 +67,7 @@ import type { BusinessDay, BusinessDayStatus, ClosingBlocker, ClosingValidation,
 import { useSession } from '../../app/session';
 import { RegisterReconciliationDialog } from '../registersessions/RegisterReconciliation';
 import { resolveBusinessDayAccess } from './businessDayAccess';
+import { useBusinessDayBoundaryRefresh } from './useBusinessDayBoundaryRefresh';
 
 function canManageBusinessDay(roles: UserRole[]) {
   return roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
@@ -284,8 +285,11 @@ export function BusinessDayPage() {
   const operationalState = useQuery({
     queryKey: ['business-day', 'operational-state', storeId],
     queryFn: async () => getBusinessDayOperationalState(await getValidAccessToken(), storeId),
-    enabled: allowed && Boolean(storeId)
+    enabled: allowed && Boolean(storeId),
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always'
   });
+  useBusinessDayBoundaryRefresh(operationalState.data?.nextBusinessDateAt, operationalState.refetch);
 
   const reconciliationDay = operationalState.data?.currentBusinessDay
     ?? (operationalState.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? operationalState.data?.previousBusinessDay : null);

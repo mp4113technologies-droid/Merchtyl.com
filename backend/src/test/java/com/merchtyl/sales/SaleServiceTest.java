@@ -588,8 +588,13 @@ class SaleServiceTest {
         when(register.getType()).thenReturn(RegisterType.RETAIL);
         TaxCategory exempt = new TaxCategory(null, "EXEMPT", "Exempt", TaxTreatment.EXEMPT, null, true);
         when(taxCategoryRepository.findByCodeIgnoreCase("EXEMPT")).thenReturn(Optional.of(exempt));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenAnswer(invocation -> {
+            TaxCalculationRequest request = invocation.getArgument(0);
+            BigDecimal net = request.unitPrice().multiply(request.quantity()).subtract(request.discountAmount());
+            return taxResponse(net, BigDecimal.ZERO.setScale(2), net);
+        });
 
-        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
                 new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Fresh Produce",
                         new BigDecimal("3.50"), CustomItemTaxTreatment.NON_TAXABLE, new BigDecimal("3"), false))), customItemAuth());
 
@@ -598,6 +603,10 @@ class SaleServiceTest {
         assertThat(request.getValue().productTaxCategoryId()).isEqualTo(exempt.getId());
         assertThat(request.getValue().unitPrice()).isEqualByComparingTo("3.50");
         assertThat(request.getValue().quantity()).isEqualByComparingTo("3.0000");
+        assertThat(response.items().getFirst().customItemTaxTreatment()).isEqualTo(CustomItemTaxTreatment.NON_TAXABLE);
+        assertThat(response.items().getFirst().estimatedTaxAmount()).isEqualByComparingTo("0.00");
+        assertThat(response.estimatedTaxAmount()).isEqualByComparingTo("0.00");
+        assertThat(response.totalAmount()).isEqualByComparingTo("10.50");
     }
 
     @Test

@@ -357,6 +357,32 @@ function emptySale(): Sale {
   };
 }
 
+function saleForCheckoutItems(items: any[]): Sale {
+  const mapped = items.map((item, index) => {
+    const signedAmount = (item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT' ? -1 : 1)
+      * (item.unitPrice ?? (item.productId === productId ? 10 : 20)) * item.quantity;
+    return {
+      ...sale().items[0],
+      id: `00000000-0000-0000-0001-${String(index + 1).padStart(12, '0')}`,
+      lineType: item.lineType,
+      productId: item.productId ?? null,
+      lineNumber: index + 1,
+      productName: item.description ?? (item.lineType === 'LOTTERY_SOLD' ? 'Lottery Sold' : item.lineType === 'LOTTERY_WIN' ? 'Lottery Win' : item.productId === productId ? 'Coffee' : 'Lottery Ticket Pack'),
+      productSku: item.productId ? (item.productId === productId ? 'COFFEE' : 'LOTTERY-PHYSICAL') : null,
+      customItemTaxTreatment: item.taxTreatment ?? null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice ?? (item.productId === productId ? 10 : 20),
+      lineSubtotal: signedAmount,
+      estimatedTaxAmount: item.taxTreatment === 'NON_TAXABLE' || item.lineType?.startsWith('LOTTERY_') ? 0 : 0.75,
+      lineTotal: signedAmount + (item.taxTreatment === 'NON_TAXABLE' || item.lineType?.startsWith('LOTTERY_') ? 0 : 0.75)
+    };
+  });
+  const subtotalAmount = mapped.reduce((sum, item) => sum + item.lineSubtotal, 0);
+  const estimatedTaxAmount = mapped.reduce((sum, item) => sum + item.estimatedTaxAmount, 0);
+  const totalAmount = subtotalAmount + estimatedTaxAmount;
+  return { ...sale(), items: mapped, subtotalAmount, estimatedTaxAmount, totalAmount, balanceDue: totalAmount };
+}
+
 function page<T>(content: T[]) {
   return {
     content,
@@ -491,6 +517,10 @@ describe('POS pages', () => {
 
     expect(await screen.findByText('Coffee — Large')).toBeInTheDocument();
     expect(screen.getAllByText('At checkout').length).toBeGreaterThan(0);
+    const balanceRow = screen.getByText('Balance due').parentElement;
+    expect(balanceRow).not.toBeNull();
+    expect(within(balanceRow!).getByText('—')).toBeInTheDocument();
+    expect(screen.getByText('Checkout calculates the authoritative total before payment.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
     await screen.findByRole('heading', { name: 'Take payment' });
     expect(fetchMock.mock.calls.filter(([input, init]) => {
@@ -503,6 +533,108 @@ describe('POS pages', () => {
     })).toBe(false);
   });
 
+  it('scans a 20-item cart with zero calculation requests and calculates the complete cart once', async () => {
+    let checkoutCalls = 0;
+    let barcodeCalls = 0;
+    let checkoutBody: any;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
+        barcodeCalls += 1;
+        return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 100, active: true });
+      }
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutCalls += 1;
+        checkoutBody = JSON.parse(String(init.body));
+        return jsonResponse(saleForCheckoutItems(checkoutBody.items));
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    const barcodeInput = await screen.findByRole('textbox', { name: 'Barcode' });
+    for (let scan = 1; scan <= 20; scan += 1) {
+      await userEvent.type(barcodeInput, '12345{enter}');
+      await waitFor(() => expect(barcodeCalls).toBe(scan));
+      await waitFor(() => expect(barcodeInput).toBeEnabled());
+    }
+    expect(checkoutCalls).toBe(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+    expect(await screen.findByRole('heading', { name: 'Take payment' })).toBeInTheDocument();
+    expect(checkoutCalls).toBe(1);
+    expect(checkoutBody.items).toEqual([expect.objectContaining({ productId, quantity: 20 })]);
+  });
+
+  it('calculates only on demand and reuses an unchanged authoritative calculation at checkout', async () => {
+    let checkoutCalls = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
+        return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      }
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutCalls += 1;
+        const body = JSON.parse(String(init.body));
+        return jsonResponse(saleForCheckoutItems(body.items));
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Barcode' }), '12345{enter}');
+    await screen.findByText('Coffee');
+    await new Promise(resolve => window.setTimeout(resolve, 350));
+    expect(checkoutCalls).toBe(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Calculate Tax' }));
+    const takePayment = await screen.findByRole('button', { name: 'Take payment' });
+    expect(checkoutCalls).toBe(1);
+
+    await userEvent.click(takePayment);
+    expect(await screen.findByRole('heading', { name: 'Take payment' })).toBeInTheDocument();
+    expect(checkoutCalls).toBe(1);
+  });
+
+  it('marks calculated totals stale after a quantity change without recalculating until checkout', async () => {
+    let checkoutCalls = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
+        return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      }
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutCalls += 1;
+        const body = JSON.parse(String(init.body));
+        return jsonResponse(saleForCheckoutItems(body.items));
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Barcode' }), '12345{enter}');
+    await screen.findByText('Coffee');
+    await userEvent.click(screen.getByRole('button', { name: 'Calculate Tax' }));
+    await screen.findByRole('button', { name: 'Take payment' });
+    expect(checkoutCalls).toBe(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Coffee' }));
+    expect(await screen.findByRole('button', { name: 'Checkout' })).toBeInTheDocument();
+    await new Promise(resolve => window.setTimeout(resolve, 350));
+    expect(checkoutCalls).toBe(1);
+    expect(within(screen.getByText('Balance due').parentElement!).getByText('—')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+    expect(await screen.findByRole('heading', { name: 'Take payment' })).toBeInTheDocument();
+    expect(checkoutCalls).toBe(2);
+  });
+
   it('uses a fixed checkout viewport with only the cart body as the scrolling region', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => commonApi(input) ?? jsonResponse({}, 404));
     document.body.style.overflow = 'auto';
@@ -511,9 +643,10 @@ describe('POS pages', () => {
 
     const shell = await screen.findByTestId('retail-checkout-shell');
     const cartScrollRegion = await screen.findByTestId('cart-scroll-region');
-    expect(shell).toHaveStyle({ height: 'calc(100dvh - 88px)', overflow: 'hidden' });
+    expect(screen.getByTestId('pos-viewport')).toHaveStyle({ height: '100dvh', overflow: 'hidden' });
+    expect(shell).toHaveStyle({ height: '100%', overflow: 'hidden' });
     expect(cartScrollRegion).toHaveStyle({ overflowY: 'auto' });
-    expect(document.body).toHaveStyle({ overflow: 'hidden' });
+    expect(document.body).toHaveStyle({ overflow: 'auto' });
     expect(screen.getByRole('button', { name: 'Barcode' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('textbox', { name: 'Barcode' })).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Product search' })).not.toBeInTheDocument();
@@ -524,6 +657,41 @@ describe('POS pages', () => {
     expect(document.body).toHaveStyle({ overflow: 'auto' });
   });
 
+  it('releases every POS dialog portal and MUI body scroll lock across repeated use', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(),
+        permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+    document.body.style.overflow = 'auto';
+    render(<App initialEntries={['/pos']} />);
+
+    const actions = ['Taxable Custom Item', 'Non-Taxable Custom Item', 'Deposit Payout', 'Lottery Sold', 'Lottery Win'];
+    await screen.findByRole('button', { name: actions[0] });
+    for (let cycle = 0; cycle < 10; cycle += 1) {
+      for (const action of actions) {
+        await userEvent.click(screen.getByRole('button', { name: action }));
+        const dialog = await screen.findByRole('dialog');
+        expect(document.body).toHaveStyle({ overflow: 'hidden' });
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(document.querySelectorAll('.MuiModal-root')).toHaveLength(0);
+        expect(document.querySelectorAll('.MuiBackdrop-root')).toHaveLength(0);
+        expect(document.body).toHaveStyle({ overflow: 'auto' });
+      }
+    }
+    await userEvent.click(screen.getByRole('link', { name: 'Back to Store Menu' }));
+    expect(await screen.findByRole('heading', { name: 'Store Menu' })).toBeInTheDocument();
+    expect(document.querySelectorAll('.MuiModal-root:not(.MuiModal-hidden)')).toHaveLength(0);
+    expect(document.querySelectorAll('.MuiModal-root:not(.MuiModal-hidden) .MuiBackdrop-root')).toHaveLength(0);
+    expect(document.body).toHaveStyle({ overflow: 'auto' });
+  }, 60_000);
+
   it('uses dedicated custom-item actions and keeps their explicit tax treatments isolated', async () => {
     let checkoutBody: any;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
@@ -533,7 +701,7 @@ describe('POS pages', () => {
       if (common) return common;
       if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
         checkoutBody = JSON.parse(String(init.body));
-        return jsonResponse(sale());
+        return jsonResponse(saleForCheckoutItems(checkoutBody.items));
       }
       return jsonResponse({}, 404);
     });
@@ -585,13 +753,87 @@ describe('POS pages', () => {
 
     expect(await screen.findByText('Custom Taxable Item')).toBeInTheDocument();
     expect(await screen.findByText('Miscellaneous Merchandise')).toBeInTheDocument();
+    expect(screen.getAllByText('Non-Taxable').length).toBeGreaterThanOrEqual(2);
     await userEvent.click(await screen.findByRole('button', { name: 'Calculate Tax' }));
-    await waitFor(() => expect(checkoutBody).toBeDefined());
+    await waitFor(() => expect(checkoutBody?.items).toHaveLength(2));
     expect(checkoutBody.items).toEqual([
       { lineType: 'CUSTOM_ITEM', description: 'Custom Taxable Item', unitPrice: 7.99, quantity: 1, taxTreatment: 'TAXABLE' },
       { lineType: 'CUSTOM_ITEM', description: 'Miscellaneous Merchandise', unitPrice: 8.5, quantity: 1, taxTreatment: 'NON_TAXABLE' }
     ]);
     expect(checkoutBody.items.every((item: any) => item.productId === undefined)).toBe(true);
+  });
+
+  it('reports checkout cart validation without claiming nonexistent highlighted fields', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/products/barcodes/12345')) {
+        return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '12345', sku: 'COFFEE', unitOfMeasureId: null, price: 5, taxCategoryId: null, taxCategoryName: null, availableQuantity: 2, active: true });
+      }
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        return jsonResponse({
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          correlationId: 'corr-checkout-1',
+          violations: [{ field: 'items[0].quantity', code: 'NotNull', message: 'must not be null' }]
+        }, 400);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Barcode' }), '12345{enter}');
+    await screen.findByText('Coffee');
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+
+    expect(await screen.findByText('One or more cart items is missing required checkout information. Review the cart and try again.')).toBeInTheDocument();
+    expect(screen.queryByText('Please review the highlighted fields and correct the information.')).not.toBeInTheDocument();
+  });
+
+  it('checks out a mixed retail cart with lottery and an explicitly non-taxable custom line', async () => {
+    let checkoutBody: any;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(), permissions: ['POS_CUSTOM_ITEM', 'LOTTERY_SALE_RECORD']
+      });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
+      if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
+      const common = commonApi(input);
+      if (common) return common;
+      if (url.pathname.endsWith('/api/v1/products/barcodes/111')) return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '111', sku: 'COFFEE', unitOfMeasureId: null, price: 10, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      if (url.pathname.endsWith('/api/v1/products/barcodes/222')) return jsonResponse({ productId: '00000000-0000-0000-0000-000000000922', variantId: null, productName: 'Lottery Ticket Pack', variantName: null, barcode: '222', sku: 'LOTTERY-PHYSICAL', unitOfMeasureId: null, price: 20, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
+        checkoutBody = JSON.parse(String(init.body));
+        return jsonResponse(saleForCheckoutItems(checkoutBody.items));
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    const barcode = await screen.findByRole('textbox', { name: 'Barcode' });
+    await userEvent.type(barcode, '111{enter}');
+    await screen.findByText('Coffee');
+    await userEvent.type(barcode, '222{enter}');
+    await screen.findByText('Lottery Ticket Pack');
+    await userEvent.click(screen.getByRole('button', { name: 'Lottery Sold' }));
+    await userEvent.type(screen.getByRole('spinbutton', { name: 'Amount (USD)' }), '5');
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Non-Taxable Custom Item' }));
+    await userEvent.type(screen.getByRole('spinbutton', { name: 'Price (USD)' }), '4.25');
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add to Cart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+
+    await screen.findByRole('heading', { name: 'Take payment' });
+    expect(checkoutBody.items).toEqual([
+      expect.objectContaining({ lineType: 'CATALOG_PRODUCT', productId, quantity: 1 }),
+      expect.objectContaining({ lineType: 'CATALOG_PRODUCT', productId: '00000000-0000-0000-0000-000000000922', quantity: 1 }),
+      { lineType: 'LOTTERY_SOLD', unitPrice: 5, quantity: 1 },
+      { lineType: 'CUSTOM_ITEM', description: 'Custom Non-Taxable Item', unitPrice: 4.25, quantity: 1, taxTreatment: 'NON_TAXABLE' }
+    ]);
   });
 
   it('orders all five permitted POS actions in the shared action grid', async () => {
@@ -621,6 +863,7 @@ describe('POS pages', () => {
 
   it('preserves a custom item tax treatment while editing its other fields', async () => {
     let checkoutBody: any;
+    const checkoutBodies: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({ ...currentUser(), permissions: ['POS_CUSTOM_ITEM'] });
@@ -628,7 +871,8 @@ describe('POS pages', () => {
       if (common) return common;
       if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
         checkoutBody = JSON.parse(String(init.body));
-        return jsonResponse(sale());
+        checkoutBodies.push(checkoutBody);
+        return jsonResponse(saleForCheckoutItems(checkoutBody.items));
       }
       return jsonResponse({}, 404);
     });
@@ -651,8 +895,11 @@ describe('POS pages', () => {
     await userEvent.type(editPrice, '8.50');
     await userEvent.click(within(editDialog).getByRole('button', { name: 'Update Item' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await userEvent.click(await screen.findByRole('button', { name: 'Calculate Tax' }));
-    await waitFor(() => expect(checkoutBody).toBeDefined());
+    const calculateTax = await screen.findByRole('button', { name: 'Calculate Tax' });
+    await waitFor(() => expect(calculateTax).toBeEnabled());
+    await userEvent.click(calculateTax);
+    await waitFor(() => expect(checkoutBodies.some((body) => body.items?.[0]?.unitPrice === 8.5)).toBe(true));
+    checkoutBody = checkoutBodies.slice().reverse().find((body: any) => body.items?.[0]?.unitPrice === 8.5);
     expect(checkoutBody.items[0]).toEqual({ lineType: 'CUSTOM_ITEM', description: 'Grocery Item', unitPrice: 8.5, quantity: 1, taxTreatment: 'NON_TAXABLE' });
     expect(checkoutBody.items[0].productId).toBeUndefined();
   });
