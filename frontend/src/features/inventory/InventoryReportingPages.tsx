@@ -1,4 +1,5 @@
 import DownloadIcon from '@mui/icons-material/Download';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HistoryIcon from '@mui/icons-material/History';
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined';
@@ -28,14 +29,17 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   catalogueReferenceApi,
+  confirmInventoryUpdate,
+  downloadInventoryUpdateWorkbook,
   getInventoryReport,
   listProducts,
   listStores,
+  validateInventoryUpdateWorkbook,
   type InventoryReportParams
 } from '../../api/client';
 import type {
@@ -43,6 +47,7 @@ import type {
   InventoryActivityReportRow,
   InventoryReport,
   InventoryStockReportRow,
+  InventoryImportValidation,
   Product,
   Store,
   UserRole
@@ -83,9 +88,142 @@ function canViewInventoryReports(roles: UserRole[]) {
 function useInventoryReportPermissions() {
   const { currentUser, session } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
+  const hasManagementRole = roles.some((role) =>
+    role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER'
+  );
+  const permissions = currentUser?.permissions ?? [];
   return {
-    canView: canViewInventoryReports(roles)
+    canView: canViewInventoryReports(roles),
+    // Roles remain the source of truth for legacy accounts whose current-user
+    // response can contain an empty/incomplete permission list.
+    canManage: hasManagementRole || permissions.some((permission) =>
+      permission === 'INVENTORY_MANAGE' || permission === 'INVENTORY_RECEIVE' || permission === 'INVENTORY_ADJUST'
+    )
   };
+}
+
+function InventoryWorkbookPanel({
+  stores,
+  storeId,
+  onStoreChange
+}: {
+  stores: Store[];
+  storeId: string;
+  onStoreChange: (storeId: string) => void;
+}) {
+  const { getValidAccessToken } = useSession();
+  const queryClient = useQueryClient();
+  const [file, setFile] = React.useState<File | null>(null);
+  const [preview, setPreview] = React.useState<InventoryImportValidation | null>(null);
+  const [success, setSuccess] = React.useState<string | null>(null);
+
+  const resetUpload = () => {
+    setFile(null);
+    setPreview(null);
+    setSuccess(null);
+  };
+  const download = useMutation({
+    mutationFn: async () => {
+      const blob = await downloadInventoryUpdateWorkbook(await getValidAccessToken(), storeId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Merchtyl-Store-Inventory-${stores.find((store) => store.id === storeId)?.code ?? storeId}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  });
+  const validate = useMutation({
+    mutationFn: async () => validateInventoryUpdateWorkbook(await getValidAccessToken(), storeId, file!),
+    onSuccess: (value) => {
+      setPreview(value);
+      setSuccess(null);
+    }
+  });
+  const confirm = useMutation({
+    mutationFn: async () => confirmInventoryUpdate(await getValidAccessToken(), storeId, preview!.importId),
+    onSuccess: async (value) => {
+      setSuccess(`Inventory updated successfully. ${value.changedRows} rows changed.`);
+      setPreview(null);
+      setFile(null);
+      await queryClient.invalidateQueries({ queryKey: ['inventory-report'] });
+    }
+  });
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Stack spacing={2}>
+        <Typography variant="h6">Bulk Inventory Management</Typography>
+        <Typography color="text.secondary">
+          Download current store inventory, enter either a physical count or received quantity, validate, preview, then confirm.
+        </Typography>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <TextField
+            select
+            label="Inventory update store"
+            value={storeId}
+            onChange={(event) => {
+              onStoreChange(event.target.value);
+              resetUpload();
+            }}
+            sx={{ minWidth: 280 }}
+          >
+            {stores.map((store) => <MenuItem key={store.id} value={store.id}>{storeLabel(store)}</MenuItem>)}
+          </TextField>
+          <Button variant="outlined" startIcon={<DownloadIcon />} disabled={!storeId || download.isPending} onClick={() => download.mutate()}>
+            Download Inventory Excel
+          </Button>
+          <Button component="label" variant="outlined" startIcon={<UploadFileIcon />} disabled={!storeId}>
+            Upload Stock Update
+            <input hidden type="file" accept=".xlsx" onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setPreview(null);
+              setSuccess(null);
+            }} />
+          </Button>
+          <Button variant="contained" disabled={!storeId || !file || validate.isPending} onClick={() => validate.mutate()}>
+            Validate and Preview
+          </Button>
+        </Stack>
+        {file ? <Typography variant="body2">Selected: {file.name}</Typography> : null}
+        {download.error || validate.error || confirm.error
+          ? <Alert severity="error">{errorMessage(download.error ?? validate.error ?? confirm.error)}</Alert>
+          : null}
+        {success ? <Alert severity="success">{success}</Alert> : null}
+        {preview ? (
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip label={`${preview.rows.length} rows processed`} />
+              <Chip label={`${preview.changedRows} rows changed`} color="primary" />
+              <Chip label={`${preview.unchangedRows} unchanged`} />
+              <Chip label={`${preview.errorRows} errors`} color={preview.errorRows ? 'error' : 'default'} />
+            </Stack>
+            <TableContainer sx={{ maxHeight: 420 }}>
+              <Table stickyHeader size="small" aria-label="Inventory update preview">
+                <TableHead><TableRow>{['Product', 'Variant', 'Downloaded Stock', 'Current DB Stock', 'Operation', 'Entered Qty', 'Adjustment', 'Final Stock', 'Validation'].map((heading) => <TableCell key={heading}>{heading}</TableCell>)}</TableRow></TableHead>
+                <TableBody>{preview.rows.map((row) => (
+                  <TableRow key={row.rowNumber} sx={row.stockChanged ? { bgcolor: 'warning.light' } : undefined}>
+                    <TableCell>{row.productName ?? 'Unknown'}</TableCell>
+                    <TableCell>{row.variant ?? row.sku}</TableCell>
+                    <TableCell>{formatQuantity(row.downloadedStock)}</TableCell>
+                    <TableCell>{formatQuantity(row.currentStock)}{row.stockChanged ? <Typography variant="caption" display="block">Changed since download</Typography> : null}</TableCell>
+                    <TableCell>{row.operation === 'SET_COUNT' ? 'Counted Stock (Set To)' : row.operation === 'ADD_STOCK' ? 'Add Stock (Received Qty)' : 'No change'}</TableCell>
+                    <TableCell>{row.enteredQuantity == null ? '—' : formatQuantity(row.enteredQuantity)}</TableCell>
+                    <TableCell>{row.adjustment > 0 ? '+' : ''}{formatQuantity(row.adjustment)}</TableCell>
+                    <TableCell>{formatQuantity(row.finalStock)}</TableCell>
+                    <TableCell>{row.errors.length ? row.errors.join(' ') : 'Ready'}</TableCell>
+                  </TableRow>
+                ))}</TableBody>
+              </Table>
+            </TableContainer>
+            <Button variant="contained" disabled={!preview.canConfirm || confirm.isPending} onClick={() => confirm.mutate()} sx={{ alignSelf: 'flex-start' }}>
+              Confirm Inventory Update
+            </Button>
+          </Stack>
+        ) : null}
+      </Stack>
+    </Paper>
+  );
 }
 
 function errorMessage(error: unknown) {
@@ -523,7 +661,7 @@ function exportActivityRows(mode: InventoryReportMode, rows: InventoryActivityRe
 
 export function InventoryReportingPage({ mode }: InventoryReportPageProps) {
   const { getValidAccessToken } = useSession();
-  const { canView } = useInventoryReportPermissions();
+  const { canView, canManage } = useInventoryReportPermissions();
   const [filters, setFilters] = React.useState(defaultFilters);
   const reportParams = React.useMemo(() => cleanParams(filters), [filters]);
 
@@ -609,6 +747,14 @@ export function InventoryReportingPage({ mode }: InventoryReportPageProps) {
         filters={filters}
         onChange={setFilters}
       />
+
+      {mode === 'current' && canManage ? (
+        <InventoryWorkbookPanel
+          stores={allStores}
+          storeId={filters.storeId}
+          onStoreChange={(storeId) => setFilters((current) => ({ ...current, storeId }))}
+        />
+      ) : null}
 
       {loading ? <LoadingPanel label="Loading inventory report" /> : null}
       {error ? <Alert severity="error">{errorMessage(error)}</Alert> : null}

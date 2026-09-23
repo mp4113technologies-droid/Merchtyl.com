@@ -212,6 +212,7 @@ public class SaleService {
 
         List<DiscountEngine.Line> discountLines=new java.util.ArrayList<>();
         List<DiscountEngine.PromotionLine> promotionLines=new java.util.ArrayList<>();
+        CheckoutCatalogContext catalogContext = checkoutCatalogContext(session, request.items());
         for (SaleCheckoutItemRequest line : request.items()) {
             if (!line.isValidShape()) throw new BadRequestException("INVALID_CHECKOUT_ITEM");
             if (line.resolvedLineType() == SaleLineType.DEPOSIT_PAYOUT) {
@@ -263,7 +264,7 @@ public class SaleService {
                         money(price.multiply(item.getQuantity())), true));
                 continue;
             }
-            ResolvedCheckoutItem resolved = resolveCheckoutItem(session, sale, line);
+            ResolvedCheckoutItem resolved = resolveCheckoutItem(session, sale, line, catalogContext);
             Product product = resolved.product();
             ProductVariant variant = resolved.variant();
             if (product.getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT
@@ -378,7 +379,8 @@ public class SaleService {
         return selectedResult.amount();
     }
 
-    private ResolvedCheckoutItem resolveCheckoutItem(RegisterSession session, Sale sale, SaleCheckoutItemRequest line) {
+    private ResolvedCheckoutItem resolveCheckoutItem(RegisterSession session, Sale sale, SaleCheckoutItemRequest line,
+                                                      CheckoutCatalogContext catalogContext) {
         if (line.foodMenuItemId() != null) {
             if (session.getRegister().getType() != RegisterType.FOOD_SERVICE) {
                 throw new BadRequestException("FOOD_SERVICE_REGISTER_REQUIRED");
@@ -422,8 +424,8 @@ public class SaleService {
         if (line.productId() == null) {
             throw new BadRequestException("INVALID_CHECKOUT_ITEM");
         }
-        ResolvedStoreProduct storeProduct = storeProduct(sale, line.productId());
-        ProductVariant variant = line.variantId() == null ? null : productVariantRepository.findById(line.variantId())
+        ResolvedStoreProduct storeProduct = catalogContext.resolveStoreProduct(sale, line.productId());
+        ProductVariant variant = line.variantId() == null ? null : java.util.Optional.ofNullable(catalogContext.variants().get(line.variantId()))
                 .filter(candidate -> candidate.getProduct().getId().equals(storeProduct.product().getId()) && candidate.isActive())
                 .orElseThrow(() -> new NotFoundException("PRODUCT_VARIANT_NOT_AVAILABLE"));
         return new ResolvedCheckoutItem(storeProduct.product(), variant,
@@ -434,6 +436,52 @@ public class SaleService {
 
     private record ResolvedCheckoutItem(Product product, ProductVariant variant, BigDecimal unitPrice,UUID sourceItemId,
                                         UUID categoryId, UUID productCategoryId, UUID menuItemId, UUID menuCategoryId, String menuItemName,UUID menuItemVariantId,String menuVariantName,java.util.List<String> modifierNames,java.util.List<FoodComponentSnapshot> componentSnapshots) {}
+
+    private CheckoutCatalogContext checkoutCatalogContext(RegisterSession session, List<SaleCheckoutItemRequest> items) {
+        if (storeProductRepository == null || productVariantRepository == null) {
+            return CheckoutCatalogContext.fallback(this);
+        }
+        var catalogLines = items.stream()
+                .filter(line -> line.foodMenuItemId() == null && line.productId() != null
+                        && line.resolvedLineType() == SaleLineType.CATALOG_PRODUCT)
+                .toList();
+        var productIds = catalogLines.stream().map(SaleCheckoutItemRequest::productId)
+                .collect(java.util.stream.Collectors.toSet());
+        var variantIds = catalogLines.stream().map(SaleCheckoutItemRequest::variantId).filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        if (productIds.isEmpty()) return new CheckoutCatalogContext(java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), null);
+        var products = productRepository.findCheckoutProducts(session.getStore().getTenantId(), productIds).stream()
+                .collect(java.util.stream.Collectors.toMap(Product::getId, java.util.function.Function.identity()));
+        var mappings = storeProductRepository.findByTenantIdAndStore_IdAndProduct_IdInAndActiveTrueAndSellableTrue(
+                        session.getStore().getTenantId(), session.getStore().getId(), productIds).stream()
+                .collect(java.util.stream.Collectors.toMap(mapping -> mapping.getProduct().getId(), java.util.function.Function.identity()));
+        var variants = variantIds.isEmpty() ? java.util.Map.<UUID, ProductVariant>of()
+                : productVariantRepository.findCheckoutVariants(session.getStore().getTenantId(), variantIds).stream()
+                .collect(java.util.stream.Collectors.toMap(ProductVariant::getId, java.util.function.Function.identity()));
+        return new CheckoutCatalogContext(products, mappings, variants, null);
+    }
+
+    private record CheckoutCatalogContext(java.util.Map<UUID, Product> products,
+                                          java.util.Map<UUID, StoreProduct> mappings,
+                                          java.util.Map<UUID, ProductVariant> variants,
+                                          SaleService fallbackService) {
+        static CheckoutCatalogContext fallback(SaleService service) {
+            return new CheckoutCatalogContext(java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), service);
+        }
+
+        ResolvedStoreProduct resolveStoreProduct(Sale sale, UUID productId) {
+            if (fallbackService != null) return fallbackService.storeProduct(sale, productId);
+            Product product = java.util.Optional.ofNullable(products.get(productId))
+                    .filter(Product::isActive)
+                    .orElseThrow(() -> new BadRequestException("PRODUCT_NOT_AVAILABLE_AT_STORE"));
+            if (product.getAvailabilityScope() == ProductAvailabilityScope.ALL_STORES) {
+                return new ResolvedStoreProduct(product, product.getPrice());
+            }
+            StoreProduct mapping = java.util.Optional.ofNullable(mappings.get(productId))
+                    .orElseThrow(() -> new BadRequestException("PRODUCT_NOT_AVAILABLE_AT_STORE"));
+            return new ResolvedStoreProduct(mapping.getProduct(), mapping.getSellingPrice());
+        }
+    }
 
     @Transactional(readOnly = true)
     public SaleResponse get(UUID id) {
@@ -921,6 +969,10 @@ public class SaleService {
         BigDecimal discount = moneyZero();
         BigDecimal tax = moneyZero();
         BigDecimal total = moneyZero();
+        // Variants of the same catalog product commonly have identical tax inputs. A checkout
+        // must calculate tax authoritatively, but it need not reload the same store geography,
+        // rules and audit context once per identical line.
+        java.util.Map<TaxCalculationRequest, TaxCalculationResponse> taxResults = new java.util.HashMap<>();
         for (SaleItem item : sale.getItems()) {
             if (item.isDepositPayout()) {
                 BigDecimal payout = money(item.getUnitPrice());
@@ -939,7 +991,7 @@ public class SaleService {
                 continue;
             }
             if (item.isCatalogProduct()) saleItemHandlerRegistry.validate(item.validationRequest());
-            TaxCalculationResponse taxResponse = taxEngine.calculate(new TaxCalculationRequest(
+            TaxCalculationRequest taxRequest = new TaxCalculationRequest(
                     sale.getStore().getId(),
                     null,
                     null,
@@ -952,7 +1004,9 @@ public class SaleService {
                     item.getQuantity(),
                     item.getDiscountAmount(),
                     sale.isPricesIncludeTax(),
-                    sale.getCurrencyCode()), authentication);
+                    sale.getCurrencyCode());
+            TaxCalculationResponse taxResponse = taxResults.computeIfAbsent(taxRequest,
+                    ignored -> taxEngine.calculate(taxRequest, authentication));
             item.applyVariantDeposit();
             BigDecimal lineSubtotal = money(taxResponse.netAmount().add(item.getDiscountAmount()));
             BigDecimal depositTotal = item.getDepositTotal();

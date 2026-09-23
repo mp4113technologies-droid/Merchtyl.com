@@ -115,6 +115,7 @@ public class InventoryService {
 
         BigDecimal resultingQuantity = balance.getQuantityOnHand().add(quantityDelta).setScale(QUANTITY_SCALE);
         if (resultingQuantity.compareTo(BigDecimal.ZERO) < 0
+                && quantityDelta.signum() < 0
                 && request.transactionType() != InventoryTransactionType.SALE
                 && !store.isNegativeStockAllowed()) {
             throw new ConflictException("Store does not allow negative stock");

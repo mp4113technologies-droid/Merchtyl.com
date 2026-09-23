@@ -82,6 +82,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -187,6 +188,21 @@ class SaleServiceTest {
         when(saleRepository.saveAndFlush(any(Sale.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenReturn(taxResponse(new BigDecimal("10.00"), new BigDecimal("1.50"), new BigDecimal("11.50")));
         when(foodOrderTokenService.nextToken(registerSession)).thenReturn("1045");
+    }
+
+    @Test
+    void checkoutReusesTaxResultForIdenticalLineInputs() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("STANDARD")).thenReturn(Optional.of(standard));
+
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Item A",
+                        new BigDecimal("10.00"), CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Item B",
+                        new BigDecimal("10.00"), CustomItemTaxTreatment.TAXABLE, BigDecimal.ONE, false))), customItemAuth());
+
+        verify(taxEngine, times(1)).calculate(any(TaxCalculationRequest.class), any());
     }
 
     @Test

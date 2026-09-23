@@ -201,7 +201,7 @@ class BusinessDayServiceTest {
     }
 
     @Test
-    void lotterySectionAggregatesSoldAndWinsAcrossRegisters() {
+    void legacyStandaloneLotteryRecordsAreNotAddedToCompletedSaleTotals() {
         LotterySale registerOneSold = lotterySale("R1", "200.00");
         LotterySale registerTwoSold = lotterySale("R2", "300.00");
         LotteryPayout registerOneWin = lotteryPayout("50.00");
@@ -215,9 +215,8 @@ class BusinessDayServiceTest {
                 List.of(), List.of(), List.of(), List.of());
 
         assertThat(result.enabled()).isTrue();
-        assertThat(result.lotterySales()).isEqualByComparingTo("500.00");
-        assertThat(result.lotteryPayouts()).isEqualByComparingTo("180.00");
-        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("320.00");
+        assertThat(result.lotterySales()).isEqualByComparingTo("0.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -236,9 +235,9 @@ class BusinessDayServiceTest {
                 List.of(lotteryPayout("25.00"), lotteryPayout("75.00")),
                 List.of(), List.of(), List.of(), List.of());
 
-        assertThat(result.lotterySales()).isEqualByComparingTo("300.00");
-        assertThat(result.lotteryPayouts()).isEqualByComparingTo("100.00");
-        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("200.00");
+        assertThat(result.lotterySales()).isEqualByComparingTo("60.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("0.00");
+        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("60.00");
         assertThat(service.categorySalesValues(
                 List.of(registerOneSale, registerTwoSale),
                 List.of())).isEmpty();
@@ -255,15 +254,36 @@ class BusinessDayServiceTest {
         when(win.getType()).thenReturn(LotteryPosActivityType.WIN);
         when(win.getAmount()).thenReturn(new BigDecimal("25.00"));
 
-        Sale scannedSale = mock(Sale.class);
-        when(scannedSale.getItems()).thenReturn(List.of(ticket));
+        Sale scannedSale = sale(RegisterType.RETAIL,ticket);
         BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
                 true, List.of(scannedSale), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(sold, win));
 
-        assertThat(result.lotterySales()).isEqualByComparingTo("110.00");
-        assertThat(result.lotteryPayouts()).isEqualByComparingTo("25.00");
+        assertThat(result.lotterySales()).isEqualByComparingTo("10.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("0.00");
+        assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("10.00");
+    }
+
+    @Test
+    void lotterySessionsStartAtZeroAndStoreTotalIsDirectSum() throws Exception {
+        Sale sessionOne=lotterySessionSale("R1","30","20","10");
+        Sale sessionTwo=lotterySessionSale("R2","40","10","5");
+        BusinessDayService.EndOfDayLotteryValues result=service.lotteryValues(true,List.of(sessionOne,sessionTwo),List.of(),List.of(),List.of(),List.of(),List.of(),List.of());
+        assertThat(result.lotterySales()).isEqualByComparingTo("100.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("15.00");
         assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("85.00");
+        var rows=new ObjectMapper().readValue(result.registerTotals(),BusinessDayService.LotterySessionTotal[].class);
+        assertThat(rows).hasSize(2);
+        assertThat(rows[0].physicalLotterySold()).isEqualByComparingTo("30.00");assertThat(rows[0].manualLotterySold()).isEqualByComparingTo("20.00");assertThat(rows[0].netLottery()).isEqualByComparingTo("40.00");
+        assertThat(rows[1].physicalLotterySold()).isEqualByComparingTo("40.00");assertThat(rows[1].manualLotterySold()).isEqualByComparingTo("10.00");assertThat(rows[1].netLottery()).isEqualByComparingTo("45.00");
+    }
+
+    @Test
+    void fiveRegistersAndTwoSessionsOnSameRegisterRemainIndependent() throws Exception {
+        List<Sale> sales=new java.util.ArrayList<>();for(int i=1;i<=5;i++)sales.add(lotterySessionSale("R"+i,String.valueOf(i*10),String.valueOf(i),String.valueOf(i-1)));sales.add(lotterySessionSale("R1","5","2","1"));
+        var result=service.lotteryValues(true,sales,List.of(),List.of(),List.of(),List.of(),List.of(),List.of());
+        assertThat(result.lotterySales()).isEqualByComparingTo("172.00");assertThat(result.lotteryPayouts()).isEqualByComparingTo("11.00");assertThat(result.lotterySales().subtract(result.lotteryPayouts())).isEqualByComparingTo("161.00");
+        var rows=new ObjectMapper().readValue(result.registerTotals(),BusinessDayService.LotterySessionTotal[].class);assertThat(rows).hasSize(6);assertThat(rows).filteredOn(row->row.registerCode().equals("R1")).hasSize(2);
     }
 
     @Test
@@ -316,15 +336,15 @@ class BusinessDayServiceTest {
         Register register = mock(Register.class);
         User cashier = mock(User.class);
         com.merchtyl.lottery.LotteryOperator operator = mock(com.merchtyl.lottery.LotteryOperator.class);
-        when(sale.getAmount()).thenReturn(new BigDecimal(amount));
-        when(sale.getStatus()).thenReturn(LotterySaleStatus.RECORDED);
-        when(sale.getPaymentMethod()).thenReturn(PaymentMethod.CASH);
-        when(sale.getRegister()).thenReturn(register);
-        when(register.getCode()).thenReturn(registerCode);
-        when(sale.getCashier()).thenReturn(cashier);
-        when(cashier.getEmail()).thenReturn(registerCode.toLowerCase() + "@example.test");
-        when(sale.getOperator()).thenReturn(operator);
-        when(operator.getCode()).thenReturn("ATLANTIC");
+        lenient().when(sale.getAmount()).thenReturn(new BigDecimal(amount));
+        lenient().when(sale.getStatus()).thenReturn(LotterySaleStatus.RECORDED);
+        lenient().when(sale.getPaymentMethod()).thenReturn(PaymentMethod.CASH);
+        lenient().when(sale.getRegister()).thenReturn(register);
+        lenient().when(register.getCode()).thenReturn(registerCode);
+        lenient().when(sale.getCashier()).thenReturn(cashier);
+        lenient().when(cashier.getEmail()).thenReturn(registerCode.toLowerCase() + "@example.test");
+        lenient().when(sale.getOperator()).thenReturn(operator);
+        lenient().when(operator.getCode()).thenReturn("ATLANTIC");
         return sale;
     }
 
@@ -345,6 +365,8 @@ class BusinessDayServiceTest {
         lenient().when(sale.getItems()).thenReturn(List.of(items));
         return sale;
     }
+
+    private static Sale lotterySessionSale(String registerCode,String physical,String manual,String wins){SaleItem ticket=saleItem(null,null,"1",physical,"0",false);when(ticket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);SaleItem sold=saleItem(null,null,"1",manual,"0",false);when(sold.getLineType()).thenReturn(com.merchtyl.sales.SaleLineType.LOTTERY_SOLD);SaleItem win=saleItem(null,null,"1","-"+wins,"0",false);when(win.getLineType()).thenReturn(com.merchtyl.sales.SaleLineType.LOTTERY_WIN);Sale sale=mock(Sale.class);Register register=mock(Register.class);RegisterSession session=mock(RegisterSession.class);when(register.getId()).thenReturn(UUID.randomUUID());when(register.getCode()).thenReturn(registerCode);when(register.getType()).thenReturn(RegisterType.RETAIL);when(sale.getRegister()).thenReturn(register);when(session.getId()).thenReturn(UUID.randomUUID());when(sale.getRegisterSession()).thenReturn(session);when(sale.getItems()).thenReturn(List.of(ticket,sold,win));return sale;}
 
     private static SaleItem saleItem(UUID categoryId, String categoryName, String quantity, String subtotal,
                                      String discount, boolean custom) {

@@ -93,7 +93,8 @@ public class LotterySalesReportService {
         return (root, query, cb) -> {
             query.distinct(true);
             List<Predicate> values = new ArrayList<>();
-            values.add(cb.equal(root.get("status"), SaleStatus.COMPLETED));
+            values.add(root.get("status").in(SaleStatus.COMPLETED, SaleStatus.PARTIALLY_REFUNDED, SaleStatus.REFUNDED));
+            values.add(cb.equal(root.get("register").get("type"), com.merchtyl.register.RegisterType.RETAIL));
             values.add(cb.equal(root.get("store").get("tenantId"), actor.getTenantId()));
             if (request.storeId() != null) values.add(cb.equal(root.get("store").get("id"), request.storeId()));
             if (request.registerId() != null) values.add(cb.equal(root.get("register").get("id"), request.registerId()));

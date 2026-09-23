@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -30,9 +31,16 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     public static final String ERROR_CODE_ATTRIBUTE = "merchtyl.logging.errorCode";
 
     private final MerchtylLoggingProperties properties;
+    private final RequestSqlStatementCounter sqlStatementCounter;
+
+    @Autowired
+    public RequestLoggingFilter(MerchtylLoggingProperties properties, RequestSqlStatementCounter sqlStatementCounter) {
+        this.properties = properties;
+        this.sqlStatementCounter = sqlStatementCounter;
+    }
 
     public RequestLoggingFilter(MerchtylLoggingProperties properties) {
-        this.properties = properties;
+        this(properties, null);
     }
 
     public RequestLoggingFilter() {
@@ -43,6 +51,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         long started = System.nanoTime();
+        if (sqlStatementCounter != null) sqlStatementCounter.begin();
         if (properties.getRequest().isEnabled()) {
             logIncomingRequest(request);
         }
@@ -53,15 +62,17 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             throw exception;
         } finally {
             long durationMs = (System.nanoTime() - started) / 1_000_000;
+            int sqlStatements = sqlStatementCounter == null ? 0 : sqlStatementCounter.finish();
             updateAuthenticatedMdc();
             if (properties.getResponse().isEnabled()) {
-                logOutgoingResponse(request, response, durationMs);
+                logOutgoingResponse(request, response, durationMs, sqlStatements);
             }
             if (properties.getPerformance().isEnabled()
                     && durationMs > properties.getPerformance().getSlowRequestThresholdMs()) {
                 log.warn(
-                        "SLOW REQUEST duration_ms={} method={} uri={} controller={}",
+                        "SLOW REQUEST duration_ms={} orm_statements={} method={} uri={} controller={}",
                         durationMs,
+                        sqlStatements,
                         request.getMethod(),
                         logSafe(request.getRequestURI()),
                         controllerName(request));
@@ -85,14 +96,15 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                 LogSanitizer.maskedHeaders(request, maskSensitive));
     }
 
-    private void logOutgoingResponse(HttpServletRequest request, HttpServletResponse response, long durationMs) {
+    private void logOutgoingResponse(HttpServletRequest request, HttpServletResponse response, long durationMs, int sqlStatements) {
         String exceptionType = attribute(request, EXCEPTION_TYPE_ATTRIBUTE);
         String errorCode = attribute(request, ERROR_CODE_ATTRIBUTE);
         if (response.getStatus() >= 500) {
             log.error(
-                    "http_response_failure status={} duration_ms={} response_size={} controller={} uri={} correlation_id={} exception_type={} business_error_code={}",
+                    "http_response_failure status={} duration_ms={} orm_statements={} response_size={} controller={} uri={} correlation_id={} exception_type={} business_error_code={}",
                     response.getStatus(),
                     durationMs,
+                    sqlStatements,
                     responseSize(response),
                     controllerName(request),
                     logSafe(request.getRequestURI()),
@@ -103,9 +115,10 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         }
         if (response.getStatus() >= 400 || exceptionType != null) {
             log.warn(
-                    "http_response_failure status={} duration_ms={} response_size={} controller={} uri={} correlation_id={} exception_type={} business_error_code={}",
+                    "http_response_failure status={} duration_ms={} orm_statements={} response_size={} controller={} uri={} correlation_id={} exception_type={} business_error_code={}",
                     response.getStatus(),
                     durationMs,
+                    sqlStatements,
                     responseSize(response),
                     controllerName(request),
                     logSafe(request.getRequestURI()),
@@ -115,9 +128,10 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             return;
         }
         log.info(
-                "http_response_completed status={} duration_ms={} response_size={} controller={} uri={} correlation_id={}",
+                "http_response_completed status={} duration_ms={} orm_statements={} response_size={} controller={} uri={} correlation_id={}",
                 response.getStatus(),
                 durationMs,
+                sqlStatements,
                 responseSize(response),
                 controllerName(request),
                 logSafe(request.getRequestURI()),

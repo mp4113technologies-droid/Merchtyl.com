@@ -63,7 +63,7 @@ import {
   reopenBusinessDay,
   startBusinessDayClosing
 } from '../../api/client';
-import type { BusinessDay, BusinessDayStatus, ClosingBlocker, ClosingValidation, EndOfDayClosingPreview, EndOfDayReport, RegisterReconciliation, Store, UserRole } from '../../api/types';
+import type { BusinessDay, BusinessDayStatus, ClosingBlocker, ClosingValidation, EndOfDayClosingPreview, EndOfDayLotterySessionTotal, EndOfDayReport, RegisterReconciliation, Store, UserRole } from '../../api/types';
 import { useSession } from '../../app/session';
 import { RegisterReconciliationDialog } from '../registersessions/RegisterReconciliation';
 import { resolveBusinessDayAccess } from './businessDayAccess';
@@ -165,6 +165,8 @@ function idempotencyKey(action: string) {
 function money(value: number | null | undefined, currencyCode = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode }).format(Number(value ?? 0));
 }
+
+function lotterySessionRows(value:string):EndOfDayLotterySessionTotal[]{try{const parsed=JSON.parse(value);return Array.isArray(parsed)?parsed:[];}catch{return [];}}
 
 function quantity(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value);
@@ -877,7 +879,7 @@ export function EndOfDayReportDetailPage() {
       <ReportTable title="Retail Category Sales Distribution" rows={<SimpleTable headers={['Category', 'Qty Sold', 'Net Sales', 'Share']} rows={categoryRows(data)} emptyMessage="No retail merchandise sales." />} />
       <ReportTable title="Cashiers" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Refunds', 'Cash handled']} rows={data.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, data.currencyCode), money(row.refundTotal, data.currencyCode), money(row.cashHandled, data.currencyCode)])} />} />
       <ReportTable title="Exceptions" rows={<SimpleTable headers={['Type', 'Count', 'Amount', 'Details']} rows={data.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, data.currencyCode), row.details ?? ''])} />} />
-      {data.lottery?.enabled ? <ReportTable title="Lottery" rows={<SimpleTable headers={['Lottery Sold', 'Lottery Wins', 'Net Lottery']} rows={[[money(data.lottery.lotterySales, data.currencyCode), money(data.lottery.lotteryPayouts, data.currencyCode), money(data.lottery.netLottery, data.currencyCode)]]} />} /> : null}
+      {data.lottery?.enabled ? <ReportTable title="Lottery" rows={<SimpleTable headers={['Till / Session','Physical Sold','Manual Sold','Total Sold','Wins','Net']} rows={[...lotterySessionRows(data.lottery.registerTotals).map(row=>[`${row.registerCode} / ${row.registerSessionId.slice(0,8)}`,money(row.physicalLotterySold,data.currencyCode),money(row.manualLotterySold,data.currencyCode),money(row.totalLotterySold,data.currencyCode),money(row.lotteryWins,data.currencyCode),money(row.netLottery,data.currencyCode)]),['Store Total','—','—',money(data.lottery.lotterySales,data.currencyCode),money(data.lottery.lotteryPayouts,data.currencyCode),money(data.lottery.netLottery,data.currencyCode)]]} />} /> : null}
       {canReopen ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
           <Stack spacing={2}>

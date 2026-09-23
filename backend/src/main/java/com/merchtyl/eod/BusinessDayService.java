@@ -1188,21 +1188,25 @@ public class BusinessDayService {
     }
 
     EndOfDayLotteryValues lotteryValues(boolean enabled, List<Sale> postedSales, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements, List<LotteryPosActivity> posActivities) {
-        BigDecimal barcodeSales = postedSales.stream().flatMap(sale -> sale.getItems().stream())
+        List<Sale> retailSales=postedSales.stream().filter(sale->sale.getRegister().getType()==RegisterType.RETAIL).toList();
+        BigDecimal barcodeSales = retailSales.stream().flatMap(sale -> sale.getItems().stream())
                 .filter(LotterySaleLineClassifier::isPhysicalTicket)
                 .map(LotterySaleLineClassifier::reportingAmount)
                 .reduce(moneyZero(), BigDecimal::add);
-        BigDecimal cartSold = postedSales.stream().flatMap(sale -> sale.getItems().stream())
+        BigDecimal cartSold = retailSales.stream().flatMap(sale -> sale.getItems().stream())
                 .filter(LotterySaleLineClassifier::isManualSold)
                 .map(LotterySaleLineClassifier::reportingAmount).reduce(moneyZero(), BigDecimal::add);
-        BigDecimal cartWins = postedSales.stream().flatMap(sale -> sale.getItems().stream())
+        BigDecimal cartWins = retailSales.stream().flatMap(sale -> sale.getItems().stream())
                 .filter(LotterySaleLineClassifier::isWin)
                 .map(LotterySaleLineClassifier::reportingAmount).reduce(moneyZero(), BigDecimal::add);
         // Retain already-recorded V126 activities as legacy history; new POS actions are SaleItems.
         BigDecimal manualSold = posActivities.stream().filter(activity -> activity.getType() == LotteryPosActivityType.SOLD).map(LotteryPosActivity::getAmount).reduce(cartSold, BigDecimal::add);
         BigDecimal manualWins = posActivities.stream().filter(activity -> activity.getType() == LotteryPosActivityType.WIN).map(LotteryPosActivity::getAmount).reduce(cartWins, BigDecimal::add);
-        BigDecimal salesTotal = money(sales.stream().filter(sale -> sale.getStatus() == LotterySaleStatus.RECORDED || sale.getStatus() == LotterySaleStatus.CANCELLED).map(LotterySale::getAmount).reduce(barcodeSales.add(manualSold), BigDecimal::add));
-        BigDecimal payoutsTotal = money(payouts.stream().filter(payout -> payout.getStatus() == LotteryPayoutStatus.PAID || payout.getStatus() == LotteryPayoutStatus.REVERSED).map(LotteryPayout::getAmount).reduce(manualWins, BigDecimal::add));
+        // EOD sold/win reporting has the same authoritative source as the Lottery Sales report:
+        // financially posted SaleItems for this Store and BusinessDay. Legacy standalone records
+        // remain available for cash/settlement audit, but must not be added to completed cart lines.
+        BigDecimal salesTotal = money(barcodeSales.add(cartSold));
+        BigDecimal payoutsTotal = money(cartWins);
         BigDecimal cancellationTotal = money(cancellations.stream().map(LotterySaleCancellation::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal reversalTotal = money(reversals.stream().map(LotteryPayoutReversal::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal cashSales = money(sales.stream().filter(sale -> sale.getPaymentMethod() == PaymentMethod.CASH).map(LotterySale::getAmount).reduce(manualSold, BigDecimal::add));
@@ -1226,8 +1230,28 @@ public class BusinessDayService {
                 payouts.stream().mapToLong(payout -> payout.getApprovals().size()).sum(),
                 payouts.stream().filter(payout -> payout.getStatus() == LotteryPayoutStatus.REJECTED).count(),
                 groupedTotals(sales, sale -> sale.getOperator().getCode(), LotterySale::getAmount),
-                groupedTotals(sales, sale -> sale.getRegister().getCode(), LotterySale::getAmount),
+                snapshot(lotterySessionTotals(retailSales)),
                 groupedTotals(sales, sale -> sale.getCashier().getEmail(), LotterySale::getAmount));
+    }
+
+    private static List<LotterySessionTotal> lotterySessionTotals(List<Sale> sales) {
+        Map<UUID, LotterySessionAccumulator> totals = new LinkedHashMap<>();
+        for (Sale sale : sales) {
+            if (sale.getRegisterSession() == null) continue;
+            UUID sessionId = sale.getRegisterSession().getId();
+            LotterySessionAccumulator total = totals.computeIfAbsent(sessionId, ignored -> new LotterySessionAccumulator(
+                    sessionId, sale.getRegister().getId(), sale.getRegister().getCode()));
+            for (SaleItem item : sale.getItems()) {
+                BigDecimal amount = money(LotterySaleLineClassifier.reportingAmount(item));
+                if (LotterySaleLineClassifier.isPhysicalTicket(item)) total.physical = total.physical.add(amount);
+                else if (LotterySaleLineClassifier.isManualSold(item)) total.manual = total.manual.add(amount);
+                else if (LotterySaleLineClassifier.isWin(item)) total.wins = total.wins.add(amount);
+            }
+        }
+        return totals.values().stream().map(value -> {
+            BigDecimal physical=money(value.physical),manual=money(value.manual),wins=money(value.wins),sold=money(physical.add(manual));
+            return new LotterySessionTotal(value.sessionId,value.registerId,value.registerCode,physical,manual,sold,wins,money(sold.subtract(wins)));
+        }).toList();
     }
 
     private static boolean isMerchandiseLine(SaleItem item) {
@@ -1725,6 +1749,14 @@ public class BusinessDayService {
         private BigDecimal changeGiven = moneyZero();
         private long transactionCount;
     }
+
+    private static final class LotterySessionAccumulator {
+        private final UUID sessionId; private final UUID registerId; private final String registerCode;
+        private BigDecimal physical=moneyZero(),manual=moneyZero(),wins=moneyZero();
+        private LotterySessionAccumulator(UUID sessionId,UUID registerId,String registerCode){this.sessionId=sessionId;this.registerId=registerId;this.registerCode=registerCode;}
+    }
+
+    record LotterySessionTotal(UUID registerSessionId,UUID registerId,String registerCode,BigDecimal physicalLotterySold,BigDecimal manualLotterySold,BigDecimal totalLotterySold,BigDecimal lotteryWins,BigDecimal netLottery) {}
 
     private static final class TaxAccumulator {
         private final String componentCode;

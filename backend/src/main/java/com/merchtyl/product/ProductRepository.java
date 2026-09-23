@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpecificationExecutor<Product> {
@@ -24,6 +26,10 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
 
     @Query("select p from Product p where p.id = :id and p.tenantId = :tenantId and p.deletedAt is null")
     Optional<Product> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    @EntityGraph(attributePaths = {"category", "capabilityAssignments"})
+    @Query("select distinct p from Product p where p.tenantId = :tenantId and p.id in :ids and p.deletedAt is null")
+    List<Product> findCheckoutProducts(@Param("tenantId") UUID tenantId, @Param("ids") Collection<UUID> ids);
     @Query("select p from Product p where p.tenantId = :tenantId and p.deletedAt is null")
     java.util.List<Product> findAllByTenantId(@Param("tenantId") UUID tenantId);
     @Query("select p from Product p where p.tenantId = :tenantId and lower(p.productReference) = lower(:productReference) and p.deletedAt is null")

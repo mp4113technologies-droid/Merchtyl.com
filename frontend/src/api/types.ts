@@ -700,6 +700,8 @@ export type EndOfDayLotterySummary = {
   cashierTotals: string;
 };
 
+export type EndOfDayLotterySessionTotal = { registerSessionId:string; registerId:string; registerCode:string; physicalLotterySold:number; manualLotterySold:number; totalLotterySold:number; lotteryWins:number; netLottery:number };
+
 export type EndOfDayInventorySummary = {
   deductedBySales: number;
   restoredByReturns: number;
@@ -981,6 +983,11 @@ export type InventoryTransaction = {
 export type InventoryBalanceListResponse = PageResponse<InventoryBalance>;
 
 export type InventoryTransactionListResponse = PageResponse<InventoryTransaction>;
+
+export type InventoryImportOperation = 'SET_COUNT' | 'ADD_STOCK' | 'NO_CHANGE';
+export type InventoryImportPreviewRow = { rowNumber:number; productId:string|null; variantId:string; productCode:string|null; productName:string|null; variant:string|null; sku:string|null; barcode:string|null; downloadedStock:number; currentStock:number; operation:InventoryImportOperation; enteredQuantity:number|null; adjustment:number; finalStock:number; stockChanged:boolean; errors:string[] };
+export type InventoryImportValidation = { importId:string; storeId:string; changedRows:number; unchangedRows:number; errorRows:number; canConfirm:boolean; rows:InventoryImportPreviewRow[] };
+export type InventoryImportResult = { importId:string; storeId:string; changedRows:number; rows:InventoryImportPreviewRow[] };
 
 export type InventoryStockReportRow = {
   storeId: string;

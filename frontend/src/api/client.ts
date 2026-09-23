@@ -34,6 +34,8 @@ import type {
   InventoryTransaction,
   InventoryTransactionListResponse,
   InventoryTransactionType,
+  InventoryImportValidation,
+  InventoryImportResult,
   LotteryCommissionPeriod,
   LotteryCommissionRule,
   LotteryCommissionRuleListResponse,
@@ -2243,6 +2245,10 @@ export function listInventoryBalances(token: string, params: InventoryBalanceSea
 export function listInventoryTransactions(token: string, params: InventoryTransactionSearchParams = {}) {
   return request<InventoryTransactionListResponse>(`/inventory/transactions${queryString(params)}`, undefined, token);
 }
+
+export function downloadInventoryUpdateWorkbook(token:string,storeId:string){return requestBlob(`/stores/${storeId}/inventory/import/workbook`,undefined,token);}
+export function validateInventoryUpdateWorkbook(token:string,storeId:string,file:File){const body=new FormData();body.append('file',file);return request<InventoryImportValidation>(`/stores/${storeId}/inventory/import/validate`,{method:'POST',body},token);}
+export function confirmInventoryUpdate(token:string,storeId:string,importId:string){return request<InventoryImportResult>(`/stores/${storeId}/inventory/import/${importId}/confirm`,{method:'POST'},token);}
 
 export function listStockAdjustments(token: string, params: StockAdjustmentSearchParams = {}) {
   return request<StockAdjustmentListResponse>(`/inventory/adjustments${queryString(params)}`, undefined, token);

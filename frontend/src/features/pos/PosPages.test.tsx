@@ -1666,7 +1666,24 @@ describe('POS pages', () => {
   it('resets transaction state and accepts a product immediately after each of 25 completed sales', async () => {
     let checkoutCount = 0;
     let barcodeCalls = 0;
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+    let paymentCalls = 0;
+    let completeCalls = 0;
+    let receiptCalls = 0;
+    vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    window.localStorage.setItem('merchtyl.receiptPrinterPreferences', JSON.stringify({
+      receiptPrintMode: 'KIOSK_AUTO_PRINT',
+      autoPrintReceipt: true,
+      widthMm: 80,
+      copies: 1
+    }));
+    const listenerAdds = vi.spyOn(window, 'addEventListener');
+    const listenerRemoves = vi.spyOn(window, 'removeEventListener');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const common = commonApi(input);
       if (common) return common;
       const url = new URL(String(input), window.location.origin);
@@ -1681,22 +1698,38 @@ describe('POS pages', () => {
       }
       const paymentMatch = url.pathname.match(/\/api\/v1\/sales\/([^/]+)\/payments$/);
       if (paymentMatch && init?.method === 'POST') {
+        paymentCalls += 1;
         return jsonResponse({ ...saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]), id: paymentMatch[1] });
       }
       const completeMatch = url.pathname.match(/\/api\/v1\/sales\/([^/]+)\/complete$/);
       if (completeMatch && init?.method === 'POST') {
+        completeCalls += 1;
         return jsonResponse({ ...saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)], 'COMPLETED'), id: completeMatch[1] });
       }
       const receiptMatch = url.pathname.match(/\/api\/v1\/sales\/([^/]+)\/receipt$/);
       if (receiptMatch && init?.method === undefined) {
+        receiptCalls += 1;
         const response = receipt();
         return jsonResponse({ ...response, saleId: receiptMatch[1], document: { ...response.document, saleId: receiptMatch[1] } });
       }
       return jsonResponse({}, 404);
     });
 
+    document.body.style.overflow = 'auto';
     render(<App initialEntries={['/pos']} />);
+    await screen.findByRole('textbox', { name: 'Barcode' });
+    const listenerBalance = () => listenerAdds.mock.calls.filter(([type]) => type === 'keydown').length
+      - listenerRemoves.mock.calls.filter(([type]) => type === 'keydown').length;
+    const initial = {
+      domNodes: document.querySelectorAll('*').length,
+      listeners: listenerBalance(),
+      modals: document.querySelectorAll('.MuiModal-root').length,
+      backdrops: document.querySelectorAll('.MuiBackdrop-root').length,
+      networkCalls: fetchMock.mock.calls.length
+    };
+    const measurements: Array<typeof initial & { order: number }> = [];
     for (let order = 1; order <= 25; order += 1) {
+      const callsBeforeOrder = fetchMock.mock.calls.length;
       const barcode = await screen.findByRole('textbox', { name: 'Barcode' });
       expect(barcode).toBeEnabled();
       await userEvent.type(barcode, '12345{enter}');
@@ -1707,11 +1740,34 @@ describe('POS pages', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
-      await userEvent.click(await screen.findByRole('button', { name: 'New sale' }));
+      const newSale = await screen.findByRole('button', { name: 'New sale' });
+      await waitFor(() => expect(print).toHaveBeenCalledTimes(order));
+      await userEvent.click(newSale);
       expect(await screen.findByText('Cart is empty')).toBeVisible();
       expect(screen.queryByText('The checkout request is incomplete. Review the cart and try again.')).not.toBeInTheDocument();
+      const measurement = {
+        order,
+        domNodes: document.querySelectorAll('*').length,
+        listeners: listenerBalance(),
+        modals: document.querySelectorAll('.MuiModal-root').length,
+        backdrops: document.querySelectorAll('.MuiBackdrop-root').length,
+        networkCalls: fetchMock.mock.calls.length - callsBeforeOrder
+      };
+      measurements.push(measurement);
+      expect(measurement.modals).toBe(0);
+      expect(measurement.backdrops).toBe(0);
+      expect(document.body).toHaveStyle({ overflow: 'auto' });
+      expect(document.documentElement.style.overflow).not.toBe('hidden');
     }
+    expect(barcodeCalls).toBe(25);
     expect(checkoutCount).toBe(25);
+    expect(paymentCalls).toBe(25);
+    expect(completeCalls).toBe(25);
+    expect(receiptCalls).toBe(25);
+    expect(print).toHaveBeenCalledTimes(25);
+    expect(new Set(measurements.slice(4).map(value => value.domNodes)).size).toBe(1);
+    expect(new Set(measurements.slice(4).map(value => value.listeners)).size).toBe(1);
+    expect(measurements.slice(4).every(value => value.networkCalls >= 5 && value.networkCalls <= 6)).toBe(true);
   }, 120_000);
 
   it('reports auto-print failure without reversing a completed sale', async () => {

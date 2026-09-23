@@ -67,6 +67,60 @@ class LotterySalesReportServiceTest {
         assertThat(result.activities()).hasSize(3).allSatisfy(row -> assertThat(row.receiptNumber()).isEqualTo("RCT-1001"));
     }
 
+    @Test
+    void twoTillsMatchEndOfDayLotteryClassificationTotals() {
+        SaleRepository sales = mock(SaleRepository.class);
+        ReceiptRepository receipts = mock(ReceiptRepository.class);
+        StoreAccessService access = mock(StoreAccessService.class);
+        User actor = mock(User.class);
+        UUID tenantId = UUID.randomUUID();
+        UUID storeId = UUID.randomUUID();
+        when(actor.getTenantId()).thenReturn(tenantId);
+        when(actor.getId()).thenReturn(UUID.randomUUID());
+        when(access.currentTenantUser(any(Authentication.class))).thenReturn(actor);
+        when(access.canAccessStore(actor.getId(), storeId)).thenReturn(true);
+
+        Sale tillOne = lotterySale(storeId, "TILL-1", "30", "20", "-10");
+        Sale tillTwo = lotterySale(storeId, "TILL-2", "40", "10", "-5");
+        when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(tillOne, tillTwo));
+
+        LotterySalesReportService service = new LotterySalesReportService(
+                sales, receipts, access, mock(FeatureService.class),
+                Clock.fixed(Instant.parse("2026-09-15T15:00:00Z"), ZoneOffset.UTC));
+        LotterySalesReportResponse result = service.summarize(new LotterySalesReportRequest(
+                null, null, null, LocalDate.parse("2026-09-15"), LocalDate.parse("2026-09-15"), "ALL", "ALL"),
+                mock(Authentication.class));
+
+        assertThat(result.physicalTicketSales()).isEqualByComparingTo("70.00");
+        assertThat(result.manualLotterySold()).isEqualByComparingTo("30.00");
+        assertThat(result.totalLotterySold()).isEqualByComparingTo("100.00");
+        assertThat(result.lotteryWins()).isEqualByComparingTo("15.00");
+        assertThat(result.netLottery()).isEqualByComparingTo("85.00");
+    }
+
+    private static Sale lotterySale(UUID storeId, String registerCode, String physical, String manual, String win) {
+        Sale sale = mock(Sale.class);
+        Store store = mock(Store.class);
+        Register register = mock(Register.class);
+        User cashier = mock(User.class);
+        when(store.getId()).thenReturn(storeId);
+        when(register.getCode()).thenReturn(registerCode);
+        when(cashier.getDisplayName()).thenReturn("Cashier " + registerCode);
+        when(sale.getId()).thenReturn(UUID.randomUUID());
+        when(sale.getStore()).thenReturn(store);
+        when(sale.getRegister()).thenReturn(register);
+        when(sale.getCreatedBy()).thenReturn(cashier);
+        when(sale.getCurrencyCode()).thenReturn("CAD");
+        when(sale.getCompletedAt()).thenReturn(Instant.parse("2026-09-15T14:30:00Z"));
+        List<SaleItem> items = List.of(
+                item(SaleLineType.CATALOG_PRODUCT, SellableType.LOTTERY_PRODUCT, "Ticket", physical, "1"),
+                item(SaleLineType.LOTTERY_SOLD, null, "Lottery Sold", manual, "1"),
+                item(SaleLineType.LOTTERY_WIN, null, "Lottery Win", win, "1"));
+        when(sale.getItems()).thenReturn(items);
+        return sale;
+    }
+
     private static SaleItem item(SaleLineType type, SellableType sellableType, String name, String subtotal, String quantity) {
         SaleItem item = mock(SaleItem.class);
         when(item.getLineType()).thenReturn(type); when(item.getSellableTypeSnapshot()).thenReturn(sellableType);

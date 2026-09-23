@@ -315,7 +315,7 @@ public class TestUserProvisioningService {
                     id, tenant_id, legal_business_name, operating_name, contact_name,
                     contact_email, country_code, administrative_division_code, industry_type, notes
                 )
-                values (?, ?, ?, ?, 'Test Provisioning', ?, 'CA', 'NB', 'TEST', 'Created by development test provisioning helper')
+                values (?, ?, ?, ?, 'Test Provisioning', ?, 'CA', 'NB', 'RETAIL', 'Created by development test provisioning helper')
                 on conflict (tenant_id) do nothing
                 """, UUID.randomUUID(), tenantId, tenantCode + " Legal Test Merchant", tenantCode + " Test Merchant",
                 "contact." + tenantCode.toLowerCase(Locale.ROOT) + TEST_EMAIL_DOMAIN);

@@ -38,12 +38,13 @@ function authResponse(roles: UserRole[] = ['OWNER']): AuthResponse {
   };
 }
 
-function currentUser(roles: UserRole[] = ['OWNER']): CurrentUserResponse {
+function currentUser(roles: UserRole[] = ['OWNER'], permissions?: string[]): CurrentUserResponse {
   return {
     userId: '00000000-0000-0000-0000-000000000201',
     email: 'inventory@example.local',
     displayName: 'Inventory User',
-    roles
+    roles,
+    permissions
   };
 }
 
@@ -246,7 +247,7 @@ function storeSession(roles: UserRole[] = ['OWNER']) {
   window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse(roles)));
 }
 
-function mockInventoryReportApi() {
+function mockInventoryReportApi(roles: UserRole[] = ['OWNER'], permissions?: string[]) {
   const stores = [store(), store(SECOND_STORE_ID, 'WEST', 'West Store')];
   const categories = [category()];
   const products = [
@@ -257,7 +258,7 @@ function mockInventoryReportApi() {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = new URL(String(input), window.location.origin);
     if (url.pathname.endsWith('/api/v1/auth/me')) {
-      return jsonResponse(currentUser(['OWNER']));
+      return jsonResponse(currentUser(roles, permissions));
     }
     if (url.pathname.endsWith('/api/v1/stores')) {
       return jsonResponse(page<Store>(stores) satisfies StoreListResponse);
@@ -379,5 +380,49 @@ describe('Inventory reporting pages', () => {
     expect(await screen.findByRole('heading', { name: 'Expired inventory' })).toBeInTheDocument();
     expect(await screen.findByText('BBQ Chips')).toBeInTheDocument();
     expect(screen.getAllByText('Expired')[0]).toBeInTheDocument();
+  });
+
+  it('validates, previews, warns about changed stock, and confirms an inventory workbook', async () => {
+    storeSession(['OWNER']);
+    const base=mockInventoryReportApi().getMockImplementation()!;
+    vi.mocked(globalThis.fetch).mockImplementation((input,init)=>{
+      const url=new URL(String(input),window.location.origin);
+      if(url.pathname.endsWith(`/stores/${STORE_ID}/inventory/import/validate`)&&init?.method==='POST')return jsonResponse({importId:'import-1',storeId:STORE_ID,changedRows:2,unchangedRows:1,errorRows:0,canConfirm:true,rows:[
+        {rowNumber:2,productId:COFFEE_ID,variantId:'variant-1',productCode:'P1',productName:'House Coffee',variant:'Regular',sku:'COFFEE-12OZ',barcode:'123',downloadedStock:-7,currentStock:-5,operation:'SET_COUNT',enteredQuantity:10,adjustment:15,finalStock:10,stockChanged:true,errors:[]},
+        {rowNumber:3,productId:SODA_ID,variantId:'variant-2',productCode:'P2',productName:'Cola Can',variant:'Can',sku:'SODA-CAN',barcode:'456',downloadedStock:3,currentStock:5,operation:'ADD_STOCK',enteredQuantity:10,adjustment:10,finalStock:15,stockChanged:true,errors:[]}
+      ]});
+      if(url.pathname.endsWith(`/stores/${STORE_ID}/inventory/import/import-1/confirm`)&&init?.method==='POST')return jsonResponse({importId:'import-1',storeId:STORE_ID,changedRows:2,rows:[]});
+      return base(input,init);
+    });
+    render(<App initialEntries={['/inventory']}/>);
+    await userEvent.click(await screen.findByLabelText('Inventory update store'));
+    await userEvent.click(screen.getByRole('option',{name:'Main Store (MAIN)'}));
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement,new File(['xlsx'],'inventory.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    await userEvent.click(screen.getByRole('button',{name:'Validate and Preview'}));
+    expect(await screen.findByText('Counted Stock (Set To)')).toBeInTheDocument();
+    expect(screen.getByText('Add Stock (Received Qty)')).toBeInTheDocument();
+    expect(screen.getAllByText('Changed since download')).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button',{name:'Confirm Inventory Update'}));
+    expect(await screen.findByText('Inventory updated successfully. 2 rows changed.')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['owner', 'TENANT_OWNER' as UserRole],
+    ['manager', 'STORE_MANAGER' as UserRole]
+  ])('shows bulk inventory actions to an authorized %s even with an empty permission list', async (_label, role) => {
+    storeSession([role]);
+    mockInventoryReportApi([role], []);
+
+    render(<App initialEntries={['/inventory']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Bulk Inventory Management' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download Inventory Excel' })).toBeDisabled();
+    expect(screen.getByText('Upload Stock Update')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('Inventory update store'));
+    await userEvent.click(screen.getByRole('option', { name: 'Main Store (MAIN)' }));
+
+    expect(screen.getByRole('button', { name: 'Download Inventory Excel' })).toBeEnabled();
+    expect(document.querySelector('input[type="file"]')).toBeEnabled();
   });
 });
