@@ -947,7 +947,12 @@ public class BusinessDayService {
         List<EndOfDayPaymentValues> paymentValues = paymentValues(sales, refunds);
         List<EndOfDayTaxValues> taxValues = taxValues(sales, refunds);
         List<EndOfDayCategorySalesSummaryResponse> categoryValues = categorySalesValues(sales, refunds);
-        EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, sales, lotterySales, lotteryPayouts, cancellations, reversals, settlements, posActivities);
+        BigDecimal actualLotteryCashSales = money(cashBreakdowns.values().stream()
+                .map(CashLedgerBreakdownResponse::lotteryCashSales).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal actualLotteryCashPayouts = money(cashBreakdowns.values().stream()
+                .map(CashLedgerBreakdownResponse::lotteryPayouts).reduce(moneyZero(), BigDecimal::add));
+        EndOfDayLotteryValues lotteryValues = lotteryValues(lotteryEnabled, sales, lotterySales, lotteryPayouts,
+                cancellations, reversals, settlements, posActivities, actualLotteryCashSales, actualLotteryCashPayouts);
         EndOfDayInventoryValues inventoryValues = inventoryValues(inventoryTransactions, balances);
         List<EndOfDayCashierValues> cashierValues = cashierValues(sales, refunds, lotterySales, lotteryPayouts);
         List<EndOfDayExceptionValues> exceptionValues = exceptionValues(day, sales, voidedSales, refunds, sessions, cashMovements, lotteryPayouts, reversals, variance);
@@ -1188,6 +1193,15 @@ public class BusinessDayService {
     }
 
     EndOfDayLotteryValues lotteryValues(boolean enabled, List<Sale> postedSales, List<LotterySale> sales, List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations, List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements, List<LotteryPosActivity> posActivities) {
+        return lotteryValues(enabled, postedSales, sales, payouts, cancellations, reversals, settlements,
+                posActivities, moneyZero(), moneyZero());
+    }
+
+    EndOfDayLotteryValues lotteryValues(boolean enabled, List<Sale> postedSales, List<LotterySale> sales,
+            List<LotteryPayout> payouts, List<LotterySaleCancellation> cancellations,
+            List<LotteryPayoutReversal> reversals, List<LotterySettlement> settlements,
+            List<LotteryPosActivity> posActivities, BigDecimal actualLotteryCashSales,
+            BigDecimal actualLotteryCashPayouts) {
         List<Sale> retailSales=postedSales.stream().filter(sale->sale.getRegister().getType()==RegisterType.RETAIL).toList();
         BigDecimal barcodeSales = retailSales.stream().flatMap(sale -> sale.getItems().stream())
                 .filter(LotterySaleLineClassifier::isPhysicalTicket)
@@ -1209,8 +1223,11 @@ public class BusinessDayService {
         BigDecimal payoutsTotal = money(cartWins);
         BigDecimal cancellationTotal = money(cancellations.stream().map(LotterySaleCancellation::getAmount).reduce(moneyZero(), BigDecimal::add));
         BigDecimal reversalTotal = money(reversals.stream().map(LotteryPayoutReversal::getAmount).reduce(moneyZero(), BigDecimal::add));
-        BigDecimal cashSales = money(sales.stream().filter(sale -> sale.getPaymentMethod() == PaymentMethod.CASH).map(LotterySale::getAmount).reduce(manualSold, BigDecimal::add));
-        BigDecimal cashPayouts = money(payouts.stream().filter(payout -> payout.getPayoutMethod() == LotteryPayoutMethod.CASH).map(LotteryPayout::getAmount).reduce(manualWins, BigDecimal::add));
+        // Cash reconciliation is authoritative in the cash ledger. A Lottery Win line is a
+        // reporting classification and may be offset against purchases or paid by debit, so it
+        // must never be assumed to be physical cash leaving the drawer.
+        BigDecimal cashSales = money(actualLotteryCashSales);
+        BigDecimal cashPayouts = money(actualLotteryCashPayouts);
         BigDecimal commission = money(settlements.stream().map(LotterySettlement::getCommission).reduce(moneyZero(), BigDecimal::add));
         BigDecimal settlement = money(settlements.stream().map(LotterySettlement::getExpectedSettlement).reduce(moneyZero(), BigDecimal::add));
         boolean hasLotteryActivity = barcodeSales.signum() != 0 || cartSold.signum() != 0 || cartWins.signum() != 0 || !sales.isEmpty() || !payouts.isEmpty() || !posActivities.isEmpty()

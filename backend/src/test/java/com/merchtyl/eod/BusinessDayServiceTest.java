@@ -307,6 +307,20 @@ class BusinessDayServiceTest {
     }
 
     @Test
+    void cashLotteryActivityUsesActualLedgerPayoutRatherThanAllWinLines() {
+        Sale sale = lotterySessionSale("R1", "10", "0", "20");
+
+        BusinessDayService.EndOfDayLotteryValues result = service.lotteryValues(
+                true, List.of(sale), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                new BigDecimal("0.00"), new BigDecimal("10.00"));
+
+        assertThat(result.lotterySales()).isEqualByComparingTo("10.00");
+        assertThat(result.lotteryPayouts()).isEqualByComparingTo("20.00");
+        assertThat(result.cashLotteryActivity()).isEqualByComparingTo("-10.00");
+        assertThat(result.nonCashLotteryActivity()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
     void scannedLotteryProductUsesSnapshotClassificationAndIsNotDoubleCountedAsMerchandise() {
         SaleItem scannedTicket = saleItem(null, null, "2.0000", "10.00", "0.00", false);
         when(scannedTicket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
@@ -350,10 +364,10 @@ class BusinessDayServiceTest {
 
     private static LotteryPayout lotteryPayout(String amount) {
         LotteryPayout payout = mock(LotteryPayout.class);
-        when(payout.getAmount()).thenReturn(new BigDecimal(amount));
-        when(payout.getStatus()).thenReturn(LotteryPayoutStatus.PAID);
-        when(payout.getPayoutMethod()).thenReturn(LotteryPayoutMethod.CASH);
-        when(payout.getApprovals()).thenReturn(List.of());
+        lenient().when(payout.getAmount()).thenReturn(new BigDecimal(amount));
+        lenient().when(payout.getStatus()).thenReturn(LotteryPayoutStatus.PAID);
+        lenient().when(payout.getPayoutMethod()).thenReturn(LotteryPayoutMethod.CASH);
+        lenient().when(payout.getApprovals()).thenReturn(List.of());
         return payout;
     }
 

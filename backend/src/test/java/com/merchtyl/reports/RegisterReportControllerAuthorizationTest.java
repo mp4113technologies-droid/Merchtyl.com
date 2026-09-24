@@ -55,12 +55,12 @@ class RegisterReportControllerAuthorizationTest {
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW"))))
                 .andExpect(status().isForbidden());
 
-        verify(registerReportService, never()).summarize(any());
+        verify(registerReportService, never()).summarize(any(), any());
     }
 
     @Test
     void viewerCanRequestRegisterReportWithFilters() throws Exception {
-        when(registerReportService.summarize(any())).thenReturn(response());
+        when(registerReportService.summarize(any(), any())).thenReturn(response());
 
         mockMvc.perform(get("/api/v1/reports/registers")
                         .param("storeId", "00000000-0000-0000-0000-000000000601")
@@ -76,7 +76,7 @@ class RegisterReportControllerAuthorizationTest {
                 .andExpect(jsonPath("$.variance").value(-3.00));
 
         ArgumentCaptor<RegisterReportRequest> request = ArgumentCaptor.forClass(RegisterReportRequest.class);
-        verify(registerReportService).summarize(request.capture());
+        verify(registerReportService).summarize(request.capture(), any());
         assertThat(request.getValue().storeId()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000601"));
         assertThat(request.getValue().registerId()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000602"));
         assertThat(request.getValue().cashierId()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000603"));

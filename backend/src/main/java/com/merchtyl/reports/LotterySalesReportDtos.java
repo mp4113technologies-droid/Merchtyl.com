@@ -16,5 +16,5 @@ record LotterySalesReportResponse(UUID storeId, UUID registerId, UUID cashierId,
                                   LocalDate dateFrom, LocalDate dateTo, String type, String source,
                                   BigDecimal physicalTicketSales, BigDecimal manualLotterySold,
                                   BigDecimal totalLotterySold, BigDecimal lotteryWins,
-                                  BigDecimal netLottery, String currencyCode,
+                                  BigDecimal netLottery, BigDecimal actualCashPayouts, String currencyCode,
                                   List<LotterySalesActivityRow> activities, Instant generatedAt) {}

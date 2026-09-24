@@ -5,11 +5,14 @@ import com.merchtyl.cash.CashLedgerService;
 import com.merchtyl.common.BadRequestException;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
+import com.merchtyl.security.StoreAccessService;
+import com.merchtyl.security.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -20,6 +23,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class RegisterReportService {
@@ -27,29 +32,41 @@ public class RegisterReportService {
 
     private final RegisterSessionRepository registerSessionRepository;
     private final CashLedgerService cashLedgerService;
+    private final StoreAccessService storeAccessService;
     private final Clock clock;
 
     @Autowired
     public RegisterReportService(
             RegisterSessionRepository registerSessionRepository,
-            CashLedgerService cashLedgerService) {
-        this(registerSessionRepository, cashLedgerService, Clock.systemUTC());
+            CashLedgerService cashLedgerService,
+            StoreAccessService storeAccessService) {
+        this(registerSessionRepository, cashLedgerService, storeAccessService, Clock.systemUTC());
     }
 
     RegisterReportService(
             RegisterSessionRepository registerSessionRepository,
             CashLedgerService cashLedgerService,
+            StoreAccessService storeAccessService,
             Clock clock) {
         this.registerSessionRepository = registerSessionRepository;
         this.cashLedgerService = cashLedgerService;
+        this.storeAccessService = storeAccessService;
         this.clock = clock;
     }
 
     @Transactional(readOnly = true)
-    public RegisterReportResponse summarize(RegisterReportRequest request) {
+    public RegisterReportResponse summarize(RegisterReportRequest request, Authentication authentication) {
         RegisterReportRequest filters = normalize(request);
+        User actor = storeAccessService.currentTenantUser(authentication);
+        if (filters.storeId() != null) {
+            storeAccessService.requireStoreAccess(authentication, filters.storeId());
+        }
+        Set<UUID> accessibleStoreIds = filters.storeId() == null
+                ? storeAccessService.assignedStores(authentication).stream()
+                        .map(value -> value.storeId()).collect(Collectors.toSet())
+                : Set.of(filters.storeId());
         List<RegisterSession> sessions = registerSessionRepository
-                .findAll(specification(filters),
+                .findAll(specification(filters, actor, accessibleStoreIds),
                         Sort.by(Sort.Direction.DESC, "openedAt").and(Sort.by(Sort.Direction.DESC, "id")));
         Map<UUID, CashLedgerBreakdownResponse> breakdowns = cashLedgerService.breakdowns(sessions);
         List<RegisterReportRow> rows = sessions.stream()
@@ -135,9 +152,12 @@ public class RegisterReportService {
         return request;
     }
 
-    private static Specification<RegisterSession> specification(RegisterReportRequest request) {
-        return Specification
-                .where(equalReference("store", request.storeId()))
+    private static Specification<RegisterSession> specification(
+            RegisterReportRequest request, User actor, Set<UUID> accessibleStoreIds) {
+        return Specification.<RegisterSession>where((root, query, criteriaBuilder) -> criteriaBuilder.equal(
+                        root.get("store").get("tenantId"), actor.getTenantId()))
+                .and((root, query, criteriaBuilder) -> root.get("store").get("id").in(accessibleStoreIds))
+                .and(equalReference("store", request.storeId()))
                 .and(equalReference("register", request.registerId()))
                 .and(equalReference("assignedCashier", request.cashierId()))
                 .and(equalEnum("status", request.status()))

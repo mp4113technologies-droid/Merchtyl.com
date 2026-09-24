@@ -1937,6 +1937,7 @@ export type LotterySalesReport = {
   totalLotterySold: number;
   lotteryWins: number;
   netLottery: number;
+  actualCashPayouts: number;
   currencyCode: string;
   activities: LotterySalesActivity[];
   generatedAt: string;

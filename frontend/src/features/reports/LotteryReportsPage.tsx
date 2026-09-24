@@ -16,7 +16,8 @@ function Summary({ report }: { report: LotterySalesReport }) {
     ['Manual Lottery Sold', report.manualLotterySold],
     ['Total Lottery Sold', report.totalLotterySold],
     ['Lottery Wins', report.lotteryWins],
-    ['Net Lottery', report.netLottery]
+    ['Net Lottery', report.netLottery],
+    ['Actual Cash Payouts', report.actualCashPayouts]
   ] as const;
   return <Grid container spacing={1.5}>{values.map(([label, value]) => <Grid item xs={12} sm={6} lg={label === 'Net Lottery' ? 4 : 2} key={label}><Card variant="outlined"><CardContent><Typography color="text.secondary" variant="body2">{label}</Typography><Typography variant="h6" color={label === 'Net Lottery' && value < 0 ? 'error.main' : 'text.primary'}>{money(value, report.currencyCode)}</Typography></CardContent></Card></Grid>)}</Grid>;
 }

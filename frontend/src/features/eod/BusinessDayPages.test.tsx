@@ -712,6 +712,7 @@ describe('Business day pages', () => {
     expect(screen.getByText('Retail Category Sales Distribution')).toBeInTheDocument();
     expect(screen.getByText('Beverages')).toBeInTheDocument();
     expect(screen.getByText('Custom Items')).toBeInTheDocument();
+    expect(screen.getByText('Lottery cash payouts')).toBeInTheDocument();
     expect(screen.getByText('75.0%')).toBeInTheDocument();
     expect(screen.getByText('100.0%')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'CSV' }));

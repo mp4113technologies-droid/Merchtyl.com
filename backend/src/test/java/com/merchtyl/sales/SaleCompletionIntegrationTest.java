@@ -35,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -156,6 +157,43 @@ class SaleCompletionIntegrationTest {
     }
 
     @Test
+    void completedPhysicalLotteryCashSaleUsesOneLotteryCashLedgerReceipt() throws Exception {
+        Fixture fixture = fixture("LOTTERY-CASH", false, BigDecimal.ZERO);
+        ReflectionTestUtils.setField(fixture.store(), "capabilities", new java.util.LinkedHashSet<>(Set.of(
+                com.merchtyl.store.StoreCapability.RETAIL,
+                com.merchtyl.store.StoreCapability.LOTTERY)));
+        storeRepository.saveAndFlush(fixture.store());
+        Product lottery = productRepository.saveAndFlush(new Product(new ProductValues(
+                "LOT-10", "Ten Dollar Ticket", null, SellableType.LOTTERY_PRODUCT, null,
+                BigDecimal.ZERO.setScale(4), new BigDecimal("10.0000"), null, null,
+                true, false, false, null, null, List.of(), List.of(), Set.of())));
+        var lotteryAuth = lotteryAuth(fixture.cashier());
+        SaleResponse draft = saleService.createDraft(
+                new SaleCreateDraftRequest(fixture.session().getId(), null, "POS"), lotteryAuth);
+        SaleResponse withTicket = saleService.addItem(draft.id(), new SaleAddItemRequest(
+                lottery.getId(), BigDecimal.ONE, null, null, false, false,
+                null, null, null, null), lotteryAuth);
+        saleService.recordPayment(withTicket.id(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("10.00"), new BigDecimal("10.00"), null, null), lotteryAuth);
+
+        saleService.completeIdempotently(withTicket.id(), "lottery-cash-complete", lotteryAuth);
+
+        Sale completed = saleRepository.findByIdForUpdate(withTicket.id()).orElseThrow();
+        assertThat(completed.getItems()).singleElement().satisfies(item ->
+                assertThat(item.getSellableTypeSnapshot()).isEqualTo(SellableType.LOTTERY_PRODUCT));
+        assertThat(completed.getPayments()).singleElement().satisfies(payment ->
+                assertThat(payment.getMethod()).isEqualTo(PaymentMethod.CASH));
+        var entries = cashLedgerRepository.findByRegisterSession_IdOrderByOccurredAtAscCreatedAtAsc(
+                fixture.session().getId());
+        assertThat(entries).singleElement().satisfies(entry -> {
+            assertThat(entry.getSourceType()).isEqualTo(CashLedgerSourceType.LOTTERY_SALE_CASH);
+            assertThat(entry.getDirection()).isEqualTo(CashLedgerDirection.IN);
+            assertThat(entry.getAmount()).isEqualByComparingTo("10.00");
+            assertThat(entry.getBusinessDate()).isEqualTo(completed.getBusinessDate());
+        });
+    }
+
+    @Test
     void completeSaleAllowsInventoryToBecomeNegative() throws Exception {
         Fixture fixture = fixture("ROLLBACK", false, BigDecimal.ZERO);
         SaleResponse sale = payableSale(fixture, new BigDecimal("2.0000"), new BigDecimal("20.00"));
@@ -224,6 +262,13 @@ class SaleCompletionIntegrationTest {
                 cashier.getEmail(),
                 "n/a",
                 List.of(new SimpleGrantedAuthority("ROLE_CASHIER")));
+    }
+
+    private static UsernamePasswordAuthenticationToken lotteryAuth(User cashier) {
+        return new UsernamePasswordAuthenticationToken(
+                cashier.getEmail(), "n/a", List.of(
+                        new SimpleGrantedAuthority("ROLE_CASHIER"),
+                        new SimpleGrantedAuthority("LOTTERY_SALE_RECORD")));
     }
 
     private static Product product(String sku) {

@@ -1173,24 +1173,35 @@ public class SaleService {
         if (sale.getTotalAmount().signum() < 0) {
             appendNetCashPayout(sale, actor, completedAt);
         }
+        boolean lotteryOnly = !sale.getItems().isEmpty()
+                && sale.getItems().stream().allMatch(LotterySaleLineClassifier::isLottery);
+        boolean allTenderIsCash = !sale.getPayments().isEmpty()
+                && sale.getPayments().stream().allMatch(payment -> payment.getMethod() == PaymentMethod.CASH);
+        // Attribution policy: a mixed merchandise/Lottery basket is split by line value only
+        // when every tender is cash. With mixed tenders there is no persisted line-to-tender
+        // association, so assigning the cash portion to Lottery would be an unauditable guess;
+        // retain it as the generic sale receipt. Lottery-only baskets remain unambiguous.
+        BigDecimal remainingLotteryCash = allTenderIsCash
+                ? positiveLotteryNet(sale).min(money(sale.getTotalAmount().max(BigDecimal.ZERO)))
+                : moneyZero();
         for (Payment payment : sale.getPayments()) {
             if (payment.getMethod() != PaymentMethod.CASH) {
                 continue;
             }
-            cashLedgerService.append(new CashLedgerEntryCommand(
-                    sale.getStore(),
-                    sale.getRegister(),
-                    sale.getRegisterSession(),
-                    CashLedgerSourceType.SALE_CASH_RECEIPT,
-                    payment.getId(),
-                    CashLedgerDirection.IN,
-                    payment.getCashTendered(),
-                    sale.getCurrencyCode(),
-                    sale.getBusinessDate(),
-                    completedAt,
-                    actor,
-                    operationId(sale.getId(), "cash-receipt", payment.getId()),
-                    "Sale cash tender"));
+            BigDecimal lotteryReceipt = lotteryOnly
+                    ? payment.getCashTendered()
+                    : allTenderIsCash ? remainingLotteryCash.min(payment.getCashSettlementAmount()) : moneyZero();
+            BigDecimal saleReceipt = money(payment.getCashTendered().subtract(lotteryReceipt));
+            if (lotteryReceipt.signum() > 0) {
+                appendCashReceipt(sale, payment, actor, completedAt, CashLedgerSourceType.LOTTERY_SALE_CASH,
+                        lotteryReceipt, "lottery-cash-receipt", "Lottery sale cash tender");
+                remainingLotteryCash = money(remainingLotteryCash.subtract(
+                        lotteryReceipt.min(payment.getCashSettlementAmount())));
+            }
+            if (saleReceipt.signum() > 0) {
+                appendCashReceipt(sale, payment, actor, completedAt, CashLedgerSourceType.SALE_CASH_RECEIPT,
+                        saleReceipt, "cash-receipt", "Sale cash tender");
+            }
             if (payment.getChangeDue().signum() > 0) {
                 cashLedgerService.append(new CashLedgerEntryCommand(
                         sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
@@ -1199,6 +1210,27 @@ public class SaleService {
                         operationId(sale.getId(), "cash-change", payment.getId()), "Sale change given"));
             }
         }
+    }
+
+    private void appendCashReceipt(Sale sale, Payment payment, User actor, Instant completedAt,
+            CashLedgerSourceType sourceType, BigDecimal amount, String operation, String notes) {
+        cashLedgerService.append(new CashLedgerEntryCommand(
+                sale.getStore(), sale.getRegister(), sale.getRegisterSession(), sourceType, payment.getId(),
+                CashLedgerDirection.IN, money(amount), sale.getCurrencyCode(), sale.getBusinessDate(), completedAt,
+                actor, operationId(sale.getId(), operation, payment.getId()), notes));
+    }
+
+    private BigDecimal positiveLotteryNet(Sale sale) {
+        BigDecimal sold = sale.getItems().stream()
+                .filter(item -> LotterySaleLineClassifier.isPhysicalTicket(item)
+                        || LotterySaleLineClassifier.isManualSold(item))
+                .map(LotterySaleLineClassifier::reportingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal wins = sale.getItems().stream()
+                .filter(LotterySaleLineClassifier::isWin)
+                .map(LotterySaleLineClassifier::reportingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return money(sold.subtract(wins).max(BigDecimal.ZERO));
     }
 
     private void appendNetCashPayout(Sale sale, User actor, Instant completedAt) {

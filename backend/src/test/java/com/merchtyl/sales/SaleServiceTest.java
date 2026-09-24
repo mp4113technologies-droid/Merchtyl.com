@@ -450,6 +450,170 @@ class SaleServiceTest {
     }
 
     @Test
+    void lotteryWinOffsetPaidInCashRecordsOnlyTheActualNetCashReceipt() {
+        Sale sale = checkoutLotterySale("30.00", "5.00");
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("25.00"), new BigDecimal("25.00"), null, null), lotteryAuth());
+
+        service.complete(sale.getId(), cashier, lotteryAuth());
+
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.LOTTERY_SALE_CASH);
+        assertThat(ledger.getValue().direction()).isEqualTo(CashLedgerDirection.IN);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("25.00");
+    }
+
+    @Test
+    void manualLotterySoldPaidInCashIsClassifiedWithoutAddingASecondReceipt() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_SOLD, null, null, null, null,
+                        new BigDecimal("20.00"), null, BigDecimal.ONE, false))), lotteryAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("20.00"), new BigDecimal("20.00"), null, null), lotteryAuth());
+
+        service.complete(sale.getId(), cashier, lotteryAuth());
+
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getAllValues()).singleElement().satisfies(entry -> {
+            assertThat(entry.sourceType()).isEqualTo(CashLedgerSourceType.LOTTERY_SALE_CASH);
+            assertThat(entry.amount()).isEqualByComparingTo("20.00");
+        });
+    }
+
+    @Test
+    void allCashMixedCartSplitsOneReceiptTotalWithoutDoubleCounting() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        TaxCategory exempt = new TaxCategory(null, "EXEMPT", "Exempt", TaxTreatment.EXEMPT, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("EXEMPT")).thenReturn(Optional.of(exempt));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenAnswer(invocation -> {
+            TaxCalculationRequest request = invocation.getArgument(0);
+            BigDecimal net = request.unitPrice().multiply(request.quantity()).subtract(request.discountAmount());
+            return taxResponse(net, BigDecimal.ZERO.setScale(2), net);
+        });
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Retail",
+                        new BigDecimal("20.00"), CustomItemTaxTreatment.NON_TAXABLE, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_SOLD, null, null, null, null,
+                        new BigDecimal("10.00"), null, BigDecimal.ONE, false))), mixedLotteryAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("30.00"), new BigDecimal("30.00"), null, null), mixedLotteryAuth());
+
+        service.complete(sale.getId(), cashier, mixedLotteryAuth());
+
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService, times(2)).append(ledger.capture());
+        assertThat(ledger.getAllValues()).extracting(CashLedgerEntryCommand::sourceType, CashLedgerEntryCommand::amount)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(CashLedgerSourceType.LOTTERY_SALE_CASH, new BigDecimal("10.00")),
+                        org.assertj.core.groups.Tuple.tuple(CashLedgerSourceType.SALE_CASH_RECEIPT, new BigDecimal("20.00")));
+        assertThat(ledger.getAllValues().stream().map(CashLedgerEntryCommand::amount).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    void mixedCartWithSplitTenderKeepsCashInOneAuditableGenericBucket() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        TaxCategory exempt = new TaxCategory(null, "EXEMPT", "Exempt", TaxTreatment.EXEMPT, null, true);
+        when(taxCategoryRepository.findByCodeIgnoreCase("EXEMPT")).thenReturn(Optional.of(exempt));
+        when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenAnswer(invocation -> {
+            TaxCalculationRequest request = invocation.getArgument(0);
+            BigDecimal net = request.unitPrice().multiply(request.quantity()).subtract(request.discountAmount());
+            return taxResponse(net, BigDecimal.ZERO.setScale(2), net);
+        });
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.CUSTOM_ITEM, null, null, null, "Retail",
+                        new BigDecimal("20.00"), CustomItemTaxTreatment.NON_TAXABLE, BigDecimal.ONE, false),
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_SOLD, null, null, null, null,
+                        new BigDecimal("10.00"), null, BigDecimal.ONE, false))), mixedLotteryAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("10.00"), new BigDecimal("10.00"), null, null), mixedLotteryAuth());
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("20.00"), null, null, null), mixedLotteryAuth());
+
+        service.complete(sale.getId(), cashier, mixedLotteryAuth());
+
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.SALE_CASH_RECEIPT);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("10.00");
+    }
+
+    @Test
+    void lotteryWinOffsetPaidByDebitDoesNotCreateCashMovement() {
+        Sale sale = checkoutLotterySale("30.00", "5.00");
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("25.00"), null, null, null), lotteryAuth());
+
+        service.complete(sale.getId(), cashier, lotteryAuth());
+
+        verify(cashLedgerService, never()).append(any());
+    }
+
+    @Test
+    void lotteryWinOffsetWithSplitPaymentRecordsOnlyCashPortion() {
+        Sale sale = checkoutLotterySale("30.00", "5.00");
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("10.00"), new BigDecimal("10.00"), null, null), lotteryAuth());
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, new BigDecimal("15.00"), null, null, null), lotteryAuth());
+
+        service.complete(sale.getId(), cashier, lotteryAuth());
+
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.LOTTERY_SALE_CASH);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("10.00");
+    }
+
+    @Test
+    void winOnlySaleCompletesAsActualCashPayout() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(SaleLineType.LOTTERY_WIN, null, null, null, null,
+                        new BigDecimal("50.00"), null, BigDecimal.ONE, false))), lotteryAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+
+        service.complete(sale.getId(), cashier, lotteryAuth());
+
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.LOTTERY_PAYOUT_CASH);
+        assertThat(ledger.getValue().direction()).isEqualTo(CashLedgerDirection.OUT);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
     void checkoutAppliesDepositPayoutAfterTaxWithoutReducingTaxableBase() {
         when(register.getType()).thenReturn(RegisterType.RETAIL);
         TaxCategory standard = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
@@ -1521,6 +1685,14 @@ class SaleServiceTest {
                 List.of(new SimpleGrantedAuthority("ROLE_CASHIER"),
                         new SimpleGrantedAuthority("LOTTERY_SALE_RECORD"),
                         new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")));
+    }
+
+    private static UsernamePasswordAuthenticationToken mixedLotteryAuth() {
+        return new UsernamePasswordAuthenticationToken("cashier@example.test", "n/a", List.of(
+                new SimpleGrantedAuthority("ROLE_CASHIER"),
+                new SimpleGrantedAuthority("POS_CUSTOM_ITEM"),
+                new SimpleGrantedAuthority("LOTTERY_SALE_RECORD"),
+                new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")));
     }
 
     private static UsernamePasswordAuthenticationToken depositPayoutAuth() {

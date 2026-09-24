@@ -9,9 +9,11 @@ import com.merchtyl.sales.SaleItem;
 import com.merchtyl.sales.SaleLineType;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.security.StoreAccessService;
+import com.merchtyl.security.AssignedStoreResponse;
 import com.merchtyl.security.User;
 import com.merchtyl.store.Store;
 import com.merchtyl.features.FeatureService;
+import com.merchtyl.cash.CashLedgerRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
 
@@ -34,6 +36,7 @@ class LotterySalesReportServiceTest {
     void combinesPhysicalAndManualSoldAndKeepsWinsSeparate() {
         SaleRepository sales = mock(SaleRepository.class);
         ReceiptRepository receipts = mock(ReceiptRepository.class);
+        CashLedgerRepository cashLedger = mock(CashLedgerRepository.class);
         StoreAccessService access = mock(StoreAccessService.class);
         User actor = mock(User.class), cashier = mock(User.class);
         Store store = mock(Store.class); Register register = mock(Register.class); Sale sale = mock(Sale.class);
@@ -41,6 +44,8 @@ class LotterySalesReportServiceTest {
         when(actor.getTenantId()).thenReturn(tenantId); when(actor.getId()).thenReturn(UUID.randomUUID());
         when(access.currentTenantUser(any(Authentication.class))).thenReturn(actor);
         when(access.canAccessStore(actor.getId(), storeId)).thenReturn(true);
+        when(access.assignedStores(any(Authentication.class))).thenReturn(List.of(
+                new AssignedStoreResponse(storeId, "MAIN", "Main", null, null, null, java.util.Set.of())));
         when(store.getId()).thenReturn(storeId); when(register.getCode()).thenReturn("REG-01");
         when(cashier.getDisplayName()).thenReturn("John");
         when(sale.getId()).thenReturn(saleId); when(sale.getStore()).thenReturn(store); when(sale.getRegister()).thenReturn(register);
@@ -53,8 +58,14 @@ class LotterySalesReportServiceTest {
         when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class))).thenReturn(List.of(sale));
         Receipt receipt = mock(Receipt.class); when(receipt.getReceiptNumber()).thenReturn("RCT-1001");
         when(receipts.findBySale_Id(saleId)).thenReturn(Optional.of(receipt));
+        when(cashLedger.sumLotteryCashPayouts(any(),
+                org.mockito.ArgumentMatchers.nullable(UUID.class),
+                org.mockito.ArgumentMatchers.nullable(UUID.class),
+                org.mockito.ArgumentMatchers.nullable(UUID.class),
+                org.mockito.ArgumentMatchers.nullable(LocalDate.class),
+                org.mockito.ArgumentMatchers.nullable(LocalDate.class))).thenReturn(new BigDecimal("7.00"));
         LotterySalesReportService service = new LotterySalesReportService(sales, receipts, access, mock(FeatureService.class),
-                Clock.fixed(Instant.parse("2026-09-15T15:00:00Z"), ZoneOffset.UTC));
+                cashLedger, Clock.fixed(Instant.parse("2026-09-15T15:00:00Z"), ZoneOffset.UTC));
 
         LotterySalesReportResponse result = service.summarize(new LotterySalesReportRequest(
                 null, null, null, LocalDate.parse("2026-09-15"), LocalDate.parse("2026-09-15"), "ALL", "ALL"), mock(Authentication.class));
@@ -64,6 +75,7 @@ class LotterySalesReportServiceTest {
         assertThat(result.totalLotterySold()).isEqualByComparingTo("60.00");
         assertThat(result.lotteryWins()).isEqualByComparingTo("20.00");
         assertThat(result.netLottery()).isEqualByComparingTo("40.00");
+        assertThat(result.actualCashPayouts()).isEqualByComparingTo("7.00");
         assertThat(result.activities()).hasSize(3).allSatisfy(row -> assertThat(row.receiptNumber()).isEqualTo("RCT-1001"));
     }
 
@@ -71,6 +83,7 @@ class LotterySalesReportServiceTest {
     void twoTillsMatchEndOfDayLotteryClassificationTotals() {
         SaleRepository sales = mock(SaleRepository.class);
         ReceiptRepository receipts = mock(ReceiptRepository.class);
+        CashLedgerRepository cashLedger = mock(CashLedgerRepository.class);
         StoreAccessService access = mock(StoreAccessService.class);
         User actor = mock(User.class);
         UUID tenantId = UUID.randomUUID();
@@ -79,6 +92,8 @@ class LotterySalesReportServiceTest {
         when(actor.getId()).thenReturn(UUID.randomUUID());
         when(access.currentTenantUser(any(Authentication.class))).thenReturn(actor);
         when(access.canAccessStore(actor.getId(), storeId)).thenReturn(true);
+        when(access.assignedStores(any(Authentication.class))).thenReturn(List.of(
+                new AssignedStoreResponse(storeId, "MAIN", "Main", null, null, null, java.util.Set.of())));
 
         Sale tillOne = lotterySale(storeId, "TILL-1", "30", "20", "-10");
         Sale tillTwo = lotterySale(storeId, "TILL-2", "40", "10", "-5");
@@ -87,7 +102,7 @@ class LotterySalesReportServiceTest {
 
         LotterySalesReportService service = new LotterySalesReportService(
                 sales, receipts, access, mock(FeatureService.class),
-                Clock.fixed(Instant.parse("2026-09-15T15:00:00Z"), ZoneOffset.UTC));
+                cashLedger, Clock.fixed(Instant.parse("2026-09-15T15:00:00Z"), ZoneOffset.UTC));
         LotterySalesReportResponse result = service.summarize(new LotterySalesReportRequest(
                 null, null, null, LocalDate.parse("2026-09-15"), LocalDate.parse("2026-09-15"), "ALL", "ALL"),
                 mock(Authentication.class));

@@ -315,7 +315,9 @@ public class ProductService {
     }
 
     private ProductValues values(ProductRequest request, UUID tenantId) {
-        validateLotteryConfiguration(request.sellableType(), request.taxCategoryId(), request.decimalQuantityAllowed());
+        Category category = category(request.sellableType(), request.categoryId(), tenantId);
+        SellableType sellableType = semanticSellableType(request.sellableType(), category);
+        validateLotteryConfiguration(sellableType, request.taxCategoryId(), request.decimalQuantityAllowed());
         requireActiveTaxCategory(request.taxCategoryId());
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = generatedVariantValues(tenantId, productName, request.variants());
@@ -323,11 +325,11 @@ public class ProductService {
                 skuGenerator.generate(tenantId, productName, null),
                 productName,
                 optionalText(request.description()),
-                request.sellableType(),
+                sellableType,
                 findActiveUnit(request.unitOfMeasureId()),
                 request.cost(),
                 request.price(),
-                category(request.sellableType(), request.categoryId(), tenantId),
+                category,
                 findOptional(request.brandId(), id -> brandRepository.findByIdAndTenantId(id, tenantId), "Brand not found"),
                 request.active(),
                 request.inventoryTrackingEnabled(),
@@ -336,11 +338,13 @@ public class ProductService {
                 request.taxCategoryId(),
                 variants,
                 barcodeValues(request.variants(), variants),
-                capabilities(request.sellableType(), request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
+                capabilities(sellableType, request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
     private ProductValues values(Product product, ProductUpdateRequest request, UUID tenantId) {
-        validateLotteryConfiguration(request.sellableType(), request.taxCategoryId(), request.decimalQuantityAllowed());
+        Category category = category(request.sellableType(), request.categoryId(), tenantId);
+        SellableType sellableType = semanticSellableType(request.sellableType(), category);
+        validateLotteryConfiguration(sellableType, request.taxCategoryId(), request.decimalQuantityAllowed());
         requireActiveTaxCategory(request.taxCategoryId());
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = updateVariantValues(product, tenantId, productName, request.variants());
@@ -348,11 +352,11 @@ public class ProductService {
                 product.getSku(),
                 productName,
                 optionalText(request.description()),
-                request.sellableType(),
+                sellableType,
                 findActiveUnit(request.unitOfMeasureId()),
                 request.cost(),
                 request.price(),
-                category(request.sellableType(), request.categoryId(), tenantId),
+                category,
                 findOptional(request.brandId(), id -> brandRepository.findByIdAndTenantId(id, tenantId), "Brand not found"),
                 request.active(),
                 request.inventoryTrackingEnabled(),
@@ -361,7 +365,7 @@ public class ProductService {
                 request.taxCategoryId(),
                 variants,
                 barcodeValues(request.variants(), variants),
-                capabilities(request.sellableType(), request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
+                capabilities(sellableType, request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
     private void requireActiveTaxCategory(UUID taxCategoryId) {
@@ -386,6 +390,19 @@ public class ProductService {
         }
         return findOptional(requestedCategoryId,
                 id -> categoryRepository.findByIdAndTenantId(id, tenantId), "Category not found");
+    }
+
+    /**
+     * A system category is a catalog rule, not merely presentation metadata. Keep
+     * the semantic product type aligned even when an older client submits the
+     * default STANDARD_PRODUCT value with the tenant's protected Lottery category.
+     */
+    private static SellableType semanticSellableType(SellableType requestedType, Category category) {
+        if (category != null && category.isSystemManaged()
+                && LOTTERY_CATEGORY_CODE.equals(category.getSystemType())) {
+            return SellableType.LOTTERY_PRODUCT;
+        }
+        return requestedType;
     }
 
     private Integer validatedMinimumAge(Set<ProductCapability> capabilities, Integer minimumAge) {

@@ -1,6 +1,7 @@
 package com.merchtyl.reports;
 
 import com.merchtyl.common.BadRequestException;
+import com.merchtyl.cash.CashLedgerRepository;
 import com.merchtyl.features.FeatureCode;
 import com.merchtyl.features.FeatureService;
 import com.merchtyl.receipts.ReceiptRepository;
@@ -26,6 +27,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class LotterySalesReportService {
@@ -33,17 +37,18 @@ public class LotterySalesReportService {
     private final ReceiptRepository receipts;
     private final StoreAccessService storeAccess;
     private final FeatureService features;
+    private final CashLedgerRepository cashLedger;
     private final Clock clock;
 
     @Autowired
     public LotterySalesReportService(SaleRepository sales, ReceiptRepository receipts, StoreAccessService storeAccess,
-                                     FeatureService features) {
-        this(sales, receipts, storeAccess, features, Clock.systemUTC());
+                                     FeatureService features, CashLedgerRepository cashLedger) {
+        this(sales, receipts, storeAccess, features, cashLedger, Clock.systemUTC());
     }
 
     LotterySalesReportService(SaleRepository sales, ReceiptRepository receipts, StoreAccessService storeAccess,
-                              FeatureService features, Clock clock) {
-        this.sales = sales; this.receipts = receipts; this.storeAccess = storeAccess; this.features = features; this.clock = clock;
+                              FeatureService features, CashLedgerRepository cashLedger, Clock clock) {
+        this.sales = sales; this.receipts = receipts; this.storeAccess = storeAccess; this.features = features; this.cashLedger = cashLedger; this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -84,9 +89,18 @@ public class LotterySalesReportService {
         }
         physical = money(physical); manual = money(manual); wins = money(wins);
         BigDecimal total = money(physical.add(manual));
+        Set<UUID> payoutStoreIds = request.storeId() == null
+                ? storeAccess.assignedStores(authentication).stream().map(value -> value.storeId()).collect(Collectors.toSet())
+                : Set.of(request.storeId());
+        BigDecimal cashPayoutTotal = payoutStoreIds.stream()
+                .map(storeId -> cashLedger.sumLotteryCashPayouts(actor.getTenantId(), storeId,
+                        request.registerId(), request.cashierId(), request.dateFrom(), request.dateTo()))
+                .filter(value -> value != null)
+                .reduce(zero(), BigDecimal::add);
+        BigDecimal actualCashPayouts = money(cashPayoutTotal == null ? zero() : cashPayoutTotal);
         return new LotterySalesReportResponse(request.storeId(), request.registerId(), request.cashierId(),
                 request.dateFrom(), request.dateTo(), type, source, physical, manual, total, wins,
-                money(total.subtract(wins)), currency, List.copyOf(rows), Instant.now(clock));
+                money(total.subtract(wins)), actualCashPayouts, currency, List.copyOf(rows), Instant.now(clock));
     }
 
     private static Specification<Sale> specification(LotterySalesReportRequest request, User actor) {

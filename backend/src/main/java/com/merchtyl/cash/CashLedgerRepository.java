@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDate;
 
 public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, UUID> {
     boolean existsByOperationId(UUID operationId);
@@ -23,4 +24,24 @@ public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, UUI
 
     List<CashLedgerEntry> findByRegisterSession_IdInOrderByRegisterSession_IdAscOccurredAtAscCreatedAtAsc(
             Collection<UUID> registerSessionIds);
+
+    @Query("""
+            select coalesce(sum(entry.amount), 0)
+            from CashLedgerEntry entry
+            where entry.sourceType = com.merchtyl.cash.CashLedgerSourceType.LOTTERY_PAYOUT_CASH
+              and entry.direction = com.merchtyl.cash.CashLedgerDirection.OUT
+              and entry.store.tenantId = :tenantId
+              and (:storeId is null or entry.store.id = :storeId)
+              and (:registerId is null or entry.register.id = :registerId)
+              and (:cashierId is null or entry.createdBy.id = :cashierId)
+              and (:dateFrom is null or entry.businessDate >= :dateFrom)
+              and (:dateTo is null or entry.businessDate <= :dateTo)
+            """)
+    BigDecimal sumLotteryCashPayouts(
+            @Param("tenantId") UUID tenantId,
+            @Param("storeId") UUID storeId,
+            @Param("registerId") UUID registerId,
+            @Param("cashierId") UUID cashierId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo);
 }

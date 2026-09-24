@@ -7,6 +7,7 @@ import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.security.User;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Sort;
@@ -37,13 +38,18 @@ class RegisterReportServiceTest {
 
     private final RegisterSessionRepository registerSessionRepository = mock(RegisterSessionRepository.class);
     private final CashLedgerService cashLedgerService = mock(CashLedgerService.class);
+    private final StoreAccessService storeAccessService = mock(StoreAccessService.class);
+    private final User actor = mock(User.class);
     private final RegisterReportService service = new RegisterReportService(
             registerSessionRepository,
             cashLedgerService,
+            storeAccessService,
             Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     void summarizesRegisterCashBucketsAndVariance() {
+        when(actor.getTenantId()).thenReturn(UUID.fromString("00000000-0000-0000-0000-000000000699"));
+        when(storeAccessService.currentTenantUser(any())).thenReturn(actor);
         RegisterSession session = session();
         when(registerSessionRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of(session));
         when(cashLedgerService.breakdowns(List.of(session))).thenReturn(Map.of(SESSION_ID, breakdown()));
@@ -54,7 +60,7 @@ class RegisterReportServiceTest {
                 CASHIER_ID,
                 RegisterSessionStatus.CLOSED,
                 LocalDate.parse("2026-07-01"),
-                LocalDate.parse("2026-07-31")));
+                LocalDate.parse("2026-07-31")), mock(org.springframework.security.core.Authentication.class));
 
         assertThat(response.openingCash()).isEqualByComparingTo("100.00");
         assertThat(response.retailCashReceived()).isEqualByComparingTo("250.00");

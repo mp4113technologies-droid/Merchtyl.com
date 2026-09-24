@@ -237,6 +237,24 @@ class ProductServiceTest {
     }
 
     @Test
+    void systemLotteryCategoryPromotesLegacyStandardRequestToLotteryProduct() {
+        UUID tenantId = new UUID(0L, 1L);
+        Category lottery = new Category("IGNORED-CODE", "Renamed Category", null, true);
+        lottery.assignTenant(tenantId);
+        ReflectionTestUtils.setField(lottery, "systemManaged", true);
+        ReflectionTestUtils.setField(lottery, "systemType", "LOTTERY");
+        when(categoryRepository.findByIdAndTenantId(lottery.getId(), tenantId)).thenReturn(Optional.of(lottery));
+
+        ProductResponse response = productService.create(new ProductRequest(
+                null, "Twenty Dollar Ticket", null, SellableType.STANDARD_PRODUCT, null,
+                BigDecimal.ZERO, new BigDecimal("20.00"), lottery.getId(), null,
+                true, false, false, null, null, List.of(), Set.of()), null);
+
+        assertThat(response.sellableType()).isEqualTo(SellableType.LOTTERY_PRODUCT);
+        assertThat(response.categoryId()).isEqualTo(lottery.getId());
+    }
+
+    @Test
     void createRejectsInactiveTaxCategory() {
         UUID taxCategoryId = UUID.randomUUID();
         when(taxCategoryRepository.findById(taxCategoryId)).thenReturn(Optional.of(new TaxCategory(
