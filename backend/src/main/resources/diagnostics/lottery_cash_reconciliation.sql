@@ -12,6 +12,23 @@
 
 BEGIN TRANSACTION READ ONLY;
 
+-- Active lottery catalog rows with a conflicting direct or assignment-based tax category.
+SELECT p.id AS product_id, p.product_reference, p.sku, p.name, p.sellable_type,
+       p.tax_category_id, tc.code AS tax_category_code, tc.treatment AS tax_treatment,
+       assignment.id AS assignment_id, assigned.code AS assigned_tax_category_code,
+       assigned.treatment AS assigned_tax_treatment
+FROM products p
+LEFT JOIN tax_categories tc ON tc.id = p.tax_category_id
+LEFT JOIN product_tax_category_assignments assignment
+  ON assignment.product_id = p.id AND assignment.active = TRUE
+LEFT JOIN tax_categories assigned ON assigned.id = assignment.tax_category_id
+WHERE p.tenant_id = :'tenant_id'::uuid
+  AND p.active = TRUE
+  AND p.deleted_at IS NULL
+  AND p.sellable_type = 'LOTTERY_PRODUCT'
+  AND (p.tax_category_id IS NOT NULL OR assignment.id IS NOT NULL)
+ORDER BY p.created_at, p.id;
+
 -- Current catalog mismatches. These rows require an explicit, audited catalog
 -- correction; this diagnostic intentionally performs no UPDATE.
 SELECT p.id AS product_id, p.product_reference, p.sku, p.name,
@@ -48,6 +65,23 @@ WHERE st.tenant_id = :'tenant_id'::uuid
   AND c.system_managed = TRUE
   AND c.system_type = 'LOTTERY'
   AND si.sellable_type_snapshot IS DISTINCT FROM 'LOTTERY_PRODUCT'
+ORDER BY s.completed_at, s.id, si.line_number;
+
+-- Historical completed lines that were actually charged tax while carrying the Lottery semantic.
+-- This is a review list only; never update these snapshots in place.
+SELECT s.id AS sale_id, r.receipt_number, s.business_date, s.completed_at,
+       si.id AS sale_item_id, si.product_id, si.product_name,
+       si.quantity, si.line_subtotal, si.estimated_tax_amount, si.line_total
+FROM sales s
+JOIN stores st ON st.id = s.store_id
+JOIN sale_items si ON si.sale_id = s.id
+LEFT JOIN receipts r ON r.sale_id = s.id
+WHERE st.tenant_id = :'tenant_id'::uuid
+  AND s.store_id = :'store_id'::uuid
+  AND s.business_date = :'business_date'::date
+  AND s.status IN ('COMPLETED', 'PARTIALLY_REFUNDED', 'REFUNDED')
+  AND si.sellable_type_snapshot = 'LOTTERY_PRODUCT'
+  AND si.estimated_tax_amount <> 0
 ORDER BY s.completed_at, s.id, si.line_number;
 
 WITH scoped_sessions AS (

@@ -488,7 +488,7 @@ describe('Product pages', () => {
     expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument();
   });
 
-  it('selects the persisted system Lottery category and keeps it manually selectable', async () => {
+  it('selects and locks the persisted system Lottery category while showing effective tax treatment', async () => {
     storeSession(['OWNER']);
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);
@@ -505,10 +505,9 @@ describe('Product pages', () => {
     await userEvent.click(sellableType);
     await userEvent.click(await screen.findByRole('option', { name: 'LOTTERY PRODUCT' }));
     await waitFor(() => expect(category).toHaveTextContent('Lottery (ADV01-CAT-004)'));
-    expect(category).not.toHaveAttribute('aria-disabled', 'true');
-    await userEvent.click(category);
-    expect(await screen.findByRole('option', { name: 'Lottery (ADV01-CAT-004)' })).toBeVisible();
-    await userEvent.click(screen.getByRole('option', { name: 'Lottery (ADV01-CAT-004)' }));
+    expect(category).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByLabelText('Tax Treatment')).toHaveValue('Tax Exempt — inherited from Lottery');
+    expect(screen.getByText('Physical lottery products are always tax exempt. Change the sellable type to use normal tax controls.')).toBeVisible();
 
     await userEvent.click(sellableType);
     await userEvent.click(await screen.findByRole('option', { name: 'STANDARD PRODUCT' }));
@@ -569,6 +568,7 @@ describe('Product pages', () => {
     expect(await screen.findByRole('heading', { name: 'Five Dollar Ticket' })).toBeVisible();
     expect(await screen.findByRole('combobox', { name: 'Sellable type' })).toHaveTextContent('LOTTERY PRODUCT');
     expect(screen.getByRole('combobox', { name: 'Category' })).toHaveTextContent('Lottery (ADV01-CAT-004)');
+    expect(screen.getByLabelText('Tax Treatment')).toHaveValue('Tax Exempt — inherited from Lottery');
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes(`/products/${created.id}`))).toBe(true);
   });
 

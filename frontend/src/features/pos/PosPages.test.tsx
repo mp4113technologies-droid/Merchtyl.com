@@ -816,7 +816,7 @@ describe('POS pages', () => {
       const common = commonApi(input);
       if (common) return common;
       if (url.pathname.endsWith('/api/v1/products/barcodes/111')) return jsonResponse({ productId, variantId: null, productName: 'Coffee', variantName: null, barcode: '111', sku: 'COFFEE', unitOfMeasureId: null, price: 10, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
-      if (url.pathname.endsWith('/api/v1/products/barcodes/222')) return jsonResponse({ productId: '00000000-0000-0000-0000-000000000922', variantId: null, productName: 'Lottery Ticket Pack', variantName: null, barcode: '222', sku: 'LOTTERY-PHYSICAL', unitOfMeasureId: null, price: 20, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
+      if (url.pathname.endsWith('/api/v1/products/barcodes/222')) return jsonResponse({ productId: '00000000-0000-0000-0000-000000000922', variantId: null, productName: 'Lottery Ticket Pack', variantName: null, barcode: '222', sku: 'LOTTERY-PHYSICAL', sellableType: 'LOTTERY_PRODUCT', unitOfMeasureId: null, price: 20, taxCategoryId: null, taxCategoryName: null, availableQuantity: 10, active: true });
       if (url.pathname.endsWith('/api/v1/sales/checkout') && init?.method === 'POST') {
         checkoutBody = JSON.parse(String(init.body));
         return jsonResponse(saleForCheckoutItems(checkoutBody.items));
@@ -830,6 +830,7 @@ describe('POS pages', () => {
     await screen.findByText('Coffee');
     await userEvent.type(barcode, '222{enter}');
     await screen.findByText('Lottery Ticket Pack');
+    expect(screen.getByText('Exempt')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Lottery Sold' }));
     await userEvent.type(screen.getByRole('spinbutton', { name: 'Amount (USD)' }), '5');
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add to Cart' }));

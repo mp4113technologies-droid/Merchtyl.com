@@ -1910,6 +1910,7 @@ export type SaleItem = {
   depositUnitAmount?: number | null;
   depositQuantity?: number;
   depositTotal?: number;
+  sellableType?: SellableType | null;
   version: number;
 };
 

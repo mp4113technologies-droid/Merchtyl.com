@@ -990,6 +990,17 @@ public class SaleService {
                 total = total.add(signed);
                 continue;
             }
+            if (item.isCatalogProduct()
+                    && item.getProduct().getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT) {
+                BigDecimal amount = money(item.getUnitPrice().multiply(item.getQuantity()).subtract(item.getDiscountAmount()));
+                item.applyVariantDeposit();
+                BigDecimal depositTotal = item.getDepositTotal();
+                item.setCalculatedAmounts(amount.add(depositTotal), moneyZero(), amount.add(depositTotal));
+                subtotal = subtotal.add(amount).add(depositTotal);
+                discount = discount.add(item.getDiscountAmount());
+                total = total.add(amount).add(depositTotal);
+                continue;
+            }
             if (item.isCatalogProduct()) saleItemHandlerRegistry.validate(item.validationRequest());
             TaxCalculationRequest taxRequest = new TaxCalculationRequest(
                     sale.getStore().getId(),

@@ -224,16 +224,19 @@ class ProductServiceTest {
         lottery.assignTenant(tenantId);
         org.springframework.test.util.ReflectionTestUtils.setField(lottery, "systemType", "LOTTERY");
         UUID unrelatedCategoryId = UUID.randomUUID();
+        UUID staleTaxCategoryId = UUID.randomUUID();
         when(categoryRepository.findByTenantIdAndSystemType(tenantId, "LOTTERY"))
                 .thenReturn(Optional.of(lottery));
 
         ProductResponse response = productService.create(new ProductRequest(
                 null, "Five Dollar Ticket", null, SellableType.LOTTERY_PRODUCT, null,
                 BigDecimal.ZERO, new BigDecimal("5.00"), unrelatedCategoryId, null,
-                true, false, false, null, null, List.of(), Set.of()), null);
+                true, false, false, null, staleTaxCategoryId, List.of(), Set.of()), null);
 
         assertThat(response.categoryId()).isEqualTo(lottery.getId());
+        assertThat(response.taxCategoryId()).isNull();
         verify(categoryRepository, never()).findByIdAndTenantId(unrelatedCategoryId, tenantId);
+        verify(taxCategoryRepository, never()).findById(staleTaxCategoryId);
     }
 
     @Test

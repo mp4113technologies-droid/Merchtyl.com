@@ -6,6 +6,7 @@ import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.NotFoundException;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.SellableType;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
@@ -71,9 +72,10 @@ public class TaxEngine {
 
         Store store = request.storeId() == null ? null : storeRepository.findById(request.storeId())
                 .orElseThrow(() -> new NotFoundException("Store not found"));
-        // Checkout already supplies the resolved category snapshot. Avoid reloading the same
-        // catalog product for every line merely to rediscover that category.
-        Product product = request.productId() == null || request.productTaxCategoryId() != null
+        // A supplied tax category is only an input, never authority over the product's semantic
+        // classification. In particular, LOTTERY_PRODUCT must remain exempt even if stale catalog
+        // data or a client supplies a taxable category.
+        Product product = request.productId() == null
                 ? null
                 : productRepository.findById(request.productId())
                         .orElseThrow(() -> new NotFoundException("Product not found"));
@@ -101,7 +103,14 @@ public class TaxEngine {
                 request.customerExempt(),
                 transactionDate,
                 request.saleChannel());
-        TaxRuleEvaluationResponse evaluation = taxRuleEvaluator.evaluate(evaluationRequest);
+        TaxRuleEvaluationResponse evaluation = product != null && product.getSellableType() == SellableType.LOTTERY_PRODUCT
+                ? new TaxRuleEvaluationResponse(
+                        java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                        false, true, false,
+                        IncludedPriceBehavior.USE_RATE_SETTING,
+                        TaxRoundingStrategy.HALF_UP,
+                        java.util.List.of())
+                : taxRuleEvaluator.evaluate(evaluationRequest);
         TaxCalculationContext context = new TaxCalculationContext(
                 request.storeId(),
                 storeJurisdictionId,

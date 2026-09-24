@@ -3,6 +3,7 @@ package com.merchtyl.sales;
 import java.math.BigDecimal;
 import java.util.UUID;
 import com.merchtyl.product.DepositType;
+import com.merchtyl.product.SellableType;
 
 public record SaleItemResponse(
         UUID id,
@@ -48,6 +49,7 @@ public record SaleItemResponse(
         BigDecimal depositUnitAmount,
         BigDecimal depositQuantity,
         BigDecimal depositTotal,
+        SellableType sellableType,
         long version
 ) {
     public SaleItemResponse(UUID id, UUID productId, int lineNumber, String productSku, String productName,
@@ -60,7 +62,7 @@ public record SaleItemResponse(
                 discountAmount, null,null,null,null,null,null,null,null, completedProductCost, completedProductPrice, completedProductCapabilities,
                 priceOverride, ageVerified, serialNumber, externalReference, customerId, paymentMethodCode,
                 lineSubtotal, estimatedTaxAmount, lineTotal, null, null, null, null, java.util.List.of(), java.util.List.of(),
-                null, null, BigDecimal.ZERO, BigDecimal.ZERO, version);
+                null, null, BigDecimal.ZERO, BigDecimal.ZERO, null, version);
     }
 
     static SaleItemResponse from(SaleItem item) {
@@ -102,6 +104,7 @@ public record SaleItemResponse(
                 item.getDepositUnitAmount(),
                 item.getDepositQuantity(),
                 item.getDepositTotal(),
+                item.getSellableTypeSnapshot(),
                 item.getVersion());
     }
 }

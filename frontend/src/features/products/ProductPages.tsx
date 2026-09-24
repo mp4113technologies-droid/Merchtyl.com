@@ -521,7 +521,7 @@ function ProductForm({
               />
             </Grid>
             <Grid item xs={12} md={6} xl={4}>
-              <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled} />
+              <ReferenceSelect control={form.control} name="categoryId" label="Category" options={categories} disabled={disabled || watchedSellableType === 'LOTTERY_PRODUCT'} />
             </Grid>
             <Grid item xs={12} md={6} xl={4}>
               <ReferenceSelect control={form.control} name="brandId" label="Brand" options={brands} disabled={disabled} />
@@ -539,7 +539,15 @@ function ProductForm({
               <TextInput control={form.control} name="imageUrl" label="Product image URL" disabled={disabled} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <Controller
+              {watchedSellableType === 'LOTTERY_PRODUCT' ? (
+                <TextField
+                  label="Tax Treatment"
+                  value="Tax Exempt — inherited from Lottery"
+                  disabled
+                  helperText="Physical lottery products are always tax exempt. Change the sellable type to use normal tax controls."
+                  fullWidth
+                />
+              ) : <Controller
                 name="taxCategoryId"
                 control={form.control}
                 render={({ field, fieldState }) => (
@@ -547,13 +555,11 @@ function ProductForm({
                     {...field}
                     select
                     label="Tax Category"
-                    required={form.watch('sellableType') !== 'LOTTERY_PRODUCT'}
-                    disabled={disabled || form.watch('sellableType') === 'LOTTERY_PRODUCT' || taxCategoriesLoading || Boolean(taxCategoriesError) || taxCategories.length === 0}
+                    required
+                    disabled={disabled || taxCategoriesLoading || Boolean(taxCategoriesError) || taxCategories.length === 0}
                     error={Boolean(fieldState.error) || Boolean(taxCategoriesError)}
                     helperText={taxCategoriesLoading
                       ? 'Loading tax categories...'
-                      : form.watch('sellableType') === 'LOTTERY_PRODUCT'
-                        ? 'Lottery products are outside normal merchandise tax.'
                       : taxCategoriesError
                         ? 'Unable to load tax categories.'
                         : taxCategories.length === 0
@@ -566,8 +572,8 @@ function ProductForm({
                     {taxCategories.map((category) => <MenuItem key={category.id} value={category.id} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{category.name}</MenuItem>)}
                   </TextField>
                 )}
-              />
-              {taxCategoriesError ? <Button size="small" onClick={retryTaxCategories}>Retry</Button> : null}
+              />}
+              {watchedSellableType !== 'LOTTERY_PRODUCT' && taxCategoriesError ? <Button size="small" onClick={retryTaxCategories}>Retry</Button> : null}
             </Grid>
           </Grid>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

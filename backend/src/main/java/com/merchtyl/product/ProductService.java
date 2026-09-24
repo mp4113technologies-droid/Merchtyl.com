@@ -317,8 +317,9 @@ public class ProductService {
     private ProductValues values(ProductRequest request, UUID tenantId) {
         Category category = category(request.sellableType(), request.categoryId(), tenantId);
         SellableType sellableType = semanticSellableType(request.sellableType(), category);
-        validateLotteryConfiguration(sellableType, request.taxCategoryId(), request.decimalQuantityAllowed());
-        requireActiveTaxCategory(request.taxCategoryId());
+        validateLotteryConfiguration(sellableType, request.decimalQuantityAllowed());
+        UUID taxCategoryId = effectiveTaxCategoryId(sellableType, request.taxCategoryId());
+        requireActiveTaxCategory(taxCategoryId);
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = generatedVariantValues(tenantId, productName, request.variants());
         return new ProductValues(
@@ -335,7 +336,7 @@ public class ProductService {
                 request.inventoryTrackingEnabled(),
                 request.decimalQuantityAllowed(),
                 optionalText(request.imageUrl()),
-                request.taxCategoryId(),
+                taxCategoryId,
                 variants,
                 barcodeValues(request.variants(), variants),
                 capabilities(sellableType, request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
@@ -344,8 +345,9 @@ public class ProductService {
     private ProductValues values(Product product, ProductUpdateRequest request, UUID tenantId) {
         Category category = category(request.sellableType(), request.categoryId(), tenantId);
         SellableType sellableType = semanticSellableType(request.sellableType(), category);
-        validateLotteryConfiguration(sellableType, request.taxCategoryId(), request.decimalQuantityAllowed());
-        requireActiveTaxCategory(request.taxCategoryId());
+        validateLotteryConfiguration(sellableType, request.decimalQuantityAllowed());
+        UUID taxCategoryId = effectiveTaxCategoryId(sellableType, request.taxCategoryId());
+        requireActiveTaxCategory(taxCategoryId);
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = updateVariantValues(product, tenantId, productName, request.variants());
         return new ProductValues(
@@ -362,7 +364,7 @@ public class ProductService {
                 request.inventoryTrackingEnabled(),
                 request.decimalQuantityAllowed(),
                 optionalText(request.imageUrl()),
-                request.taxCategoryId(),
+                taxCategoryId,
                 variants,
                 barcodeValues(request.variants(), variants),
                 capabilities(sellableType, request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
@@ -375,10 +377,13 @@ public class ProductService {
         if (!category.isActive()) throw new BadRequestException("Tax category is inactive");
     }
 
-    private static void validateLotteryConfiguration(SellableType type, UUID taxCategoryId, boolean decimalQuantityAllowed) {
+    private static void validateLotteryConfiguration(SellableType type, boolean decimalQuantityAllowed) {
         if (type != SellableType.LOTTERY_PRODUCT) return;
-        if (taxCategoryId != null) throw new BadRequestException("LOTTERY_PRODUCT_MUST_BE_NON_TAXABLE");
         if (decimalQuantityAllowed) throw new BadRequestException("LOTTERY_PRODUCT_REQUIRES_WHOLE_QUANTITY");
+    }
+
+    private static UUID effectiveTaxCategoryId(SellableType type, UUID requestedTaxCategoryId) {
+        return type == SellableType.LOTTERY_PRODUCT ? null : requestedTaxCategoryId;
     }
 
     private Category category(SellableType type, UUID requestedCategoryId, UUID tenantId) {

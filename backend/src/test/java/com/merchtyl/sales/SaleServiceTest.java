@@ -832,6 +832,37 @@ class SaleServiceTest {
     }
 
     @Test
+    void scannedLotteryTicketQuantityTwoIsExcludedFromTaxCalculation() {
+        UUID tenantId = UUID.randomUUID();
+        Product lotteryProduct = new Product(new ProductValues(
+                "LOT-050", "Atlantic Lottery Ticket", null, SellableType.LOTTERY_PRODUCT, null,
+                BigDecimal.ZERO, new BigDecimal("0.5000"), null, null, true, false, false,
+                null, UUID.randomUUID(), List.of(), List.of(), Set.of()));
+        lotteryProduct.assignTenant(tenantId);
+        lotteryProduct.setAvailabilityScope(ProductAvailabilityScope.ALL_STORES);
+        ReflectionTestUtils.setField(service, "storeProductRepository", storeProductRepository);
+        when(store.getTenantId()).thenReturn(tenantId);
+        when(store.getCapabilities()).thenReturn(Set.of(StoreCapability.RETAIL, StoreCapability.LOTTERY));
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(productRepository.findByIdAndTenantId(lotteryProduct.getId(), tenantId))
+                .thenReturn(Optional.of(lotteryProduct));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(SESSION_ID, "POS", List.of(
+                new SaleCheckoutItemRequest(lotteryProduct.getId(), null, null, new BigDecimal("2"), false))), lotteryAuth());
+
+        assertThat(response.items()).singleElement().satisfies(item -> {
+            assertThat(item.sellableType()).isEqualTo(SellableType.LOTTERY_PRODUCT);
+            assertThat(item.quantity()).isEqualByComparingTo("2.0000");
+            assertThat(item.unitPrice()).isEqualByComparingTo("0.50");
+            assertThat(item.estimatedTaxAmount()).isZero();
+            assertThat(item.lineTotal()).isEqualByComparingTo("1.00");
+        });
+        assertThat(response.estimatedTaxAmount()).isZero();
+        assertThat(response.totalAmount()).isEqualByComparingTo("1.00");
+        verify(taxEngine, never()).calculate(any(), any());
+    }
+
+    @Test
     void checkoutRejectsSelectedStoresProductWithoutActiveStoreMappingUsingFriendlyCode() {
         UUID tenantId = UUID.randomUUID();
         product.assignTenant(tenantId);

@@ -95,15 +95,17 @@ class TaxEngineTest {
     }
 
     @Test
-    void calculateDoesNotReloadProductWhenCheckoutSuppliesResolvedTaxCategory() {
+    void calculateStillLoadsProductSemanticWhenCheckoutSuppliesResolvedTaxCategory() {
         UUID storeId = UUID.fromString("00000000-0000-0000-0000-000000000601");
         UUID productId = UUID.fromString("00000000-0000-0000-0000-000000000602");
         UUID categoryId = UUID.fromString("00000000-0000-0000-0000-000000000701");
         Store store = mock(Store.class);
+        Product product = product(categoryId);
         TaxRuleEvaluationResponse evaluation = new TaxRuleEvaluationResponse(List.of(), List.of(), List.of(), false, false, false,
                 IncludedPriceBehavior.USE_RATE_SETTING, TaxRoundingStrategy.HALF_UP, List.of());
         TaxCalculationResponse calculated = response(storeId, productId, categoryId, null, null);
         when(storeRepository.findById(storeId)).thenReturn(Optional.of(store));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(taxCategoryRepository.existsById(categoryId)).thenReturn(true);
         when(taxRuleEvaluator.evaluate(any())).thenReturn(evaluation);
         when(taxCalculator.calculate(any(), any())).thenReturn(calculated);
@@ -113,7 +115,35 @@ class TaxEngineTest {
                 new BigDecimal("10.00"), BigDecimal.ONE, BigDecimal.ZERO, false, "CAD"), null);
 
         assertThat(result).isEqualTo(calculated);
-        verify(productRepository, never()).findById(any());
+        verify(productRepository).findById(productId);
+    }
+
+    @Test
+    void lotteryProductIsExemptEvenWhenAStaleTaxableCategoryIsSupplied() {
+        UUID storeId = UUID.randomUUID();
+        UUID staleTaxCategoryId = UUID.randomUUID();
+        Store store = mock(Store.class);
+        Product lottery = new Product(new ProductValues(
+                "LOT-050", "Atlantic Lottery Ticket", null, SellableType.LOTTERY_PRODUCT, null,
+                BigDecimal.ZERO, new BigDecimal("0.50"), null, null, true, false, false,
+                null, staleTaxCategoryId, List.of(), List.of(), Set.of()));
+        when(storeRepository.findById(storeId)).thenReturn(Optional.of(store));
+        when(productRepository.findById(lottery.getId())).thenReturn(Optional.of(lottery));
+        when(taxCategoryRepository.existsById(staleTaxCategoryId)).thenReturn(true);
+        when(taxCalculator.calculate(any(), any())).thenAnswer(invocation -> {
+            TaxCalculationContext context = invocation.getArgument(0);
+            TaxRuleEvaluationResponse evaluation = invocation.getArgument(1);
+            assertThat(evaluation.exempt()).isTrue();
+            return response(storeId, lottery.getId(), staleTaxCategoryId, null, null);
+        });
+
+        TaxCalculationResponse result = taxEngine.calculate(new TaxCalculationRequest(
+                storeId, null, null, lottery.getId(), staleTaxCategoryId, false,
+                LocalDate.of(2026, 9, 24), "POS", new BigDecimal("0.50"),
+                new BigDecimal("2"), BigDecimal.ZERO, false, "CAD"), null);
+
+        assertThat(result.taxAmount()).isZero();
+        verify(taxRuleEvaluator, never()).evaluate(any());
     }
 
     private static Product product(UUID taxCategoryId) {

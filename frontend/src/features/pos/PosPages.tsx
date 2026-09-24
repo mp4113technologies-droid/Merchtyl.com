@@ -69,7 +69,7 @@ import {
   reprintSaleReceipt,
   resumeSale,
 } from '../../api/client';
-import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, Store } from '../../api/types';
+import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, SellableType, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { bestMultiBuyPromotion } from './multiBuyPricing';
@@ -429,7 +429,9 @@ function CartLines({
                   ? <Chip size="small" label={item.lineType === 'LOTTERY_WIN' ? 'Lottery offset' : 'Lottery'} color={item.lineType === 'LOTTERY_WIN' ? 'warning' : 'primary'} variant="outlined" />
                 : item.lineType === 'DEPOSIT_PAYOUT'
                   ? <Chip size="small" label="Deposit payout" color="warning" variant="outlined" />
-                : <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>{item.variantSku ?? item.productSku}</Typography>}
+                : item.sellableType === 'LOTTERY_PRODUCT'
+                  ? <Chip size="small" label="Lottery" color="primary" variant="outlined" />
+                  : <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>{item.variantSku ?? item.productSku}</Typography>}
               {(item.depositTotal ?? 0) > 0 ? (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   {depositLabel(item.depositType)}: {item.quantity > 1
@@ -488,6 +490,8 @@ function CartLines({
             <TableCell align="right">{
               item.lineType?.startsWith('LOTTERY_') || item.lineType === 'DEPOSIT_PAYOUT'
                 ? '—'
+                : item.sellableType === 'LOTTERY_PRODUCT'
+                  ? 'Exempt'
                 : item.lineType === 'CUSTOM_ITEM' && item.customItemTaxTreatment === 'NON_TAXABLE'
                   ? 'Non-Taxable'
                   : totalsCalculated
@@ -1169,11 +1173,12 @@ export function PosCartPage() {
     setPaymentDialogOpen(false);
   }
 
-  function localItem(item: { productId: string; variantId?: string; name: string; sku: string; price: number; ageVerified?: boolean }): SaleItem {
+  function localItem(item: { productId: string; variantId?: string; name: string; sku: string; price: number; sellableType?: SellableType; ageVerified?: boolean }): SaleItem {
     return {
       id: `local:${item.productId}:${item.variantId ?? ''}`,
       productId: item.productId, variantId: item.variantId, lineNumber: cartItems.length + 1,
       productSku: item.sku, productName: item.name, variantSku: null, variantName: null,
+      sellableType: item.sellableType,
       quantity: 1, unitPrice: item.price, discountAmount: 0, completedProductCost: null,
       completedProductPrice: null, completedProductCapabilities: null, priceOverride: false,
       ageVerified: Boolean(item.ageVerified), serialNumber: null, externalReference: null,
@@ -1352,14 +1357,14 @@ export function PosCartPage() {
     }
   }, [receiptPreferences]);
 
-  function addResolvedProduct(item: { productId: string; variantId?: string; ageVerified?: boolean; name?: string; sku?: string; price?: number }) {
+  function addResolvedProduct(item: { productId: string; variantId?: string; ageVerified?: boolean; name?: string; sku?: string; price?: number; sellableType?: SellableType }) {
       posScanDebug('CART_ADD_CALLED', {
         productId: item.productId,
         variantId: item.variantId ?? null,
         ageVerified: Boolean(item.ageVerified),
         cartItemsBefore: activeSale?.items.length ?? 0
       });
-      const resolved = localItem({ productId: item.productId, variantId: item.variantId, name: item.name ?? 'Product', sku: item.sku ?? '', price: item.price ?? 0, ageVerified: item.ageVerified });
+      const resolved = localItem({ productId: item.productId, variantId: item.variantId, name: item.name ?? 'Product', sku: item.sku ?? '', price: item.price ?? 0, sellableType: item.sellableType, ageVerified: item.ageVerified });
       posScanDebug('CART_STATE_AFTER_ADD', {
         cartItemsAfter: cartItems.length + 1
       });
@@ -1372,9 +1377,9 @@ export function PosCartPage() {
       && (item.variantId ?? undefined) === variantId && item.ageVerified));
   }
 
-  function queueRestrictedItem(item: { productId: string; variantId?: string; label: string; sku: string; price: number; minimumAge: number | null }) {
+  function queueRestrictedItem(item: { productId: string; variantId?: string; label: string; sku: string; price: number; minimumAge: number | null; sellableType?: SellableType }) {
     if (isVerifiedInCurrentSale(item.productId, item.variantId)) {
-      addResolvedProduct({ productId: item.productId, variantId: item.variantId, ageVerified: true, name: item.label, sku: item.sku, price: item.price });
+      addResolvedProduct({ productId: item.productId, variantId: item.variantId, ageVerified: true, name: item.label, sku: item.sku, price: item.price, sellableType: item.sellableType });
       return;
     }
     setPendingAgeVerification(item);
@@ -1386,12 +1391,12 @@ export function PosCartPage() {
       queueRestrictedItem({ productId: product.id, variantId: selectedVariant?.id,
         label: selectedVariant ? `${product.name} — ${selectedVariant.name}` : product.name,
         sku: selectedVariant?.sku ?? product.sku, price: selectedVariant?.price ?? product.price,
-        minimumAge: product.minimumAge ?? null });
+        minimumAge: product.minimumAge ?? null, sellableType: product.sellableType });
       return;
     }
     addResolvedProduct({ productId: product.id, variantId: selectedVariant?.id,
       name: selectedVariant ? `${product.name} — ${selectedVariant.name}` : product.name,
-      sku: selectedVariant?.sku ?? product.sku, price: selectedVariant?.price ?? product.price });
+      sku: selectedVariant?.sku ?? product.sku, price: selectedVariant?.price ?? product.price, sellableType: product.sellableType });
   }
 
   const barcodeMutation = useMutation({
@@ -1426,7 +1431,8 @@ export function PosCartPage() {
         label: product.variantName ? `${product.productName} — ${product.variantName}` : product.productName,
         sku: product.sku,
         price: product.price,
-        minimumAge: product.minimumAge ?? null
+        minimumAge: product.minimumAge ?? null,
+        sellableType: product.sellableType
       };
       if (product.ageRestricted) {
         posScanDebug('CART_ADD_DEFERRED_AGE_VERIFICATION', {
@@ -1436,7 +1442,7 @@ export function PosCartPage() {
         });
         queueRestrictedItem(item);
       } else {
-        addResolvedProduct({ productId: item.productId, variantId: item.variantId, name: item.label, sku: product.sku, price: product.price });
+        addResolvedProduct({ productId: item.productId, variantId: item.variantId, name: item.label, sku: product.sku, price: product.price, sellableType: product.sellableType });
       }
       if (barcodeStartedAtRef.current !== null) {
         reportPosTiming('barcode-to-cart', barcodeStartedAtRef.current);
