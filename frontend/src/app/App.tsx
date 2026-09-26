@@ -114,6 +114,7 @@ import { BusinessDayClosePage, BusinessDayHistoryPage, BusinessDayPage, EndOfDay
 import { resolveBusinessDayAccess } from '../features/eod/businessDayAccess';
 import { PrinterSettingsPage } from '../features/settings/PrinterSettingsPage';
 import { FeatureSettingsPage } from '../features/settings/FeatureSettingsPage';
+import { PosQuickKeysPage } from '../features/settings/PosQuickKeysPage';
 import { ScannerTestPage } from '../features/settings/ScannerTestPage';
 import {
   AdministrativeAreasPage,
@@ -571,6 +572,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       { label: 'Lottery Sales', to: '/reports/lottery', icon: <AssessmentOutlinedIcon />, visible: canViewReports && lotteryReportingEnabled }
     ] },
     { id: 'configuration', label: 'Configuration', items: [
+      { label: 'POS Quick Keys', to: '/settings/pos-quick-keys', icon: <PointOfSaleOutlinedIcon />, visible: permissions.includes('PRODUCT_VIEW') },
       { label: 'Tax', to: '/tax/rules', icon: <PublicOutlinedIcon />, visible: canViewTax },
       { label: 'Tax Test', to: '/settings/taxes/test', icon: <CalculateOutlinedIcon />, visible: canViewTax && import.meta.env.DEV },
       { label: 'Features', to: '/settings/features', icon: <ToggleOnOutlinedIcon />, visible: canViewFeatures },
@@ -923,6 +925,7 @@ function AppRoutes() {
           <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
           <Route path="/settings/units" element={<UnitsPage />} />
           <Route path="/settings/features" element={<FeatureSettingsPage />} />
+          <Route path="/settings/pos-quick-keys" element={<PosQuickKeysPage />} />
           <Route path="/settings/taxes/test" element={<TaxSimulatorPage />} />
           <Route path="/settings/hardware/printers" element={<PrinterSettingsPage />} />
           <Route path="/settings/hardware/scanner-test" element={<ScannerTestPage />} />

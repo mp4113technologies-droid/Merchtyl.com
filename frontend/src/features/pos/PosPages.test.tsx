@@ -438,6 +438,9 @@ function commonApi(input: RequestInfo | URL) {
   if (url.pathname.endsWith('/api/v1/devices')) {
     return jsonResponse(page([device()]));
   }
+  if (url.pathname.endsWith('/api/v1/pos/quick-keys')) {
+    return jsonResponse([]);
+  }
   return null;
 }
 
@@ -655,6 +658,48 @@ describe('POS pages', () => {
 
     view.unmount();
     expect(document.body).toHaveStyle({ overflow: 'auto' });
+  });
+
+  it('keeps existing POS controls and uses ordered Quick Keys through the normal cart merge path', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(), permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT']
+      });
+      if (url.pathname.endsWith('/api/v1/pos/quick-keys')) return jsonResponse([
+        { id: 'key-coke', productId: 'product-coke', productVariantId: 'variant-coke', productName: 'Coca-Cola', variantName: '500 mL', displayLabel: 'Coke 500ml', sku: 'COKE-500', price: 2.5, sellableType: 'STANDARD_PRODUCT', ageRestricted: false, minimumAge: null, active: true, productAvailable: true, displayOrder: 0, version: 0 },
+        { id: 'key-lotto', productId: 'product-lotto', productVariantId: 'variant-lotto', productName: 'Lottery Ticket', variantName: '$5', displayLabel: 'Lotto $5', sku: 'LOTTO-5', price: 5, sellableType: 'LOTTERY_PRODUCT', ageRestricted: false, minimumAge: null, active: true, productAvailable: true, displayOrder: 1, version: 0 }
+      ]);
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    expect(await screen.findByRole('button', { name: 'Barcode' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Product Search' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Taxable Custom Item' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Non-Taxable Custom Item' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Deposit Payout' })).toBeVisible();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Quick Keys' }));
+    const grid = await screen.findByTestId('pos-quick-keys-grid');
+    expect(within(grid).getAllByRole('button').map(button => button.textContent)).toEqual([
+      expect.stringContaining('Coke 500ml'), expect.stringContaining('Lotto $5')
+    ]);
+    const coke = within(grid).getByRole('button', { name: /Coke 500ml/ });
+    await userEvent.click(coke);
+    await userEvent.click(coke);
+    expect(screen.getByRole('spinbutton', { name: 'Quantity for Coke 500ml' })).toHaveValue(2);
+
+    await userEvent.click(within(grid).getByRole('button', { name: /Lotto \$5/ }));
+    expect(screen.getAllByText('Lottery').length).toBeGreaterThan(0);
+  });
+
+  it('shows the Quick Keys empty state without changing the default Barcode mode', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => commonApi(input) ?? jsonResponse({}, 404));
+    render(<App initialEntries={['/pos']} />);
+    expect(await screen.findByRole('button', { name: 'Barcode' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Quick Keys' }));
+    expect(await screen.findByText('No quick products configured for this merchant.')).toBeVisible();
   });
 
   it('releases every POS dialog portal and MUI body scroll lock across repeated use', async () => {

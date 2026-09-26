@@ -2003,6 +2003,26 @@ export function lookupPosBarcode(token: string, barcode: string, storeId: string
   return request<PosBarcodeLookup>(`/products/barcodes/${encodeURIComponent(barcode)}${queryString({ storeId })}`, undefined, token);
 }
 
+export function listPosQuickKeys(token: string, storeId: string) {
+  return request<import('./types').PosQuickKey[]>(`/pos/quick-keys${queryString({ storeId })}`, undefined, token);
+}
+
+export function listPosQuickKeyConfiguration(token: string) {
+  return request<import('./types').PosQuickKey[]>('/pos/quick-keys/configuration', undefined, token);
+}
+
+export function createPosQuickKey(token: string, payload: { productVariantId: string; displayLabel?: string }) {
+  return request<import('./types').PosQuickKey>('/pos/quick-keys/configuration', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function updatePosQuickKey(token: string, id: string, payload: { displayLabel?: string; displayOrder: number; active: boolean }) {
+  return request<import('./types').PosQuickKey>(`/pos/quick-keys/configuration/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token);
+}
+
+export function deletePosQuickKey(token: string, id: string) {
+  return request<void>(`/pos/quick-keys/configuration/${id}`, { method: 'DELETE' }, token);
+}
+
 export function lookupBarcodeOwnership(token: string, barcode: string) {
   return request<BarcodeOwnership>(`/products/barcodes/${encodeURIComponent(barcode)}/ownership`, undefined, token);
 }

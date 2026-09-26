@@ -59,6 +59,7 @@ import {
   holdSale,
   listDevices,
   listProducts,
+  listPosQuickKeys,
   listActiveStoreDiscounts,
   lookupPosBarcode,
   listRegisters,
@@ -69,7 +70,7 @@ import {
   reprintSaleReceipt,
   resumeSale,
 } from '../../api/client';
-import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, SellableType, Store } from '../../api/types';
+import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, PosQuickKey, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, SellableType, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { bestMultiBuyPromotion } from './multiBuyPricing';
@@ -457,11 +458,10 @@ function CartLines({
                 </Tooltip>
                 <TextField
                   key={`${item.id}:${item.quantity}`}
-                  aria-label={`Quantity for ${item.productName}`}
                   type="number"
                   size="small"
                   defaultValue={item.quantity}
-                  inputProps={{ min: 0.0001, step: 1, style: { textAlign: 'center' } }}
+                  inputProps={{ min: 0.0001, step: 1, style: { textAlign: 'center' }, 'aria-label': `Quantity for ${item.productName}` }}
                   sx={{ width: 56, '& .MuiInputBase-input': { px: 0.5, py: 0.75 } }}
                   disabled={busy}
                   onBlur={(event) => {
@@ -1034,7 +1034,7 @@ export function PosCartPage() {
   const completionStartedAtRef = React.useRef<number | null>(null);
   const barcodeStartedAtRef = React.useRef<number | null>(null);
   const [barcode, setBarcode] = React.useState('');
-  const [searchMode, setSearchMode] = React.useState<'BARCODE' | 'PRODUCT'>('BARCODE');
+  const [searchMode, setSearchMode] = React.useState<'BARCODE' | 'PRODUCT' | 'QUICK_KEYS'>('BARCODE');
   const [productSearch, setProductSearch] = React.useState('');
   const [customItemOpen, setCustomItemOpen] = React.useState(false);
   const [customItemDescription, setCustomItemDescription] = React.useState('');
@@ -1128,6 +1128,12 @@ export function PosCartPage() {
     queryKey: ['products', 'pos-search', current.data?.storeId, submittedSearch],
     queryFn: async () => listProducts(await getValidAccessToken(), { q: submittedSearch, storeId: current.data?.storeId, active: true, size: 20 }),
     enabled: submittedSearch.trim().length > 0 && Boolean(current.data?.storeId)
+  });
+  const quickKeys = useQuery({
+    queryKey: ['pos-quick-keys', current.data?.storeId],
+    queryFn: async () => listPosQuickKeys(await getValidAccessToken(), current.data?.storeId ?? ''),
+    enabled: Boolean(current.data?.storeId),
+    staleTime: 5 * 60_000
   });
   const savedDiscounts=useQuery({queryKey:['active-pos-discounts',current.data?.storeId],queryFn:async()=>listActiveStoreDiscounts(await getValidAccessToken(),current.data?.storeId??''),enabled:Boolean(current.data?.storeId),staleTime:5*60_000});
   React.useEffect(() => {
@@ -1713,6 +1719,7 @@ export function PosCartPage() {
                 <Stack direction="row" spacing={0.5} role="group" aria-label="Search mode">
                   <Button size="small" variant={searchMode === 'BARCODE' ? 'contained' : 'outlined'} aria-pressed={searchMode === 'BARCODE'} onClick={() => { setSearchMode('BARCODE'); setSubmittedSearch(''); window.setTimeout(() => barcodeInputRef.current?.focus(), 0); }} sx={searchMode === 'BARCODE' ? undefined : { bgcolor: posTokens.colors.blueLight }}>Barcode</Button>
                   <Button size="small" variant={searchMode === 'PRODUCT' ? 'contained' : 'outlined'} aria-pressed={searchMode === 'PRODUCT'} onClick={() => setSearchMode('PRODUCT')} sx={searchMode === 'PRODUCT' ? undefined : { bgcolor: posTokens.colors.blueLight }}>Product Search</Button>
+                  <Button size="small" variant={searchMode === 'QUICK_KEYS' ? 'contained' : 'outlined'} aria-pressed={searchMode === 'QUICK_KEYS'} onClick={() => setSearchMode('QUICK_KEYS')} sx={searchMode === 'QUICK_KEYS' ? undefined : { bgcolor: posTokens.colors.blueLight }}>Quick Keys</Button>
                 </Stack>
                 {searchMode === 'BARCODE' ? (
                   <Box component="form" onSubmit={(event) => {
@@ -1758,7 +1765,7 @@ export function PosCartPage() {
                       }}
                     />
                   </Box>
-                ) : (
+                ) : searchMode === 'PRODUCT' ? (
                   <Box component="form" onSubmit={(event) => {
                     event.preventDefault();
                     setSubmittedSearch(productSearch.trim());
@@ -1785,7 +1792,18 @@ export function PosCartPage() {
                       </Button>
                     </Stack>
                   </Box>
-                )}
+                ) : <Box sx={{ minHeight: 116 }}>
+                  {quickKeys.isLoading ? <CircularProgress size={22} aria-label="Loading Quick Keys" /> : null}
+                  {quickKeys.isError ? <Alert severity="error">Quick products could not be loaded.</Alert> : null}
+                  {!quickKeys.isLoading && !quickKeys.isError && quickKeys.data?.length === 0 ? <Alert severity="info">No quick products configured for this merchant.</Alert> : null}
+                  {quickKeys.data?.length ? <Box data-testid="pos-quick-keys-grid" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))', lg: 'repeat(5, minmax(0, 1fr))' }, gap: 1 }}>
+                    {quickKeys.data.map((key: PosQuickKey) => <Button key={key.id} variant="outlined" disabled={cartLocked} sx={{ minHeight: 76, p: 1.25, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }} onClick={() => {
+                      const item = { productId: key.productId, variantId: key.productVariantId, label: key.displayLabel || `${key.productName} — ${key.variantName}`, sku: key.sku, price: key.price, minimumAge: key.minimumAge, sellableType: key.sellableType };
+                      if (key.ageRestricted) queueRestrictedItem(item);
+                      else addResolvedProduct({ productId: item.productId, variantId: item.variantId, name: item.label, sku: item.sku, price: item.price, sellableType: item.sellableType });
+                    }}><Typography component="span" fontWeight={750} lineHeight={1.2}>{key.displayLabel || key.productName}</Typography><Typography component="span" variant="caption" color="text.secondary">{key.variantName} · {money(key.price, currencyCode)}</Typography></Button>)}
+                  </Box> : null}
+                </Box>}
                 {searchMode === 'PRODUCT' && (productResults.isFetching || (submittedSearch && productResults.data)) ? (
                   <Paper elevation={2} sx={{ position: 'absolute', top: 'calc(100% - 2px)', left: 8, right: 8, maxHeight: 260, overflowY: 'auto', zIndex: 5, border: '1px solid', borderColor: 'divider' }}>
                     {productResults.isFetching ? <Box sx={{ p: 1.5 }}><CircularProgress size={22} aria-label="Searching products" /></Box> : null}

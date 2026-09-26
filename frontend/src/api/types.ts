@@ -455,6 +455,24 @@ export type ProductVariant = {
   version: number;
 };
 
+export type PosQuickKey = {
+  id: string;
+  productId: string;
+  productVariantId: string;
+  productName: string;
+  variantName: string;
+  displayLabel: string | null;
+  sku: string;
+  price: number;
+  sellableType: SellableType;
+  ageRestricted: boolean;
+  minimumAge: number | null;
+  active: boolean;
+  productAvailable: boolean;
+  displayOrder: number;
+  version: number;
+};
+
 export type ProductBarcode = {
   id: string;
   barcode: string;
