@@ -59,7 +59,7 @@ public class PosQuickKeyService {
     public Response update(UUID id, UpdateRequest request, Authentication authentication) {
         UUID tenantId = tenant(authentication);
         PosQuickKey key = repository.findByIdAndTenantId(id, tenantId).orElseThrow(() -> new NotFoundException("Quick Key not found"));
-        if (request.active() && !productAvailable(key.getProductVariant())) throw new BadRequestException("Unavailable product cannot be enabled");
+        if (!key.isActive() && request.active() && !productAvailable(key.getProductVariant())) throw new BadRequestException("Unavailable product cannot be enabled");
         List<PosQuickKey> ordered = new ArrayList<>(repository.findByTenantIdOrderByDisplayOrderAscIdAsc(tenantId));
         ordered.removeIf(item -> item.getId().equals(id));
         int target = Math.min(request.displayOrder(), ordered.size());

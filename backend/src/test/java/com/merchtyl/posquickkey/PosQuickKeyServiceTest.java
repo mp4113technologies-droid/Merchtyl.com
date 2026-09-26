@@ -99,6 +99,21 @@ class PosQuickKeyServiceTest {
                 .containsExactly(false, false);
     }
 
+    @Test
+    void permitsReorderingAnExistingActiveKeyAfterItsProductBecomesUnavailable() {
+        ProductVariant variant = variant(SellableType.STANDARD_PRODUCT, ProductAvailabilityScope.ALL_STORES, true);
+        when(variant.getProduct().isDeleted()).thenReturn(true);
+        PosQuickKey key = key(variant, 0, true);
+        when(repository.findByIdAndTenantId(key.getId(), tenantId)).thenReturn(Optional.of(key));
+        when(repository.findByTenantIdOrderByDisplayOrderAscIdAsc(tenantId)).thenReturn(List.of(key));
+
+        var response = service.update(key.getId(), new PosQuickKeyDtos.UpdateRequest("Old favorite", 0, true), authentication);
+
+        assertThat(response.productAvailable()).isFalse();
+        assertThat(response.displayLabel()).isEqualTo("Old favorite");
+        verify(repository).saveAll(List.of(key));
+    }
+
     private PosQuickKey key(ProductVariant variant, int order, boolean active) {
         PosQuickKey key = new PosQuickKey(tenantId, variant, null, order);
         key.update(null, order, active);
