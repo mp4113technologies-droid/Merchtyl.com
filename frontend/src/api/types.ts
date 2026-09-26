@@ -772,6 +772,10 @@ export type EndOfDayReport = {
   refundTotal: number;
   voidTotal: number;
   taxTotal: number;
+  taxableSales?: number;
+  nonTaxableSales?: number;
+  taxCollected?: number;
+  merchandiseNetSales?: number;
   depositsCollected: number;
   depositPayouts: number;
   netDeposits: number;
@@ -1622,6 +1626,10 @@ export type SalesReport = {
   discounts: number;
   refunds: number;
   taxes: number;
+  taxableSales?: number;
+  nonTaxableSales?: number;
+  taxCollected?: number;
+  merchandiseNetSales?: number;
   payments: number;
   containerDeposits?: number;
   depositPayouts?: number;
@@ -1649,6 +1657,13 @@ export type Device = {
 export type DeviceListResponse = PageResponse<Device>;
 
 export type RegisterSessionStatus = 'OPEN' | 'CLOSING' | 'CLOSED' | 'FORCE_CLOSED';
+
+export type SalesClassification = {
+  taxableSales?: number;
+  nonTaxableSales?: number;
+  taxCollected?: number;
+  merchandiseNetSales?: number;
+};
 
 export type RegisterSession = {
   id: string;
@@ -1682,6 +1697,7 @@ export type RegisterSession = {
   tillSecuredAt?: string | null;
   tillPinLockedUntil?: string | null;
   posPinConfigured?: boolean;
+  salesClassification?: SalesClassification;
 };
 
 export type RegisterSessionListResponse = PageResponse<RegisterSession>;
@@ -1781,6 +1797,7 @@ export type RegisterReportRow = {
   cashierDisplayName: string;
   status: RegisterSessionStatus;
   currencyCode: string;
+  businessDate: string | null;
   openingCash: number;
   retailCash: number;
   retailCashReceived: number;
@@ -1794,9 +1811,15 @@ export type RegisterReportRow = {
   cashMovements: number;
   cashMovementIn: number;
   cashMovementOut: number;
+  cashIn: number;
+  cashOut: number;
   expectedCash: number;
   countedCash: number | null;
   variance: number | null;
+  taxableSales?: number;
+  nonTaxableSales?: number;
+  taxCollected?: number;
+  merchandiseNetSales?: number;
   openedAt: string;
   closedAt: string | null;
 };
@@ -1821,12 +1844,18 @@ export type RegisterReport = {
   cashMovements: number;
   cashMovementIn: number;
   cashMovementOut: number;
+  cashOut: number;
   expectedCash: number;
   countedCash: number;
   variance: number;
+  taxableSales?: number;
+  nonTaxableSales?: number;
+  taxCollected?: number;
+  merchandiseNetSales?: number;
   sessionCount: number;
   closedSessionCount: number;
-  rows: RegisterReportRow[];
+  openSessionCount: number;
+  rows: PageResponse<RegisterReportRow>;
   generatedAt: string;
 };
 
@@ -1877,6 +1906,7 @@ export type SaleItem = {
   variantSku?: string | null;
   variantName?: string | null;
   customItemTaxTreatment?: 'TAXABLE' | 'NON_TAXABLE' | null;
+  historicalTaxTreatment?: 'TAXABLE' | 'NON_TAXABLE' | null;
   quantity: number;
   unitPrice: number;
   discountAmount: number;

@@ -1,5 +1,6 @@
 package com.merchtyl.reports;
 
+import com.merchtyl.common.PageResponse;
 import com.merchtyl.registersession.RegisterSessionStatus;
 import com.merchtyl.security.AuthorizationService;
 import org.junit.jupiter.api.Test;
@@ -83,6 +84,8 @@ class RegisterReportControllerAuthorizationTest {
         assertThat(request.getValue().status()).isEqualTo(RegisterSessionStatus.CLOSED);
         assertThat(request.getValue().dateFrom()).isEqualTo(LocalDate.parse("2026-07-01"));
         assertThat(request.getValue().dateTo()).isEqualTo(LocalDate.parse("2026-07-31"));
+        assertThat(request.getValue().page()).isZero();
+        assertThat(request.getValue().size()).isEqualTo(5);
     }
 
     private static RegisterReportResponse response() {
@@ -106,12 +109,18 @@ class RegisterReportControllerAuthorizationTest {
                 new BigDecimal("25.00"),
                 new BigDecimal("40.00"),
                 new BigDecimal("15.00"),
+                new BigDecimal("92.00"),
                 new BigDecimal("383.00"),
                 new BigDecimal("380.00"),
                 new BigDecimal("-3.00"),
+                new BigDecimal("50.00"),
+                new BigDecimal("30.00"),
+                new BigDecimal("6.00"),
+                new BigDecimal("80.00"),
                 1,
                 1,
-                List.of(),
+                0,
+                new PageResponse<>(List.of(), 0, 5, 0, 0, true, true),
                 Instant.parse("2026-07-29T12:00:00Z"));
     }
 

@@ -4,6 +4,7 @@ import com.merchtyl.registersession.RegisterSessionStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record RegisterReportRow(
@@ -19,6 +20,7 @@ public record RegisterReportRow(
         String cashierDisplayName,
         RegisterSessionStatus status,
         String currencyCode,
+        LocalDate businessDate,
         BigDecimal openingCash,
         BigDecimal retailCash,
         BigDecimal retailCashReceived,
@@ -32,9 +34,15 @@ public record RegisterReportRow(
         BigDecimal cashMovements,
         BigDecimal cashMovementIn,
         BigDecimal cashMovementOut,
+        BigDecimal cashIn,
+        BigDecimal cashOut,
         BigDecimal expectedCash,
         BigDecimal countedCash,
         BigDecimal variance,
+        BigDecimal taxableSales,
+        BigDecimal nonTaxableSales,
+        BigDecimal taxCollected,
+        BigDecimal merchandiseNetSales,
         Instant openedAt,
         Instant closedAt
 ) {

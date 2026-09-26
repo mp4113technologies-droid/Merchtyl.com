@@ -55,6 +55,7 @@ import com.merchtyl.sales.SaleLineType;
 import com.merchtyl.sales.LotterySaleLineClassifier;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
+import com.merchtyl.sales.HistoricalTaxTreatment;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
@@ -733,6 +734,10 @@ public class BusinessDayService {
                 totals.refundTotal(),
                 totals.voidTotal(),
                 totals.taxTotal(),
+                classificationTaxable(generated.taxes()),
+                classificationNonTaxable(generated.taxes()),
+                classificationTax(generated.taxes()),
+                money(classificationTaxable(generated.taxes()).add(classificationNonTaxable(generated.taxes()))),
                 totals.depositsCollected(),
                 totals.depositPayouts(),
                 totals.netDeposits(),
@@ -757,6 +762,19 @@ public class BusinessDayService {
                 inventoryPreview(generated.inventory()),
                 generated.cashiers().stream().map(BusinessDayService::cashierPreview).toList(),
                 generated.exceptions().stream().map(BusinessDayService::exceptionPreview).toList());
+    }
+
+    private static BigDecimal classificationTaxable(List<EndOfDayTaxValues> values) {
+        return money(values.stream().map(EndOfDayTaxValues::taxableSales).reduce(moneyZero(), BigDecimal::add));
+    }
+
+    private static BigDecimal classificationNonTaxable(List<EndOfDayTaxValues> values) {
+        return money(values.stream().map(EndOfDayTaxValues::exemptSales).reduce(moneyZero(), BigDecimal::add));
+    }
+
+    private static BigDecimal classificationTax(List<EndOfDayTaxValues> values) {
+        return money(values.stream().map(value -> value.taxCollected().subtract(value.taxRefunded()))
+                .reduce(moneyZero(), BigDecimal::add));
     }
 
     private static EndOfDayRegisterSummaryResponse registerPreview(RegisterValuesWithSession register) {
@@ -1121,20 +1139,39 @@ public class BusinessDayService {
         Map<String, TaxAccumulator> taxes = new LinkedHashMap<>();
         TaxAccumulator salesTax = taxes.computeIfAbsent("SALES_TAX", ignored -> new TaxAccumulator("SALES_TAX", "Posted sales tax"));
         sales.forEach(sale -> {
-            BigDecimal merchandiseTaxableBase = sale.getItems().stream()
-                    .filter(BusinessDayService::isMerchandiseLine)
-                    .map(item -> item.getLineSubtotal().subtract(item.getDiscountAmount()))
-                    .reduce(moneyZero(), BigDecimal::add);
-            salesTax.taxableSales = salesTax.taxableSales.add(money(merchandiseTaxableBase));
+            sale.getItems().stream().filter(BusinessDayService::isMerchandiseLine).forEach(item -> {
+                BigDecimal net = money(item.getLineSubtotal().subtract(item.getDepositTotal()).subtract(item.getDiscountAmount()));
+                if (taxTreatment(item) == HistoricalTaxTreatment.TAXABLE) salesTax.taxableSales = salesTax.taxableSales.add(net);
+                else salesTax.exemptSales = salesTax.exemptSales.add(net);
+            });
             salesTax.taxCollected = salesTax.taxCollected.add(money(sale.getEstimatedTaxAmount()));
         });
+        refunds.forEach(refund -> refund.getReturnRecord().getItems().stream()
+                .filter(item -> isMerchandiseLine(item.getOriginalSaleItem()))
+                .forEach(item -> {
+                    BigDecimal allocatedDiscount = item.getOriginalDiscountAmount() == null || item.getOriginalQuantity() == null
+                            ? moneyZero()
+                            : item.getOriginalDiscountAmount().multiply(item.getQuantity())
+                                .divide(item.getOriginalQuantity(), MONEY_SCALE, RoundingMode.HALF_UP);
+                    BigDecimal net = money(item.getReturnSubtotalAmount().subtract(item.getReturnDepositTotal()).subtract(allocatedDiscount));
+                    if (taxTreatment(item.getOriginalSaleItem()) == HistoricalTaxTreatment.TAXABLE) salesTax.taxableSales = salesTax.taxableSales.subtract(net);
+                    else salesTax.exemptSales = salesTax.exemptSales.subtract(net);
+                }));
         refunds.forEach(refund -> refund.getItemTaxes().forEach(tax -> {
             TaxAccumulator accumulator = taxes.computeIfAbsent(tax.getTaxComponentCode(), ignored -> new TaxAccumulator(tax.getTaxComponentCode(), tax.getTaxComponentName()));
             accumulator.taxRefunded = accumulator.taxRefunded.add(money(tax.getTaxAmount()));
         }));
         return taxes.values().stream()
-                .map(total -> new EndOfDayTaxValues(total.componentCode, total.componentName, money(total.taxableSales), moneyZero(), moneyZero(), moneyZero(), money(total.taxCollected), money(total.taxRefunded), moneyZero()))
+                .map(total -> new EndOfDayTaxValues(total.componentCode, total.componentName, money(total.taxableSales), money(total.exemptSales), moneyZero(), moneyZero(), money(total.taxCollected), money(total.taxRefunded), moneyZero()))
                 .toList();
+    }
+
+    private static HistoricalTaxTreatment taxTreatment(SaleItem item) {
+        if (item.getHistoricalTaxTreatment() != null) return item.getHistoricalTaxTreatment();
+        if (item.isCustomItem()) return item.getCustomItemTaxTreatment() == com.merchtyl.sales.CustomItemTaxTreatment.TAXABLE
+                ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE;
+        return item.getEstimatedTaxAmount().signum() != 0
+                ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE;
     }
 
     List<EndOfDayCategorySalesSummaryResponse> categorySalesValues(List<Sale> sales, List<Refund> refunds) {
@@ -1779,6 +1816,7 @@ public class BusinessDayService {
         private final String componentCode;
         private final String componentName;
         private BigDecimal taxableSales = moneyZero();
+        private BigDecimal exemptSales = moneyZero();
         private BigDecimal taxCollected = moneyZero();
         private BigDecimal taxRefunded = moneyZero();
 

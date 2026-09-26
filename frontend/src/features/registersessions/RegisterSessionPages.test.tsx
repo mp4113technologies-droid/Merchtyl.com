@@ -137,6 +137,7 @@ function registerSession(): RegisterSession {
     closedByDisplayName: null,
     closedAt: null,
     forceCloseReason: null,
+    salesClassification: { taxableSales: 21, nonTaxableSales: 12, taxCollected: 3.15, merchandiseNetSales: 33 },
     reconciliation: {
       openingCash: 125.5,
       retailCashReceived: 0,
@@ -311,6 +312,25 @@ describe('Register session pages', () => {
     expect(await screen.findByRole('heading', { name: 'Current register' })).toBeInTheDocument();
     expect(await screen.findByText('No register session is open for this user.')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /Open register|Open/i }).length).toBeGreaterThan(0);
+  });
+
+  it('keeps four responsive classification cards visible while the current session loads', async () => {
+    storeSession(['CASHIER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['CASHIER']));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return new Promise(() => undefined);
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/current']} />);
+
+    expect(await screen.findByRole('status', { name: 'Loading current register' })).toBeInTheDocument();
+    const loadingGrid = screen.getByTestId('sales-classification-loading-grid');
+    expect(loadingGrid.children).toHaveLength(4);
+    for (const card of Array.from(loadingGrid.children)) {
+      expect(card).toHaveClass('MuiGrid-grid-xs-12', 'MuiGrid-grid-sm-6', 'MuiGrid-grid-lg-3');
+    }
   });
 
   it('confirms starting closing and restores the closing screen after navigation', async () => {
@@ -688,6 +708,19 @@ describe('Register session pages', () => {
     render(<App initialEntries={['/register/current']} />);
 
     expect(await screen.findByRole('heading', { name: 'Current register' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sales Classification' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Cash Reconciliation' })).toBeInTheDocument();
+    const classificationGrid = screen.getByTestId('sales-classification-grid');
+    expect(classificationGrid.querySelectorAll(':scope > [data-sales-classification-card]')).toHaveLength(4);
+    for (const card of classificationGrid.querySelectorAll(':scope > [data-sales-classification-card]')) {
+      expect(card).toHaveClass('MuiGrid-grid-xs-12', 'MuiGrid-grid-sm-6', 'MuiGrid-grid-lg-3');
+    }
+    expect(classificationGrid.querySelector('[data-sales-classification-card="Taxable Sales"]')).toHaveTextContent('$21.00');
+    expect(classificationGrid.querySelector('[data-sales-classification-card="Non-Taxable Sales"]')).toHaveTextContent('$12.00');
+    expect(classificationGrid.querySelector('[data-sales-classification-card="Tax Collected"]')).toHaveTextContent('$3.15');
+    expect(classificationGrid.querySelector('[data-sales-classification-card="Merchandise Net Sales"]')).toHaveTextContent('$33.00');
+    expect(screen.getAllByText('Opening cash')).toHaveLength(2);
+    expect(screen.getAllByText('Expected cash')).toHaveLength(1);
     expect(await screen.findByText('Retail cash received')).toBeInTheDocument();
     expect(screen.getByText('Retail change')).toBeInTheDocument();
     expect(screen.getByText('Retail refunds')).toBeInTheDocument();

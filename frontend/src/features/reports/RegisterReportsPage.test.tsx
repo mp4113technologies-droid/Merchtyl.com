@@ -96,7 +96,7 @@ function cashier(): UserAdmin {
   };
 }
 
-function registerReport(): RegisterReport {
+function registerReport(pageNumber = 0, pageSize = 5, totalElements = 1): RegisterReport {
   return {
     storeId: null,
     registerId: null,
@@ -117,12 +117,18 @@ function registerReport(): RegisterReport {
     cashMovements: 25,
     cashMovementIn: 40,
     cashMovementOut: 15,
+    cashOut: 92,
     expectedCash: 383,
     countedCash: 380,
     variance: -3,
+    taxableSales: 21,
+    nonTaxableSales: 12,
+    taxCollected: 3.15,
+    merchandiseNetSales: 33,
     sessionCount: 1,
     closedSessionCount: 1,
-    rows: [{
+    openSessionCount: 0,
+    rows: page([{
       registerSessionId: SESSION_ID,
       storeId: STORE_ID,
       storeCode: 'MAIN',
@@ -135,6 +141,7 @@ function registerReport(): RegisterReport {
       cashierDisplayName: 'Ada Cashier',
       status: 'CLOSED',
       currencyCode: 'USD',
+      businessDate: '2026-07-29',
       openingCash: 100,
       retailCash: 220,
       retailCashReceived: 250,
@@ -148,25 +155,31 @@ function registerReport(): RegisterReport {
       cashMovements: 25,
       cashMovementIn: 40,
       cashMovementOut: 15,
+      cashIn: 375,
+      cashOut: 92,
       expectedCash: 383,
       countedCash: 380,
       variance: -3,
+      taxableSales: 21,
+      nonTaxableSales: 12,
+      taxCollected: 3.15,
+      merchandiseNetSales: 33,
       openedAt: '2026-07-29T08:00:00Z',
       closedAt: '2026-07-29T16:00:00Z'
-    }],
+    }], pageSize, pageNumber, totalElements),
     generatedAt: '2026-07-29T17:00:00Z'
   };
 }
 
-function page<T>(content: T[]) {
+function page<T>(content: T[], size = 100, pageNumber = 0, totalElements = content.length) {
   return {
     content,
-    page: 0,
-    size: 100,
-    totalElements: content.length,
-    totalPages: 1,
-    first: true,
-    last: true
+    page: pageNumber,
+    size,
+    totalElements,
+    totalPages: Math.ceil(totalElements / size),
+    first: pageNumber === 0,
+    last: pageNumber >= Math.ceil(totalElements / size) - 1
   };
 }
 
@@ -210,7 +223,10 @@ function mockRegisterReportApi() {
       return jsonResponse(page<UserAdmin>([cashier()]) satisfies UserAdminListResponse);
     }
     if (url.pathname.endsWith('/api/v1/reports/registers')) {
-      return jsonResponse(registerReport());
+      return jsonResponse(registerReport(
+        Number(url.searchParams.get('page') ?? 0),
+        Number(url.searchParams.get('size') ?? 5)
+      ));
     }
     return apiError('Unexpected request');
   });
@@ -232,7 +248,9 @@ describe('Register reports page', () => {
     render(<App initialEntries={['/reports/registers']} />);
 
     expect(await screen.findByRole('heading', { name: 'Register reports' })).toBeInTheDocument();
-    expect((await screen.findAllByText('Opening cash'))[0]).toBeInTheDocument();
+    expect((await screen.findAllByText('Total opening floats'))[0]).toBeInTheDocument();
+    expect(screen.getByText('Informational only — per-session starting floats')).toBeInTheDocument();
+    expect(screen.getByText('1 reconciled • 0 open')).toBeInTheDocument();
     expect(screen.getAllByText('$100.00')[0]).toBeInTheDocument();
     expect(screen.getAllByText('$220.00')[0]).toBeInTheDocument();
     expect(screen.getAllByText('$50.00')[0]).toBeInTheDocument();
@@ -241,8 +259,12 @@ describe('Register reports page', () => {
     expect(screen.getAllByText('-$3.00')[0]).toBeInTheDocument();
     expect(screen.getByText('Cash sources')).toBeInTheDocument();
     expect(screen.getByText('Reconciliation')).toBeInTheDocument();
+    expect(screen.getByText('Taxable Sales')).toBeInTheDocument();
+    expect(screen.getByText('Non-Taxable Sales')).toBeInTheDocument();
+    expect(screen.getByText('Merchandise Net Sales')).toBeInTheDocument();
     expect(screen.getByText('Front Register (R1)')).toBeInTheDocument();
     expect(screen.getByText('Ada Cashier')).toBeInTheDocument();
+    expect(screen.getByText('2026-07-29')).toBeInTheDocument();
 
     await userEvent.click(screen.getByLabelText('Store'));
     await userEvent.click(await screen.findByRole('option', { name: 'Main Store (MAIN)' }));
@@ -272,5 +294,53 @@ describe('Register reports page', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     expect(URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it('paginates session details without changing full-range summary totals', async () => {
+    storeSession(['OWNER']);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/users')) return jsonResponse(page<UserAdmin>([cashier()]));
+      if (url.pathname.endsWith('/api/v1/reports/registers')) {
+        const requestedPage = Number(url.searchParams.get('page') ?? 0);
+        return jsonResponse(registerReport(requestedPage, Number(url.searchParams.get('size') ?? 5), 20));
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/reports/registers']} />);
+
+    expect(await screen.findByText('1–5 of 20')).toBeInTheDocument();
+    expect(screen.getAllByText('$220.00')[0]).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Go to next page' }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => {
+      const url = new URL(String(input), window.location.origin);
+      return url.pathname.endsWith('/api/v1/reports/registers')
+        && url.searchParams.get('page') === '1'
+        && url.searchParams.get('size') === '5';
+    })).toBe(true));
+    expect(await screen.findByText('6–10 of 20')).toBeInTheDocument();
+    expect(screen.getAllByText('$220.00')[0]).toBeInTheDocument();
+  });
+
+  it('remembers page size and resets paging when a filter changes', async () => {
+    storeSession(['OWNER']);
+    window.localStorage.setItem('merchtyl.registerReports.pageSize', '10');
+    const fetchMock = mockRegisterReportApi();
+
+    render(<App initialEntries={['/reports/registers']} />);
+
+    await screen.findByText('Front Register (R1)');
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => {
+      const url = new URL(String(input), window.location.origin);
+      return url.pathname.endsWith('/api/v1/reports/registers')
+        && url.searchParams.get('page') === '0'
+        && url.searchParams.get('size') === '10';
+    })).toBe(true));
+    expect(screen.getByLabelText('Rows per page:')).toHaveTextContent('10');
   });
 });

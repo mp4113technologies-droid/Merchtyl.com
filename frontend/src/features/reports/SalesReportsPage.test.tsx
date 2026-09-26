@@ -149,19 +149,27 @@ function report(): SalesReport {
     productId,
     dateFrom: '2026-07-01',
     dateTo: '2026-07-31',
-    grossSales: 100,
-    netSales: 70,
-    discounts: 10,
-    refunds: 22,
-    taxes: 6,
-    payments: 74,
+    grossSales: 2285.97,
+    netSales: 2285.97,
+    discounts: 0,
+    refunds: 0,
+    taxes: 290.10,
+    taxableSales: 1933.97,
+    nonTaxableSales: 352,
+    taxCollected: 290.10,
+    merchandiseNetSales: 2285.97,
+    payments: 3114.87,
+    containerDeposits: 0,
+    depositPayouts: 0,
+    netDeposits: 0,
+    refundedContainerDeposits: 0,
     saleCount: 1,
     refundCount: 1,
     paymentBreakdown: [{
       method: 'CASH',
-      collected: 96,
-      refunded: 22,
-      net: 74
+      collected: 3114.87,
+      refunded: 0,
+      net: 3114.87
     }],
     generatedAt: '2026-07-29T12:00:00Z'
   };
@@ -231,9 +239,19 @@ describe('Sales reports page', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sales reports' })).toBeInTheDocument();
     expect(await screen.findByText('Gross sales')).toBeInTheDocument();
-    expect(await screen.findAllByText('$100.00')).not.toHaveLength(0);
+    expect(await screen.findAllByText('$2,285.97')).not.toHaveLength(0);
     expect(screen.getByText('Net sales')).toBeInTheDocument();
-    expect(screen.getAllByText('$70.00')).not.toHaveLength(0);
+    expect(screen.getByText('$1,933.97')).toBeInTheDocument();
+    expect(screen.getByText('$352.00')).toBeInTheDocument();
+    expect(screen.getByText('$290.10')).toBeInTheDocument();
+    expect(screen.getAllByText('$3,114.87')).not.toHaveLength(0);
+    const summaryGrid = screen.getByTestId('sales-summary-grid');
+    expect(summaryGrid.querySelectorAll(':scope > [data-summary-card]')).toHaveLength(13);
+    for (const key of ['taxable-sales', 'non-taxable-sales', 'tax-collected', 'merchandise-net-sales']) {
+      const item = summaryGrid.querySelector(`[data-summary-card="${key}"]`);
+      expect(item?.parentElement).toBe(summaryGrid);
+      expect(item).toHaveClass('MuiGrid-grid-xs-12', 'MuiGrid-grid-sm-6', 'MuiGrid-grid-lg-3');
+    }
     expect(screen.getByRole('table', { name: 'Payment breakdown' })).toBeInTheDocument();
     expect(screen.getByText('Cash')).toBeInTheDocument();
 
@@ -265,8 +283,39 @@ describe('Sales reports page', () => {
       expect(filteredCall?.searchParams.get('dateFrom')).toBe('2026-07-01');
       expect(filteredCall?.searchParams.get('dateTo')).toBe('2026-07-31');
     });
+    expect(screen.getByTestId('sales-summary-grid')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     expect(URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it('keeps the responsive summary grid stable while loading', async () => {
+    storeSession(['MANAGER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
+      if (url.pathname.endsWith('/api/v1/reports/sales')) return new Promise(() => undefined);
+      return jsonResponse(pageResponse([]));
+    });
+    render(<App initialEntries={['/reports/sales']} />);
+    expect(await screen.findByRole('status', { name: 'Loading sales report' })).toBeInTheDocument();
+    expect(screen.getByTestId('sales-summary-grid').querySelectorAll(':scope > [data-summary-card]')).toHaveLength(13);
+  });
+
+  it('shows a report error without rendering failed metrics as zero', async () => {
+    storeSession(['MANAGER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['MANAGER']));
+      if (url.pathname.endsWith('/api/v1/reports/sales')) return jsonResponse({ message: 'Report unavailable' }, 500);
+      return jsonResponse(pageResponse([]));
+    });
+    render(<App initialEntries={['/reports/sales']} />);
+    const unavailableValues = await screen.findAllByText('Unavailable', {}, { timeout: 5_000 });
+    const errorGrid = screen.getByTestId('sales-summary-grid');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(errorGrid.querySelectorAll(':scope > [data-summary-card]')).toHaveLength(13);
+    expect(unavailableValues).toHaveLength(13);
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
   });
 });

@@ -11,6 +11,8 @@ import com.merchtyl.sales.Sale;
 import com.merchtyl.sales.SaleItem;
 import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
+import com.merchtyl.sales.HistoricalTaxTreatment;
+import com.merchtyl.sales.LotterySaleLineClassifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -76,11 +78,18 @@ public class SalesReportService {
                     includedTotal = includedTotal.add(money(item.getLineTotal()));
                     continue;
                 }
+                if (LotterySaleLineClassifier.isLottery(item)) {
+                    includedTotal = includedTotal.add(money(item.getLineTotal()));
+                    continue;
+                }
                 BigDecimal itemDeposit = item.getDepositTotal() == null ? moneyZero() : item.getDepositTotal();
                 totals.grossSales = totals.grossSales.add(money(item.getLineSubtotal().subtract(itemDeposit)));
                 totals.containerDeposits = totals.containerDeposits.add(money(itemDeposit));
                 totals.discounts = totals.discounts.add(money(item.getDiscountAmount()));
                 totals.saleTax = totals.saleTax.add(money(item.getEstimatedTaxAmount()));
+                BigDecimal merchandiseNet = money(item.getLineSubtotal().subtract(itemDeposit).subtract(item.getDiscountAmount()));
+                if (taxTreatment(item) == HistoricalTaxTreatment.TAXABLE) totals.taxableSales = totals.taxableSales.add(merchandiseNet);
+                else totals.nonTaxableSales = totals.nonTaxableSales.add(merchandiseNet);
                 includedTotal = includedTotal.add(money(item.getLineTotal()));
             }
             BigDecimal ratio = ratio(includedTotal, sale.getTotalAmount());
@@ -107,6 +116,20 @@ public class SalesReportService {
                 totals.refundSubtotal = totals.refundSubtotal.add(money(item.getReturnSubtotalAmount().subtract(returnedDeposit)));
                 totals.refundedContainerDeposits = totals.refundedContainerDeposits.add(money(returnedDeposit));
                 totals.refundTax = totals.refundTax.add(money(item.getReturnTaxAmount()));
+                BigDecimal returnedDiscount = item.getOriginalDiscountAmount() == null || item.getOriginalQuantity() == null
+                        ? moneyZero()
+                        : item.getOriginalDiscountAmount().multiply(item.getQuantity())
+                            .divide(item.getOriginalQuantity(), MONEY_SCALE, RoundingMode.HALF_UP);
+                BigDecimal returnedMerchandise = money(item.getReturnSubtotalAmount().subtract(returnedDeposit).subtract(returnedDiscount));
+                SaleItem originalItem = item.getOriginalSaleItem();
+                if (originalItem == null || (!originalItem.isDepositPayout() && !LotterySaleLineClassifier.isLottery(originalItem))) {
+                    HistoricalTaxTreatment returnedTreatment = originalItem == null
+                            ? (item.getOriginalTaxAmount() != null && item.getOriginalTaxAmount().signum() != 0
+                                ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE)
+                            : taxTreatment(originalItem);
+                    if (returnedTreatment == HistoricalTaxTreatment.TAXABLE) totals.taxableSales = totals.taxableSales.subtract(returnedMerchandise);
+                    else totals.nonTaxableSales = totals.nonTaxableSales.subtract(returnedMerchandise);
+                }
                 includedRefundTotal = includedRefundTotal.add(money(item.getReturnTotalAmount()));
             }
             BigDecimal ratio = ratio(includedRefundTotal, refund.getTotalAmount());
@@ -146,6 +169,10 @@ public class SalesReportService {
                 money(totals.discounts),
                 money(refundsTotal),
                 money(netTaxes),
+                money(totals.taxableSales),
+                money(totals.nonTaxableSales),
+                money(netTaxes),
+                money(totals.taxableSales.add(totals.nonTaxableSales)),
                 money(netPayments),
                 money(totals.containerDeposits),
                 money(totals.depositPayouts),
@@ -179,6 +206,13 @@ public class SalesReportService {
             return BigDecimal.ONE.setScale(8);
         }
         return includedTotal.divide(fullTotal, 8, RoundingMode.HALF_UP);
+    }
+
+    private static HistoricalTaxTreatment taxTreatment(SaleItem item) {
+        if (item.getHistoricalTaxTreatment() != null) return item.getHistoricalTaxTreatment();
+        if (item.isCustomItem()) return item.getCustomItemTaxTreatment() == com.merchtyl.sales.CustomItemTaxTreatment.TAXABLE
+                ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE;
+        return item.getEstimatedTaxAmount().signum() != 0 ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE;
     }
 
     private static Specification<Sale> saleSpecification(SalesReportRequest request) {
@@ -306,6 +340,8 @@ public class SalesReportService {
         private BigDecimal saleTax = moneyZero();
         private BigDecimal refundSubtotal = moneyZero();
         private BigDecimal refundTax = moneyZero();
+        private BigDecimal taxableSales = moneyZero();
+        private BigDecimal nonTaxableSales = moneyZero();
     }
 
     private static final class PaymentTotals {

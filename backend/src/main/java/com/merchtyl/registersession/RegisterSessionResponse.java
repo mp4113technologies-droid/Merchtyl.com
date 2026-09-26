@@ -5,6 +5,7 @@ import java.time.Instant;
 import com.merchtyl.cash.CashLedgerBreakdownResponse;
 import java.util.UUID;
 import com.merchtyl.register.RegisterType;
+import com.merchtyl.sales.SalesClassification;
 
 public record RegisterSessionResponse(
         UUID id,
@@ -37,7 +38,8 @@ public record RegisterSessionResponse(
         boolean tillSecured,
         Instant tillSecuredAt,
         Instant tillPinLockedUntil,
-        boolean posPinConfigured
+        boolean posPinConfigured,
+        SalesClassification salesClassification
 ) {
     public RegisterSessionResponse(
             UUID id, UUID storeId, UUID registerId, UUID deviceId,
@@ -50,7 +52,8 @@ public record RegisterSessionResponse(
         this(id, storeId, registerId, RegisterType.RETAIL, deviceId, null, assignedCashierId, assignedCashierEmail,
                 assignedCashierDisplayName, assignedCashierId, assignedCashierDisplayName, status, openingCash, expectedCash, countedCash,
                 expectedCashAtClose, differenceCash, closedByUserId, closedByEmail, closedByDisplayName,
-                closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false);
+                closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false,
+                SalesClassification.zero());
     }
 
     static RegisterSessionResponse from(RegisterSession session, BigDecimal expectedCash) {
@@ -82,10 +85,15 @@ public record RegisterSessionResponse(
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
                 session.getVersion(), session.isTillSecured(), session.getTillSecuredAt(),
-                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin());
+                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin(), SalesClassification.zero());
     }
 
     static RegisterSessionResponse from(RegisterSession session, CashLedgerBreakdownResponse reconciliation) {
+        return from(session, reconciliation, SalesClassification.zero());
+    }
+
+    static RegisterSessionResponse from(RegisterSession session, CashLedgerBreakdownResponse reconciliation,
+                                        SalesClassification salesClassification) {
         return new RegisterSessionResponse(
                 session.getId(),
                 session.getStore().getId(),
@@ -114,6 +122,6 @@ public record RegisterSessionResponse(
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
                 session.getVersion(), session.isTillSecured(), session.getTillSecuredAt(),
-                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin());
+                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin(), salesClassification);
     }
 }

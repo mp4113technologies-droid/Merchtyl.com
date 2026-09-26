@@ -774,6 +774,8 @@ export type LotteryReportParams = {
   cashierId?: string;
   dateFrom?: string;
   dateTo?: string;
+  page?: number;
+  size?: number;
 };
 
 export type DevicePayload = {
@@ -861,6 +863,8 @@ export type RegisterReportParams = {
   status?: RegisterSessionStatus | '';
   dateFrom?: string;
   dateTo?: string;
+  page?: number;
+  size?: number;
 };
 
 export type CashMovementPayload = {

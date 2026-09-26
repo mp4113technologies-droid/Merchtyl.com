@@ -19,6 +19,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Tooltip,
@@ -59,6 +60,12 @@ const defaultFilters: FilterState = {
 };
 
 const statuses: RegisterSessionStatus[] = ['OPEN', 'CLOSING', 'CLOSED', 'FORCE_CLOSED'];
+const PAGE_SIZE_KEY = 'merchtyl.registerReports.pageSize';
+
+function initialPageSize() {
+  const stored = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
+  return stored === 10 ? 10 : 5;
+}
 
 function canViewRegisterReports(roles: UserRole[]) {
   return roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
@@ -104,19 +111,21 @@ function downloadCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url);
 }
 
-function cleanParams(filters: FilterState): RegisterReportParams {
+function cleanParams(filters: FilterState, page: number, size: number): RegisterReportParams {
   return {
     storeId: filters.storeId || undefined,
     registerId: filters.registerId || undefined,
     cashierId: filters.cashierId || undefined,
     status: filters.status || undefined,
     dateFrom: filters.dateFrom || undefined,
-    dateTo: filters.dateTo || undefined
+    dateTo: filters.dateTo || undefined,
+    page,
+    size
   };
 }
 
 function currencyFor(report?: RegisterReport) {
-  return report?.rows[0]?.currencyCode ?? 'USD';
+  return report?.rows.content[0]?.currencyCode ?? 'USD';
 }
 
 function MetricCard({ title, value, detail }: { title: string; value: string; detail?: string }) {
@@ -134,14 +143,16 @@ function MetricCard({ title, value, detail }: { title: string; value: string; de
 function SummaryCards({ report }: { report: RegisterReport }) {
   const currencyCode = currencyFor(report);
   const metrics = [
-    { title: 'Opening cash', value: money(report.openingCash, currencyCode), detail: `${report.sessionCount} sessions` },
-    { title: 'Retail cash', value: money(report.retailCash, currencyCode), detail: `Received ${money(report.retailCashReceived, currencyCode)} - change ${money(report.retailChange, currencyCode)}` },
-    { title: 'Lottery cash', value: money(report.lotteryCash, currencyCode), detail: `Sales ${money(report.lotteryCashSales, currencyCode)} - payouts ${money(report.lotteryPayouts, currencyCode)}` },
-    { title: 'Refunds', value: money(report.refunds, currencyCode), detail: 'Cash refunds' },
-    { title: 'Cash movements', value: money(report.cashMovements, currencyCode), detail: `In ${money(report.cashMovementIn, currencyCode)} - out ${money(report.cashMovementOut, currencyCode)}` },
-    { title: 'Expected cash', value: money(report.expectedCash, currencyCode), detail: 'Ledger expected drawer cash' },
-    { title: 'Counted cash', value: money(report.countedCash, currencyCode), detail: `${report.closedSessionCount} counted sessions` },
-    { title: 'Variance', value: money(report.variance, currencyCode), detail: 'Counted minus expected at close' }
+    { title: 'Taxable Sales', value: money(report.taxableSales ?? 0, currencyCode), detail: 'Net taxable merchandise' },
+    { title: 'Non-Taxable Sales', value: money(report.nonTaxableSales ?? 0, currencyCode), detail: 'Net exempt merchandise' },
+    { title: 'Tax Collected', value: money(report.taxCollected ?? 0, currencyCode), detail: 'Actual completed-line tax' },
+    { title: 'Merchandise Net Sales', value: money(report.merchandiseNetSales ?? 0, currencyCode), detail: 'Taxable + non-taxable' },
+    { title: 'Sessions', value: String(report.sessionCount), detail: `${report.closedSessionCount} reconciled • ${report.openSessionCount} open` },
+    { title: 'Retail cash activity', value: money(report.retailCash, currencyCode), detail: `Received ${money(report.retailCashReceived, currencyCode)} - change ${money(report.retailChange, currencyCode)}` },
+    { title: 'Lottery cash activity', value: money(report.lotteryCash, currencyCode), detail: `Sales ${money(report.lotteryCashSales, currencyCode)} - payouts ${money(report.lotteryPayouts, currencyCode)}` },
+    { title: 'Cash out', value: money(report.cashOut, currencyCode), detail: 'All recorded session cash outflows' },
+    { title: 'Total variance', value: money(report.variance, currencyCode), detail: `${report.closedSessionCount} reconciled sessions` },
+    { title: 'Total opening floats', value: money(report.openingCash, currencyCode), detail: 'Informational only — per-session starting floats' }
   ];
 
   return (
@@ -198,7 +209,7 @@ function Charts({ report }: { report: RegisterReport }) {
           title="Cash sources"
           currencyCode={currencyCode}
           rows={[
-            { label: 'Opening cash', value: report.openingCash, tone: 'neutral' },
+            { label: 'Total opening floats', value: report.openingCash, tone: 'neutral' },
             { label: 'Retail cash', value: report.retailCash, tone: 'positive' },
             { label: 'Lottery cash', value: report.lotteryCash, tone: report.lotteryCash < 0 ? 'negative' : 'positive' },
             { label: 'Cash movements', value: report.cashMovements, tone: report.cashMovements < 0 ? 'negative' : 'positive' }
@@ -210,9 +221,9 @@ function Charts({ report }: { report: RegisterReport }) {
           title="Reconciliation"
           currencyCode={currencyCode}
           rows={[
-            { label: 'Expected cash', value: report.expectedCash, tone: 'neutral' },
-            { label: 'Counted cash', value: report.countedCash, tone: 'neutral' },
-            { label: 'Variance', value: report.variance, tone: report.variance === 0 ? 'positive' : 'negative' },
+            { label: 'Total expected at close', value: report.expectedCash, tone: 'neutral' },
+            { label: 'Total counted at close', value: report.countedCash, tone: 'neutral' },
+            { label: 'Total variance', value: report.variance, tone: report.variance === 0 ? 'positive' : 'negative' },
             { label: 'Refunds', value: report.refunds, tone: 'negative' }
           ]}
         />
@@ -318,23 +329,32 @@ function RegisterReportFilters({
   );
 }
 
-function RegisterReportTable({ rows }: { rows: RegisterReportRow[] }) {
+function RegisterReportTable({ report, loading, onPageChange, onPageSizeChange }: {
+  report: RegisterReport;
+  loading: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}) {
+  const rows = report.rows.content;
   return (
-    <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+    <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, position: 'relative' }}>
+      {loading ? <Box sx={{ position: 'absolute', inset: 0, bgcolor: 'rgba(255,255,255,0.65)', zIndex: 1, display: 'grid', placeItems: 'center' }}><CircularProgress size={30} aria-label="Loading session details" /></Box> : null}
       <TableContainer>
         <Table aria-label="Register report sessions">
           <TableHead>
             <TableRow>
-              <TableCell>Opened</TableCell>
+              <TableCell>Business date</TableCell>
               <TableCell>Register</TableCell>
               <TableCell>Cashier</TableCell>
+              <TableCell>Opened</TableCell>
+              <TableCell>Closed</TableCell>
               <TableCell>Status</TableCell>
               <TableCell align="right">Opening cash</TableCell>
               <TableCell align="right">Retail cash</TableCell>
               <TableCell align="right">Lottery cash</TableCell>
-              <TableCell align="right">Refunds</TableCell>
-              <TableCell align="right">Cash movements</TableCell>
-              <TableCell align="right">Expected</TableCell>
+              <TableCell align="right">Other cash in</TableCell>
+              <TableCell align="right">Cash out</TableCell>
+              <TableCell align="right">Expected at close / current</TableCell>
               <TableCell align="right">Counted</TableCell>
               <TableCell align="right">Variance</TableCell>
             </TableRow>
@@ -342,10 +362,7 @@ function RegisterReportTable({ rows }: { rows: RegisterReportRow[] }) {
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.registerSessionId}>
-                <TableCell>
-                  <Typography>{new Date(row.openedAt).toLocaleString()}</Typography>
-                  {row.closedAt ? <Typography variant="body2" color="text.secondary">Closed {new Date(row.closedAt).toLocaleString()}</Typography> : null}
-                </TableCell>
+                <TableCell>{row.businessDate ?? 'Legacy session'}</TableCell>
                 <TableCell>
                   <Typography fontWeight={600}>{row.registerName} ({row.registerCode})</Typography>
                   <Typography variant="body2" color="text.secondary">{row.storeName} ({row.storeCode})</Typography>
@@ -354,12 +371,14 @@ function RegisterReportTable({ rows }: { rows: RegisterReportRow[] }) {
                   <Typography>{row.cashierDisplayName}</Typography>
                   <Typography variant="body2" color="text.secondary">{row.cashierEmail}</Typography>
                 </TableCell>
+                <TableCell>{new Date(row.openedAt).toLocaleString()}</TableCell>
+                <TableCell>{row.closedAt ? new Date(row.closedAt).toLocaleString() : 'Open'}</TableCell>
                 <TableCell><Chip label={label(row.status)} size="small" /></TableCell>
                 <TableCell align="right">{money(row.openingCash, row.currencyCode)}</TableCell>
                 <TableCell align="right">{money(row.retailCash, row.currencyCode)}</TableCell>
                 <TableCell align="right">{money(row.lotteryCash, row.currencyCode)}</TableCell>
-                <TableCell align="right">{money(row.refunds, row.currencyCode)}</TableCell>
-                <TableCell align="right">{money(row.cashMovements, row.currencyCode)}</TableCell>
+                <TableCell align="right">{money(row.cashMovementIn, row.currencyCode)}</TableCell>
+                <TableCell align="right">{money(row.cashOut, row.currencyCode)}</TableCell>
                 <TableCell align="right">{money(row.expectedCash, row.currencyCode)}</TableCell>
                 <TableCell align="right">{row.countedCash === null ? 'Not counted' : money(row.countedCash, row.currencyCode)}</TableCell>
                 <TableCell align="right">
@@ -371,7 +390,7 @@ function RegisterReportTable({ rows }: { rows: RegisterReportRow[] }) {
             ))}
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12}>
+                <TableCell colSpan={14}>
                   <Typography color="text.secondary">No register sessions found.</Typography>
                 </TableCell>
               </TableRow>
@@ -379,14 +398,24 @@ function RegisterReportTable({ rows }: { rows: RegisterReportRow[] }) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={report.rows.totalElements}
+        page={report.rows.page}
+        rowsPerPage={report.rows.size}
+        rowsPerPageOptions={[5, 10]}
+        onPageChange={(_, nextPage) => onPageChange(nextPage)}
+        onRowsPerPageChange={(event) => onPageSizeChange(Number(event.target.value))}
+      />
     </Paper>
   );
 }
 
 function exportReport(report: RegisterReport) {
   downloadCsv('register-report.csv', [
-    ['Opened', 'Closed', 'Store', 'Register', 'Cashier', 'Status', 'Opening Cash', 'Retail Cash', 'Lottery Cash', 'Refunds', 'Cash Movements', 'Expected Cash', 'Counted Cash', 'Variance'],
-    ...report.rows.map((row) => [
+    ['Business Date', 'Opened', 'Closed', 'Store', 'Register', 'Cashier', 'Status', 'Opening Cash', 'Retail Cash', 'Lottery Cash', 'Other Cash In', 'Cash Out', 'Expected at Close / Current', 'Counted Cash', 'Variance'],
+    ...report.rows.content.map((row) => [
+      row.businessDate ?? '',
       row.openedAt,
       row.closedAt ?? '',
       `${row.storeName} (${row.storeCode})`,
@@ -396,8 +425,8 @@ function exportReport(report: RegisterReport) {
       row.openingCash.toFixed(2),
       row.retailCash.toFixed(2),
       row.lotteryCash.toFixed(2),
-      row.refunds.toFixed(2),
-      row.cashMovements.toFixed(2),
+      row.cashMovementIn.toFixed(2),
+      row.cashOut.toFixed(2),
       row.expectedCash.toFixed(2),
       row.countedCash?.toFixed(2) ?? '',
       row.variance?.toFixed(2) ?? ''
@@ -410,7 +439,9 @@ export function RegisterReportsPage() {
   const roles = currentUser?.roles ?? session?.roles ?? [];
   const canView = canViewRegisterReports(roles);
   const [filters, setFilters] = React.useState(defaultFilters);
-  const params = React.useMemo(() => cleanParams(filters), [filters]);
+  const [page, setPage] = React.useState(0);
+  const [pageSize, setPageSize] = React.useState(initialPageSize);
+  const params = React.useMemo(() => cleanParams(filters, page, pageSize), [filters, page, pageSize]);
 
   const stores = useQuery({
     queryKey: ['stores', 'register-reports'],
@@ -430,7 +461,8 @@ export function RegisterReportsPage() {
   const report = useQuery({
     queryKey: ['register-report', params],
     queryFn: async () => getRegisterReport(await getValidAccessToken(), params),
-    enabled: canView
+    enabled: canView,
+    placeholderData: (previous) => previous
   });
 
   if (!canView) {
@@ -475,7 +507,10 @@ export function RegisterReportsPage() {
         registers={registers.data?.content ?? []}
         users={users.data?.content ?? []}
         filters={filters}
-        onChange={setFilters}
+        onChange={(next) => {
+          setFilters(next);
+          setPage(0);
+        }}
       />
 
       {loading ? (
@@ -501,7 +536,16 @@ export function RegisterReportsPage() {
               </Box>
             </Stack>
           </Paper>
-          <RegisterReportTable rows={report.data.rows} />
+          <RegisterReportTable
+            report={report.data}
+            loading={report.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              window.localStorage.setItem(PAGE_SIZE_KEY, String(size));
+              setPageSize(size);
+              setPage(0);
+            }}
+          />
         </>
       ) : null}
     </Stack>

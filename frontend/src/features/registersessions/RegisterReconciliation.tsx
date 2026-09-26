@@ -1,6 +1,6 @@
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, Stack,
+  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, Paper, Stack,
   Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography
 } from '@mui/material';
 import { useMutation } from '@tanstack/react-query';
@@ -39,7 +39,7 @@ function reconciliationFor(session: ReconciliationSession): CashLedgerBreakdown 
   };
 }
 
-export function ReconciliationBreakdown({ session, currencyCode = 'USD' }: { session: ReconciliationSession; currencyCode?: string }) {
+export function ReconciliationBreakdown({ session, currencyCode = 'USD', contained = false }: { session: ReconciliationSession; currencyCode?: string; contained?: boolean }) {
   const reconciliation = reconciliationFor(session);
   const rows = [
     ['Opening cash', '+', reconciliation.openingCash], ['Retail cash received', '+', reconciliation.retailCashReceived],
@@ -49,11 +49,12 @@ export function ReconciliationBreakdown({ session, currencyCode = 'USD' }: { ses
     ['Payout reversals', '+', reconciliation.payoutReversals], ['Lottery sale cancellations', '-', reconciliation.lotterySaleCancellations],
     ['Other cash in', '+', reconciliation.otherCashIn], ['Other cash out', '-', reconciliation.otherCashOut]
   ] as const;
-  return <Stack spacing={2}>
+  const content = <Stack spacing={2}>
+    {contained ? <Typography id="cash-reconciliation-heading" variant="h6" component="h2" fontWeight={600}>Cash Reconciliation</Typography> : null}
     <Grid container spacing={2}>
       {[['Opening cash', reconciliation.openingCash], ['Cash in', reconciliation.totalIn], ['Cash out', reconciliation.totalOut], ['Expected cash', reconciliation.expectedCash]].map(([label, amount]) =>
-        <Grid item xs={12} sm={6} md={3} key={label}><Typography variant="body2" color="text.secondary">{label}</Typography><Typography fontWeight={700}>{money(amount as number, currencyCode)}</Typography></Grid>)}
-      {session.countedCash !== null ? <><Grid item xs={12} sm={6} md={3}><Typography variant="body2" color="text.secondary">Counted cash</Typography><Typography fontWeight={700}>{money(session.countedCash, currencyCode)}</Typography></Grid><Grid item xs={12} sm={6} md={3}><Typography variant="body2" color="text.secondary">Difference</Typography><Typography fontWeight={700} color={(session.differenceCash ?? 0) === 0 ? 'success.main' : 'warning.main'}>{money(session.differenceCash ?? 0, currencyCode)}</Typography></Grid></> : null}
+        <Grid item xs={12} sm={6} lg={3} key={label}><Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 104, height: '100%' }}><Typography variant="body2" color="text.secondary">{label}</Typography><Typography variant="h6" fontWeight={700}>{money(amount as number, currencyCode)}</Typography></Paper></Grid>)}
+      {session.countedCash !== null ? <><Grid item xs={12} sm={6} lg={3}><Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 104 }}><Typography variant="body2" color="text.secondary">Counted cash</Typography><Typography variant="h6" fontWeight={700}>{money(session.countedCash, currencyCode)}</Typography></Paper></Grid><Grid item xs={12} sm={6} lg={3}><Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 104 }}><Typography variant="body2" color="text.secondary">Difference</Typography><Typography variant="h6" fontWeight={700} color={(session.differenceCash ?? 0) === 0 ? 'success.main' : 'warning.main'}>{money(session.differenceCash ?? 0, currencyCode)}</Typography></Paper></Grid></> : null}
     </Grid>
     <Table size="small" aria-label="Register reconciliation formula"><TableHead><TableRow><TableCell>Category</TableCell><TableCell align="center">Effect</TableCell><TableCell align="right">Amount</TableCell></TableRow></TableHead><TableBody>
       {rows.map(([label, sign, amount]) => <TableRow key={label}><TableCell>{label}</TableCell><TableCell align="center">{sign}</TableCell><TableCell align="right">{money(amount, currencyCode)}</TableCell></TableRow>)}
@@ -61,6 +62,9 @@ export function ReconciliationBreakdown({ session, currencyCode = 'USD' }: { ses
     </TableBody></Table>
     {reconciliation.sourceBreakdown.length ? <Table size="small" aria-label="Reconciliation source breakdown"><TableHead><TableRow><TableCell>Source</TableCell><TableCell>Direction</TableCell><TableCell align="right">Amount</TableCell></TableRow></TableHead><TableBody>{reconciliation.sourceBreakdown.map((item) => <TableRow key={`${item.sourceType}-${item.direction}`}><TableCell>{sourceLabel(item.sourceType)}</TableCell><TableCell>{item.direction}</TableCell><TableCell align="right">{money(item.amount, currencyCode)}</TableCell></TableRow>)}</TableBody></Table> : <Typography variant="body2" color="text.secondary">No cash activity after opening float.</Typography>}
   </Stack>;
+  return contained
+    ? <Paper component="section" aria-labelledby="cash-reconciliation-heading" elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 2.5 } }}>{content}</Paper>
+    : content;
 }
 
 export function RegisterReconciliationDialog({ open, session, registerName, currencyCode, onClose, onCompleted }: {

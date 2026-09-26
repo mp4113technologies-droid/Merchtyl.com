@@ -6,11 +6,11 @@ import {
   Alert,
   Box,
   Button,
-  CircularProgress,
   Grid,
   IconButton,
   MenuItem,
   Paper,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -116,6 +116,10 @@ function reportCsvRows(report: SalesReport) {
     ['Net deposits', report.netDeposits ?? 0],
     ['Refunded container deposits', report.refundedContainerDeposits ?? 0],
     ['Taxes', report.taxes],
+    ['Taxable Sales', report.taxableSales ?? 0],
+    ['Non-Taxable Sales', report.nonTaxableSales ?? 0],
+    ['Tax Collected', report.taxCollected ?? report.taxes],
+    ['Merchandise Net Sales', report.merchandiseNetSales ?? report.netSales],
     ['Payments', report.payments],
     ['Sale count', report.saleCount],
     ['Refund count', report.refundCount],
@@ -125,15 +129,48 @@ function reportCsvRows(report: SalesReport) {
   ];
 }
 
-function MetricTile({ label: tileLabel, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'positive' | 'warning' }) {
+function MetricTile({ label: tileLabel, value, detail, tone = 'default' }: { label: string; value: string; detail?: string; tone?: 'default' | 'positive' | 'warning' }) {
   const color = tone === 'positive' ? 'success.main' : tone === 'warning' ? 'warning.main' : 'text.primary';
   return (
-    <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 112 }}>
+    <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 112, height: '100%' }}>
       <Stack spacing={1}>
         <Typography variant="body2" color="text.secondary">{tileLabel}</Typography>
         <Typography variant="h5" color={color}>{value}</Typography>
+        {detail ? <Typography variant="caption" color="text.secondary">{detail}</Typography> : null}
       </Stack>
     </Paper>
+  );
+}
+
+function SummaryGrid({ data, loading = false, unavailable = false }: { data?: SalesReport; loading?: boolean; unavailable?: boolean }) {
+  const card = (key: string, tileLabel: string, value: number, tone: 'default' | 'positive' | 'warning' = 'default', detail?: string) => (
+    <Grid item xs={12} sm={6} lg={3} key={key} data-summary-card={key}>
+      {loading
+        ? <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 112, height: '100%' }}><Skeleton width="45%" /><Skeleton variant="text" width="70%" height={42} /></Paper>
+        : <MetricTile label={tileLabel} value={unavailable ? 'Unavailable' : money(value)} detail={detail} tone={unavailable ? 'warning' : tone} />}
+    </Grid>
+  );
+  return (
+    <Grid container spacing={2} data-testid="sales-summary-grid" alignItems="stretch">
+      <Grid item xs={12}><Typography variant="overline" color="text.secondary">Sales overview</Typography></Grid>
+      {card('gross-sales', 'Gross sales', data?.grossSales ?? 0)}
+      {card('net-sales', 'Net sales', data?.netSales ?? 0, 'positive')}
+      {card('discounts', 'Discounts', data?.discounts ?? 0)}
+      {card('refunds', 'Refunds', data?.refunds ?? 0, 'warning')}
+
+      <Grid item xs={12}><Typography variant="overline" color="text.secondary">Sales classification</Typography></Grid>
+      {card('taxable-sales', 'Taxable Sales', data?.taxableSales ?? 0)}
+      {card('non-taxable-sales', 'Non-Taxable Sales', data?.nonTaxableSales ?? 0)}
+      {card('tax-collected', 'Tax Collected', data?.taxCollected ?? data?.taxes ?? 0)}
+      {card('merchandise-net-sales', 'Merchandise Net Sales', data?.merchandiseNetSales ?? data?.netSales ?? 0, 'positive')}
+
+      <Grid item xs={12}><Typography variant="overline" color="text.secondary">Payments and deposits</Typography></Grid>
+      {card('payments', 'Payments', data?.payments ?? 0, 'default', 'Net tender; product filters are proportionally attributed.')}
+      {card('container-deposits', 'Container deposits', data?.containerDeposits ?? 0)}
+      {card('deposit-payouts', 'Deposit payouts', data?.depositPayouts ?? 0, 'warning')}
+      {card('net-deposits', 'Net deposits', data?.netDeposits ?? 0)}
+      {card('refunded-container-deposits', 'Refunded container deposits', data?.refundedContainerDeposits ?? 0, 'warning')}
+    </Grid>
   );
 }
 
@@ -320,45 +357,9 @@ export function SalesReportsPage() {
         </Grid>
       </Paper>
 
-      {report.isLoading ? (
-        <Stack alignItems="center" justifyContent="center" spacing={2} sx={{ minHeight: 320 }}>
-          <CircularProgress aria-label="Loading sales report" />
-          <Typography color="text.secondary">Loading sales report</Typography>
-        </Stack>
-      ) : data ? (
+      {report.isLoading ? <Box role="status" aria-label="Loading sales report"><SummaryGrid loading /></Box> : data ? (
         <>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Gross sales" value={money(data.grossSales)} />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Net sales" value={money(data.netSales)} tone="positive" />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Discounts" value={money(data.discounts)} />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Refunds" value={money(data.refunds)} tone="warning" />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Taxes" value={money(data.taxes)} />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Payments" value={money(data.payments)} />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Container deposits" value={money(data.containerDeposits ?? 0)} />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Deposit payouts" value={money(data.depositPayouts ?? 0)} tone="warning" />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Net deposits" value={money(data.netDeposits ?? 0)} />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <MetricTile label="Refunded container deposits" value={money(data.refundedContainerDeposits ?? 0)} tone="warning" />
-            </Grid>
-          </Grid>
+          <SummaryGrid data={data} loading={false} />
 
           <Grid container spacing={3}>
             <Grid item xs={12} md={4}>
@@ -406,7 +407,7 @@ export function SalesReportsPage() {
             </Grid>
           </Grid>
         </>
-      ) : null}
+      ) : report.isError ? <SummaryGrid unavailable /> : null}
     </Stack>
   );
 }

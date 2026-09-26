@@ -713,8 +713,10 @@ function ClosingPreview({ preview }: { preview: EndOfDayClosingPreview }) {
   return (
     <Stack spacing={2}>
       <Grid container spacing={2}>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Gross sales" value={money(preview.grossSales, preview.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Net sales" value={money(preview.netSales, preview.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Taxable Sales" value={money(preview.taxableSales, preview.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Non-Taxable Sales" value={money(preview.nonTaxableSales, preview.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Tax Collected" value={money(preview.taxCollected, preview.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Merchandise Net Sales" value={money(preview.merchandiseNetSales, preview.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Payments net" value={money(preview.payments.reduce((total, row) => total + row.net, 0), preview.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Cash variance" value={money(preview.cashVariance, preview.currencyCode)} tone={preview.cashVariance === 0 ? 'success' : 'warning'} /></Grid>
       </Grid>
@@ -860,8 +862,10 @@ export function EndOfDayReportDetailPage() {
       </Stack>
       {reopen.isError ? <Alert severity="error">{errorMessage(reopen.error)}</Alert> : null}
       <Grid container spacing={2}>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Gross sales" value={money(data.grossSales, data.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Net sales" value={money(data.netSales, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Taxable Sales" value={money(data.taxableSales, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Non-Taxable Sales" value={money(data.nonTaxableSales, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Tax Collected" value={money(data.taxCollected, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Merchandise Net Sales" value={money(data.merchandiseNetSales, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Tax" value={money(data.taxTotal, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Cash variance" value={money(data.cashVariance, data.currencyCode)} tone={data.cashVariance === 0 ? 'success' : 'warning'} /></Grid>
       </Grid>

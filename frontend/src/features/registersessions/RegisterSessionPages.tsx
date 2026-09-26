@@ -18,6 +18,7 @@ import {
   IconButton,
   MenuItem,
   Paper,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -164,6 +165,51 @@ function movementLabel(value: CashMovementType) {
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function SessionMetricCard({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+  return <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 104, height: '100%' }}>
+    <Stack spacing={0.75} justifyContent="center" sx={{ height: '100%' }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="h6" fontWeight={700} color={emphasis ? 'success.main' : 'text.primary'}>{value}</Typography>
+    </Stack>
+  </Paper>;
+}
+
+function SalesClassificationSection({ session, currencyCode }: { session: RegisterSession; currencyCode?: string }) {
+  const classification = session.salesClassification;
+  const metrics = [
+    ['Taxable Sales', classification?.taxableSales],
+    ['Non-Taxable Sales', classification?.nonTaxableSales],
+    ['Tax Collected', classification?.taxCollected],
+    ['Merchandise Net Sales', classification?.merchandiseNetSales]
+  ] as const;
+  return <Paper component="section" aria-labelledby="sales-classification-heading" elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 2.5 } }}>
+    <Stack spacing={2}>
+      <Typography id="sales-classification-heading" variant="h6" component="h2" fontWeight={600}>Sales Classification</Typography>
+      <Grid container spacing={2} data-testid="sales-classification-grid">
+        {metrics.map(([label, amount], index) => <Grid item xs={12} sm={6} lg={3} key={label} data-sales-classification-card={label}>
+          <SessionMetricCard label={label} value={amount === undefined ? 'Unavailable' : money(amount, currencyCode)} emphasis={index === metrics.length - 1 && amount !== undefined} />
+        </Grid>)}
+      </Grid>
+    </Stack>
+  </Paper>;
+}
+
+function CurrentSessionLoading() {
+  return <Paper role="status" aria-label="Loading current register" elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
+    <Stack spacing={3}>
+      <Skeleton variant="text" width="35%" height={44} />
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 2.5 } }}>
+        <Stack spacing={2}>
+          <Skeleton variant="text" width={180} height={32} />
+          <Grid container spacing={2} data-testid="sales-classification-loading-grid">
+            {[0, 1, 2, 3].map((key) => <Grid item xs={12} sm={6} lg={3} key={key}><Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 104 }}><Skeleton width="60%" /><Skeleton width="75%" height={34} /></Paper></Grid>)}
+          </Grid>
+        </Stack>
+      </Paper>
+    </Stack>
+  </Paper>;
+}
+
 
 function CurrentSessionSummary({
   session,
@@ -210,14 +256,6 @@ function CurrentSessionSummary({
             <Typography fontWeight={700}>{session.openedByDisplayName ?? 'Operator not recorded'}</Typography>
           </Grid>
           <Grid item xs={12} sm={6}>
-            <Typography variant="body2" color="text.secondary">Opening cash</Typography>
-            <Typography fontWeight={700}>{money(session.openingCash, store?.currencyCode)}</Typography>
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Typography variant="body2" color="text.secondary">Expected cash</Typography>
-            <Typography fontWeight={700}>{money(session.expectedCash, store?.currencyCode)}</Typography>
-          </Grid>
-          <Grid item xs={12} sm={6}>
             <Typography variant="body2" color="text.secondary">Opened</Typography>
             <Typography fontWeight={700}>{new Date(session.openedAt).toLocaleString()}</Typography>
           </Grid>
@@ -226,7 +264,8 @@ function CurrentSessionSummary({
             <Typography fontWeight={700}>{session.version}</Typography>
           </Grid>
         </Grid>
-        <ReconciliationBreakdown session={session} currencyCode={store?.currencyCode} />
+        <SalesClassificationSection session={session} currencyCode={store?.currencyCode} />
+        <ReconciliationBreakdown session={session} currencyCode={store?.currencyCode} contained />
       </Stack>
     </Paper>
   );
@@ -305,7 +344,7 @@ export function RegisterCurrentPage() {
         )}
       </Stack>
 
-      {current.isLoading ? <LoadingPanel label="Loading current register" /> : null}
+      {current.isLoading ? <CurrentSessionLoading /> : null}
       {current.isError ? <Alert severity="error">{errorMessage(current.error)}</Alert> : null}
       {startClosing.isError ? <Alert severity="error">{errorMessage(startClosing.error)}</Alert> : null}
       {!current.isLoading && !current.isError && !current.data ? (

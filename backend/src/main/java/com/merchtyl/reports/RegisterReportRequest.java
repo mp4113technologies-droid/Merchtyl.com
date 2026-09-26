@@ -11,6 +11,8 @@ public record RegisterReportRequest(
         UUID cashierId,
         RegisterSessionStatus status,
         LocalDate dateFrom,
-        LocalDate dateTo
+        LocalDate dateTo,
+        int page,
+        int size
 ) {
 }

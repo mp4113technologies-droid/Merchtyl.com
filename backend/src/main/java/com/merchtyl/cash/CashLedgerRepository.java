@@ -34,8 +34,8 @@ public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, UUI
               and (:storeId is null or entry.store.id = :storeId)
               and (:registerId is null or entry.register.id = :registerId)
               and (:cashierId is null or entry.createdBy.id = :cashierId)
-              and (:dateFrom is null or entry.businessDate >= :dateFrom)
-              and (:dateTo is null or entry.businessDate <= :dateTo)
+              and (cast(:dateFrom as date) is null or entry.businessDate >= :dateFrom)
+              and (cast(:dateTo as date) is null or entry.businessDate <= :dateTo)
             """)
     BigDecimal sumLotteryCashPayouts(
             @Param("tenantId") UUID tenantId,

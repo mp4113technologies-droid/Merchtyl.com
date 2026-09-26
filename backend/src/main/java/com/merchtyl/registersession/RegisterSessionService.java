@@ -29,6 +29,7 @@ import com.merchtyl.security.UserRoleRepository;
 import com.merchtyl.security.UserStoreAssignmentRepository;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
+import com.merchtyl.sales.SalesClassificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -82,6 +83,8 @@ public class RegisterSessionService {
     private RolePermissionRepository rolePermissionRepository;
     @Autowired(required = false)
     private BusinessDayService businessDayService;
+    @Autowired(required = false)
+    private SalesClassificationService salesClassificationService;
     @Autowired(required = false)
     private RegisterCapabilityService registerCapabilityService;
     @Autowired
@@ -246,7 +249,10 @@ public class RegisterSessionService {
         User actor = currentUser(authentication);
         return currentSession(deviceId, deviceIdentifier, authentication)
                 .filter(session -> canViewCurrent(session, actor, authentication))
-                .map(session -> RegisterSessionResponse.from(session, cashLedgerService.breakdown(session)))
+                .map(session -> RegisterSessionResponse.from(session, cashLedgerService.breakdown(session),
+                        salesClassificationService == null
+                                ? com.merchtyl.sales.SalesClassification.zero()
+                                : salesClassificationService.forRegisterSession(actor.getTenantId(), session.getId())))
                 .orElse(null);
     }
 

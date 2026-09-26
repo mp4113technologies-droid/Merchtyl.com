@@ -30,6 +30,8 @@ public class RegisterReportController {
             @RequestParam(required = false) RegisterSessionStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "5") int size,
             Authentication authentication) {
         return registerReportService.summarize(new RegisterReportRequest(
                 storeId,
@@ -37,6 +39,8 @@ public class RegisterReportController {
                 cashierId,
                 status,
                 dateFrom,
-                dateTo), authentication);
+                dateTo,
+                page,
+                size), authentication);
     }
 }

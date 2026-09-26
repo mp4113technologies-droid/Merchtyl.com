@@ -3,11 +3,16 @@ package com.merchtyl.reports;
 import com.merchtyl.cash.CashLedgerBreakdownResponse;
 import com.merchtyl.cash.CashLedgerService;
 import com.merchtyl.common.BadRequestException;
+import com.merchtyl.common.PageResponse;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.User;
+import com.merchtyl.sales.SalesClassification;
+import com.merchtyl.sales.SalesClassificationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -34,6 +39,8 @@ public class RegisterReportService {
     private final CashLedgerService cashLedgerService;
     private final StoreAccessService storeAccessService;
     private final Clock clock;
+    @Autowired(required = false)
+    private SalesClassificationService salesClassificationService;
 
     @Autowired
     public RegisterReportService(
@@ -68,9 +75,22 @@ public class RegisterReportService {
         List<RegisterSession> sessions = registerSessionRepository
                 .findAll(specification(filters, actor, accessibleStoreIds),
                         Sort.by(Sort.Direction.DESC, "openedAt").and(Sort.by(Sort.Direction.DESC, "id")));
+        Page<RegisterSession> sessionPage = registerSessionRepository.findAll(
+                specification(filters, actor, accessibleStoreIds),
+                PageRequest.of(filters.page(), filters.size(),
+                        Sort.by(Sort.Direction.DESC, "openedAt").and(Sort.by(Sort.Direction.DESC, "id"))));
         Map<UUID, CashLedgerBreakdownResponse> breakdowns = cashLedgerService.breakdowns(sessions);
+        Map<UUID, SalesClassification> classifications = salesClassificationService == null
+                ? Map.of()
+                : salesClassificationService.byRegisterSessions(actor.getTenantId(), sessions.stream().map(RegisterSession::getId).toList());
         List<RegisterReportRow> rows = sessions.stream()
-                .map(session -> row(session, breakdowns.get(session.getId())))
+                .map(session -> row(session, breakdowns.get(session.getId()), classifications.getOrDefault(session.getId(), SalesClassification.zero())))
+                .toList();
+        List<RegisterReportRow> reconciledRows = rows.stream()
+                .filter(RegisterReportService::isReconciled)
+                .toList();
+        List<RegisterReportRow> pageRows = sessionPage.getContent().stream()
+                .map(session -> row(session, breakdowns.get(session.getId()), classifications.getOrDefault(session.getId(), SalesClassification.zero())))
                 .toList();
 
         return new RegisterReportResponse(
@@ -93,22 +113,35 @@ public class RegisterReportService {
                 sum(rows, RegisterReportRow::cashMovements),
                 sum(rows, RegisterReportRow::cashMovementIn),
                 sum(rows, RegisterReportRow::cashMovementOut),
-                sum(rows, RegisterReportRow::expectedCash),
-                sum(rows, RegisterReportRow::countedCash),
-                sum(rows, RegisterReportRow::variance),
+                sum(rows, RegisterReportRow::cashOut),
+                sum(reconciledRows, RegisterReportRow::expectedCash),
+                sum(reconciledRows, RegisterReportRow::countedCash),
+                sum(reconciledRows, RegisterReportRow::variance),
+                sum(rows, RegisterReportRow::taxableSales),
+                sum(rows, RegisterReportRow::nonTaxableSales),
+                sum(rows, RegisterReportRow::taxCollected),
+                sum(rows, RegisterReportRow::merchandiseNetSales),
                 rows.size(),
-                rows.stream().filter(row -> row.countedCash() != null).count(),
-                rows,
+                reconciledRows.size(),
+                rows.stream().filter(row -> row.status() == com.merchtyl.registersession.RegisterSessionStatus.OPEN
+                        || row.status() == com.merchtyl.registersession.RegisterSessionStatus.CLOSING).count(),
+                new PageResponse<>(pageRows, sessionPage.getNumber(), sessionPage.getSize(),
+                        sessionPage.getTotalElements(), sessionPage.getTotalPages(),
+                        sessionPage.isFirst(), sessionPage.isLast()),
                 Instant.now(clock));
     }
 
-    private RegisterReportRow row(RegisterSession session, CashLedgerBreakdownResponse breakdown) {
+    private RegisterReportRow row(RegisterSession session, CashLedgerBreakdownResponse breakdown, SalesClassification classification) {
         BigDecimal retailCash = money(breakdown.retailCashReceived().subtract(breakdown.retailChange()));
         BigDecimal lotteryCash = money(breakdown.lotteryCashSales()
                 .add(breakdown.payoutReversals())
                 .subtract(breakdown.lotteryPayouts())
                 .subtract(breakdown.lotterySaleCancellations()));
         BigDecimal cashMovements = money(breakdown.otherCashIn().subtract(breakdown.otherCashOut()));
+        boolean reconciled = session.getCountedCash() != null && session.getExpectedCashAtClose() != null;
+        BigDecimal expectedCash = reconciled ? money(session.getExpectedCashAtClose()) : money(breakdown.expectedCash());
+        BigDecimal countedCash = reconciled ? money(session.getCountedCash()) : null;
+        BigDecimal variance = reconciled ? money(countedCash.subtract(expectedCash)) : null;
         return new RegisterReportRow(
                 session.getId(),
                 session.getStore().getId(),
@@ -122,6 +155,7 @@ public class RegisterReportService {
                 session.getAssignedCashier().getDisplayName(),
                 session.getStatus(),
                 session.getStore().getCurrencyCode(),
+                session.getBusinessDay() == null ? null : session.getBusinessDay().getBusinessDate(),
                 money(breakdown.openingCash()),
                 retailCash,
                 money(breakdown.retailCashReceived()),
@@ -135,9 +169,15 @@ public class RegisterReportService {
                 cashMovements,
                 money(breakdown.otherCashIn()),
                 money(breakdown.otherCashOut()),
-                money(breakdown.expectedCash()),
-                moneyOrNull(session.getCountedCash()),
-                moneyOrNull(session.getDifferenceCash()),
+                money(breakdown.totalIn()),
+                money(breakdown.totalOut()),
+                expectedCash,
+                countedCash,
+                variance,
+                classification.taxableSales(),
+                classification.nonTaxableSales(),
+                classification.taxCollected(),
+                classification.merchandiseNetSales(),
                 session.getOpenedAt(),
                 session.getClosedAt());
     }
@@ -148,6 +188,12 @@ public class RegisterReportService {
         }
         if (request.dateFrom() != null && request.dateTo() != null && request.dateTo().isBefore(request.dateFrom())) {
             throw new BadRequestException("dateTo must be on or after dateFrom");
+        }
+        if (request.page() < 0) {
+            throw new BadRequestException("page must be zero or greater");
+        }
+        if (request.size() != 5 && request.size() != 10) {
+            throw new BadRequestException("size must be 5 or 10");
         }
         return request;
     }
@@ -161,8 +207,8 @@ public class RegisterReportService {
                 .and(equalReference("register", request.registerId()))
                 .and(equalReference("assignedCashier", request.cashierId()))
                 .and(equalEnum("status", request.status()))
-                .and(openedAtGreaterThanOrEqualTo(request.dateFrom()))
-                .and(openedAtBeforeDayAfter(request.dateTo()));
+                .and(businessDateGreaterThanOrEqualTo(request.dateFrom()))
+                .and(businessDateLessThanOrEqualTo(request.dateTo()));
     }
 
     private static Specification<RegisterSession> equalReference(String field, UUID value) {
@@ -179,20 +225,26 @@ public class RegisterReportService {
         return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get(field), value);
     }
 
-    private static Specification<RegisterSession> openedAtGreaterThanOrEqualTo(LocalDate value) {
+    private static Specification<RegisterSession> businessDateGreaterThanOrEqualTo(LocalDate value) {
         if (value == null) {
             return null;
         }
         Instant start = value.atStartOfDay().toInstant(ZoneOffset.UTC);
-        return (root, query, criteriaBuilder) -> criteriaBuilder.greaterThanOrEqualTo(root.get("openedAt"), start);
+        return (root, query, criteriaBuilder) -> criteriaBuilder.or(
+                criteriaBuilder.greaterThanOrEqualTo(root.get("businessDay").get("businessDate"), value),
+                criteriaBuilder.and(criteriaBuilder.isNull(root.get("businessDay")),
+                        criteriaBuilder.greaterThanOrEqualTo(root.get("openedAt"), start)));
     }
 
-    private static Specification<RegisterSession> openedAtBeforeDayAfter(LocalDate value) {
+    private static Specification<RegisterSession> businessDateLessThanOrEqualTo(LocalDate value) {
         if (value == null) {
             return null;
         }
         Instant end = value.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-        return (root, query, criteriaBuilder) -> criteriaBuilder.lessThan(root.get("openedAt"), end);
+        return (root, query, criteriaBuilder) -> criteriaBuilder.or(
+                criteriaBuilder.lessThanOrEqualTo(root.get("businessDay").get("businessDate"), value),
+                criteriaBuilder.and(criteriaBuilder.isNull(root.get("businessDay")),
+                        criteriaBuilder.lessThan(root.get("openedAt"), end)));
     }
 
     private static BigDecimal sum(List<RegisterReportRow> rows, AmountSelector selector) {
@@ -204,6 +256,12 @@ public class RegisterReportService {
 
     private static BigDecimal moneyOrNull(BigDecimal value) {
         return value == null ? null : money(value);
+    }
+
+    private static boolean isReconciled(RegisterReportRow row) {
+        return row.countedCash() != null && row.variance() != null
+                && (row.status() == com.merchtyl.registersession.RegisterSessionStatus.CLOSED
+                || row.status() == com.merchtyl.registersession.RegisterSessionStatus.FORCE_CLOSED);
     }
 
     private static BigDecimal money(BigDecimal value) {

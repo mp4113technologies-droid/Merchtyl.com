@@ -975,6 +975,7 @@ public class SaleService {
         java.util.Map<TaxCalculationRequest, TaxCalculationResponse> taxResults = new java.util.HashMap<>();
         for (SaleItem item : sale.getItems()) {
             if (item.isDepositPayout()) {
+                item.snapshotTaxTreatment(HistoricalTaxTreatment.NON_TAXABLE);
                 BigDecimal payout = money(item.getUnitPrice());
                 BigDecimal signed = payout.negate();
                 item.setCalculatedAmounts(signed, moneyZero(), signed);
@@ -983,6 +984,7 @@ public class SaleService {
                 continue;
             }
             if (item.isLottery()) {
+                item.snapshotTaxTreatment(HistoricalTaxTreatment.NON_TAXABLE);
                 BigDecimal amount = money(item.getUnitPrice().multiply(item.getQuantity()));
                 BigDecimal signed = item.isLotteryWin() ? amount.negate() : amount;
                 item.setCalculatedAmounts(signed, moneyZero(), signed);
@@ -992,6 +994,7 @@ public class SaleService {
             }
             if (item.isCatalogProduct()
                     && item.getProduct().getSellableType() == com.merchtyl.product.SellableType.LOTTERY_PRODUCT) {
+                item.snapshotTaxTreatment(HistoricalTaxTreatment.NON_TAXABLE);
                 BigDecimal amount = money(item.getUnitPrice().multiply(item.getQuantity()).subtract(item.getDiscountAmount()));
                 item.applyVariantDeposit();
                 BigDecimal depositTotal = item.getDepositTotal();
@@ -1018,6 +1021,11 @@ public class SaleService {
                     sale.getCurrencyCode());
             TaxCalculationResponse taxResponse = taxResults.computeIfAbsent(taxRequest,
                     ignored -> taxEngine.calculate(taxRequest, authentication));
+            item.snapshotTaxTreatment(item.isCustomItem()
+                    ? (item.getCustomItemTaxTreatment() == CustomItemTaxTreatment.TAXABLE
+                        ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE)
+                    : (taxResponse.exempt() || taxResponse.outOfScope()
+                        ? HistoricalTaxTreatment.NON_TAXABLE : HistoricalTaxTreatment.TAXABLE));
             item.applyVariantDeposit();
             BigDecimal lineSubtotal = money(taxResponse.netAmount().add(item.getDiscountAmount()));
             BigDecimal depositTotal = item.getDepositTotal();

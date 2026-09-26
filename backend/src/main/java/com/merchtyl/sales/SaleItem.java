@@ -39,6 +39,10 @@ public class SaleItem extends BaseUuidEntity {
     @Column(length = 32)
     private CustomItemTaxTreatment customItemTaxTreatment;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "historical_tax_treatment", length = 32)
+    private HistoricalTaxTreatment historicalTaxTreatment;
+
     private UUID taxCategorySnapshotId;
 
     private UUID categorySnapshotId;
@@ -283,6 +287,10 @@ public class SaleItem extends BaseUuidEntity {
         this.lineTotal = lineTotal;
     }
 
+    void snapshotTaxTreatment(HistoricalTaxTreatment treatment) {
+        this.historicalTaxTreatment = treatment;
+    }
+
     void applyVariantDeposit() {
         if (variant != null && variant.isDepositEnabled()) {
             depositType = variant.getDepositType();
@@ -349,6 +357,7 @@ public class SaleItem extends BaseUuidEntity {
     public boolean isLotteryWin() { return lineType == SaleLineType.LOTTERY_WIN; }
     public boolean isDepositPayout() { return lineType == SaleLineType.DEPOSIT_PAYOUT; }
     public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
+    public HistoricalTaxTreatment getHistoricalTaxTreatment() { return historicalTaxTreatment; }
     public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
     public UUID getCategorySnapshotId() { return categorySnapshotId; }
     public String getCategoryNameSnapshot() { return categoryNameSnapshot; }

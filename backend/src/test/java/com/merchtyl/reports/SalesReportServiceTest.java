@@ -108,6 +108,32 @@ class SalesReportServiceTest {
         assertThat(response.refunds()).isZero();
     }
 
+    @Test
+    void physicalLotteryRefundNeverEntersNonTaxableMerchandise() {
+        Refund refund = mock(Refund.class);
+        Return returnRecord = mock(Return.class);
+        ReturnItem returnedTicket = returnItem(PRODUCT_ID, CATEGORY_ID, "20.00", "0.00", "20.00");
+        SaleItem originalTicket = mock(SaleItem.class);
+        when(originalTicket.getSellableTypeSnapshot()).thenReturn(SellableType.LOTTERY_PRODUCT);
+        when(returnedTicket.getOriginalSaleItem()).thenReturn(originalTicket);
+        when(returnedTicket.getOriginalQuantity()).thenReturn(BigDecimal.ONE);
+        when(returnedTicket.getQuantity()).thenReturn(BigDecimal.ONE);
+        when(returnedTicket.getOriginalDiscountAmount()).thenReturn(BigDecimal.ZERO);
+        when(returnRecord.getItems()).thenReturn(List.of(returnedTicket));
+        when(refund.getReturnRecord()).thenReturn(returnRecord);
+        when(refund.getPayments()).thenReturn(List.of());
+        when(refund.getTotalAmount()).thenReturn(new BigDecimal("20.00"));
+        when(saleRepository.findAll(any(Specification.class))).thenReturn(List.of());
+        when(refundRepository.findAll(any(Specification.class))).thenReturn(List.of(refund));
+
+        SalesReportResponse response = service.summarize(new SalesReportRequest(
+                null, null, null, null, null, LocalDate.parse("2026-07-01"), LocalDate.parse("2026-07-31")));
+
+        assertThat(response.taxableSales()).isZero();
+        assertThat(response.nonTaxableSales()).isZero();
+        assertThat(response.merchandiseNetSales()).isZero();
+    }
+
     private static Sale sale() {
         Sale sale = mock(Sale.class);
         SaleItem matchingItem = saleItem(PRODUCT_ID, CATEGORY_ID, "100.00", "10.00", "8.00", "96.00");

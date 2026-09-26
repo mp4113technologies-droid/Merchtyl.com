@@ -1,11 +1,11 @@
 package com.merchtyl.reports;
 
+import com.merchtyl.common.PageResponse;
 import com.merchtyl.registersession.RegisterSessionStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 public record RegisterReportResponse(
@@ -28,12 +28,18 @@ public record RegisterReportResponse(
         BigDecimal cashMovements,
         BigDecimal cashMovementIn,
         BigDecimal cashMovementOut,
+        BigDecimal cashOut,
         BigDecimal expectedCash,
         BigDecimal countedCash,
         BigDecimal variance,
+        BigDecimal taxableSales,
+        BigDecimal nonTaxableSales,
+        BigDecimal taxCollected,
+        BigDecimal merchandiseNetSales,
         long sessionCount,
         long closedSessionCount,
-        List<RegisterReportRow> rows,
+        long openSessionCount,
+        PageResponse<RegisterReportRow> rows,
         Instant generatedAt
 ) {
 }

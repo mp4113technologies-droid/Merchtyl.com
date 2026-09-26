@@ -20,11 +20,11 @@ import java.util.UUID;
 
 public interface RegisterSessionRepository extends JpaRepository<RegisterSession, UUID>, JpaSpecificationExecutor<RegisterSession> {
     @Override
-    @EntityGraph(attributePaths = {"store", "register", "device", "assignedCashier", "openedBy", "closedBy"})
+    @EntityGraph(attributePaths = {"store", "register", "businessDay", "device", "assignedCashier", "openedBy", "closedBy"})
     Page<RegisterSession> findAll(Specification<RegisterSession> specification, Pageable pageable);
 
     @Override
-    @EntityGraph(attributePaths = {"store", "register", "device", "assignedCashier", "openedBy", "closedBy"})
+    @EntityGraph(attributePaths = {"store", "register", "businessDay", "device", "assignedCashier", "openedBy", "closedBy"})
     List<RegisterSession> findAll(Specification<RegisterSession> specification, Sort sort);
 
     boolean existsByRegister_IdAndStatusIn(UUID registerId, Collection<RegisterSessionStatus> statuses);
