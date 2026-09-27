@@ -36,8 +36,8 @@ public class TaxCategoryController {
 
     @GetMapping
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).TAX_VIEW)")
-    PageResponse<TaxCategoryResponse> list(@RequestParam(required = false) UUID taxGroupId, @RequestParam(required = false) String code, @RequestParam(required = false) String name, @RequestParam(required = false) TaxTreatment treatment, @RequestParam(required = false) Boolean active, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-        return service.search(new TaxCategorySearchRequest(taxGroupId, code, name, treatment, active, page, size));
+    PageResponse<TaxCategoryResponse> list(@RequestParam(required = false) UUID taxGroupId, @RequestParam(required = false) String code, @RequestParam(required = false) String name, @RequestParam(required = false) TaxTreatment treatment, @RequestParam(required = false) Boolean active, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, Authentication authentication) {
+        return service.search(new TaxCategorySearchRequest(taxGroupId, code, name, treatment, active, page, size), authentication);
     }
 
     @GetMapping("/{id}")

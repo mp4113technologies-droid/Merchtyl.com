@@ -5,6 +5,7 @@ import com.merchtyl.audit.CreateAuditRecordCommand;
 import com.merchtyl.common.ConflictException;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
+import com.merchtyl.product.ProductTaxClass;
 import com.merchtyl.product.ProductValues;
 import com.merchtyl.product.SellableType;
 import com.merchtyl.security.UserRepository;
@@ -14,6 +15,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -82,6 +84,7 @@ class TaxGroupCategoryServiceTest {
     void productAssignmentSetsProductTaxCategoryPlaceholder() {
         Product product = product();
         TaxCategory category = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        category.assignMerchantOwnership(product.getTenantId());
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(taxCategoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
         when(assignmentRepository.existsByProduct(product)).thenReturn(false);
@@ -99,6 +102,7 @@ class TaxGroupCategoryServiceTest {
     void productAssignmentRejectsSecondAssignmentForProduct() {
         Product product = product();
         TaxCategory category = new TaxCategory(null, "STANDARD", "Standard", TaxTreatment.STANDARD, null, true);
+        category.assignMerchantOwnership(product.getTenantId());
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(taxCategoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
         when(assignmentRepository.existsByProduct(product)).thenReturn(true);
@@ -123,7 +127,7 @@ class TaxGroupCategoryServiceTest {
     }
 
     private static Product product() {
-        return new Product(new ProductValues(
+        Product product = new Product(new ProductValues(
                 "SKU-1",
                 "Coffee",
                 null,
@@ -138,8 +142,11 @@ class TaxGroupCategoryServiceTest {
                 false,
                 null,
                 null,
+                ProductTaxClass.CUSTOM,
                 List.of(),
                 List.of(),
                 Set.of()));
+        product.assignTenant(new UUID(0L, 1L));
+        return product;
     }
 }

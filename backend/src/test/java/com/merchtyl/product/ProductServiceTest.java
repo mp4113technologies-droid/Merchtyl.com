@@ -210,11 +210,9 @@ class ProductServiceTest {
     @Test
     void createRejectsUnknownTaxCategory() {
         UUID taxCategoryId = UUID.randomUUID();
-        when(taxCategoryRepository.findById(taxCategoryId)).thenReturn(Optional.empty());
-
         assertThatThrownBy(() -> productService.create(requestWithTaxCategory(taxCategoryId), null))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Invalid tax category");
+                .hasMessage("Tax Category is only valid for Custom Tax Treatment");
     }
 
     @Test
@@ -260,12 +258,34 @@ class ProductServiceTest {
     @Test
     void createRejectsInactiveTaxCategory() {
         UUID taxCategoryId = UUID.randomUUID();
-        when(taxCategoryRepository.findById(taxCategoryId)).thenReturn(Optional.of(new TaxCategory(
-                null, "INACTIVE", "Inactive", TaxTreatment.STANDARD, null, false)));
-
         assertThatThrownBy(() -> productService.create(requestWithTaxCategory(taxCategoryId), null))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Tax category is inactive");
+                .hasMessage("Tax Category is only valid for Custom Tax Treatment");
+    }
+
+    @Test
+    void createAcceptsMerchantOwnedCustomTaxCategory() {
+        UUID tenantId = new UUID(0L, 1L);
+        TaxCategory category = new TaxCategory(null, "ADV01-TXC-001", "Prepared food", TaxTreatment.STANDARD, null, true);
+        category.assignMerchantOwnership(tenantId);
+        when(taxCategoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
+
+        ProductResponse response = productService.create(requestWithTaxTreatment(ProductTaxClass.CUSTOM, category.getId()), null);
+
+        assertThat(response.taxClass()).isEqualTo(ProductTaxClass.CUSTOM);
+        assertThat(response.taxCategoryId()).isEqualTo(category.getId());
+    }
+
+    @Test
+    void createRejectsSystemCategoryForCustomTreatment() {
+        TaxCategory category = new TaxCategory(null, "CA_NL_VAPE", "NL Vape", TaxTreatment.STANDARD, null, true);
+        ReflectionTestUtils.setField(category, "systemManaged", true);
+        ReflectionTestUtils.setField(category, "merchantAssignable", false);
+        when(taxCategoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
+
+        assertThatThrownBy(() -> productService.create(requestWithTaxTreatment(ProductTaxClass.CUSTOM, category.getId()), null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Tax category is not available for manual Product assignment");
     }
 
     @Test
@@ -307,6 +327,12 @@ class ProductServiceTest {
         return new ProductRequest("taxed-product", "Taxed Product", null, SellableType.STANDARD_PRODUCT, null,
                 BigDecimal.ONE, BigDecimal.TEN, null, null, true, false, false, null, taxCategoryId,
                 List.of(), Set.of());
+    }
+
+    private ProductRequest requestWithTaxTreatment(ProductTaxClass taxClass, UUID taxCategoryId) {
+        return new ProductRequest("taxed-product", "Taxed Product", null, SellableType.STANDARD_PRODUCT, null,
+                BigDecimal.ONE, BigDecimal.TEN, null, null, true, false, false, null, taxCategoryId,
+                taxClass, List.of(), Set.of(), Set.of(), null, ProductAvailabilityScope.ALL_STORES);
     }
 
     private ProductRequest requestWithUnit(UUID unitId) {

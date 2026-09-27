@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/tax/product-category-assignments")
@@ -32,6 +33,12 @@ public class ProductTaxCategoryAssignmentController {
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).TAX_MANAGE)")
     ProductTaxCategoryAssignmentResponse create(@Valid @RequestBody ProductTaxCategoryAssignmentRequest request, Authentication authentication) {
         return service.create(request, authentication);
+    }
+
+    @PostMapping("/bulk-tax-class")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).TAX_MANAGE)")
+    Map<String, Integer> bulkTaxClass(@Valid @RequestBody BulkProductTaxClassRequest request, Authentication authentication) {
+        return Map.of("updated", service.bulkAssignTaxClass(request, authentication));
     }
 
     @GetMapping

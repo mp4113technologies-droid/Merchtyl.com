@@ -15,6 +15,7 @@ public record PosBarcodeLookupResponse(
         BigDecimal price,
         UUID taxCategoryId,
         String taxCategoryName,
+        ProductTaxClass taxClass,
         BigDecimal availableQuantity,
         boolean active,
         boolean ageRestricted,

@@ -1021,6 +1021,13 @@ public class SaleService {
                     sale.getCurrencyCode());
             TaxCalculationResponse taxResponse = taxResults.computeIfAbsent(taxRequest,
                     ignored -> taxEngine.calculate(taxRequest, authentication));
+            var resolvedCategory = taxResponse.productTaxCategoryId() == null || taxCategoryRepository == null
+                    ? null : taxCategoryRepository.findById(taxResponse.productTaxCategoryId()).orElse(null);
+            item.snapshotTaxes(resolvedCategory,
+                    taxResponse.components().stream().collect(java.util.stream.Collectors.toMap(
+                            com.merchtyl.tax.TaxComponentCalculationResponse::taxComponentId,
+                            com.merchtyl.tax.TaxComponentCalculationResponse::reportingType,
+                            (left, right) -> left)), taxResponse.components());
             item.snapshotTaxTreatment(item.isCustomItem()
                     ? (item.getCustomItemTaxTreatment() == CustomItemTaxTreatment.TAXABLE
                         ? HistoricalTaxTreatment.TAXABLE : HistoricalTaxTreatment.NON_TAXABLE)

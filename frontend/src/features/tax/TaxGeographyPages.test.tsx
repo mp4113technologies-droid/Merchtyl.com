@@ -201,6 +201,8 @@ function taxCategory(overrides: Partial<TaxCategory> = {}): TaxCategory {
     treatment: 'STANDARD',
     description: 'Default taxable products',
     active: true,
+    systemManaged: false,
+    merchantAssignable: true,
     createdAt: '2026-07-22T12:00:00Z',
     updatedAt: '2026-07-22T12:00:00Z',
     version: 0,
@@ -918,7 +920,7 @@ describe('Tax geography pages', () => {
     });
   });
 
-  it('creates and deactivates product tax category assignments', async () => {
+  it('bulk assigns one semantic product tax treatment', async () => {
     storeSession(['OWNER']);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
@@ -931,8 +933,8 @@ describe('Tax geography pages', () => {
       if (url.pathname.endsWith('/api/v1/tax/categories')) {
         return jsonResponse(taxCategoryPage([taxCategory()]));
       }
-      if (url.pathname.endsWith('/api/v1/tax/product-category-assignments') && init?.method === 'POST') {
-        return jsonResponse(assignment(), 201);
+      if (url.pathname.endsWith('/api/v1/tax/product-category-assignments/bulk-tax-class') && init?.method === 'POST') {
+        return jsonResponse({ updated: 1 });
       }
       if (url.pathname.endsWith(`/api/v1/tax/product-category-assignments/${assignmentId}/status`) && init?.method === 'PATCH') {
         return jsonResponse(assignment({ active: false, version: 1 }));
@@ -947,25 +949,20 @@ describe('Tax geography pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Product tax assignments' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'SKU-100' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'New assignment' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New product tax assignment' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Create assignment' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'SKU-100 - Coffee beans' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Tax Treatment' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Vape / Vapour Product' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input, init]) => {
         const url = new URL(String(input), window.location.origin);
-        if (!url.pathname.endsWith('/api/v1/tax/product-category-assignments') || init?.method !== 'POST') {
+        if (!url.pathname.endsWith('/api/v1/tax/product-category-assignments/bulk-tax-class') || init?.method !== 'POST') {
           return false;
         }
         const body = JSON.parse(String(init.body));
-        return body.productId === productId && body.taxCategoryId === taxCategoryId;
+        return body.productIds[0] === productId && body.taxClass === 'VAPE' && body.taxCategoryId === undefined;
       })).toBe(true);
-    });
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Deactivate SKU-100 STANDARD' }));
-
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith('/status') && init?.method === 'PATCH')).toBe(true);
     });
   });
 

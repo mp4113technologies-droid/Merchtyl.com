@@ -41,6 +41,7 @@ public class TaxGroupComponentService {
     @Transactional
     public TaxGroupComponentResponse create(TaxGroupComponentRequest request, Authentication authentication) {
         TaxGroup group = taxGroupService.find(request.taxGroupId());
+        taxGroupService.requireMerchantEditable(group);
         TaxComponent component = taxComponentService.find(request.taxComponentId());
         validateCalculationOrder(request.calculationOrder());
         if (taxGroupComponentRepository.existsByTaxGroupAndTaxComponent(group, component)) {
@@ -69,6 +70,7 @@ public class TaxGroupComponentService {
     @Transactional
     public TaxGroupComponentResponse update(UUID id, TaxGroupComponentUpdateRequest request, Authentication authentication) {
         TaxGroupComponent groupComponent = find(id);
+        taxGroupService.requireMerchantEditable(groupComponent.getTaxGroup());
         TaxGeographySupport.requireCurrentVersion(groupComponent.getVersion(), request.version(), "Tax group component");
         TaxGroup group = taxGroupService.find(request.taxGroupId());
         TaxComponent component = taxComponentService.find(request.taxComponentId());
@@ -86,6 +88,7 @@ public class TaxGroupComponentService {
     @Transactional
     public TaxGroupComponentResponse updateStatus(UUID id, TaxGroupComponentStatusRequest request, Authentication authentication) {
         TaxGroupComponent groupComponent = find(id);
+        taxGroupService.requireMerchantEditable(groupComponent.getTaxGroup());
         TaxGeographySupport.requireCurrentVersion(groupComponent.getVersion(), request.version(), "Tax group component");
         TaxGroupComponentResponse before = TaxGroupComponentResponse.from(groupComponent);
         groupComponent.setActive(request.active());

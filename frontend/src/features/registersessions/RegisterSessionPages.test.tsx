@@ -711,13 +711,15 @@ describe('Register session pages', () => {
     expect(await screen.findByRole('heading', { name: 'Sales Classification' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Cash Reconciliation' })).toBeInTheDocument();
     const classificationGrid = screen.getByTestId('sales-classification-grid');
-    expect(classificationGrid.querySelectorAll(':scope > [data-sales-classification-card]')).toHaveLength(4);
+    expect(classificationGrid.querySelectorAll(':scope > [data-sales-classification-card]')).toHaveLength(6);
     for (const card of classificationGrid.querySelectorAll(':scope > [data-sales-classification-card]')) {
       expect(card).toHaveClass('MuiGrid-grid-xs-12', 'MuiGrid-grid-sm-6', 'MuiGrid-grid-lg-3');
     }
     expect(classificationGrid.querySelector('[data-sales-classification-card="Taxable Sales"]')).toHaveTextContent('$21.00');
     expect(classificationGrid.querySelector('[data-sales-classification-card="Non-Taxable Sales"]')).toHaveTextContent('$12.00');
-    expect(classificationGrid.querySelector('[data-sales-classification-card="Tax Collected"]')).toHaveTextContent('$3.15');
+    expect(classificationGrid.querySelector('[data-sales-classification-card="General Tax Collected"]')).toHaveTextContent('$3.15');
+    expect(classificationGrid.querySelector('[data-sales-classification-card="Vape Tax Collected"]')).toHaveTextContent('$0.00');
+    expect(classificationGrid.querySelector('[data-sales-classification-card="Total Tax Collected"]')).toHaveTextContent('$3.15');
     expect(classificationGrid.querySelector('[data-sales-classification-card="Merchandise Net Sales"]')).toHaveTextContent('$33.00');
     expect(screen.getAllByText('Opening cash')).toHaveLength(2);
     expect(screen.getAllByText('Expected cash')).toHaveLength(1);

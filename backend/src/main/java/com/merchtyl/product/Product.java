@@ -94,6 +94,10 @@ public class Product extends BaseUuidEntity {
 
     private UUID taxCategoryId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tax_class", nullable = false, length = 32)
+    private ProductTaxClass taxClass = ProductTaxClass.STANDARD;
+
     @Column(name = "minimum_age")
     private Integer minimumAge;
 
@@ -132,6 +136,7 @@ public class Product extends BaseUuidEntity {
         this.decimalQuantityAllowed = values.decimalQuantityAllowed();
         this.imageUrl = values.imageUrl();
         this.taxCategoryId = values.taxCategoryId();
+        this.taxClass = values.taxClass() == null ? ProductTaxClass.STANDARD : values.taxClass();
         reconcileChildren(values.variants(), values.barcodes());
         if (tenantId != null) {
             variants.forEach(variant -> variant.assignTenant(tenantId));
@@ -170,6 +175,13 @@ public class Product extends BaseUuidEntity {
 
     public void setTaxCategoryId(UUID taxCategoryId) {
         this.taxCategoryId = taxCategoryId;
+    }
+
+    public ProductTaxClass getTaxClass() { return taxClass; }
+
+    public void setTaxClass(ProductTaxClass taxClass) {
+        this.taxClass = taxClass == null ? ProductTaxClass.STANDARD : taxClass;
+        if (this.taxClass != ProductTaxClass.CUSTOM) this.taxCategoryId = null;
     }
 
     public void setMinimumAge(Integer minimumAge) {

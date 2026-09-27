@@ -215,7 +215,7 @@ public class ProductService {
                 product.getSellableType(),
                 product.getUnitOfMeasure() == null ? null : product.getUnitOfMeasure().getId(),
                 variant == null ? storeProduct==null?product.getPrice():storeProduct.getSellingPrice() : variant.getPrice(),
-                product.getTaxCategoryId(), taxCategory == null ? null : taxCategory.getName(), quantity, true,
+                product.getTaxCategoryId(), taxCategory == null ? null : taxCategory.getName(), product.getTaxClass(), quantity, true,
                 product.hasCapability(ProductCapability.REQUIRE_AGE_VERIFICATION), product.getMinimumAge());
         log.debug("pos_event event=POS_BARCODE_RESOLVED tenant_id={} store_id={} product_id={} variant_id={}",
                 tenantId, storeId, product.getId(), response.variantId());
@@ -318,8 +318,9 @@ public class ProductService {
         Category category = category(request.sellableType(), request.categoryId(), tenantId);
         SellableType sellableType = semanticSellableType(request.sellableType(), category);
         validateLotteryConfiguration(sellableType, request.decimalQuantityAllowed());
-        UUID taxCategoryId = effectiveTaxCategoryId(sellableType, request.taxCategoryId());
-        requireActiveTaxCategory(taxCategoryId);
+        ProductTaxClass taxClass = effectiveTaxClass(sellableType, request.taxClass());
+        UUID taxCategoryId = effectiveTaxCategoryId(sellableType, taxClass, request.taxCategoryId());
+        requireCompatibleActiveTaxCategory(taxCategoryId, taxClass, tenantId);
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = generatedVariantValues(tenantId, productName, request.variants());
         return new ProductValues(
@@ -337,6 +338,7 @@ public class ProductService {
                 request.decimalQuantityAllowed(),
                 optionalText(request.imageUrl()),
                 taxCategoryId,
+                taxClass,
                 variants,
                 barcodeValues(request.variants(), variants),
                 capabilities(sellableType, request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
@@ -346,8 +348,9 @@ public class ProductService {
         Category category = category(request.sellableType(), request.categoryId(), tenantId);
         SellableType sellableType = semanticSellableType(request.sellableType(), category);
         validateLotteryConfiguration(sellableType, request.decimalQuantityAllowed());
-        UUID taxCategoryId = effectiveTaxCategoryId(sellableType, request.taxCategoryId());
-        requireActiveTaxCategory(taxCategoryId);
+        ProductTaxClass taxClass = effectiveTaxClass(sellableType, request.taxClass());
+        UUID taxCategoryId = effectiveTaxCategoryIdForUpdate(product, sellableType, taxClass, request.taxCategoryId());
+        requireCompatibleActiveTaxCategory(taxCategoryId, taxClass, tenantId);
         String productName = cleanRequired(request.name(), "name");
         List<ProductVariantValues> variants = updateVariantValues(product, tenantId, productName, request.variants());
         return new ProductValues(
@@ -365,16 +368,32 @@ public class ProductService {
                 request.decimalQuantityAllowed(),
                 optionalText(request.imageUrl()),
                 taxCategoryId,
+                taxClass,
                 variants,
                 barcodeValues(request.variants(), variants),
                 capabilities(sellableType, request.capabilities(), request.inventoryTrackingEnabled(), request.decimalQuantityAllowed()));
     }
 
-    private void requireActiveTaxCategory(UUID taxCategoryId) {
+    private void requireCompatibleActiveTaxCategory(UUID taxCategoryId, ProductTaxClass taxClass, UUID tenantId) {
+        if (taxClass == ProductTaxClass.CUSTOM && taxCategoryId == null) {
+            throw new BadRequestException("Custom Tax Treatment requires a Tax Category");
+        }
+        if (taxClass != ProductTaxClass.CUSTOM && taxCategoryId != null) {
+            throw new BadRequestException("Tax Category is only valid for Custom Tax Treatment");
+        }
         if (taxCategoryId == null) return;
         var category = taxCategoryRepository.findById(taxCategoryId)
                 .orElseThrow(() -> new BadRequestException("Invalid tax category"));
         if (!category.isActive()) throw new BadRequestException("Tax category is inactive");
+        if (category.isSystemManaged() || !category.isMerchantAssignable())
+            throw new BadRequestException("Tax category is not available for manual Product assignment");
+        if (!tenantId.equals(category.getOwnerTenantId()))
+            throw new BadRequestException("Tax category does not belong to this Merchant");
+    }
+
+    private static ProductTaxClass effectiveTaxClass(SellableType sellableType, ProductTaxClass requested) {
+        if (sellableType == SellableType.LOTTERY_PRODUCT) return ProductTaxClass.NON_TAXABLE;
+        return requested == null ? ProductTaxClass.STANDARD : requested;
     }
 
     private static void validateLotteryConfiguration(SellableType type, boolean decimalQuantityAllowed) {
@@ -382,8 +401,20 @@ public class ProductService {
         if (decimalQuantityAllowed) throw new BadRequestException("LOTTERY_PRODUCT_REQUIRES_WHOLE_QUANTITY");
     }
 
-    private static UUID effectiveTaxCategoryId(SellableType type, UUID requestedTaxCategoryId) {
-        return type == SellableType.LOTTERY_PRODUCT ? null : requestedTaxCategoryId;
+    private static UUID effectiveTaxCategoryId(SellableType type, ProductTaxClass taxClass, UUID requestedTaxCategoryId) {
+        if (type == SellableType.LOTTERY_PRODUCT) return null;
+        if (taxClass == ProductTaxClass.CUSTOM) return requestedTaxCategoryId;
+        if (requestedTaxCategoryId != null) throw new BadRequestException("Tax Category is only valid for Custom Tax Treatment");
+        return null;
+    }
+
+    private static UUID effectiveTaxCategoryIdForUpdate(Product product, SellableType type, ProductTaxClass taxClass, UUID requestedTaxCategoryId) {
+        if (type == SellableType.LOTTERY_PRODUCT) return null;
+        if (taxClass == ProductTaxClass.CUSTOM) return requestedTaxCategoryId;
+        // Changing away from CUSTOM is an explicit semantic transition: discard the old/hidden category.
+        if (product.getTaxClass() == ProductTaxClass.CUSTOM) return null;
+        if (requestedTaxCategoryId != null) throw new BadRequestException("Tax Category is only valid for Custom Tax Treatment");
+        return null;
     }
 
     private Category category(SellableType type, UUID requestedCategoryId, UUID tenantId) {

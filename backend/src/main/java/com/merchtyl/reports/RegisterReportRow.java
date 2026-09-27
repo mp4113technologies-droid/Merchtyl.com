@@ -41,9 +41,12 @@ public record RegisterReportRow(
         BigDecimal variance,
         BigDecimal taxableSales,
         BigDecimal nonTaxableSales,
-        BigDecimal taxCollected,
+        BigDecimal generalTaxCollected,
+        BigDecimal vapeTaxCollected,
+        BigDecimal totalTaxCollected,
         BigDecimal merchandiseNetSales,
         Instant openedAt,
         Instant closedAt
 ) {
+    public BigDecimal taxCollected() { return totalTaxCollected; }
 }

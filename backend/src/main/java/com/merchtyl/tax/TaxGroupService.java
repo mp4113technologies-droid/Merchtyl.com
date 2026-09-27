@@ -61,6 +61,7 @@ public class TaxGroupService {
     @Transactional
     public TaxGroupResponse update(UUID id, TaxGroupUpdateRequest request, Authentication authentication) {
         TaxGroup group = find(id);
+        requireMerchantEditable(group);
         TaxGeographySupport.requireCurrentVersion(group.getVersion(), request.version(), "Tax group");
         String code = TaxGeographySupport.normalizeCode(request.code(), 64);
         if (taxGroupRepository.existsByCodeIgnoreCaseAndIdNot(code, id)) {
@@ -76,6 +77,7 @@ public class TaxGroupService {
     @Transactional
     public TaxGroupResponse updateStatus(UUID id, TaxGroupStatusRequest request, Authentication authentication) {
         TaxGroup group = find(id);
+        requireMerchantEditable(group);
         TaxGeographySupport.requireCurrentVersion(group.getVersion(), request.version(), "Tax group");
         TaxGroupResponse before = TaxGroupResponse.from(group);
         group.setActive(request.active());
@@ -86,6 +88,10 @@ public class TaxGroupService {
 
     TaxGroup find(UUID id) {
         return taxGroupRepository.findById(id).orElseThrow(() -> new NotFoundException("Tax group not found"));
+    }
+
+    void requireMerchantEditable(TaxGroup group) {
+        if (group.isSystemManaged()) throw new ConflictException("System tax groups cannot be modified");
     }
 
     private TaxGroup save(TaxGroup group) {

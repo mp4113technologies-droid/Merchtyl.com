@@ -13,6 +13,9 @@ import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import com.merchtyl.sales.SaleItemTax;
+import com.merchtyl.tax.TaxReportingType;
+import java.math.RoundingMode;
 
 @Entity
 @Table(name = "refund_item_taxes")
@@ -50,6 +53,10 @@ public class RefundItemTax extends BaseUuidEntity {
     @Column(nullable = false, length = 3, updatable = false)
     private String currencyCode;
 
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name="reporting_type", nullable=false, length=32, updatable=false)
+    private TaxReportingType reportingType;
+
     protected RefundItemTax() {
     }
 
@@ -63,7 +70,21 @@ public class RefundItemTax extends BaseUuidEntity {
         this.taxableAmount = returnItem.getReturnSubtotalAmount();
         this.taxAmount = returnItem.getReturnTaxAmount();
         this.currencyCode = refund.getCurrencyCode();
+        this.reportingType = TaxReportingType.OTHER;
         initializeIdAndTimestamps();
+    }
+
+    RefundItemTax(Refund refund, ReturnItem returnItem, SaleItemTax original) {
+        this.refund=refund; this.returnItem=returnItem; this.originalSaleItem=returnItem.getOriginalSaleItem();
+        this.productTaxCategoryId=original.getTaxCategoryId(); this.taxComponentCode=original.getTaxComponentCode();
+        this.taxComponentName=original.getTaxComponentName(); this.reportingType=original.getReportingType();
+        this.taxableAmount=prorate(original.getTaxableAmount(), returnItem);
+        this.taxAmount=prorate(original.getTaxAmount(), returnItem); this.currencyCode=refund.getCurrencyCode();
+        initializeIdAndTimestamps();
+    }
+
+    private static BigDecimal prorate(BigDecimal amount, ReturnItem item) {
+        return amount.multiply(item.getQuantity()).divide(item.getOriginalQuantity(), 2, RoundingMode.HALF_UP);
     }
 
     void assignLineNumber(int lineNumber) {
@@ -109,4 +130,5 @@ public class RefundItemTax extends BaseUuidEntity {
     public String getCurrencyCode() {
         return currencyCode;
     }
+    public TaxReportingType getReportingType() { return reportingType; }
 }

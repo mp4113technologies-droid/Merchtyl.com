@@ -33,6 +33,13 @@ public class TaxComponent extends BaseUuidEntity {
     @Column(nullable = false)
     private boolean active;
 
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "reporting_type", nullable = false, length = 32)
+    private TaxReportingType reportingType = TaxReportingType.GENERAL_SALES_TAX;
+
+    @Column(name = "system_managed", nullable = false)
+    private boolean systemManaged;
+
     protected TaxComponent() {
     }
 
@@ -76,5 +83,11 @@ public class TaxComponent extends BaseUuidEntity {
 
     public boolean isActive() {
         return active;
+    }
+
+    public TaxReportingType getReportingType() { return reportingType; }
+    public boolean isSystemManaged() { return systemManaged; }
+    public void setReportingType(TaxReportingType reportingType) {
+        this.reportingType = reportingType == null ? TaxReportingType.GENERAL_SALES_TAX : reportingType;
     }
 }

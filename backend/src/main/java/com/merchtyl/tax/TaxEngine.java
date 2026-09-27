@@ -13,6 +13,7 @@ import com.merchtyl.store.StoreRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -29,6 +30,8 @@ public class TaxEngine {
     private final TaxCalculator taxCalculator;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    @Autowired(required = false)
+    private ProductTaxConfigurationResolver productTaxConfigurationResolver;
 
     public TaxEngine(
             StoreRepository storeRepository,
@@ -79,7 +82,9 @@ public class TaxEngine {
                 ? null
                 : productRepository.findById(request.productId())
                         .orElseThrow(() -> new NotFoundException("Product not found"));
-        UUID productTaxCategoryId = request.productTaxCategoryId() != null
+        TaxCategory resolvedCategory = product != null && productTaxConfigurationResolver != null
+                ? productTaxConfigurationResolver.resolve(product, store, transactionDate) : null;
+        UUID productTaxCategoryId = resolvedCategory != null ? resolvedCategory.getId() : request.productTaxCategoryId() != null
                 ? request.productTaxCategoryId()
                 : product == null ? null : product.getTaxCategoryId();
         if (productTaxCategoryId != null && !taxCategoryRepository.existsById(productTaxCategoryId)) {
@@ -111,6 +116,15 @@ public class TaxEngine {
                         TaxRoundingStrategy.HALF_UP,
                         java.util.List.of())
                 : taxRuleEvaluator.evaluate(evaluationRequest);
+        if (resolvedCategory != null && resolvedCategory.getTaxGroup() != null && !evaluation.exempt()
+                && !evaluation.outOfScope()) {
+            java.util.LinkedHashSet<UUID> groups = new java.util.LinkedHashSet<>(evaluation.appliedTaxGroupIds());
+            groups.clear(); // A semantic jurisdiction category is authoritative over generic jurisdiction rules.
+            groups.add(resolvedCategory.getTaxGroup().getId());
+            evaluation = new TaxRuleEvaluationResponse(java.util.List.copyOf(groups), evaluation.appliedTaxComponentIds(),
+                    evaluation.excludedTaxComponentIds(), evaluation.zeroRated(), evaluation.exempt(), evaluation.outOfScope(),
+                    evaluation.includedPriceBehavior(), evaluation.roundingStrategy(), evaluation.ruleMatches());
+        }
         TaxCalculationContext context = new TaxCalculationContext(
                 request.storeId(),
                 storeJurisdictionId,

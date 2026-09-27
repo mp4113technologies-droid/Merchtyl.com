@@ -1137,14 +1137,25 @@ public class BusinessDayService {
 
     private List<EndOfDayTaxValues> taxValues(List<Sale> sales, List<Refund> refunds) {
         Map<String, TaxAccumulator> taxes = new LinkedHashMap<>();
-        TaxAccumulator salesTax = taxes.computeIfAbsent("SALES_TAX", ignored -> new TaxAccumulator("SALES_TAX", "Posted sales tax"));
+        TaxAccumulator salesTax = taxes.computeIfAbsent("GENERAL_TAX", ignored -> new TaxAccumulator("GENERAL_TAX", "General Tax Collected"));
+        TaxAccumulator vapeTax = taxes.computeIfAbsent("VAPE_TAX", ignored -> new TaxAccumulator("VAPE_TAX", "Vape Tax Collected"));
+        TaxAccumulator otherTax = taxes.computeIfAbsent("OTHER_TAX", ignored -> new TaxAccumulator("OTHER_TAX", "Other Tax Collected"));
         sales.forEach(sale -> {
             sale.getItems().stream().filter(BusinessDayService::isMerchandiseLine).forEach(item -> {
                 BigDecimal net = money(item.getLineSubtotal().subtract(item.getDepositTotal()).subtract(item.getDiscountAmount()));
                 if (taxTreatment(item) == HistoricalTaxTreatment.TAXABLE) salesTax.taxableSales = salesTax.taxableSales.add(net);
                 else salesTax.exemptSales = salesTax.exemptSales.add(net);
+                if (item.getTaxSnapshots().isEmpty()) {
+                    salesTax.taxCollected = salesTax.taxCollected.add(money(item.getEstimatedTaxAmount()));
+                } else item.getTaxSnapshots().forEach(snapshot -> {
+                    TaxAccumulator target = switch (snapshot.getReportingType()) {
+                        case GENERAL_SALES_TAX -> salesTax;
+                        case VAPE_TAX -> vapeTax;
+                        case OTHER -> otherTax;
+                    };
+                    target.taxCollected = target.taxCollected.add(money(snapshot.getTaxAmount()));
+                });
             });
-            salesTax.taxCollected = salesTax.taxCollected.add(money(sale.getEstimatedTaxAmount()));
         });
         refunds.forEach(refund -> refund.getReturnRecord().getItems().stream()
                 .filter(item -> isMerchandiseLine(item.getOriginalSaleItem()))
@@ -1158,7 +1169,11 @@ public class BusinessDayService {
                     else salesTax.exemptSales = salesTax.exemptSales.subtract(net);
                 }));
         refunds.forEach(refund -> refund.getItemTaxes().forEach(tax -> {
-            TaxAccumulator accumulator = taxes.computeIfAbsent(tax.getTaxComponentCode(), ignored -> new TaxAccumulator(tax.getTaxComponentCode(), tax.getTaxComponentName()));
+            TaxAccumulator accumulator = switch (tax.getReportingType()) {
+                case GENERAL_SALES_TAX -> salesTax;
+                case VAPE_TAX -> vapeTax;
+                case OTHER -> otherTax;
+            };
             accumulator.taxRefunded = accumulator.taxRefunded.add(money(tax.getTaxAmount()));
         }));
         return taxes.values().stream()

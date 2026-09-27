@@ -319,6 +319,7 @@ export type ProductPayload = {
   decimalQuantityAllowed: boolean;
   imageUrl?: string;
   taxCategoryId?: string;
+  taxClass?: 'STANDARD' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM';
   variants: ProductVariantPayload[];
   capabilities: ProductCapability[];
   minimumAge?: number;
@@ -1199,6 +1200,7 @@ export type TaxComponentPayload = {
   code: string;
   name: string;
   description?: string;
+  reportingType?: 'GENERAL_SALES_TAX' | 'VAPE_TAX' | 'OTHER';
   active: boolean;
 };
 
@@ -3432,6 +3434,13 @@ export function createProductTaxCategoryAssignment(token: string, payload: Produ
   return request<ProductTaxCategoryAssignment>('/tax/product-category-assignments', {
     method: 'POST',
     body: JSON.stringify(payload)
+  }, token);
+}
+
+export function bulkAssignProductTaxClass(token: string, productIds: string[], taxClass: 'STANDARD' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM', taxCategoryId?: string) {
+  return request<{ updated: number }>('/tax/product-category-assignments/bulk-tax-class', {
+    method: 'POST',
+    body: JSON.stringify({ productIds, taxClass, taxCategoryId })
   }, token);
 }
 

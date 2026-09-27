@@ -28,6 +28,7 @@ public record ProductUpdateRequest(
         boolean decimalQuantityAllowed,
         @Size(max = 1000) String imageUrl,
         UUID taxCategoryId,
+        ProductTaxClass taxClass,
         @Valid List<ProductVariantRequest> variants,
         Set<ProductCapability> capabilities,
         @NotNull Long version,
@@ -41,7 +42,7 @@ public record ProductUpdateRequest(
                                 UUID taxCategoryId, List<ProductVariantRequest> variants,
                                 Set<ProductCapability> capabilities, Long version, Integer minimumAge) {
         this(sku,name,description,sellableType,unitOfMeasureId,cost,price,categoryId,brandId,active,
-                inventoryTrackingEnabled,decimalQuantityAllowed,imageUrl,taxCategoryId,variants,capabilities,
+                inventoryTrackingEnabled,decimalQuantityAllowed,imageUrl,taxCategoryId,ProductTaxClass.STANDARD,variants,capabilities,
                 version,minimumAge,ProductAvailabilityScope.ALL_STORES,Set.of());
     }
     public ProductUpdateRequest(String sku, String name, String description, SellableType sellableType, UUID unitOfMeasureId,
@@ -50,7 +51,7 @@ public record ProductUpdateRequest(
                                 UUID taxCategoryId, List<ProductVariantRequest> variants,
                                 Set<ProductCapability> capabilities, Long version) {
         this(sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
-                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants,
+                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, ProductTaxClass.STANDARD, variants,
                 capabilities, version, null, ProductAvailabilityScope.ALL_STORES, Set.of());
     }
 }

@@ -179,7 +179,9 @@ function SalesClassificationSection({ session, currencyCode }: { session: Regist
   const metrics = [
     ['Taxable Sales', classification?.taxableSales],
     ['Non-Taxable Sales', classification?.nonTaxableSales],
-    ['Tax Collected', classification?.taxCollected],
+    ['General Tax Collected', classification?.generalTaxCollected ?? classification?.taxCollected],
+    ['Vape Tax Collected', classification?.vapeTaxCollected ?? 0],
+    ['Total Tax Collected', classification?.totalTaxCollected ?? classification?.taxCollected],
     ['Merchandise Net Sales', classification?.merchandiseNetSales]
   ] as const;
   return <Paper component="section" aria-labelledby="sales-classification-heading" elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: { xs: 2, sm: 2.5 } }}>

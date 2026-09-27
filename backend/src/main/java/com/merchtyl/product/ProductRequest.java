@@ -28,6 +28,7 @@ public record ProductRequest(
         boolean decimalQuantityAllowed,
         @Size(max = 1000) String imageUrl,
         UUID taxCategoryId,
+        ProductTaxClass taxClass,
         @Valid List<ProductVariantRequest> variants,
         Set<ProductCapability> capabilities,
         Set<UUID> storeIds,
@@ -40,7 +41,7 @@ public record ProductRequest(
                           UUID taxCategoryId, List<ProductVariantRequest> variants,
                           Set<ProductCapability> capabilities, Set<UUID> storeIds, Integer minimumAge) {
         this(sku,name,description,sellableType,unitOfMeasureId,cost,price,categoryId,brandId,active,
-                inventoryTrackingEnabled,decimalQuantityAllowed,imageUrl,taxCategoryId,variants,capabilities,
+                inventoryTrackingEnabled,decimalQuantityAllowed,imageUrl,taxCategoryId,ProductTaxClass.STANDARD,variants,capabilities,
                 storeIds,minimumAge,ProductAvailabilityScope.SELECTED_STORES);
     }
     public ProductRequest(String sku, String name, String description, SellableType sellableType, UUID unitOfMeasureId,
@@ -49,7 +50,7 @@ public record ProductRequest(
                           UUID taxCategoryId, List<ProductVariantRequest> variants,
                           Set<ProductCapability> capabilities) {
         this(sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
-                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants,
+                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, ProductTaxClass.STANDARD, variants,
                 capabilities, Set.of(), null, ProductAvailabilityScope.ALL_STORES);
     }
 
@@ -60,7 +61,7 @@ public record ProductRequest(
                           UUID taxCategoryId, List<ProductVariantRequest> variants,
                           Set<ProductCapability> capabilities, Set<UUID> storeIds) {
         this(sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
-                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants,
+                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, ProductTaxClass.STANDARD, variants,
                 capabilities, storeIds, null, ProductAvailabilityScope.SELECTED_STORES);
     }
 }

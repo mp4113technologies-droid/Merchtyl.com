@@ -95,7 +95,7 @@ class TaxGroupCategoryControllerAuthorizationTest {
     void taxViewerCanListGroupsComponentsCategoriesAndAssignments() throws Exception {
         when(taxGroupService.search(any())).thenReturn(new PageResponse<>(List.of(groupResponse()), 0, 20, 1, 1, true, true));
         when(taxGroupComponentService.search(any())).thenReturn(new PageResponse<>(List.of(groupComponentResponse()), 0, 20, 1, 1, true, true));
-        when(taxCategoryService.search(any())).thenReturn(new PageResponse<>(List.of(categoryResponse()), 0, 20, 1, 1, true, true));
+        when(taxCategoryService.search(any(), any())).thenReturn(new PageResponse<>(List.of(categoryResponse()), 0, 20, 1, 1, true, true));
         when(assignmentService.search(any())).thenReturn(new PageResponse<>(List.of(assignmentResponse()), 0, 20, 1, 1, true, true));
 
         mockMvc.perform(get("/api/v1/tax/groups").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))

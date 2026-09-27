@@ -18,6 +18,8 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
+  FormGroup,
+  Checkbox,
   IconButton,
   MenuItem,
   Paper,
@@ -46,6 +48,7 @@ import {
   createAdministrativeArea,
   createCountry,
   createProductTaxCategoryAssignment,
+  bulkAssignProductTaxClass,
   createTaxComponent,
   createTaxCategory,
   createTaxGroup,
@@ -201,6 +204,7 @@ const taxComponentSchema = z.object({
     .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
   name: z.string().trim().min(1, 'Name is required').max(180, 'Name must be 180 characters or fewer'),
   description: z.string().max(1000, 'Description must be 1000 characters or fewer').optional(),
+  reportingType: z.enum(['GENERAL_SALES_TAX', 'VAPE_TAX', 'OTHER']),
   active: z.boolean()
 });
 
@@ -1243,6 +1247,7 @@ function TaxTable<T extends { id: string; name: string; active: boolean }>({
   onEdit,
   onStatus,
   statusPending
+  ,canManageRow = () => true
 }: {
   rows: T[];
   columns: Array<{ label: string; value: (row: T) => React.ReactNode; strong?: boolean }>;
@@ -1251,6 +1256,7 @@ function TaxTable<T extends { id: string; name: string; active: boolean }>({
   onEdit: (row: T) => void;
   onStatus: (row: T) => void;
   statusPending: boolean;
+  canManageRow?: (row: T) => boolean;
 }) {
   return (
     <Table>
@@ -1267,7 +1273,7 @@ function TaxTable<T extends { id: string; name: string; active: boolean }>({
               <TableCell key={column.label} sx={column.strong ? { fontWeight: 700 } : undefined}>{column.value(row)}</TableCell>
             ))}
             <TableCell align="right">
-              {canManage ? (
+              {canManage && canManageRow(row) ? (
                 <>
                   <Tooltip title={`Edit ${row.name}`}>
                     <IconButton aria-label={`Edit ${row.name}`} onClick={() => onEdit(row)}>
@@ -1468,6 +1474,7 @@ function cleanTaxComponent(values: TaxComponentFormValues): TaxComponentPayload 
     code: values.code.trim().toUpperCase(),
     name: values.name.trim(),
     description: optionalText(values.description),
+    reportingType: values.reportingType,
     active: values.active
   };
 }
@@ -1479,6 +1486,7 @@ function taxComponentValues(component?: TaxComponent | null, defaultTypeId = '',
     code: component?.code ?? '',
     name: component?.name ?? '',
     description: component?.description ?? '',
+    reportingType: component?.reportingType ?? 'GENERAL_SALES_TAX',
     active: component?.active ?? true
   };
 }
@@ -1523,6 +1531,13 @@ function TaxComponentDialog({ open, component, taxTypes, jurisdictions, loading,
           )} />
           <Controller name="description" control={form.control} render={({ field, fieldState }) => (
             <TextField {...field} value={field.value ?? ''} label="Description" multiline minRows={3} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} fullWidth />
+          )} />
+          <Controller name="reportingType" control={form.control} render={({ field }) => (
+            <TextField {...field} select label="Reporting classification" fullWidth>
+              <MenuItem value="GENERAL_SALES_TAX">General Sales Tax</MenuItem>
+              <MenuItem value="VAPE_TAX">Vape Tax</MenuItem>
+              <MenuItem value="OTHER">Other</MenuItem>
+            </TextField>
           )} />
           <Controller name="active" control={form.control} render={({ field }) => (
             <FormControlLabel control={<Switch checked={field.value} onChange={(_, checked) => field.onChange(checked)} />} label="Active" />
@@ -2539,6 +2554,7 @@ export function TaxCategoriesPage() {
             ]}
             canManage={canManage}
             emptyLabel="No tax categories found."
+            canManageRow={(category) => !category.systemManaged}
             onEdit={(category) => { setEditing(category); setDialogOpen(true); }}
             onStatus={(category) => statusMutation.mutate(category)}
             statusPending={statusMutation.isPending}
@@ -2636,6 +2652,11 @@ export function ProductTaxCategoryAssignmentsPage() {
   const [size, setSize] = React.useState(10);
   const [editing, setEditing] = React.useState<ProductTaxCategoryAssignment | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [selectedProducts, setSelectedProducts] = React.useState<string[]>([]);
+  const [bulkTaxClass, setBulkTaxClass] = React.useState<'STANDARD' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM'>('STANDARD');
+  const [bulkTaxCategoryId, setBulkTaxCategoryId] = React.useState('');
+  const [bulkCategory, setBulkCategory] = React.useState('');
+  const [bulkBrand, setBulkBrand] = React.useState('');
   const productOptions = useProductOptions(canView);
   const categoryOptions = useTaxCategoryOptions(canView);
 
@@ -2679,18 +2700,47 @@ export function ProductTaxCategoryAssignmentsPage() {
     }
   });
 
+  const bulkMutation = useMutation({
+    mutationFn: async () => bulkAssignProductTaxClass(await getValidAccessToken(), selectedProducts, bulkTaxClass, bulkTaxClass === 'CUSTOM' ? bulkTaxCategoryId : undefined),
+    onSuccess: async () => {
+      setSelectedProducts([]);
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+    }
+  });
+
   if (!canView) {
     return <Navigate to="/unauthorized" replace />;
   }
 
   const products = productOptions.data?.content ?? [];
   const categories = categoryOptions.data?.content ?? [];
+  const assignableCategories = categories.filter((category) => !category.systemManaged && category.merchantAssignable !== false);
   const productName = (id: string) => products.find((product) => product.id === id)?.sku ?? id;
   const categoryName = (id: string) => categories.find((category) => category.id === id)?.code ?? id;
+  const bulkProducts = products.filter((product) => (!bulkCategory || product.categoryId === bulkCategory) && (!bulkBrand || product.brandId === bulkBrand));
+  const bulkCategories = Array.from(new Set(products.map((product) => product.categoryId).filter(Boolean))) as string[];
+  const bulkBrands = Array.from(new Set(products.map((product) => product.brandId).filter(Boolean))) as string[];
 
   return (
     <Stack spacing={3}>
       <PageHeader title="Product tax assignments" subtitle="Assign product-facing tax categories to products." current="assignments" />
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2 }}>
+        <Stack spacing={2}>
+          <Typography variant="h6">Bulk assign Tax Treatment</Typography>
+          <Typography variant="body2" color="text.secondary">Filter the catalog, select products, then assign one authoritative tax treatment. Store jurisdiction determines Standard and Vape taxes.</Typography>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField select label="Category" value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} sx={{ minWidth: 220 }}><MenuItem value="">Any</MenuItem>{bulkCategories.map((id) => <MenuItem key={id} value={id}>{id}</MenuItem>)}</TextField>
+            <TextField select label="Brand" value={bulkBrand} onChange={(event) => setBulkBrand(event.target.value)} sx={{ minWidth: 220 }}><MenuItem value="">Any</MenuItem>{bulkBrands.map((id) => <MenuItem key={id} value={id}>{id}</MenuItem>)}</TextField>
+            <TextField select label="Tax Treatment" value={bulkTaxClass} onChange={(event) => { setBulkTaxClass(event.target.value as typeof bulkTaxClass); setBulkTaxCategoryId(''); }} sx={{ minWidth: 220 }}>
+              <MenuItem value="STANDARD">Standard Taxable</MenuItem><MenuItem value="NON_TAXABLE">Non-Taxable / Exempt</MenuItem><MenuItem value="VAPE">Vape / Vapour Product</MenuItem><MenuItem value="CUSTOM">Custom Tax Category</MenuItem>
+            </TextField>
+            {bulkTaxClass === 'CUSTOM' ? <TextField select label="Tax Category" value={bulkTaxCategoryId} onChange={(event) => setBulkTaxCategoryId(event.target.value)} sx={{ minWidth: 220 }}><MenuItem value="">Select custom category</MenuItem>{assignableCategories.map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}</TextField> : null}
+            <Button variant="contained" disabled={!selectedProducts.length || bulkMutation.isPending || (bulkTaxClass === 'CUSTOM' && !bulkTaxCategoryId)} onClick={() => bulkMutation.mutate()}>Assign</Button>
+          </Stack>
+          {bulkMutation.isError ? <Alert severity="error">{errorMessage(bulkMutation.error)}</Alert> : null}
+          <FormGroup row>{bulkProducts.map((product) => <FormControlLabel key={product.id} label={productLabel(product)} control={<Checkbox checked={selectedProducts.includes(product.id)} onChange={(_, checked) => setSelectedProducts((current) => checked ? [...current, product.id] : current.filter((id) => id !== product.id))} />} />)}</FormGroup>
+        </Stack>
+      </Paper>
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Stack component="form" direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ p: 2 }} onSubmit={(event) => {
           event.preventDefault();
@@ -2716,9 +2766,7 @@ export function ProductTaxCategoryAssignmentsPage() {
       {saveMutation.isError ? <Alert severity="error">{errorMessage(saveMutation.error)}</Alert> : null}
       {statusMutation.isError ? <Alert severity="error">{errorMessage(statusMutation.error)}</Alert> : null}
       <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-        <ListHeader title="Product tax assignment list" count={assignments.data?.totalElements ?? 0} refreshLabel="Refresh product tax assignments" onRefresh={() => void assignments.refetch()}>
-          {canManage ? <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditing(null); setDialogOpen(true); }}>New assignment</Button> : null}
-        </ListHeader>
+        <ListHeader title="Legacy direct category assignments" count={assignments.data?.totalElements ?? 0} refreshLabel="Refresh product tax assignments" onRefresh={() => void assignments.refetch()}><></></ListHeader>
         {assignments.isLoading || productOptions.isLoading || categoryOptions.isLoading ? <LoadingPanel label="Loading product tax assignments" /> : null}
         {assignments.isError ? <Alert severity="error" sx={{ m: 2 }}>{errorMessage(assignments.error)}</Alert> : null}
         {!assignments.isLoading && !productOptions.isLoading && !categoryOptions.isLoading && !assignments.isError ? (
@@ -2733,28 +2781,12 @@ export function ProductTaxCategoryAssignmentsPage() {
             </TableHead>
             <TableBody>
               {(assignments.data?.content ?? []).map((assignment) => {
-                const label = `${productName(assignment.productId)} ${categoryName(assignment.taxCategoryId)}`;
                 return (
                   <TableRow key={assignment.id} hover>
                     <TableCell sx={{ fontWeight: 700 }}>{productName(assignment.productId)}</TableCell>
                     <TableCell>{categoryName(assignment.taxCategoryId)}</TableCell>
                     <TableCell>{statusChip(assignment.active)}</TableCell>
-                    <TableCell align="right">
-                      {canManage ? (
-                        <>
-                          <Tooltip title={`Edit ${label}`}>
-                            <IconButton aria-label={`Edit ${label}`} onClick={() => { setEditing(assignment); setDialogOpen(true); }}>
-                              <EditIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title={assignment.active ? `Deactivate ${label}` : `Activate ${label}`}>
-                            <IconButton aria-label={`${assignment.active ? 'Deactivate' : 'Activate'} ${label}`} disabled={statusMutation.isPending} onClick={() => statusMutation.mutate(assignment)}>
-                              {assignment.active ? <BlockIcon /> : <CheckCircleIcon />}
-                            </IconButton>
-                          </Tooltip>
-                        </>
-                      ) : null}
-                    </TableCell>
+                    <TableCell align="right"><Typography variant="caption" color="text.secondary">Read only</Typography></TableCell>
                   </TableRow>
                 );
               })}
@@ -2769,12 +2801,6 @@ export function ProductTaxCategoryAssignmentsPage() {
           setPage(0);
         }} />
       </TableContainer>
-      <AssignmentDialog open={dialogOpen} assignment={editing} products={products} categories={categories} loading={saveMutation.isPending} error={saveMutation.isError ? errorMessage(saveMutation.error) : undefined} onClose={() => {
-        if (!saveMutation.isPending) {
-          setDialogOpen(false);
-          setEditing(null);
-        }
-      }} onSubmit={(values) => saveMutation.mutate(values)} />
     </Stack>
   );
 }

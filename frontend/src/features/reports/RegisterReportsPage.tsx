@@ -145,7 +145,9 @@ function SummaryCards({ report }: { report: RegisterReport }) {
   const metrics = [
     { title: 'Taxable Sales', value: money(report.taxableSales ?? 0, currencyCode), detail: 'Net taxable merchandise' },
     { title: 'Non-Taxable Sales', value: money(report.nonTaxableSales ?? 0, currencyCode), detail: 'Net exempt merchandise' },
-    { title: 'Tax Collected', value: money(report.taxCollected ?? 0, currencyCode), detail: 'Actual completed-line tax' },
+    { title: 'General Tax Collected', value: money(report.generalTaxCollected ?? report.taxCollected ?? 0, currencyCode), detail: 'GST/HST/PST/QST components' },
+    { title: 'Vape Tax Collected', value: money(report.vapeTaxCollected ?? 0, currencyCode), detail: 'Vape-specific retail components only' },
+    { title: 'Total Tax Collected', value: money(report.totalTaxCollected ?? report.taxCollected ?? 0, currencyCode), detail: 'Each tax component counted once' },
     { title: 'Merchandise Net Sales', value: money(report.merchandiseNetSales ?? 0, currencyCode), detail: 'Taxable + non-taxable' },
     { title: 'Sessions', value: String(report.sessionCount), detail: `${report.closedSessionCount} reconciled • ${report.openSessionCount} open` },
     { title: 'Retail cash activity', value: money(report.retailCash, currencyCode), detail: `Received ${money(report.retailCashReceived, currencyCode)} - change ${money(report.retailChange, currencyCode)}` },

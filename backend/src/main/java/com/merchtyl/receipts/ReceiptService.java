@@ -144,13 +144,7 @@ public class ReceiptService {
         BigDecimal containerDepositTotal = money(sale.getItems().stream()
                 .map(SaleItem::getDepositTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
-        BigDecimal taxableAmount = money(sale.getItems().stream()
-                .filter(item -> item.getEstimatedTaxAmount().signum() > 0)
-                .map(item -> item.getLineSubtotal().subtract(item.getDepositTotal()).subtract(item.getDiscountAmount()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-        List<ReceiptTaxSummaryDto> taxSummaries = sale.getEstimatedTaxAmount().signum() == 0
-                ? List.of()
-                : List.of(new ReceiptTaxSummaryDto("TAX", "Sales tax", taxableAmount, sale.getEstimatedTaxAmount()));
+        List<ReceiptTaxSummaryDto> taxSummaries = componentTaxSummaries(sale);
 
         return new ReceiptDocumentDto(
                 BRAND_NAME,
@@ -198,6 +192,30 @@ public class ReceiptService {
                 money(sale.getTotalAmount().min(BigDecimal.ZERO).abs()),
                 sale.getFoodOrderToken(),
                 sale.getDiscountName());
+    }
+
+    private List<ReceiptTaxSummaryDto> componentTaxSummaries(Sale sale) {
+        record Totals(String name, BigDecimal base, BigDecimal tax) {}
+        java.util.LinkedHashMap<String, Totals> totals = new java.util.LinkedHashMap<>();
+        sale.getItems().stream()
+                .sorted(Comparator.comparingInt(SaleItem::getLineNumber))
+                .flatMap(item -> item.getTaxSnapshots().stream())
+                .sorted(Comparator.comparingInt(com.merchtyl.sales.SaleItemTax::getCalculationOrder)
+                        .thenComparing(com.merchtyl.sales.SaleItemTax::getTaxComponentCode))
+                .forEach(snapshot -> totals.merge(snapshot.getTaxComponentCode(),
+                        new Totals(snapshot.getTaxComponentName(), snapshot.getTaxableAmount(), snapshot.getTaxAmount()),
+                        (left, right) -> new Totals(left.name(), left.base().add(right.base()), left.tax().add(right.tax()))));
+        if (totals.isEmpty() && sale.getEstimatedTaxAmount().signum() != 0) {
+            BigDecimal taxableAmount = money(sale.getItems().stream()
+                    .filter(item -> item.getEstimatedTaxAmount().signum() > 0)
+                    .map(item -> item.getLineSubtotal().subtract(item.getDepositTotal()).subtract(item.getDiscountAmount()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add));
+            return List.of(new ReceiptTaxSummaryDto("TAX", "Sales tax", taxableAmount, sale.getEstimatedTaxAmount()));
+        }
+        return totals.entrySet().stream()
+                .map(entry -> new ReceiptTaxSummaryDto(entry.getKey(), entry.getValue().name(),
+                        money(entry.getValue().base()), money(entry.getValue().tax())))
+                .toList();
     }
 
     private ReceiptItemDto item(SaleItem item) {

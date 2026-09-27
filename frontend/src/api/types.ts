@@ -140,6 +140,7 @@ export type MerchantStoreCapability = {
   storeCode: string;
   storeName: string;
   active: boolean;
+  systemManaged?: boolean;
   capabilities: StoreCapability[];
   kitchenDisplayName: string | null;
   version: number;
@@ -502,6 +503,7 @@ export type Product = {
   decimalQuantityAllowed: boolean;
   imageUrl: string | null;
   taxCategoryId: string | null;
+  taxClass?: 'STANDARD' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM';
   variants: ProductVariant[];
   barcodes: ProductBarcode[];
   capabilities: ProductCapability[];
@@ -793,6 +795,9 @@ export type EndOfDayReport = {
   taxableSales?: number;
   nonTaxableSales?: number;
   taxCollected?: number;
+  generalTaxCollected?: number;
+  vapeTaxCollected?: number;
+  totalTaxCollected?: number;
   merchandiseNetSales?: number;
   depositsCollected: number;
   depositPayouts: number;
@@ -1647,6 +1652,9 @@ export type SalesReport = {
   taxableSales?: number;
   nonTaxableSales?: number;
   taxCollected?: number;
+  generalTaxCollected?: number;
+  vapeTaxCollected?: number;
+  totalTaxCollected?: number;
   merchandiseNetSales?: number;
   payments: number;
   containerDeposits?: number;
@@ -1680,6 +1688,9 @@ export type SalesClassification = {
   taxableSales?: number;
   nonTaxableSales?: number;
   taxCollected?: number;
+  generalTaxCollected?: number;
+  vapeTaxCollected?: number;
+  totalTaxCollected?: number;
   merchandiseNetSales?: number;
 };
 
@@ -1837,6 +1848,9 @@ export type RegisterReportRow = {
   taxableSales?: number;
   nonTaxableSales?: number;
   taxCollected?: number;
+  generalTaxCollected?: number;
+  vapeTaxCollected?: number;
+  totalTaxCollected?: number;
   merchandiseNetSales?: number;
   openedAt: string;
   closedAt: string | null;
@@ -1869,6 +1883,9 @@ export type RegisterReport = {
   taxableSales?: number;
   nonTaxableSales?: number;
   taxCollected?: number;
+  generalTaxCollected?: number;
+  vapeTaxCollected?: number;
+  totalTaxCollected?: number;
   merchandiseNetSales?: number;
   sessionCount: number;
   closedSessionCount: number;
@@ -2004,6 +2021,7 @@ export type PosBarcodeLookup = {
   price: number;
   taxCategoryId: string | null;
   taxCategoryName: string | null;
+  taxClass?: 'STANDARD' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM';
   availableQuantity: number;
   active: boolean;
   ageRestricted?: boolean;
@@ -2503,6 +2521,8 @@ export type TaxComponent = {
   code: string;
   name: string;
   description: string | null;
+  reportingType?: 'GENERAL_SALES_TAX' | 'VAPE_TAX' | 'OTHER';
+  systemManaged?: boolean;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -2558,6 +2578,10 @@ export type TaxCategory = {
   treatment: TaxTreatment;
   description: string | null;
   active: boolean;
+  systemManaged?: boolean;
+  merchantAssignable?: boolean;
+  ownerTenantId?: string | null;
+  applicableProductTaxClass?: 'STANDARD' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM' | null;
   createdAt: string;
   updatedAt: string;
   version: number;

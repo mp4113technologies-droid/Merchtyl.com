@@ -22,6 +22,7 @@ public record ProductResponse(
         boolean decimalQuantityAllowed,
         String imageUrl,
         UUID taxCategoryId,
+        ProductTaxClass taxClass,
         List<ProductVariantResponse> variants,
         List<ProductBarcodeResponse> barcodes,
         Set<ProductCapability> capabilities,
@@ -50,6 +51,7 @@ public record ProductResponse(
                 product.isDecimalQuantityAllowed(),
                 product.getImageUrl(),
                 product.getTaxCategoryId(),
+                product.getTaxClass(),
                 product.getVariants().stream().map(ProductVariantResponse::from).toList(),
                 product.getBarcodes().stream().map(ProductBarcodeResponse::from).toList(),
                 product.getCapabilities(),
@@ -60,7 +62,7 @@ public record ProductResponse(
 
     ProductResponse withPrice(BigDecimal effectivePrice) {
         return new ProductResponse(id, sku, name, description, sellableType, unitOfMeasureId, cost, effectivePrice,
-                categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId,
+                categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, taxClass,
                 variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, storeIds, productReference);
     }
 
@@ -71,13 +73,13 @@ public record ProductResponse(
                            List<ProductBarcodeResponse> barcodes, Set<ProductCapability> capabilities,
                            Instant createdAt, Instant updatedAt, long version) {
         this(id, sku, name, description, sellableType, unitOfMeasureId, cost, price, categoryId, brandId, active,
-                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, variants, barcodes,
+                inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, ProductTaxClass.STANDARD, variants, barcodes,
                 capabilities, createdAt, updatedAt, version, null, ProductAvailabilityScope.SELECTED_STORES, Set.of(), null);
     }
 
     ProductResponse withAvailability(Set<UUID> assignedStoreIds) {
         return new ProductResponse(id, sku, name, description, sellableType, unitOfMeasureId, cost, price,
-                categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId,
+                categoryId, brandId, active, inventoryTrackingEnabled, decimalQuantityAllowed, imageUrl, taxCategoryId, taxClass,
                 variants, barcodes, capabilities, createdAt, updatedAt, version, minimumAge, availabilityScope, assignedStoreIds, productReference);
     }
 }

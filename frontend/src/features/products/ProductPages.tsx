@@ -147,13 +147,14 @@ const productSchema = z.object({
   decimalQuantityAllowed: z.boolean(),
   imageUrl: z.string().max(1000, 'Image URL must be 1000 characters or fewer').optional(),
   taxCategoryId: z.string().trim(),
+  taxClass: z.enum(['STANDARD', 'NON_TAXABLE', 'VAPE', 'CUSTOM']),
   variants: z.array(variantSchema),
   capabilities: z.array(z.enum(productCapabilities)),
   minimumAge: z.number().int().min(1, 'Minimum age must be at least 1').max(99, 'Minimum age must be 99 or less').optional()
   ,availabilityScope:z.enum(['ALL_STORES','SELECTED_STORES']),
   storeIds:z.array(z.string().regex(uuidPattern))
 }).superRefine((values, context) => {
-  if (values.sellableType !== 'LOTTERY_PRODUCT' && !uuidPattern.test(values.taxCategoryId)) {
+  if (values.sellableType !== 'LOTTERY_PRODUCT' && values.taxClass === 'CUSTOM' && !uuidPattern.test(values.taxCategoryId)) {
     context.addIssue({ code: 'custom', path: ['taxCategoryId'], message: 'Select a valid tax category' });
   }
   if(values.availabilityScope==='SELECTED_STORES'&&!values.storeIds.length)context.addIssue({code:'custom',path:['storeIds'],message:'Select at least one Store'});
@@ -189,6 +190,7 @@ const emptyProductForm: ProductFormValues = {
   decimalQuantityAllowed: false,
   imageUrl: '',
   taxCategoryId: '',
+  taxClass: 'STANDARD',
   variants: [{ sku: '', name: '', description: '', cost: 0, price: 0, active: true, depositEnabled: false, depositType: undefined, depositAmount: undefined, barcodes: [] }],
   capabilities: ['TRACK_INVENTORY'],
   minimumAge: undefined
@@ -301,6 +303,7 @@ function productFormValues(product: Product): ProductFormValues {
     decimalQuantityAllowed: product.decimalQuantityAllowed,
     imageUrl: product.imageUrl ?? '',
     taxCategoryId: product.taxCategoryId ?? '',
+    taxClass: product.taxClass ?? 'STANDARD',
     variants: product.variants.map((variant) => ({
       id: variant.id,
       sku: variant.sku,
@@ -359,7 +362,8 @@ function cleanPayload(values: ProductFormValues): ProductPayload {
     inventoryTrackingEnabled: values.inventoryTrackingEnabled,
     decimalQuantityAllowed: values.sellableType === 'LOTTERY_PRODUCT' ? false : values.decimalQuantityAllowed,
     imageUrl: optionalText(values.imageUrl),
-    taxCategoryId: values.sellableType === 'LOTTERY_PRODUCT' ? undefined : optionalText(values.taxCategoryId),
+    taxCategoryId: values.sellableType === 'LOTTERY_PRODUCT' || values.taxClass !== 'CUSTOM' ? undefined : optionalText(values.taxCategoryId),
+    taxClass: values.sellableType === 'LOTTERY_PRODUCT' ? 'NON_TAXABLE' : values.taxClass,
     variants: values.variants.map((variant) => ({
       id: variant.id,
       sku: optionalText(variant.sku)?.toUpperCase(),
@@ -456,6 +460,7 @@ function ProductForm({
   const variants = useFieldArray({ control: form.control, name: 'variants', keyName: 'fieldKey' });
   const watchedVariants = useWatch({ control: form.control, name: 'variants' }) ?? [];
   const watchedSellableType = useWatch({ control: form.control, name: 'sellableType' });
+  const watchedTaxClass = useWatch({ control: form.control, name: 'taxClass' });
   const watchedCategoryId = useWatch({ control: form.control, name: 'categoryId' });
   const lotteryCategory = React.useMemo(
     () => categories.find((category) => category.systemType === 'LOTTERY' || category.code.toUpperCase() === 'LOTTERY'),
@@ -468,6 +473,12 @@ function ProductForm({
       form.setValue('categoryId', lotteryCategory.id, { shouldDirty: true, shouldValidate: true });
     }
   }, [form, lotteryCategory, watchedCategoryId, watchedSellableType]);
+
+  React.useEffect(() => {
+    if (watchedTaxClass !== 'CUSTOM' && form.getValues('taxCategoryId')) {
+      form.setValue('taxCategoryId', '', { shouldDirty: true, shouldValidate: true });
+    }
+  }, [form, watchedTaxClass]);
 
   return (
     <Stack
@@ -538,6 +549,9 @@ function ProductForm({
             <Grid item xs={12} md={6}>
               <TextInput control={form.control} name="imageUrl" label="Product image URL" disabled={disabled} />
             </Grid>
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Tax Configuration</Typography>
+            </Grid>
             <Grid item xs={12} md={6}>
               {watchedSellableType === 'LOTTERY_PRODUCT' ? (
                 <TextField
@@ -548,33 +562,43 @@ function ProductForm({
                   fullWidth
                 />
               ) : <Controller
-                name="taxCategoryId"
+                name="taxClass"
                 control={form.control}
                 render={({ field, fieldState }) => (
                   <TextField
                     {...field}
                     select
-                    label="Tax Category"
+                    label="Tax Treatment"
                     required
-                    disabled={disabled || taxCategoriesLoading || Boolean(taxCategoriesError) || taxCategories.length === 0}
-                    error={Boolean(fieldState.error) || Boolean(taxCategoriesError)}
-                    helperText={taxCategoriesLoading
-                      ? 'Loading tax categories...'
-                      : taxCategoriesError
-                        ? 'Unable to load tax categories.'
-                        : taxCategories.length === 0
-                          ? 'No tax categories are configured.'
-                          : fieldState.error?.message}
+                    disabled={disabled}
+                    error={Boolean(fieldState.error)}
+                    helperText={watchedTaxClass === 'VAPE' ? 'Tax is automatically determined based on the Store jurisdiction.' : fieldState.error?.message}
                     fullWidth
                     SelectProps={{ MenuProps: productSelectMenuProps }}
                   >
-                    <MenuItem value="">Select Tax Category</MenuItem>
-                    {taxCategories.map((category) => <MenuItem key={category.id} value={category.id} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{category.name}</MenuItem>)}
+                    <MenuItem value="STANDARD">Standard Taxable</MenuItem>
+                    <MenuItem value="NON_TAXABLE">Non-Taxable / Exempt</MenuItem>
+                    <MenuItem value="VAPE">Vape / Vapour Product</MenuItem>
+                    <MenuItem value="CUSTOM">Custom Tax Category</MenuItem>
                   </TextField>
                 )}
               />}
-              {watchedSellableType !== 'LOTTERY_PRODUCT' && taxCategoriesError ? <Button size="small" onClick={retryTaxCategories}>Retry</Button> : null}
             </Grid>
+            {watchedSellableType !== 'LOTTERY_PRODUCT' && watchedTaxClass === 'CUSTOM' ? <Grid item xs={12} md={6}>
+              <Controller name="taxCategoryId" control={form.control} render={({ field, fieldState }) => (
+                <TextField {...field} select label="Tax Category" required disabled={disabled || taxCategoriesLoading || Boolean(taxCategoriesError) || taxCategories.length === 0}
+                  error={Boolean(fieldState.error) || Boolean(taxCategoriesError)} helperText={taxCategoriesLoading ? 'Loading tax categories...' : taxCategoriesError ? 'Unable to load tax categories.' : fieldState.error?.message}
+                  fullWidth SelectProps={{ MenuProps: productSelectMenuProps }}>
+                  <MenuItem value="">Select Tax Category</MenuItem>
+                  {taxCategories
+                    .filter((category) => !category.systemManaged && category.merchantAssignable !== false)
+                    .map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}
+                </TextField>)} />
+              {taxCategoriesError ? <Button size="small" onClick={retryTaxCategories}>Retry</Button> : null}
+            </Grid> : null}
+            {watchedSellableType !== 'LOTTERY_PRODUCT' && watchedTaxClass !== 'CUSTOM' ? <Grid item xs={12} md={6}>
+              <TextField label="Effective Tax" value={watchedTaxClass === 'NON_TAXABLE' ? 'No sales tax' : 'Automatically determined per Store'} disabled fullWidth helperText={watchedTaxClass === 'VAPE' ? 'Province-specific Vape taxes are configured centrally and resolved at checkout.' : watchedTaxClass === 'STANDARD' ? 'The applicable sales tax is resolved automatically for each Store.' : undefined} />
+            </Grid> : null}
           </Grid>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <SwitchInput control={form.control} name="active" label="Active" disabled={disabled} />

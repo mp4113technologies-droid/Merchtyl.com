@@ -273,7 +273,12 @@ public class RefundService {
 
     private static void addTaxSnapshots(Refund refund, Return returnRecord) {
         for (ReturnItem item : returnRecord.getItems()) {
-            refund.addItemTax(new RefundItemTax(refund, item));
+            if (item.getOriginalSaleItem().getTaxSnapshots().isEmpty()) {
+                refund.addItemTax(new RefundItemTax(refund, item));
+            } else {
+                item.getOriginalSaleItem().getTaxSnapshots().forEach(snapshot ->
+                        refund.addItemTax(new RefundItemTax(refund, item, snapshot)));
+            }
         }
     }
 

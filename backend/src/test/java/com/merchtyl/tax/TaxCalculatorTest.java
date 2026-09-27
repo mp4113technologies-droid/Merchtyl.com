@@ -42,6 +42,32 @@ class TaxCalculatorTest {
     }
 
     @Test
+    void calculatesNewfoundlandVptBeforeCompoundHstForTenDollars() {
+        TaxCalculationResponse response = calculateNewfoundlandVape(new BigDecimal("10.00"));
+
+        assertThat(response.taxAmount()).isEqualByComparingTo("3.80");
+        assertThat(response.grossAmount()).isEqualByComparingTo("13.80");
+        assertThat(response.components()).extracting(
+                TaxComponentCalculationResponse::taxComponentCode,
+                TaxComponentCalculationResponse::reportingType,
+                TaxComponentCalculationResponse::taxableAmount,
+                TaxComponentCalculationResponse::taxAmount)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("CA_NL_VPT", TaxReportingType.VAPE_TAX, new BigDecimal("10.00"), new BigDecimal("2.00")),
+                        org.assertj.core.groups.Tuple.tuple("CA_NL_HST", TaxReportingType.GENERAL_SALES_TAX, new BigDecimal("12.00"), new BigDecimal("1.80")));
+    }
+
+    @Test
+    void calculatesNewfoundlandVptBeforeCompoundHstForOneHundredDollars() {
+        TaxCalculationResponse response = calculateNewfoundlandVape(new BigDecimal("100.00"));
+
+        assertThat(response.taxAmount()).isEqualByComparingTo("38.00");
+        assertThat(response.grossAmount()).isEqualByComparingTo("138.00");
+        assertThat(response.components()).extracting(TaxComponentCalculationResponse::taxAmount)
+                .containsExactly(new BigDecimal("20.00"), new BigDecimal("18.00"));
+    }
+
+    @Test
     void extractsTaxInclusiveCompoundComponents() {
         TaxGroup group = new TaxGroup("STANDARD", "Standard", null, true);
         TaxRate gst = rate("GST", new BigDecimal("5.000000"), true, false, 0);
@@ -168,5 +194,19 @@ class TaxCalculatorTest {
                 null,
                 null,
                 null));
+    }
+
+    private TaxCalculationResponse calculateNewfoundlandVape(BigDecimal price) {
+        TaxGroup group = new TaxGroup("CA_NL_VAPE_GROUP", "NL Vape", null, true);
+        TaxRate vpt = rate("CA_NL_VPT", new BigDecimal("20.000000"), false, false, 1);
+        vpt.getTaxComponent().setReportingType(TaxReportingType.VAPE_TAX);
+        TaxRate hst = rate("CA_NL_HST", new BigDecimal("15.000000"), false, true, 2);
+        when(groupComponentRepository.findByTaxGroupIdInAndActiveTrue(List.of(group.getId()))).thenReturn(List.of(
+                new TaxGroupComponent(group, vpt.getTaxComponent(), 1, true),
+                new TaxGroupComponent(group, hst.getTaxComponent(), 2, true)));
+        when(taxRateRepository.findActiveRatesForComponents(any(), eq(LocalDate.of(2026, 7, 22))))
+                .thenReturn(List.of(vpt, hst));
+        return calculator.calculate(context(false, price), evaluation(List.of(group.getId()), false, false, false,
+                IncludedPriceBehavior.USE_RATE_SETTING, TaxRoundingStrategy.HALF_UP));
     }
 }

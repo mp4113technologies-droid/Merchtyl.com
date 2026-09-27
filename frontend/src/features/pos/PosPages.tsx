@@ -297,11 +297,13 @@ function CompactIdentitySummary({
 
 function ProductSearchResults({
   products,
+  cartItems,
   currencyCode,
   onAdd,
   disabled
 }: {
   products: Product[];
+  cartItems: SaleItem[];
   currencyCode: string;
   onAdd: (product: Product) => void;
   disabled: boolean;
@@ -331,50 +333,59 @@ function ProductSearchResults({
   });
 
   if (rows.length === 0) {
-    return <Alert severity="info">No products found in this store.</Alert>;
+    return null;
   }
 
   return (
-    <Table size="small" aria-label="Product search results" sx={{ '& .MuiTableCell-root': { borderColor: posTokens.colors.border, py: 0.75 }, '& .MuiTableRow-root:hover': { bgcolor: posTokens.colors.blueLight } }}>
-      <TableHead>
-        <TableRow>
-          <TableCell>Product</TableCell>
-          <TableCell>SKU</TableCell>
-          <TableCell align="right">Price</TableCell>
-          <TableCell align="right">Add</TableCell>
-        </TableRow>
-      </TableHead>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.key} hover>
-            <TableCell>
-              <Typography fontWeight={700}>{row.product.name}</Typography>
-              <Typography variant="body2" color="text.secondary">{row.variantName ?? row.product.sellableType.replaceAll('_', ' ')}</Typography>
-            </TableCell>
-            <TableCell sx={{ fontFamily: 'monospace' }}>{row.sku}</TableCell>
-            <TableCell align="right">{money(row.price, currencyCode)}</TableCell>
-            <TableCell align="right">
-              <Tooltip title={`Add ${row.product.name}${row.variantName ? ` — ${row.variantName}` : ''}`}>
-                <span>
-                  <IconButton
-                    aria-label={`Add ${row.product.name}${row.variantName ? ` — ${row.variantName}` : ''}`}
-                    onClick={() => onAdd({
-                      ...row.product,
-                      sku: row.sku,
-                      price: row.price,
-                      variants: row.variantId ? row.product.variants.filter((variant) => variant.id === row.variantId) : []
-                    })}
-                    disabled={disabled || !row.product.active}
-                  >
-                    <AddCircleOutlineIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <Stack role="list" aria-label="Product search results" divider={<Divider flexItem />}>
+      {rows.map((row) => {
+        const cartQuantity = cartItems
+          .filter((item) => (!item.lineType || item.lineType === 'CATALOG_PRODUCT')
+            && item.productId === row.product.id
+            && (item.variantId ?? undefined) === row.variantId)
+          .reduce((quantity, item) => quantity + item.quantity, 0);
+        const resultName = `${row.product.name}${row.variantName ? ` — ${row.variantName}` : ''}`;
+        return (
+          <Box
+            role="listitem"
+            key={row.key}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) auto auto' },
+              alignItems: 'center',
+              gap: 1,
+              p: 1.25,
+              '&:hover': { bgcolor: posTokens.colors.blueLight }
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography fontWeight={750} noWrap title={row.product.name}>{row.product.name}</Typography>
+              {row.variantName ? <Typography variant="body2" color="text.secondary">Variant: {row.variantName}</Typography> : null}
+              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{row.sku}</Typography>
+            </Box>
+            <Box sx={{ textAlign: { xs: 'left', sm: 'right' }, whiteSpace: 'nowrap' }}>
+              <Typography fontWeight={750}>{money(row.price, currencyCode)}</Typography>
+              {cartQuantity > 0 ? <Typography variant="body2" color="primary.main" fontWeight={700}>In cart: {cartQuantity}</Typography> : null}
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<AddCircleOutlineIcon />}
+              aria-label={`${cartQuantity > 0 ? 'Add another' : 'Add to cart'} ${resultName}`}
+              onClick={() => onAdd({
+                ...row.product,
+                sku: row.sku,
+                price: row.price,
+                variants: row.variantId ? row.product.variants.filter((variant) => variant.id === row.variantId) : []
+              })}
+              disabled={disabled || !row.product.active}
+              sx={{ minHeight: 44, minWidth: 132, whiteSpace: 'nowrap', justifySelf: { xs: 'stretch', sm: 'end' } }}
+            >
+              {cartQuantity > 0 ? 'Add another' : 'Add to cart'}
+            </Button>
+          </Box>
+        );
+      })}
+    </Stack>
   );
 }
 
@@ -1804,12 +1815,20 @@ export function PosCartPage() {
                     }}><Typography component="span" fontWeight={750} lineHeight={1.2}>{key.displayLabel || key.productName}</Typography><Typography component="span" variant="caption" color="text.secondary">{key.variantName} · {money(key.price, currencyCode)}</Typography></Button>)}
                   </Box> : null}
                 </Box>}
-                {searchMode === 'PRODUCT' && (productResults.isFetching || (submittedSearch && productResults.data)) ? (
-                  <Paper elevation={2} sx={{ position: 'absolute', top: 'calc(100% - 2px)', left: 8, right: 8, maxHeight: 260, overflowY: 'auto', zIndex: 5, border: '1px solid', borderColor: 'divider' }}>
-                    {productResults.isFetching ? <Box sx={{ p: 1.5 }}><CircularProgress size={22} aria-label="Searching products" /></Box> : null}
-                    {!productResults.isFetching && productResults.data ? <><ProductSearchResults products={productResults.data.content} currencyCode={currencyCode} disabled={cartLocked} onAdd={(product) => { addProduct(product); setProductSearch(''); setSubmittedSearch(''); setSearchMode('BARCODE'); }} />{currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 0.75, p: 1 }}><Button variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} onClick={() => openCustomItem('TAXABLE', productResults.data.content.length === 0 ? productSearch.trim() : '')}>Taxable Custom Item</Button><Button variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} onClick={() => openCustomItem('NON_TAXABLE', productResults.data.content.length === 0 ? productSearch.trim() : '')}>Non-Taxable Custom Item</Button></Box> : null}</> : null}
+                {searchMode === 'PRODUCT' && submittedSearch ? (
+                  <Paper data-testid="product-search-results-panel" variant="outlined" sx={{ position: 'static', overflow: 'hidden', bgcolor: 'background.paper', flexShrink: 0 }}>
+                    <Box sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="subtitle2" component="h2" sx={{ color: posTokens.colors.navy }}>Search Results</Typography>
+                    </Box>
+                    <Box sx={{ maxHeight: { xs: 280, lg: 320 }, overflowY: 'auto' }}>
+                      {productResults.isFetching ? <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 1.5 }}><CircularProgress size={22} aria-label="Searching products" /><Typography>Searching…</Typography></Stack> : null}
+                      {!productResults.isFetching && productResults.isError ? <Alert severity="error">Unable to load products. Try again.</Alert> : null}
+                      {!productResults.isFetching && !productResults.isError && productResults.data?.content.length === 0 ? <Alert severity="info">No products found for &quot;{submittedSearch}&quot;.</Alert> : null}
+                      {!productResults.isFetching && !productResults.isError && productResults.data?.content.length ? <ProductSearchResults products={productResults.data.content} cartItems={cartItems} currencyCode={currencyCode} disabled={cartLocked} onAdd={addProduct} /> : null}
+                    </Box>
                   </Paper>
                 ) : null}
+                <Typography variant="subtitle2" component="h2" sx={{ color: posTokens.colors.navy }}>Quick Actions</Typography>
                 <Box data-testid="pos-action-grid" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }, gap: 0.75, width: '100%' }}>
                   {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => openCustomItem('TAXABLE')}>Taxable Custom Item</Button> : null}
                   {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => openCustomItem('NON_TAXABLE')}>Non-Taxable Custom Item</Button> : null}

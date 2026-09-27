@@ -42,6 +42,8 @@ public class TaxRateService {
 
     @Transactional
     public TaxRateResponse create(TaxRateRequest request, Authentication authentication) {
+        TaxComponent targetComponent = taxComponentService.find(request.taxComponentId());
+        taxComponentService.requireMerchantEditable(targetComponent);
         TaxRateValues values = values(
                 request.taxComponentId(),
                 request.percentageRate(),
@@ -89,6 +91,7 @@ public class TaxRateService {
     @Transactional
     public TaxRateResponse update(UUID id, TaxRateUpdateRequest request, Authentication authentication) {
         TaxRate rate = find(id);
+        taxComponentService.requireMerchantEditable(rate.getTaxComponent());
         TaxGeographySupport.requireCurrentVersion(rate.getVersion(), request.version(), "Tax rate");
         TaxRateValues values = values(
                 request.taxComponentId(),
@@ -114,6 +117,7 @@ public class TaxRateService {
     @Transactional
     public TaxRateResponse updateStatus(UUID id, TaxRateStatusRequest request, Authentication authentication) {
         TaxRate rate = find(id);
+        taxComponentService.requireMerchantEditable(rate.getTaxComponent());
         TaxGeographySupport.requireCurrentVersion(rate.getVersion(), request.version(), "Tax rate");
         if (OVERLAP_BLOCKING_STATUSES.contains(request.status())) {
             requireNoOverlap(new TaxRateValues(

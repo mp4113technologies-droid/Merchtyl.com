@@ -69,6 +69,7 @@ public class TaxCalculator {
                     rate.getTaxComponent().getId(),
                     rate.getTaxComponent().getCode(),
                     rate.getTaxComponent().getName(),
+                    rate.getTaxComponent().getReportingType(),
                     rate.getId(),
                     rate.getPercentageRate(),
                     roundingService.roundCurrency(taxableAmount, evaluation.roundingStrategy()),

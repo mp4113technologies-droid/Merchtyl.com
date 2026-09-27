@@ -21,6 +21,9 @@ public class TaxGroup extends BaseUuidEntity {
     @Column(nullable = false)
     private boolean active;
 
+    @Column(name = "system_managed", nullable = false)
+    private boolean systemManaged;
+
     protected TaxGroup() {
     }
 
@@ -55,4 +58,6 @@ public class TaxGroup extends BaseUuidEntity {
     public boolean isActive() {
         return active;
     }
+
+    public boolean isSystemManaged() { return systemManaged; }
 }

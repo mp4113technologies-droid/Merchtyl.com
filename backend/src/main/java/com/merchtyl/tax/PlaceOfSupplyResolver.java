@@ -15,6 +15,7 @@ public class PlaceOfSupplyResolver {
     }
 
     public UUID resolveStoreJurisdiction(Store store, UUID explicitJurisdictionId) {
+        if (store != null) return resolveFromStore(store);
         if (explicitJurisdictionId != null) {
             if (!taxJurisdictionRepository.existsById(explicitJurisdictionId)) {
                 throw new NotFoundException("Tax jurisdiction not found");
@@ -25,6 +26,7 @@ public class PlaceOfSupplyResolver {
     }
 
     public UUID resolveSupplyJurisdiction(Store store, UUID explicitSupplyJurisdictionId) {
+        if (store != null) return resolveFromStore(store);
         if (explicitSupplyJurisdictionId != null) {
             if (!taxJurisdictionRepository.existsById(explicitSupplyJurisdictionId)) {
                 throw new NotFoundException("Tax jurisdiction not found");

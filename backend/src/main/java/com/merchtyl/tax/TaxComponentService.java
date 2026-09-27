@@ -43,13 +43,15 @@ public class TaxComponentService {
         if (taxComponentRepository.existsByCodeIgnoreCase(code)) {
             throw duplicate();
         }
-        TaxComponentResponse response = TaxComponentResponse.from(save(new TaxComponent(
+        TaxComponent component = new TaxComponent(
                 taxTypeService.find(request.taxTypeId()),
                 findJurisdiction(request.taxJurisdictionId()),
                 code,
                 TaxGeographySupport.cleanRequired(request.name(), "name"),
                 TaxGeographySupport.optionalText(request.description()),
-                request.active())));
+                request.active());
+        component.setReportingType(request.reportingType());
+        TaxComponentResponse response = TaxComponentResponse.from(save(component));
         audit(authentication, AuditAction.TAX_COMPONENT_CREATED, response.id(), null, response);
         return response;
     }
@@ -79,6 +81,7 @@ public class TaxComponentService {
     @Transactional
     public TaxComponentResponse update(UUID id, TaxComponentUpdateRequest request, Authentication authentication) {
         TaxComponent component = find(id);
+        requireMerchantEditable(component);
         TaxGeographySupport.requireCurrentVersion(component.getVersion(), request.version(), "Tax component");
         String code = TaxGeographySupport.normalizeCode(request.code(), 64);
         if (taxComponentRepository.existsByCodeIgnoreCaseAndIdNot(code, id)) {
@@ -92,6 +95,7 @@ public class TaxComponentService {
                 TaxGeographySupport.cleanRequired(request.name(), "name"),
                 TaxGeographySupport.optionalText(request.description()),
                 request.active());
+        component.setReportingType(request.reportingType());
         TaxComponentResponse after = TaxComponentResponse.from(save(component));
         audit(authentication, AuditAction.TAX_COMPONENT_UPDATED, id, before, after);
         return after;
@@ -100,6 +104,7 @@ public class TaxComponentService {
     @Transactional
     public TaxComponentResponse updateStatus(UUID id, TaxComponentStatusRequest request, Authentication authentication) {
         TaxComponent component = find(id);
+        requireMerchantEditable(component);
         TaxGeographySupport.requireCurrentVersion(component.getVersion(), request.version(), "Tax component");
         TaxComponentResponse before = TaxComponentResponse.from(component);
         component.setActive(request.active());
@@ -110,6 +115,10 @@ public class TaxComponentService {
 
     TaxComponent find(UUID id) {
         return taxComponentRepository.findById(id).orElseThrow(() -> new NotFoundException("Tax component not found"));
+    }
+
+    void requireMerchantEditable(TaxComponent component) {
+        if (component.isSystemManaged()) throw new ConflictException("System tax components cannot be modified");
     }
 
     private TaxJurisdiction findJurisdiction(UUID id) {

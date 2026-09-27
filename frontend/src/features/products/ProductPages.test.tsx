@@ -162,10 +162,11 @@ function mockReferenceEndpoints(url: URL) {
     const category: TaxCategory = {
       id: '00000000-0000-0000-0000-000000000901', taxGroupId: null, code: 'STANDARD', name: 'Standard Tax',
       treatment: 'STANDARD', description: null, active: true, createdAt: '2026-07-22T12:00:00Z',
-      updatedAt: '2026-07-22T12:00:00Z', version: 0
+      updatedAt: '2026-07-22T12:00:00Z', version: 0, systemManaged: false, merchantAssignable: true
     };
     const zeroRated: TaxCategory = { ...category, id: '00000000-0000-0000-0000-000000000902', code: 'ZERO', name: 'Zero Rated', treatment: 'ZERO_RATED' };
-    return jsonResponse({ ...referencePage([]), content: [category, zeroRated], totalElements: 2 });
+    const systemVape: TaxCategory = { ...category, id: '00000000-0000-0000-0000-000000000903', code: 'CA_NL_VAPE', name: 'Newfoundland and Labrador Vape Products', systemManaged: true, merchantAssignable: false, applicableProductTaxClass: 'VAPE' };
+    return jsonResponse({ ...referencePage([]), content: [category, zeroRated, systemVape], totalElements: 3 });
   }
   const lottery = reference({
       id: '00000000-0000-0000-0000-000000000899',
@@ -392,6 +393,8 @@ describe('Product pages', () => {
     expect(screen.getByLabelText('Available at all stores')).toBeChecked();
     await userEvent.click(screen.getByLabelText('Selected stores'));
     await userEvent.click(await screen.findByLabelText('Main'));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Tax Treatment' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Custom Tax Category' }));
     await userEvent.click(await screen.findByRole('combobox', { name: 'Tax Category' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Standard Tax' }));
     expect(screen.queryByText('00000000-0000-0000-0000-000000000901')).not.toBeInTheDocument();
@@ -477,6 +480,8 @@ describe('Product pages', () => {
     await screen.findByRole('heading', { name: 'New product' });
     await userEvent.type(await screen.findByLabelText('Name'), 'Duplicate Tea');
     await userEvent.type(screen.getByLabelText('Variant name'), 'Base');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Tax Treatment' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Custom Tax Category' }));
     await userEvent.click(await screen.findByRole('combobox', { name: 'Tax Category' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Standard Tax' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create product' }));
@@ -486,6 +491,39 @@ describe('Product pages', () => {
     expect(screen.getByRole('heading', { name: 'New product' })).toBeVisible();
     expect(screen.getByLabelText('Name')).toHaveValue('Duplicate Tea');
     expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument();
+  });
+
+  it('uses one Tax Treatment field and clears hidden custom categories on every semantic transition', async () => {
+    storeSession(['OWNER']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['OWNER']));
+      if (url.pathname.endsWith('/api/v1/store-access/assigned-stores')) return jsonResponse([]);
+      return mockReferenceEndpoints(url) ?? apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/products/new']} />);
+    const treatment = await screen.findByRole('combobox', { name: 'Tax Treatment' });
+    expect(screen.queryByRole('combobox', { name: 'Tax Category' })).not.toBeInTheDocument();
+
+    await userEvent.click(treatment);
+    await userEvent.click(await screen.findByRole('option', { name: 'Custom Tax Category' }));
+    const category = await screen.findByRole('combobox', { name: 'Tax Category' });
+    await userEvent.click(category);
+    expect(screen.queryByRole('option', { name: 'Newfoundland and Labrador Vape Products' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('option', { name: 'Standard Tax' }));
+
+    for (const next of ['Vape / Vapour Product', 'Standard Taxable', 'Non-Taxable / Exempt']) {
+      await userEvent.click(treatment);
+      await userEvent.click(await screen.findByRole('option', { name: next }));
+      expect(screen.queryByRole('combobox', { name: 'Tax Category' })).not.toBeInTheDocument();
+    }
+
+    await userEvent.click(treatment);
+    await userEvent.click(await screen.findByRole('option', { name: 'Custom Tax Category' }));
+    const resetCategory = await screen.findByRole('combobox', { name: 'Tax Category' });
+    await userEvent.click(resetCategory);
+    expect(screen.getByRole('option', { name: 'Select Tax Category' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('selects and locks the persisted system Lottery category while showing effective tax treatment', async () => {
@@ -767,7 +805,7 @@ describe('Product pages', () => {
 
   it('validates, edits, and deactivates a product', async () => {
     storeSession(['MANAGER']);
-    let current = product({ taxCategoryId: '00000000-0000-0000-0000-000000000901' });
+    let current = product({ taxCategoryId: '00000000-0000-0000-0000-000000000901', taxClass: 'CUSTOM' });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) {

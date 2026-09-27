@@ -14,11 +14,19 @@ import jakarta.persistence.ForeignKey;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.OrderBy;
 
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
+import com.merchtyl.tax.TaxCategory;
+import com.merchtyl.tax.TaxComponentCalculationResponse;
+import com.merchtyl.tax.TaxReportingType;
 
 @Entity
 @Table(name = "sale_items")
@@ -138,6 +146,10 @@ public class SaleItem extends BaseUuidEntity {
 
     @Column(precision = 19, scale = 4)
     private BigDecimal completedProductPrice;
+
+    @OneToMany(mappedBy="saleItem", cascade=CascadeType.ALL, orphanRemoval=true)
+    @OrderBy("calculationOrder ASC")
+    private List<SaleItemTax> taxSnapshots = new ArrayList<>();
 
     @Column(length = 1000)
     private String completedProductCapabilities;
@@ -289,6 +301,14 @@ public class SaleItem extends BaseUuidEntity {
 
     void snapshotTaxTreatment(HistoricalTaxTreatment treatment) {
         this.historicalTaxTreatment = treatment;
+    }
+
+    void snapshotTaxes(TaxCategory category, java.util.Map<UUID, TaxReportingType> reportingTypes,
+                       List<TaxComponentCalculationResponse> components) {
+        taxCategorySnapshotId = category == null ? taxCategorySnapshotId : category.getId();
+        taxSnapshots.clear();
+        components.forEach(component -> taxSnapshots.add(new SaleItemTax(this, category,
+                reportingTypes.getOrDefault(component.taxComponentId(), TaxReportingType.OTHER), component)));
     }
 
     void applyVariantDeposit() {
@@ -450,6 +470,8 @@ public class SaleItem extends BaseUuidEntity {
     public BigDecimal getCompletedProductPrice() {
         return completedProductPrice;
     }
+
+    public List<SaleItemTax> getTaxSnapshots() { return java.util.Collections.unmodifiableList(taxSnapshots); }
 
     public String getCompletedProductCapabilities() {
         return completedProductCapabilities;

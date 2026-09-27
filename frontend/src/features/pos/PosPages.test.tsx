@@ -1937,11 +1937,20 @@ describe('POS pages', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Product Search' }));
     await userEvent.type(await screen.findByRole('textbox', { name: 'Product search' }), 'coffee');
     await userEvent.click(screen.getByRole('button', { name: 'Search' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Add Coffee' }));
+    const resultsPanel = await screen.findByTestId('product-search-results-panel');
+    const quickActions = screen.getByTestId('pos-action-grid');
+    expect(window.getComputedStyle(resultsPanel).position).toBe('static');
+    expect(resultsPanel.compareDocumentPosition(quickActions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.click(await screen.findByRole('button', { name: 'Add to cart Coffee' }));
 
     expect((await screen.findAllByText('Coffee')).length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole('button', { name: 'Increase Coffee' }));
+    expect(screen.getByText('In cart: 1')).toBeInTheDocument();
+    const cartHeader = screen.getByRole('columnheader', { name: 'Item' });
+    expect(quickActions.compareDocumentPosition(cartHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Add another Coffee' }));
+    expect(await screen.findByText('In cart: 2')).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('At checkout').length).toBeGreaterThan(0);
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove Coffee' }));
     expect(await screen.findByText('Cart is empty')).toBeInTheDocument();
@@ -2024,13 +2033,13 @@ describe('POS pages', () => {
     render(<App initialEntries={['/pos']} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Product Search' }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Product search' }), 'Coffee');
-    await userEvent.click(await screen.findByRole('button', { name: /Add Coffee/ }));
-    expect(screen.getByText('Coffee')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /Add to cart Coffee/ }));
+    expect(screen.getAllByText('Coffee').length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: 'Secure Till' }));
     expect(await screen.findByRole('dialog', { name: 'Till Secured' })).toBeInTheDocument();
     for (const digit of ['1','2','3','4','5','6']) await userEvent.click(screen.getByRole('button', { name: digit }));
     await userEvent.click(screen.getByRole('button', { name: 'Resume Till' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Till Secured' })).not.toBeInTheDocument());
-    expect(screen.getByText('Coffee')).toBeInTheDocument();
+    expect(screen.getAllByText('Coffee').length).toBeGreaterThan(0);
   });
 });

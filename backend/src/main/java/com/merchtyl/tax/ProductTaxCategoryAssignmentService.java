@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.util.List;
 
 @Service
 public class ProductTaxCategoryAssignmentService {
@@ -43,6 +44,7 @@ public class ProductTaxCategoryAssignmentService {
     public ProductTaxCategoryAssignmentResponse create(ProductTaxCategoryAssignmentRequest request, Authentication authentication) {
         Product product = product(request.productId());
         TaxCategory category = taxCategoryService.find(request.taxCategoryId());
+        requireCompatibleDirectAssignment(product, category);
         if (assignmentRepository.existsByProduct(product)) {
             throw duplicate();
         }
@@ -50,6 +52,32 @@ public class ProductTaxCategoryAssignmentService {
         ProductTaxCategoryAssignmentResponse response = ProductTaxCategoryAssignmentResponse.from(save(new ProductTaxCategoryAssignment(product, category, request.active())));
         audit(authentication, AuditAction.PRODUCT_TAX_CATEGORY_ASSIGNED, response.id(), null, response);
         return response;
+    }
+
+    @Transactional
+    public int bulkAssignTaxClass(BulkProductTaxClassRequest request, Authentication authentication) {
+        var actor = userRepository.findByEmailIgnoreCase(authentication.getName())
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        List<Product> products = productRepository.findCheckoutProducts(actor.getTenantId(), request.productIds());
+        if (products.size() != request.productIds().size()) throw new NotFoundException("One or more products were not found");
+        if (request.taxClass() == com.merchtyl.product.ProductTaxClass.CUSTOM && request.taxCategoryId() == null)
+            throw new ConflictException("Custom Tax Treatment requires a Tax Category");
+        TaxCategory customCategory = request.taxClass() == com.merchtyl.product.ProductTaxClass.CUSTOM
+                ? taxCategoryService.find(request.taxCategoryId()) : null;
+        if (request.taxClass() != com.merchtyl.product.ProductTaxClass.CUSTOM && request.taxCategoryId() != null)
+            throw new ConflictException("Tax Category is only valid for Custom Tax Treatment");
+        products.forEach(product -> {
+            product.setTaxClass(request.taxClass());
+            if (customCategory != null) {
+                requireCompatibleDirectAssignment(product, customCategory);
+                product.setTaxCategoryId(customCategory.getId());
+            }
+        });
+        productRepository.saveAll(products);
+        TaxGeographySupport.audit(authentication, userRepository, auditService, AuditAction.PRODUCT_TAX_CATEGORY_ASSIGNED,
+                "PRODUCT_TAX_CLASS_BULK_ASSIGNMENT", null, null,
+                java.util.Map.of("taxClass", request.taxClass(), "productIds", request.productIds()));
+        return products.size();
     }
 
     @Transactional(readOnly = true)
@@ -73,6 +101,7 @@ public class ProductTaxCategoryAssignmentService {
         TaxGeographySupport.requireCurrentVersion(assignment.getVersion(), request.version(), "Product tax category assignment");
         Product product = product(request.productId());
         TaxCategory category = taxCategoryService.find(request.taxCategoryId());
+        requireCompatibleDirectAssignment(product, category);
         if (assignmentRepository.existsByProductAndIdNot(product, id)) {
             throw duplicate();
         }
@@ -90,6 +119,7 @@ public class ProductTaxCategoryAssignmentService {
         ProductTaxCategoryAssignment assignment = find(id);
         TaxGeographySupport.requireCurrentVersion(assignment.getVersion(), request.version(), "Product tax category assignment");
         ProductTaxCategoryAssignmentResponse before = ProductTaxCategoryAssignmentResponse.from(assignment);
+        if (request.active()) requireCompatibleDirectAssignment(assignment.getProduct(), assignment.getTaxCategory());
         assignment.setActive(request.active());
         assignment.getProduct().setTaxCategoryId(request.active() ? assignment.getTaxCategory().getId() : null);
         ProductTaxCategoryAssignmentResponse after = ProductTaxCategoryAssignmentResponse.from(save(assignment));
@@ -103,6 +133,15 @@ public class ProductTaxCategoryAssignmentService {
 
     private Product product(UUID id) {
         return productRepository.findById(id).orElseThrow(() -> new NotFoundException("Product not found"));
+    }
+
+    private void requireCompatibleDirectAssignment(Product product, TaxCategory category) {
+        if (product.getTaxClass() != com.merchtyl.product.ProductTaxClass.CUSTOM)
+            throw new ConflictException("Direct Tax Category assignment requires Custom Tax Treatment");
+        if (category.isSystemManaged() || !category.isMerchantAssignable())
+            throw new ConflictException("Tax Category is not available for manual Product assignment");
+        if (!product.getTenantId().equals(category.getOwnerTenantId()))
+            throw new ConflictException("Tax Category does not belong to this Merchant");
     }
 
     private ProductTaxCategoryAssignment save(ProductTaxCategoryAssignment assignment) {
