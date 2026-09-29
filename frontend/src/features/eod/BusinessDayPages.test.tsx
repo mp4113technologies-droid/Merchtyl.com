@@ -708,15 +708,15 @@ describe('Business day pages', () => {
 
     render(<App initialEntries={[`/end-of-day-reports/${reportId}`]} />);
 
-    expect(await screen.findByRole('heading', { name: 'Merchtyl End-of-Day Report' })).toBeInTheDocument();
-    expect(await screen.findByText('MAIN-2026-07-29-R1 - Main Store - 2026-07-29')).toBeInTheDocument();
-    expect(screen.getByText('Retail Category Sales Distribution')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'End of Day — Jul 29, 2026' })).toBeInTheDocument();
+    expect(await screen.findByText('Main Store · MAIN-2026-07-29-R1')).toBeInTheDocument();
+    expect(screen.getByText('Category Sales by Tax Treatment')).toBeInTheDocument();
     expect(screen.getByText('Beverages')).toBeInTheDocument();
     expect(screen.getByText('Custom Items')).toBeInTheDocument();
-    expect(screen.getByText('Lottery cash payouts')).toBeInTheDocument();
-    expect(screen.getByText('75.0%')).toBeInTheDocument();
-    expect(screen.getByText('100.0%')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'CSV' }));
+    expect(screen.getAllByText('Expected Cash in Tills')).toHaveLength(2);
+    expect(screen.getByText('Tax Treatment')).toBeInTheDocument();
+    expect(screen.getAllByText('Sales Before Tax').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Export EOD CSV' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/api/v1/end-of-day-reports/${reportId}/export/csv`), expect.any(Object)));
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
   });
@@ -735,7 +735,7 @@ describe('Business day pages', () => {
     });
 
     render(<App initialEntries={[`/end-of-day-reports/${reportId}`]} />);
-    expect(await screen.findByRole('heading', { name: 'Merchtyl End-of-Day Report' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'End of Day — Jul 29, 2026' })).toBeInTheDocument();
     expect(reportPrint).not.toHaveBeenCalled();
     expect(window.open).not.toHaveBeenCalled();
 

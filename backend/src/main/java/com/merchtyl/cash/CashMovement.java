@@ -70,6 +70,11 @@ public class CashMovement extends BaseUuidEntity {
     @Column(length = 1000)
     private String approvalNotes;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reversed_movement_id", unique = true,
+            foreignKey = @ForeignKey(name = "fk_cash_movements_reversed_movement"))
+    private CashMovement reversedMovement;
+
     protected CashMovement() {
     }
 
@@ -88,6 +93,26 @@ public class CashMovement extends BaseUuidEntity {
             User approvedBy,
             Instant approvedAt,
             String approvalNotes) {
+        this(store, register, registerSession, type, direction, amount, currencyCode, reason, notes,
+                createdBy, occurredAt, approvedBy, approvedAt, approvalNotes, null);
+    }
+
+    CashMovement(
+            Store store,
+            Register register,
+            RegisterSession registerSession,
+            CashMovementType type,
+            CashLedgerDirection direction,
+            BigDecimal amount,
+            String currencyCode,
+            String reason,
+            String notes,
+            User createdBy,
+            Instant occurredAt,
+            User approvedBy,
+            Instant approvedAt,
+            String approvalNotes,
+            CashMovement reversedMovement) {
         this.store = store;
         this.register = register;
         this.registerSession = registerSession;
@@ -102,6 +127,7 @@ public class CashMovement extends BaseUuidEntity {
         this.approvedBy = approvedBy;
         this.approvedAt = approvedAt;
         this.approvalNotes = approvalNotes;
+        this.reversedMovement = reversedMovement;
         initializeIdAndTimestamps();
     }
 
@@ -159,5 +185,9 @@ public class CashMovement extends BaseUuidEntity {
 
     public String getApprovalNotes() {
         return approvalNotes;
+    }
+
+    public CashMovement getReversedMovement() {
+        return reversedMovement;
     }
 }

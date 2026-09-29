@@ -50,6 +50,7 @@ import {
   listStores,
   openRegisterSession,
   openBusinessDay,
+  reverseCashPayout,
   overrideRegisterSession,
   startRegisterSessionClosing
 } from '../../api/client';
@@ -619,7 +620,7 @@ export function RegisterHistoryPage() {
   );
 }
 
-function CashMovementHistory({ movements }: { movements: CashMovement[] }) {
+function CashMovementHistory({ movements, onReverse }: { movements: CashMovement[]; onReverse?: (movement: CashMovement) => void }) {
   if (movements.length === 0) {
     return <Alert severity="info">No cash movements recorded for this session.</Alert>;
   }
@@ -631,8 +632,11 @@ function CashMovementHistory({ movements }: { movements: CashMovement[] }) {
           <TableCell>Type</TableCell>
           <TableCell>Direction</TableCell>
           <TableCell align="right">Amount</TableCell>
+          <TableCell>Employee</TableCell>
           <TableCell>Reason</TableCell>
+          <TableCell>Note</TableCell>
           <TableCell>Approved</TableCell>
+          {onReverse ? <TableCell align="right">Action</TableCell> : null}
         </TableRow>
       </TableHead>
       <TableBody>
@@ -648,8 +652,13 @@ function CashMovementHistory({ movements }: { movements: CashMovement[] }) {
               />
             </TableCell>
             <TableCell align="right">{money(movement.amount, movement.currencyCode)}</TableCell>
+            <TableCell>{movement.createdByName || '—'}</TableCell>
             <TableCell>{movement.reason}</TableCell>
+            <TableCell>{movement.notes || '—'}</TableCell>
             <TableCell>{movement.approvedAt ? new Date(movement.approvedAt).toLocaleString() : 'Not required'}</TableCell>
+            {onReverse ? <TableCell align="right">{movement.type === 'PAYOUT' && !movements.some((candidate) => candidate.reversedMovementId === movement.id)
+              ? <Button size="small" color="warning" onClick={() => onReverse(movement)}>Reverse</Button>
+              : null}</TableCell> : null}
           </TableRow>
         ))}
       </TableBody>
@@ -659,7 +668,9 @@ function CashMovementHistory({ movements }: { movements: CashMovement[] }) {
 
 export function CashMovementPage() {
   const queryClient = useQueryClient();
-  const { getValidAccessToken } = useSession();
+  const { getValidAccessToken, currentUser } = useSession();
+  const [reversing, setReversing] = React.useState<CashMovement | null>(null);
+  const [reversalReason, setReversalReason] = React.useState('');
   const { canUse } = useRegisterSessionPermissions();
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
 
@@ -723,6 +734,19 @@ export function CashMovementPage() {
         notes: '',
         approvalNotes: ''
       });
+      await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
+      await queryClient.invalidateQueries({ queryKey: ['cash-movements'] });
+    }
+  });
+
+  const reversalMutation = useMutation({
+    mutationFn: async () => {
+      if (!reversing) throw new Error('No payout selected');
+      return reverseCashPayout(await getValidAccessToken(), reversing.id, reversalReason.trim());
+    },
+    onSuccess: async () => {
+      setReversing(null);
+      setReversalReason('');
       await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
       await queryClient.invalidateQueries({ queryKey: ['cash-movements'] });
     }
@@ -873,12 +897,26 @@ export function CashMovementPage() {
                 </Box>
                 {movements.isLoading ? <LoadingPanel label="Loading cash movements" /> : null}
                 {movements.isError ? <Alert severity="error">{errorMessage(movements.error)}</Alert> : null}
-                {movements.data ? <CashMovementHistory movements={movements.data.content} /> : null}
+                {movements.data ? <CashMovementHistory movements={movements.data.content}
+                  onReverse={currentUser?.permissions?.includes('CASH_MOVEMENT_APPROVE') ? setReversing : undefined} /> : null}
               </Stack>
             </Paper>
           </Grid>
         </Grid>
       ) : null}
+      <Dialog open={reversing !== null} onClose={reversalMutation.isPending ? undefined : () => setReversing(null)} fullWidth maxWidth="xs">
+        <DialogTitle>Reverse Cash Payout</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important' }}><Stack spacing={2}>
+          <Alert severity="warning">This records an equal cash-in reversal. The original payout remains in the audit history.</Alert>
+          <Typography>Amount: {money(reversing?.amount ?? 0, reversing?.currencyCode)}</Typography>
+          <TextField autoFocus required label="Reversal reason" value={reversalReason}
+            onChange={(event) => setReversalReason(event.target.value)} multiline minRows={2} />
+          {reversalMutation.isError ? <Alert severity="error">{errorMessage(reversalMutation.error)}</Alert> : null}
+        </Stack></DialogContent>
+        <DialogActions><Button disabled={reversalMutation.isPending} onClick={() => setReversing(null)}>Cancel</Button>
+          <Button variant="contained" color="warning" disabled={!reversalReason.trim() || reversalMutation.isPending}
+            onClick={() => reversalMutation.mutate()}>Record Reversal</Button></DialogActions>
+      </Dialog>
     </Stack>
   );
 }

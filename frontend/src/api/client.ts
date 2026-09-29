@@ -2724,6 +2724,13 @@ export function createCashMovement(token: string, payload: CashMovementPayload) 
   }, token);
 }
 
+export function reverseCashPayout(token: string, movementId: string, reason: string) {
+  return request<CashMovement>(`/cash-movements/${movementId}/reversal`, {
+    method: 'POST',
+    body: JSON.stringify({ reason })
+  }, token);
+}
+
 export function listCashMovements(token: string, params: CashMovementSearchParams = {}) {
   return request<CashMovementListResponse>(`/cash-movements${queryString(params)}`, undefined, token);
 }

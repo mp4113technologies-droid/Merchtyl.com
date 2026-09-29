@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,6 +33,15 @@ public class CashMovementController {
         return cashMovementService.create(request, authentication);
     }
 
+    @PostMapping("/{movementId}/reversal")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).CASH_MOVEMENT_APPROVE)")
+    CashMovementResponse reversePayout(@PathVariable UUID movementId,
+                                       @Valid @RequestBody CashMovementReversalRequest request,
+                                       Authentication authentication) {
+        return cashMovementService.reversePayout(movementId, request, authentication);
+    }
+
     @GetMapping
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).CASH_MOVEMENT_VIEW)")
     PageResponse<CashMovementResponse> search(
@@ -42,7 +52,8 @@ public class CashMovementController {
             @RequestParam(required = false) Instant occurredFrom,
             @RequestParam(required = false) Instant occurredTo,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
         return cashMovementService.search(new CashMovementSearchRequest(
                 storeId,
                 registerId,
@@ -51,6 +62,6 @@ public class CashMovementController {
                 occurredFrom,
                 occurredTo,
                 page,
-                size));
+                size), authentication);
     }
 }

@@ -707,7 +707,7 @@ describe('POS pages', () => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
         ...currentUser(),
-        permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+        permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD', 'CASH_MOVEMENT_CREATE']
       });
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
       if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
@@ -716,7 +716,7 @@ describe('POS pages', () => {
     document.body.style.overflow = 'auto';
     render(<App initialEntries={['/pos']} />);
 
-    const actions = ['Taxable Custom Item', 'Non-Taxable Custom Item', 'Deposit Payout', 'Lottery Sold', 'Lottery Win'];
+    const actions = ['Taxable Custom Item', 'Non-Taxable Custom Item', 'Deposit Payout', 'Lottery Sold', 'Lottery Win', 'Payout'];
     await screen.findByRole('button', { name: actions[0] });
     for (let cycle = 0; cycle < 10; cycle += 1) {
       for (const action of actions) {
@@ -895,12 +895,12 @@ describe('POS pages', () => {
     ]);
   });
 
-  it('orders all five permitted POS actions in the shared action grid', async () => {
+  it('orders all six permitted POS actions in the shared action grid', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
         ...currentUser(),
-        permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD']
+        permissions: ['POS_CUSTOM_ITEM', 'POS_DEPOSIT_PAYOUT', 'LOTTERY_SALE_RECORD', 'LOTTERY_PAYOUT_RECORD', 'CASH_MOVEMENT_CREATE']
       });
       if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), capabilities: ['RETAIL', 'LOTTERY'] }]));
       if (url.pathname.endsWith('/capabilities/LOTTERY/effective')) return jsonResponse({ capability: 'LOTTERY', subscriptionEnabled: true, storeEnabled: true, enabled: true });
@@ -910,14 +910,114 @@ describe('POS pages', () => {
     render(<App initialEntries={['/pos']} />);
 
     const actionGrid = await screen.findByTestId('pos-action-grid');
-    await waitFor(() => expect(within(actionGrid).getAllByRole('button')).toHaveLength(5));
+    await waitFor(() => expect(within(actionGrid).getAllByRole('button')).toHaveLength(6));
     expect(within(actionGrid).getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Taxable Custom Item',
       'Non-Taxable Custom Item',
       'Deposit Payout',
       'Lottery Sold',
-      'Lottery Win'
+      'Lottery Win',
+      'Payout'
     ]);
+  });
+
+  it('records an independent cash payout and preserves the active cart', async () => {
+    let payoutBody: any;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(), permissions: ['CASH_MOVEMENT_CREATE', 'POS_CUSTOM_ITEM']
+      });
+      if (url.pathname.endsWith('/api/v1/cash-movements') && init?.method === 'POST') {
+        payoutBody = JSON.parse(String(init.body));
+        return jsonResponse({
+          id: '00000000-0000-0000-0000-000000000999',
+          storeId,
+          registerId,
+          registerSessionId: sessionId,
+          type: 'PAYOUT',
+          direction: 'OUT',
+          amount: 50,
+          currencyCode: 'USD',
+          reason: payoutBody.reason,
+          notes: payoutBody.notes ?? null,
+          createdBy: cashierId,
+          createdByName: 'Cashier One',
+          occurredAt: payoutBody.occurredAt,
+          approvedBy: null,
+          approvedAt: null,
+          approvalNotes: null,
+          createdAt: payoutBody.occurredAt,
+          updatedAt: payoutBody.occurredAt,
+          version: 0
+        }, 201);
+      }
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) {
+        return jsonResponse({ ...registerSession(), expectedCash: payoutBody ? 50 : 100 });
+      }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Taxable Custom Item' }));
+    let dialog = screen.getByRole('dialog', { name: 'Add Custom Item' });
+    await userEvent.clear(within(dialog).getByRole('textbox', { name: 'Item Description' }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Item Description' }), 'Cart item');
+    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Price (USD)' }), '5');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
+    expect(await screen.findByText('Cart item')).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Custom Item' })).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Payout' }));
+    dialog = screen.getByRole('dialog', { name: 'Cash Payout' });
+    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Amount (USD)' }), '50');
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Note' }), 'Milk supplier');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Record Payout' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Payout Recorded' })).toBeVisible();
+    expect(payoutBody).toMatchObject({
+      registerSessionId: sessionId,
+      type: 'PAYOUT',
+      amount: 50,
+      reason: 'VENDOR_PAYMENT',
+      notes: 'Milk supplier'
+    });
+    expect(screen.getByText('Cart item')).toBeVisible();
+  });
+
+  it('validates payout precision, available cash, and the Other note before posting', async () => {
+    let payoutWrites = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
+        ...currentUser(), permissions: ['CASH_MOVEMENT_CREATE']
+      });
+      if (url.pathname.endsWith('/api/v1/cash-movements') && init?.method === 'POST') {
+        payoutWrites += 1;
+      }
+      return commonApi(input) ?? jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Payout' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cash Payout' });
+    const amount = within(dialog).getByRole('spinbutton', { name: 'Amount (USD)' });
+    const submit = within(dialog).getByRole('button', { name: 'Record Payout' });
+
+    await userEvent.type(amount, '100.001');
+    expect(submit).toBeDisabled();
+    await userEvent.clear(amount);
+    await userEvent.type(amount, '150');
+    expect(within(dialog).getByText(/exceeds expected till cash/i)).toBeVisible();
+    expect(submit).toBeDisabled();
+    await userEvent.clear(amount);
+    await userEvent.type(amount, '25');
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Reason' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Other' }));
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Note' }), 'Authorized store expense');
+    expect(submit).toBeEnabled();
+    expect(payoutWrites).toBe(0);
   });
 
   it('preserves a custom item tax treatment while editing its other fields', async () => {

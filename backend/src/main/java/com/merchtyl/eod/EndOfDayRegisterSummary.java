@@ -81,6 +81,12 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     private BigDecimal expenses;
 
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal payouts;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal payoutReversals;
+
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal closingAdjustments;
 
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
@@ -141,6 +147,8 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
         this.floatAdditions = values.floatAdditions();
         this.floatRemovals = values.floatRemovals();
         this.expenses = values.expenses();
+        this.payouts = values.payouts();
+        this.payoutReversals = values.payoutReversals();
         this.closingAdjustments = values.closingAdjustments();
         this.expectedCash = values.expectedCash();
         this.countedCash = values.countedCash();
@@ -179,6 +187,8 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     public BigDecimal getFloatAdditions() { return floatAdditions; }
     public BigDecimal getFloatRemovals() { return floatRemovals; }
     public BigDecimal getExpenses() { return expenses; }
+    public BigDecimal getPayouts() { return payouts; }
+    public BigDecimal getPayoutReversals() { return payoutReversals; }
     public BigDecimal getClosingAdjustments() { return closingAdjustments; }
     public BigDecimal getExpectedCash() { return expectedCash; }
     public BigDecimal getCountedCash() { return countedCash; }

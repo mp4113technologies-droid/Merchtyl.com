@@ -54,4 +54,6 @@ public class SaleItemTax extends BaseUuidEntity {
     public BigDecimal getTaxableAmount(){return taxableAmount;}
     public int getCalculationOrder(){return calculationOrder;}
     public UUID getTaxCategoryId(){return taxCategoryId;}
+    public String getTaxCategoryCode(){return taxCategoryCode;}
+    public ProductTaxClass getProductTaxClass(){return productTaxClass;}
 }

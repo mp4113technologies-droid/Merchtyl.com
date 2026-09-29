@@ -11,7 +11,9 @@ import com.merchtyl.common.PageResponse;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
+import com.merchtyl.register.RegisterType;
 import com.merchtyl.security.PermissionCode;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
 import jakarta.persistence.OptimisticLockException;
@@ -32,11 +34,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.Set;
 
 @Service
 public class CashMovementService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MONEY_SCALE = 2;
+    private static final Set<String> PAYOUT_REASONS = Set.of(
+            "VENDOR_PAYMENT", "PETTY_CASH", "STORE_EXPENSE", "EMPLOYEE_REIMBURSEMENT", "OTHER");
 
     private final CashMovementRepository cashMovementRepository;
     private final RegisterSessionRepository registerSessionRepository;
@@ -44,6 +49,7 @@ public class CashMovementService {
     private final CashLedgerService cashLedgerService;
     private final AuditService auditService;
     private final CashMovementProperties properties;
+    private final StoreAccessService storeAccessService;
     private final Clock clock;
 
     @Autowired
@@ -53,8 +59,10 @@ public class CashMovementService {
             UserRepository userRepository,
             CashLedgerService cashLedgerService,
             AuditService auditService,
-            CashMovementProperties properties) {
-        this(cashMovementRepository, registerSessionRepository, userRepository, cashLedgerService, auditService, properties, Clock.systemUTC());
+            CashMovementProperties properties,
+            StoreAccessService storeAccessService) {
+        this(cashMovementRepository, registerSessionRepository, userRepository, cashLedgerService, auditService,
+                properties, storeAccessService, Clock.systemUTC());
     }
 
     CashMovementService(
@@ -64,6 +72,7 @@ public class CashMovementService {
             CashLedgerService cashLedgerService,
             AuditService auditService,
             CashMovementProperties properties,
+            StoreAccessService storeAccessService,
             Clock clock) {
         this.cashMovementRepository = cashMovementRepository;
         this.registerSessionRepository = registerSessionRepository;
@@ -71,6 +80,7 @@ public class CashMovementService {
         this.cashLedgerService = cashLedgerService;
         this.auditService = auditService;
         this.properties = properties;
+        this.storeAccessService = storeAccessService;
         this.clock = clock;
     }
 
@@ -78,12 +88,17 @@ public class CashMovementService {
     public CashMovementResponse create(CashMovementRequest request, Authentication authentication) {
         User actor = actor(authentication);
         RegisterSession session = findOpenSession(request.registerSessionId());
+        storeAccessService.requireStoreAccess(authentication, session.getStore().getId());
         validateUserCanUseSession(actor, session, authentication);
 
         CashMovementType type = requireNonNull(request.type(), "type");
         CashLedgerDirection direction = direction(type, request.direction());
         BigDecimal amount = normalizeAmount(request.amount());
         String reason = cleanRequired(request.reason(), "reason");
+        String notes = cleanOptional(request.notes());
+        if (type == CashMovementType.PAYOUT) {
+            validatePayout(session, amount, reason, notes);
+        }
         Instant occurredAt = requireNonNull(request.occurredAt(), "occurredAt");
         User approvedBy = null;
         Instant approvedAt = null;
@@ -105,7 +120,7 @@ public class CashMovementService {
                 amount,
                 session.getStore().getCurrencyCode(),
                 reason,
-                cleanOptional(request.notes()),
+                notes,
                 actor,
                 occurredAt,
                 approvedBy,
@@ -140,12 +155,59 @@ public class CashMovementService {
         return response;
     }
 
+    @Transactional
+    public CashMovementResponse reversePayout(UUID movementId, CashMovementReversalRequest request,
+                                              Authentication authentication) {
+        User actor = actor(authentication);
+        CashMovement original = cashMovementRepository.findByIdForUpdate(movementId)
+                .orElseThrow(() -> new NotFoundException("Cash payout not found"));
+        if (original.getType() != CashMovementType.PAYOUT) {
+            throw new BadRequestException("Only a cash payout can be reversed");
+        }
+        if (cashMovementRepository.existsByReversedMovement_Id(original.getId())) {
+            throw new ConflictException("Cash payout has already been reversed");
+        }
+        RegisterSession session = original.getRegisterSession();
+        if (session.getStatus() != RegisterSessionStatus.OPEN || !session.isBusinessDayOperational()) {
+            throw new ConflictException("Cash payout can only be reversed while its BusinessDay and RegisterSession are open");
+        }
+        storeAccessService.requireStoreAccess(authentication, original.getStore().getId());
+        validateUserCanUseSession(actor, session, authentication);
+        String reversalReason = cleanRequired(request.reason(), "reason");
+        Instant occurredAt = Instant.now(clock);
+        CashMovement reversal = new CashMovement(
+                original.getStore(), original.getRegister(), session,
+                CashMovementType.PAYOUT_REVERSAL, CashLedgerDirection.IN, original.getAmount(),
+                original.getCurrencyCode(), "PAYOUT_REVERSAL", reversalReason, actor, occurredAt,
+                actor, occurredAt, reversalReason, original);
+        CashMovement saved = save(reversal);
+        cashLedgerService.append(new CashLedgerEntryCommand(
+                saved.getStore(), saved.getRegister(), saved.getRegisterSession(),
+                CashLedgerSourceType.CASH_MOVEMENT, saved.getId(), CashLedgerDirection.IN,
+                saved.getAmount(), saved.getCurrencyCode(), businessDate(saved), saved.getOccurredAt(),
+                actor, saved.getId(), saved.getReason()));
+        CashMovementResponse response = CashMovementResponse.from(saved);
+        auditService.record(new CreateAuditRecordCommand(
+                actor.getId(), AuditAction.CASH_MOVEMENT_REVERSED, "CASH_MOVEMENT", response.id(),
+                response.storeId(), response.registerId(), CashMovementResponse.from(original), response,
+                reversalReason));
+        return response;
+    }
+
     @Transactional(readOnly = true)
-    public PageResponse<CashMovementResponse> search(CashMovementSearchRequest request) {
+    public PageResponse<CashMovementResponse> search(CashMovementSearchRequest request, Authentication authentication) {
+        User actor = actor(authentication);
+        if (request.storeId() != null) {
+            storeAccessService.requireStoreAccess(authentication, request.storeId());
+        }
+        Specification<CashMovement> scoped = specification(request).and(equalTenant(actor.getTenantId()));
+        if (!hasManagementRole(authentication)) {
+            scoped = scoped.and(equalReference("createdBy", actor.getId()));
+        }
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var page = cashMovementRepository.findAll(
-                specification(request),
+                scoped,
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.DESC, "occurredAt").and(Sort.by(Sort.Direction.DESC, "id"))));
         return new PageResponse<>(
@@ -172,7 +234,7 @@ public class CashMovementService {
         if (registerSessionId == null) {
             throw new BadRequestException("registerSessionId is required");
         }
-        RegisterSession session = registerSessionRepository.findById(registerSessionId)
+        RegisterSession session = registerSessionRepository.findByIdForUpdate(registerSessionId)
                 .orElseThrow(() -> new NotFoundException("Register session not found"));
         if (session.getStatus() != RegisterSessionStatus.OPEN) {
             throw new ConflictException("Register session is not open");
@@ -181,6 +243,23 @@ public class CashMovementService {
             throw new ConflictException("BUSINESS_DAY_NOT_OPEN");
         }
         return session;
+    }
+
+    private void validatePayout(RegisterSession session, BigDecimal amount, String reason, String notes) {
+        if (session.getRegister().getType() != RegisterType.RETAIL) {
+            throw new ConflictException("RETAIL_REGISTER_REQUIRED");
+        }
+        if (!PAYOUT_REASONS.contains(reason)) {
+            throw new BadRequestException("Unsupported payout reason");
+        }
+        if ("OTHER".equals(reason) && (notes == null || notes.isBlank())) {
+            throw new BadRequestException("A note is required for Other payouts");
+        }
+        BigDecimal expectedCash = cashLedgerService.expectedCash(session);
+        if (amount.compareTo(expectedCash) > 0) {
+            throw new ConflictException("Cash payout exceeds expected till cash. Expected cash currently available: "
+                    + expectedCash.toPlainString() + "; requested payout: " + amount.toPlainString());
+        }
     }
 
     private User actor(Authentication authentication) {
@@ -196,6 +275,9 @@ public class CashMovementService {
     }
 
     private static void validateUserCanUseSession(User actor, RegisterSession session, Authentication authentication) {
+        if (!java.util.Objects.equals(actor.getTenantId(), session.getStore().getTenantId())) {
+            throw new ForbiddenOperationException("Register session is outside the authenticated tenant");
+        }
         if (hasAuthority(authentication, "ROLE_OWNER") || hasAuthority(authentication, "ROLE_TENANT_OWNER")
                 || hasAuthority(authentication, "ROLE_MANAGER") || hasAuthority(authentication, "ROLE_STORE_MANAGER")) {
             return;
@@ -207,8 +289,8 @@ public class CashMovementService {
 
     private static CashLedgerDirection direction(CashMovementType type, CashLedgerDirection requested) {
         return switch (type) {
-            case CASH_IN, FLOAT_ADD -> CashLedgerDirection.IN;
-            case CASH_OUT, SAFE_DROP, FLOAT_REMOVE, EXPENSE, BANK_DEPOSIT -> CashLedgerDirection.OUT;
+            case CASH_IN, FLOAT_ADD, PAYOUT_REVERSAL -> CashLedgerDirection.IN;
+            case CASH_OUT, PAYOUT, SAFE_DROP, FLOAT_REMOVE, EXPENSE, BANK_DEPOSIT -> CashLedgerDirection.OUT;
             case CORRECTION -> requireNonNull(requested, "direction");
         };
     }
@@ -257,6 +339,10 @@ public class CashMovementService {
         return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get(field), value);
     }
 
+    private static Specification<CashMovement> equalTenant(UUID tenantId) {
+        return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("store").get("tenantId"), tenantId);
+    }
+
     private static Specification<CashMovement> occurredAtGreaterThanOrEqualTo(Instant value) {
         if (value == null) {
             return null;
@@ -289,6 +375,11 @@ public class CashMovementService {
         return authentication != null
                 && authentication.getAuthorities().stream()
                 .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals(authority));
+    }
+
+    private static boolean hasManagementRole(Authentication authentication) {
+        return hasAuthority(authentication, "ROLE_OWNER") || hasAuthority(authentication, "ROLE_TENANT_OWNER")
+                || hasAuthority(authentication, "ROLE_MANAGER") || hasAuthority(authentication, "ROLE_STORE_MANAGER");
     }
 
     private static <T> T requireNonNull(T value, String fieldName) {

@@ -173,16 +173,24 @@ function quantity(value: number) {
 }
 
 function categoryRows(report: Pick<EndOfDayReport, 'categorySalesDistribution' | 'currencyCode'>) {
-  const rows = report.categorySalesDistribution.map((row) => [
-    row.categoryName,
+  const visible = report.categorySalesDistribution.filter((row) => Math.abs(row.netSales) >= 0.005);
+  let previousCategory = '';
+  const rows = visible.map((row) => {
+    const category = row.categoryName === previousCategory ? '' : row.categoryName;
+    previousCategory = row.categoryName;
+    return [
+    category,
+    row.taxTreatmentLabel ?? 'Historical Total',
     quantity(row.quantitySold),
     money(row.netSales, report.currencyCode),
-    `${row.percentage.toFixed(1)}%`
-  ]);
+    money(row.taxCollected ?? 0, report.currencyCode)
+  ];
+  });
   if (rows.length > 0) {
-    const totalQuantity = report.categorySalesDistribution.reduce((total, row) => total + row.quantitySold, 0);
-    const totalSales = report.categorySalesDistribution.reduce((total, row) => total + row.netSales, 0);
-    rows.push(['TOTAL', quantity(totalQuantity), money(totalSales, report.currencyCode), totalSales > 0 ? '100.0%' : '—']);
+    const totalQuantity = visible.reduce((total, row) => total + row.quantitySold, 0);
+    const totalSales = visible.reduce((total, row) => total + row.netSales, 0);
+    const totalTax = visible.reduce((total, row) => total + (row.taxCollected ?? 0), 0);
+    rows.push(['TOTAL', '', quantity(totalQuantity), money(totalSales, report.currencyCode), money(totalTax, report.currencyCode)]);
   }
   return rows;
 }
@@ -732,7 +740,7 @@ function ClosingPreview({ preview }: { preview: EndOfDayClosingPreview }) {
       <ReportTable title="Payment preview" rows={<SimpleTable headers={['Method', 'Collected', 'Refunded', 'Net']} rows={preview.payments.map((row) => [row.paymentMethod, money(row.collected, preview.currencyCode), money(row.refunded, preview.currencyCode), money(row.net, preview.currencyCode)])} />} />
       <ReportTable title="Tax preview" rows={<SimpleTable headers={['Component', 'Taxable', 'Collected', 'Refunded', 'Net']} rows={preview.taxes.map((row) => [row.componentCode, money(row.taxableSales, preview.currencyCode), money(row.taxCollected, preview.currencyCode), money(row.taxRefunded, preview.currencyCode), money(row.netTaxCollected, preview.currencyCode)])} />} />
       <ReportTable title="Deposits preview" rows={<SimpleTable headers={['Deposits Collected', 'Deposit Payouts', 'Net Deposits']} rows={[[money(preview.depositsCollected, preview.currencyCode), money(preview.depositPayouts, preview.currencyCode), money(preview.netDeposits, preview.currencyCode)]]} />} />
-      <ReportTable title="Retail Category Sales Distribution" rows={<SimpleTable headers={['Category', 'Qty Sold', 'Net Sales', 'Share']} rows={categoryRows(preview)} emptyMessage="No retail merchandise sales." />} />
+      <ReportTable title="Category Sales by Tax Treatment" rows={<SimpleTable headers={['Category', 'Tax Treatment', 'Qty', 'Sales Before Tax', 'Tax']} rows={categoryRows(preview)} emptyMessage="No retail merchandise sales." />} />
       <ReportTable title="Cashier preview" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Cash handled']} rows={preview.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, preview.currencyCode), money(row.cashHandled, preview.currencyCode)])} />} />
       <ReportTable title="Exception preview" rows={<SimpleTable headers={['Type', 'Count', 'Amount']} rows={preview.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, preview.currencyCode)])} />} />
     </Stack>
@@ -800,6 +808,27 @@ function ReportTable({ title, rows }: { title: string; rows: React.ReactNode }) 
   );
 }
 
+function SummarySection({ title, rows, empty = false }: { title: string; rows: string[][]; empty?: boolean }) {
+  return (
+    <Paper component="section" elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: { xs: 2, sm: 2.5 } }}>
+      <Typography variant="subtitle1" color="primary" fontWeight={800} sx={{ textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</Typography>
+      <Divider sx={{ my: 1.5 }} />
+      {empty ? <Typography color="text.secondary">No activity</Typography> : (
+        <Grid container spacing={1.5}>
+          {rows.map(([label, value], index) => (
+            <Grid item xs={12} sm={6} key={label}>
+              <Stack direction="row" justifyContent="space-between" gap={2} sx={{ pt: index >= Math.max(0, rows.length - 1) ? 1 : 0, borderTop: index >= Math.max(0, rows.length - 1) ? '1px solid' : 'none', borderColor: 'divider' }}>
+                <Typography color="text.secondary">{label}</Typography>
+                <Typography fontWeight={index >= Math.max(0, rows.length - 1) ? 800 : 600} sx={{ fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
+              </Stack>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+    </Paper>
+  );
+}
+
 export function EndOfDayReportDetailPage() {
   const roles = useRoles();
   const allowed = canManageBusinessDay(roles);
@@ -849,41 +878,95 @@ export function EndOfDayReportDetailPage() {
   if (report.isError) return <Alert severity="error">{errorMessage(report.error)}</Alert>;
   const data = report.data;
   if (!data) return <Alert severity="info">Report not found.</Alert>;
+  const salesBeforeTax = data.totalSalesBeforeTax ?? data.merchandiseNetSales ?? ((data.taxableSales ?? 0) + (data.nonTaxableSales ?? 0));
+  const totalTax = data.totalTaxCollected ?? data.taxCollected ?? data.taxTotal;
+  const totalSales = data.totalSales ?? salesBeforeTax + totalTax;
+  const registerReconciliation = data.registerReconciliation ?? Array.from(
+    data.registers.reduce((groups, row) => {
+      const current = groups.get(row.registerId);
+      groups.set(row.registerId, { registerId: row.registerId, registerCode: row.registerCode, registerName: row.registerName, sessionCount: (current?.sessionCount ?? 0) + 1, expectedCash: row.expectedCash, countedCash: row.countedCash, variance: row.variance });
+      return groups;
+    }, new Map<string, { registerId: string; registerCode: string; registerName: string; sessionCount: number; expectedCash: number; countedCash: number; variance: number }>()).values()
+  );
+  const payment = (method: string) => data.payments.filter((row) => row.paymentMethod === method).reduce((sum, row) => sum + row.net, 0);
+  const knownPayments = ['CASH', 'DEBIT', 'CREDIT', 'GIFT_CARD'];
+  const otherPayments = data.payments.filter((row) => !knownPayments.includes(row.paymentMethod)).reduce((sum, row) => sum + row.net, 0);
+  const tax = (code: string) => data.taxes.filter((row) => row.componentCode === code).reduce((sum, row) => sum + row.netTaxCollected, 0);
+  const registerTotal = (select: (row: EndOfDayReport['registers'][number]) => number) => data.registers.reduce((sum, row) => sum + select(row), 0);
   return (
     <Stack spacing={3} sx={{ maxWidth: 1180 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Box sx={{ flexGrow: 1 }}>
-          <Typography variant="h5" component="h1">Merchtyl End-of-Day Report</Typography>
-          <Typography color="text.secondary">{data.reportNumber} - {data.storeName} - {data.businessDate}</Typography>
+          <Typography variant="h5" component="h1">End of Day — {new Date(`${data.businessDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</Typography>
+          <Typography color="text.secondary">{data.storeName} · {data.reportNumber}</Typography>
         </Box>
         <Button startIcon={<PrintIcon />} onClick={() => print.mutate(data)}>Print</Button>
-        <Button startIcon={<DownloadIcon />} onClick={() => csv.mutate(data)}>CSV</Button>
-        <Button startIcon={<DownloadIcon />} onClick={() => pdf.mutate(data)}>PDF</Button>
+        <Button startIcon={<DownloadIcon />} onClick={() => csv.mutate(data)}>Export EOD CSV</Button>
+        <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => pdf.mutate(data)}>Download EOD PDF</Button>
       </Stack>
       {reopen.isError ? <Alert severity="error">{errorMessage(reopen.error)}</Alert> : null}
+      <Typography variant="overline" color="primary" fontWeight={800}>Sales summary</Typography>
       <Grid container spacing={2}>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Total Sales (Incl. Tax)" value={money(totalSales, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Sales Before Tax" value={money(salesBeforeTax, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Total Tax Collected" value={money(totalTax, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Expected Cash in Tills" value={money(data.expectedCash, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Taxable Sales" value={money(data.taxableSales, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Non-Taxable Sales" value={money(data.nonTaxableSales, data.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Tax Collected" value={money(data.taxCollected, data.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Merchandise Net Sales" value={money(data.merchandiseNetSales, data.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Tax" value={money(data.taxTotal, data.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Cash variance" value={money(data.cashVariance, data.currencyCode)} tone={data.cashVariance === 0 ? 'success' : 'warning'} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Refunds" value={money(data.refundTotal, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Cash Variance" value={money(data.cashVariance, data.currencyCode)} tone={data.cashVariance === 0 ? 'success' : 'warning'} /></Grid>
       </Grid>
+      <SummarySection title="Cash reconciliation" rows={[
+        ['Opening Cash', money(registerTotal((row) => row.openingFloat), data.currencyCode)],
+        ['Cash Received', money(registerTotal((row) => row.cashReceipts + row.lotteryCashSales), data.currencyCode)],
+        ['Cash Paid In', money(registerTotal((row) => row.cashIn + row.floatAdditions), data.currencyCode)],
+        ['Cash Payouts', money(-registerTotal((row) => row.payouts ?? 0), data.currencyCode)],
+        ['Payout Reversals', money(registerTotal((row) => row.payoutReversals ?? 0), data.currencyCode)],
+        ['Safe Drops', money(-registerTotal((row) => row.safeDrops), data.currencyCode)],
+        ['Other Cash Out', money(-registerTotal((row) => row.cashOut + row.expenses + row.floatRemovals), data.currencyCode)],
+        ['Expected Cash in Tills', money(data.expectedCash, data.currencyCode)],
+        ['Counted Cash', money(data.countedCash, data.currencyCode)],
+        [data.cashVariance < 0 ? 'Variance — Short' : data.cashVariance > 0 ? 'Variance — Over' : 'Variance — Balanced', money(data.cashVariance, data.currencyCode)]
+      ]} />
+      <SummarySection title="Tax summary" rows={[
+        ['General Tax Collected', money(tax('GENERAL_TAX'), data.currencyCode)],
+        ['Vape Tax Collected', money(tax('VAPE_TAX'), data.currencyCode)],
+        ['Other Tax Collected', money(tax('OTHER_TAX'), data.currencyCode)],
+        ['Total Tax Collected', money(totalTax, data.currencyCode)]
+      ]} />
+      <SummarySection title="Payment summary" rows={[
+        ['Cash', money(payment('CASH'), data.currencyCode)], ['Debit', money(payment('DEBIT'), data.currencyCode)],
+        ['Credit', money(payment('CREDIT'), data.currencyCode)], ['Gift Card', money(payment('GIFT_CARD'), data.currencyCode)],
+        ['Other', money(otherPayments, data.currencyCode)], ['Net Payments', money(data.payments.reduce((sum, row) => sum + row.net, 0), data.currencyCode)]
+      ]} />
+      <SummarySection title="Lottery summary" empty={!data.lottery} rows={data.lottery ? [
+        ['Total Lottery Sold', money(data.lottery.lotterySales, data.currencyCode)],
+        ['Lottery Wins / Payouts', money(data.lottery.lotteryPayouts, data.currencyCode)],
+        ['Net Lottery', money(data.lottery.netLottery, data.currencyCode)]
+      ] : []} />
+      <SummarySection title="Deposit summary" rows={[
+        ['Deposits Collected', money(data.depositsCollected, data.currencyCode)],
+        ['Deposit Payouts', money(data.depositPayouts, data.currencyCode)],
+        ['Net Deposits', money(data.netDeposits, data.currencyCode)]
+      ]} />
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
-        <Typography variant="subtitle1" fontWeight={700}>Manager sign-off</Typography>
+        <Typography variant="subtitle1" fontWeight={700}>Closed / Signed By</Typography>
         <Divider sx={{ my: 1.5 }} />
         <Typography>{data.signOff?.managerName ?? 'Unsigned'}</Typography>
         <Typography color="text.secondary">{data.signOff?.signedAt ? new Date(data.signOff.signedAt).toLocaleString() : ''}</Typography>
         {data.signOff?.varianceExplanation ? <Typography sx={{ mt: 1 }}>Variance: {data.signOff.varianceExplanation}</Typography> : null}
       </Paper>
-      <ReportTable title="Payments" rows={<SimpleTable headers={['Method', 'Collected', 'Refunded', 'Net']} rows={data.payments.map((row) => [row.paymentMethod, money(row.collected, data.currencyCode), money(row.refunded, data.currencyCode), money(row.net, data.currencyCode)])} />} />
-      <ReportTable title="Registers" rows={<SimpleTable headers={['Register', 'Opening', 'Cash received', 'Change', 'Lottery cash payouts', 'Cash refunds', 'Cash in', 'Cash out', 'Expected', 'Counted', 'Variance']} rows={data.registers.map((row) => [row.registerCode, money(row.openingFloat, data.currencyCode), money(row.cashReceipts, data.currencyCode), money(row.changeGiven, data.currencyCode), money(row.lotteryPayouts, data.currencyCode), money(row.cashRefunds, data.currencyCode), money(row.cashIn, data.currencyCode), money(row.cashOut, data.currencyCode), money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode)])} />} />
-      <ReportTable title="Taxes" rows={<SimpleTable headers={['Component', 'Taxable', 'Collected', 'Refunded', 'Net']} rows={data.taxes.map((row) => [row.componentCode, money(row.taxableSales, data.currencyCode), money(row.taxCollected, data.currencyCode), money(row.taxRefunded, data.currencyCode), money(row.netTaxCollected, data.currencyCode)])} />} />
-      <ReportTable title="Deposits" rows={<SimpleTable headers={['Deposits Collected', 'Deposit Payouts', 'Net Deposits']} rows={[[money(data.depositsCollected, data.currencyCode), money(data.depositPayouts, data.currencyCode), money(data.netDeposits, data.currencyCode)]]} />} />
-      <ReportTable title="Retail Category Sales Distribution" rows={<SimpleTable headers={['Category', 'Qty Sold', 'Net Sales', 'Share']} rows={categoryRows(data)} emptyMessage="No retail merchandise sales." />} />
-      <ReportTable title="Cashiers" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Refunds', 'Cash handled']} rows={data.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, data.currencyCode), money(row.refundTotal, data.currencyCode), money(row.cashHandled, data.currencyCode)])} />} />
-      <ReportTable title="Exceptions" rows={<SimpleTable headers={['Type', 'Count', 'Amount', 'Details']} rows={data.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, data.currencyCode), row.details ?? ''])} />} />
-      {data.lottery?.enabled ? <ReportTable title="Lottery" rows={<SimpleTable headers={['Till / Session','Physical Sold','Manual Sold','Total Sold','Wins','Net','Actual Cash Payouts']} rows={[...lotterySessionRows(data.lottery.registerTotals).map(row=>{const register=data.registers.find(value=>value.registerSessionId===row.registerSessionId);return [`${row.registerCode} / ${row.registerSessionId.slice(0,8)}`,money(row.physicalLotterySold,data.currencyCode),money(row.manualLotterySold,data.currencyCode),money(row.totalLotterySold,data.currencyCode),money(row.lotteryWins,data.currencyCode),money(row.netLottery,data.currencyCode),money(register?.lotteryPayouts??0,data.currencyCode)];}),['Store Total','—','—',money(data.lottery.lotterySales,data.currencyCode),money(data.lottery.lotteryPayouts,data.currencyCode),money(data.lottery.netLottery,data.currencyCode),money(data.registers.reduce((sum,row)=>sum+row.lotteryPayouts,0),data.currencyCode)]]} />} /> : null}
+      <Typography variant="overline" color="primary" fontWeight={800}>Operational details</Typography>
+      <ReportTable title="Sales Details" rows={<SimpleTable headers={['Metric', 'Amount']} rows={[
+        ['Gross Merchandise Sales', money(data.grossSales, data.currencyCode)], ['Discounts', money(-Math.abs(data.discountTotal), data.currencyCode)],
+        ['Refunds', money(-Math.abs(data.refundTotal), data.currencyCode)], ['Sales Before Tax', money(salesBeforeTax, data.currencyCode)]
+      ]} />} />
+      <ReportTable title="Register Reconciliation" rows={<SimpleTable headers={['Register', 'Sessions', 'Expected', 'Counted', 'Variance']} rows={registerReconciliation.map((row) => [row.registerCode, String(row.sessionCount), money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode)])} emptyMessage="No register activity." />} />
+      <ReportTable title="Register Session Detail" rows={<SimpleTable headers={['Register / Session', 'Opening', 'Cash received', 'Change', 'Cash refunds', 'Cash in', 'Cash out', 'Expected', 'Counted', 'Variance']} rows={data.registers.map((row) => [`${row.registerCode} / ${(row.registerSessionId ?? 'legacy').slice(0, 8)}`, money(row.openingFloat, data.currencyCode), money(row.cashReceipts, data.currencyCode), money(row.changeGiven, data.currencyCode), money(row.cashRefunds, data.currencyCode), money(row.cashIn, data.currencyCode), money(row.cashOut, data.currencyCode), money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode)])} />} />
+      <ReportTable title="Cashier Summary" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net Sales', 'Cash Handled']} rows={data.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, data.currencyCode), money(row.cashHandled, data.currencyCode)])} emptyMessage="No activity." />} />
+      <ReportTable title="Category Sales by Tax Treatment" rows={<SimpleTable headers={['Category', 'Tax Treatment', 'Qty', 'Sales Before Tax', 'Tax']} rows={categoryRows(data)} emptyMessage="No activity." />} />
+      <ReportTable title="Inventory" rows={<SimpleTable headers={['Metric', 'Value']} rows={data.inventory ? [['Units Deducted', quantity(data.inventory.deductedBySales)], ['Units Restored', quantity(data.inventory.restoredByReturns)], ['Value Movement', money(data.inventory.inventoryValueMovement, data.currencyCode)]] : []} emptyMessage="No activity." />} />
+      <ReportTable title="Exceptions" rows={<SimpleTable headers={['Type', 'Count', 'Amount', 'Details']} rows={data.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, data.currencyCode), row.details ?? ''])} emptyMessage="No exceptions recorded." />} />
       {canReopen ? (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
           <Stack spacing={2}>

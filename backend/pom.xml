@@ -139,6 +139,18 @@
 
     <build>
         <finalName>merchtyl-backend</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>../frontend/public/branding</directory>
+                <targetPath>branding</targetPath>
+                <includes>
+                    <include>merchtyl-logo-horizontal.png</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

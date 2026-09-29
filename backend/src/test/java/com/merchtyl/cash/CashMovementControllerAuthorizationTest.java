@@ -95,12 +95,12 @@ class CashMovementControllerAuthorizationTest {
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE"))))
                 .andExpect(status().isForbidden());
 
-        verify(cashMovementService, never()).search(any());
+        verify(cashMovementService, never()).search(any(), any());
     }
 
     @Test
     void viewerCanReadCashMovementHistory() throws Exception {
-        when(cashMovementService.search(any())).thenReturn(new PageResponse<>(
+        when(cashMovementService.search(any(), any())).thenReturn(new PageResponse<>(
                 List.of(response()),
                 0,
                 20,
@@ -117,6 +117,28 @@ class CashMovementControllerAuthorizationTest {
                 .andExpect(jsonPath("$.content[0].reason").value("Petty cash"));
     }
 
+    @Test
+    void payoutReversalRequiresApprovalPermission() throws Exception {
+        mockMvc.perform(post("/api/v1/cash-movements/{id}/reversal", MOVEMENT_ID)
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Entered twice\"}"))
+                .andExpect(status().isForbidden());
+
+        verify(cashMovementService, never()).reversePayout(any(), any(), any());
+    }
+
+    @Test
+    void approverCanReversePayout() throws Exception {
+        when(cashMovementService.reversePayout(any(), any(), any())).thenReturn(response());
+
+        mockMvc.perform(post("/api/v1/cash-movements/{id}/reversal", MOVEMENT_ID)
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_APPROVE")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Entered twice\"}"))
+                .andExpect(status().isCreated());
+    }
+
     private static CashMovementResponse response() {
         return new CashMovementResponse(
                 MOVEMENT_ID,
@@ -130,7 +152,9 @@ class CashMovementControllerAuthorizationTest {
                 "Petty cash",
                 null,
                 USER_ID,
+                "Cashier Example",
                 NOW,
+                null,
                 null,
                 null,
                 null,

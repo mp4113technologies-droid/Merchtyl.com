@@ -201,6 +201,28 @@ class BusinessDayServiceTest {
     }
 
     @Test
+    void categoryDistributionSplitsSameCategoryByHistoricalTaxTreatmentWithoutEmptyBuckets() {
+        UUID dairyId = UUID.randomUUID();
+        SaleItem milk = saleItem(dairyId, "Dairy", "2.0000", "10.00", "0.00", false);
+        SaleItem iceCream = saleItem(dairyId, "Dairy", "3.0000", "12.00", "0.00", false);
+        when(milk.getHistoricalTaxTreatment()).thenReturn(com.merchtyl.sales.HistoricalTaxTreatment.NON_TAXABLE);
+        when(iceCream.getHistoricalTaxTreatment()).thenReturn(com.merchtyl.sales.HistoricalTaxTreatment.TAXABLE);
+
+        List<EndOfDayCategorySalesSummaryResponse> result = service.categorySalesValues(
+                List.of(sale(RegisterType.RETAIL, milk, iceCream)), List.of());
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(EndOfDayCategorySalesSummaryResponse::taxTreatment)
+                .containsExactlyInAnyOrder("TAXABLE", "NON_TAXABLE");
+        assertThat(result).filteredOn(row -> row.taxTreatment().equals("TAXABLE")).singleElement()
+                .satisfies(row -> assertThat(row.netSales()).isEqualByComparingTo("12.00"));
+        assertThat(result).filteredOn(row -> row.taxTreatment().equals("NON_TAXABLE")).singleElement()
+                .satisfies(row -> assertThat(row.netSales()).isEqualByComparingTo("10.00"));
+        assertThat(result.stream().map(EndOfDayCategorySalesSummaryResponse::netSales)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("22.00");
+    }
+
+    @Test
     void legacyStandaloneLotteryRecordsAreNotAddedToCompletedSaleTotals() {
         LotterySale registerOneSold = lotterySale("R1", "200.00");
         LotterySale registerTwoSold = lotterySale("R2", "300.00");

@@ -3,6 +3,7 @@ package com.merchtyl.sales;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductVariant;
+import com.merchtyl.product.ProductTaxClass;
 import com.merchtyl.product.DepositType;
 import com.merchtyl.product.SellableType;
 import jakarta.persistence.Column;
@@ -53,7 +54,20 @@ public class SaleItem extends BaseUuidEntity {
 
     private UUID taxCategorySnapshotId;
 
+    @Column(length = 64)
+    private String taxCategoryCodeSnapshot;
+
+    @Column(length = 180)
+    private String taxCategoryNameSnapshot;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private ProductTaxClass productTaxClassSnapshot;
+
     private UUID categorySnapshotId;
+
+    @Column(length = 64)
+    private String categoryCodeSnapshot;
 
     @Column(length = 180)
     private String categoryNameSnapshot;
@@ -306,6 +320,11 @@ public class SaleItem extends BaseUuidEntity {
     void snapshotTaxes(TaxCategory category, java.util.Map<UUID, TaxReportingType> reportingTypes,
                        List<TaxComponentCalculationResponse> components) {
         taxCategorySnapshotId = category == null ? taxCategorySnapshotId : category.getId();
+        if (category != null) {
+            taxCategoryCodeSnapshot = category.getCode();
+            taxCategoryNameSnapshot = category.getName();
+        }
+        productTaxClassSnapshot = product == null ? null : product.getTaxClass();
         taxSnapshots.clear();
         components.forEach(component -> taxSnapshots.add(new SaleItemTax(this, category,
                 reportingTypes.getOrDefault(component.taxComponentId(), TaxReportingType.OTHER), component)));
@@ -341,6 +360,7 @@ public class SaleItem extends BaseUuidEntity {
         this.sellableTypeSnapshot = product.getSellableType();
         if (product.getCategory() != null) {
             this.categorySnapshotId = product.getCategory().getId();
+            this.categoryCodeSnapshot = product.getCategory().getCode();
             this.categoryNameSnapshot = product.getCategory().getName();
         }
     }
@@ -379,7 +399,11 @@ public class SaleItem extends BaseUuidEntity {
     public CustomItemTaxTreatment getCustomItemTaxTreatment() { return customItemTaxTreatment; }
     public HistoricalTaxTreatment getHistoricalTaxTreatment() { return historicalTaxTreatment; }
     public UUID getTaxCategorySnapshotId() { return taxCategorySnapshotId; }
+    public String getTaxCategoryCodeSnapshot() { return taxCategoryCodeSnapshot; }
+    public String getTaxCategoryNameSnapshot() { return taxCategoryNameSnapshot; }
+    public ProductTaxClass getProductTaxClassSnapshot() { return productTaxClassSnapshot; }
     public UUID getCategorySnapshotId() { return categorySnapshotId; }
+    public String getCategoryCodeSnapshot() { return categoryCodeSnapshot; }
     public String getCategoryNameSnapshot() { return categoryNameSnapshot; }
 
     public ProductVariant getVariant() { return variant; }

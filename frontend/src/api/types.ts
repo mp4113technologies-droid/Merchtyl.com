@@ -654,6 +654,8 @@ export type EndOfDayRegisterSummary = {
   floatAdditions: number;
   floatRemovals: number;
   expenses: number;
+  payouts?: number;
+  payoutReversals?: number;
   closingAdjustments: number;
   expectedCash: number;
   countedCash: number;
@@ -694,9 +696,18 @@ export type EndOfDayTaxSummary = {
 
 export type EndOfDayCategorySalesSummary = {
   categoryId: string | null;
+  categoryCode?: string | null;
   categoryName: string;
+  taxTreatment?: 'TAXABLE' | 'NON_TAXABLE' | 'VAPE' | 'CUSTOM' | 'LEGACY';
+  taxTreatmentLabel?: string;
+  taxCategoryCode?: string | null;
+  taxCategoryName?: string | null;
   quantitySold: number;
+  grossSales?: number;
+  discounts?: number;
+  refunds?: number;
   netSales: number;
+  taxCollected?: number;
   percentage: number;
 };
 
@@ -772,6 +783,16 @@ export type EndOfDaySignOff = {
   confirmationAccepted: boolean;
 };
 
+export type EndOfDayRegisterReconciliation = {
+  registerId: string;
+  registerCode: string;
+  registerName: string;
+  sessionCount: number;
+  expectedCash: number;
+  countedCash: number;
+  variance: number;
+};
+
 export type EndOfDayReport = {
   id: string;
   businessDayId: string;
@@ -786,6 +807,9 @@ export type EndOfDayReport = {
   generatedAt: string;
   generatedBy: string;
   generatedByName: string;
+  totalSales?: number;
+  totalSalesBeforeTax?: number;
+  totalTaxCollected?: number;
   grossSales: number;
   netSales: number;
   discountTotal: number;
@@ -797,7 +821,6 @@ export type EndOfDayReport = {
   taxCollected?: number;
   generalTaxCollected?: number;
   vapeTaxCollected?: number;
-  totalTaxCollected?: number;
   merchandiseNetSales?: number;
   depositsCollected: number;
   depositPayouts: number;
@@ -812,6 +835,7 @@ export type EndOfDayReport = {
   countedCash: number;
   cashVariance: number;
   currencyCode: string;
+  registerReconciliation?: EndOfDayRegisterReconciliation[];
   registers: EndOfDayRegisterSummary[];
   payments: EndOfDayPaymentSummary[];
   taxes: EndOfDayTaxSummary[];
@@ -1783,6 +1807,8 @@ export type CashLedgerBreakdown = {
 export type CashMovementType =
   | 'CASH_IN'
   | 'CASH_OUT'
+  | 'PAYOUT'
+  | 'PAYOUT_REVERSAL'
   | 'SAFE_DROP'
   | 'FLOAT_ADD'
   | 'FLOAT_REMOVE'
@@ -1802,10 +1828,12 @@ export type CashMovement = {
   reason: string;
   notes: string | null;
   createdBy: string;
+  createdByName?: string | null;
   occurredAt: string;
   approvedBy: string | null;
   approvedAt: string | null;
   approvalNotes: string | null;
+  reversedMovementId?: string | null;
   createdAt: string;
   updatedAt: string;
   version: number;

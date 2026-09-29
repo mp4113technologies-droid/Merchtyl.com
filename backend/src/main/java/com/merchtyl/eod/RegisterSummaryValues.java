@@ -17,6 +17,8 @@ public record RegisterSummaryValues(
         BigDecimal floatAdditions,
         BigDecimal floatRemovals,
         BigDecimal expenses,
+        BigDecimal payouts,
+        BigDecimal payoutReversals,
         BigDecimal closingAdjustments,
         BigDecimal expectedCash,
         BigDecimal countedCash,

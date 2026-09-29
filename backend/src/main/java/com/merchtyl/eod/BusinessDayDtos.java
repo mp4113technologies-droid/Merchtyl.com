@@ -202,6 +202,9 @@ record EndOfDayClosingPreviewResponse(
         LocalDate businessDate,
         BusinessDayStatus businessDayStatus,
         long businessDayVersion,
+        BigDecimal totalSales,
+        BigDecimal totalSalesBeforeTax,
+        BigDecimal totalTaxCollected,
         @Schema(description = "Gross completed sales as a decimal monetary value.", example = "1250.00")
         BigDecimal grossSales,
         @Schema(description = "Net sales after discounts, refunds, and voids as a decimal monetary value.", example = "1175.50")
@@ -237,6 +240,7 @@ record EndOfDayClosingPreviewResponse(
         boolean varianceExplanationRequired,
         boolean managerSignOffRequired,
         String currencyCode,
+        List<EndOfDayRegisterReconciliationResponse> registerReconciliation,
         List<EndOfDayRegisterSummaryResponse> registers,
         List<EndOfDayPaymentSummaryResponse> payments,
         List<EndOfDayTaxSummaryResponse> taxes,
@@ -285,6 +289,9 @@ record EndOfDayReportResponse(
         Instant generatedAt,
         UUID generatedBy,
         String generatedByName,
+        BigDecimal totalSales,
+        BigDecimal totalSalesBeforeTax,
+        BigDecimal totalTaxCollected,
         @Schema(description = "Gross completed sales as a decimal monetary value.", example = "1250.00")
         BigDecimal grossSales,
         @Schema(description = "Net sales as a decimal monetary value.", example = "1175.50")
@@ -317,6 +324,7 @@ record EndOfDayReportResponse(
         @Schema(description = "Cash variance as a decimal monetary value.", example = "0.00")
         BigDecimal cashVariance,
         String currencyCode,
+        List<EndOfDayRegisterReconciliationResponse> registerReconciliation,
         List<EndOfDayRegisterSummaryResponse> registers,
         List<EndOfDayPaymentSummaryResponse> payments,
         List<EndOfDayTaxSummaryResponse> taxes,
@@ -345,6 +353,9 @@ record EndOfDayReportResponse(
                 report.getGeneratedAt(),
                 report.getGeneratedBy().getId(),
                 display(report.getGeneratedBy()),
+                totalSales(report),
+                totalSalesBeforeTax(report),
+                totalTaxCollected(report),
                 report.getGrossSales(),
                 report.getNetSales(),
                 report.getDiscountTotal(),
@@ -368,6 +379,7 @@ record EndOfDayReportResponse(
                 report.getCountedCash(),
                 report.getCashVariance(),
                 report.getCurrencyCode(),
+                EndOfDayRegisterReconciliationResponse.aggregate(report.getRegisterSummaries().stream().map(EndOfDayRegisterSummaryResponse::from).toList()),
                 report.getRegisterSummaries().stream().map(EndOfDayRegisterSummaryResponse::from).toList(),
                 report.getPaymentSummaries().stream().map(EndOfDayPaymentSummaryResponse::from).toList(),
                 report.getTaxSummaries().stream().map(EndOfDayTaxSummaryResponse::from).toList(),
@@ -381,24 +393,89 @@ record EndOfDayReportResponse(
                 report.getVersion());
     }
 
+    private static BigDecimal totalSalesBeforeTax(EndOfDayReport report) {
+        return report.getTaxSummaries().stream()
+                .map(value -> value.getTaxableSales().add(value.getExemptSales()))
+                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+    }
+
+    private static BigDecimal totalTaxCollected(EndOfDayReport report) {
+        return report.getTaxSummaries().stream()
+                .map(EndOfDayTaxSummary::getNetTaxCollected)
+                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+    }
+
+    private static BigDecimal totalSales(EndOfDayReport report) {
+        return totalSalesBeforeTax(report).add(totalTaxCollected(report));
+    }
+
     private static String display(com.merchtyl.security.User user) {
         return user.getDisplayName() == null || user.getDisplayName().isBlank() ? user.getEmail() : user.getDisplayName();
     }
 }
 
+record EndOfDayRegisterReconciliationResponse(
+        UUID registerId,
+        String registerCode,
+        String registerName,
+        long sessionCount,
+        BigDecimal expectedCash,
+        BigDecimal countedCash,
+        BigDecimal variance
+) {
+    static List<EndOfDayRegisterReconciliationResponse> aggregate(List<EndOfDayRegisterSummaryResponse> sessions) {
+        return sessions.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        EndOfDayRegisterSummaryResponse::registerId,
+                        java.util.LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()))
+                .values().stream()
+                .map(group -> {
+                    EndOfDayRegisterSummaryResponse latest = group.stream()
+                            .max(java.util.Comparator.comparing(EndOfDayRegisterSummaryResponse::closedAt,
+                                    java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                                    .thenComparing(EndOfDayRegisterSummaryResponse::openedAt))
+                            .orElseThrow();
+                    return new EndOfDayRegisterReconciliationResponse(
+                            latest.registerId(), latest.registerCode(), latest.registerName(), group.size(),
+                            latest.expectedCash(), latest.countedCash(), latest.variance());
+                })
+                .sorted(java.util.Comparator.comparing(EndOfDayRegisterReconciliationResponse::registerCode))
+                .toList();
+    }
+}
+
 record EndOfDayCategorySalesSummaryResponse(
         UUID categoryId,
+        String categoryCode,
         String categoryName,
+        String taxTreatment,
+        String taxTreatmentLabel,
+        String taxCategoryCode,
+        String taxCategoryName,
         BigDecimal quantitySold,
+        BigDecimal grossSales,
+        BigDecimal discounts,
+        BigDecimal refunds,
         BigDecimal netSales,
+        BigDecimal taxCollected,
         BigDecimal percentage
 ) {
     static EndOfDayCategorySalesSummaryResponse from(EndOfDayCategorySalesSummary summary) {
         return new EndOfDayCategorySalesSummaryResponse(
                 summary.getCategoryId(),
+                summary.getCategoryCode(),
                 summary.getCategoryName(),
+                summary.getTaxTreatment(),
+                summary.getTaxTreatmentLabel(),
+                summary.getTaxCategoryCode(),
+                summary.getTaxCategoryName(),
                 summary.getQuantitySold(),
+                summary.getGrossSales(),
+                summary.getDiscounts(),
+                summary.getRefunds(),
                 summary.getNetSales(),
+                summary.getTaxCollected(),
                 summary.getPercentage());
     }
 }
@@ -422,6 +499,8 @@ record EndOfDayRegisterSummaryResponse(
         BigDecimal floatAdditions,
         BigDecimal floatRemovals,
         BigDecimal expenses,
+        BigDecimal payouts,
+        BigDecimal payoutReversals,
         BigDecimal closingAdjustments,
         BigDecimal expectedCash,
         BigDecimal countedCash,
@@ -455,6 +534,8 @@ record EndOfDayRegisterSummaryResponse(
                 summary.getFloatAdditions(),
                 summary.getFloatRemovals(),
                 summary.getExpenses(),
+                summary.getPayouts(),
+                summary.getPayoutReversals(),
                 summary.getClosingAdjustments(),
                 summary.getExpectedCash(),
                 summary.getCountedCash(),

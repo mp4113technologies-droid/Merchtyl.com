@@ -53,6 +53,7 @@ import {
   cancelSale,
   checkoutSaleCart,
   completeSale,
+  createCashMovement,
   getCurrentRegisterSession,
   getEffectiveStoreCapability,
   getSale,
@@ -70,7 +71,7 @@ import {
   reprintSaleReceipt,
   resumeSale,
 } from '../../api/client';
-import type { Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, PosQuickKey, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, SellableType, Store } from '../../api/types';
+import type { CashMovement, Device, DiscountDefinition, PaymentMethod, PosBarcodeLookup, PosQuickKey, Product, Receipt, ReceiptDocument, Register, RegisterSession, Sale, SaleItem, SellableType, Store } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { bestMultiBuyPromotion } from './multiBuyPricing';
@@ -203,6 +204,38 @@ function DepositPayoutDialog({ open, currencyCode, onClose, onSubmit }: {
         <Button onClick={onClose}>Cancel</Button>
         <Button type="submit" variant="contained" color="warning" disabled={!valid}>Add to Cart</Button>
       </DialogActions>
+    </Box>
+  </Dialog>;
+}
+
+const payoutReasons = [
+  ['VENDOR_PAYMENT', 'Vendor Payment'], ['PETTY_CASH', 'Petty Cash'], ['STORE_EXPENSE', 'Store Expense'],
+  ['EMPLOYEE_REIMBURSEMENT', 'Employee Reimbursement'], ['OTHER', 'Other']
+] as const;
+
+function CashPayoutDialog({ open, currencyCode, expectedCash, busy, error, onClose, onSubmit }: {
+  open: boolean; currencyCode: string; expectedCash: number; busy: boolean; error?: unknown;
+  onClose: () => void; onSubmit: (value: { amount: number; reason: string; note?: string }) => void;
+}) {
+  const [amount, setAmount] = React.useState('');
+  const [reason, setReason] = React.useState('VENDOR_PAYMENT');
+  const [note, setNote] = React.useState('');
+  React.useEffect(() => { if (open) { setAmount(''); setReason('VENDOR_PAYMENT'); setNote(''); } }, [open]);
+  const numericAmount = Number(amount);
+  const validAmount = Number.isFinite(numericAmount) && numericAmount > 0 && /^\d+(\.\d{1,2})?$/.test(amount);
+  const exceedsCash = validAmount && numericAmount > expectedCash;
+  const valid = validAmount && !exceedsCash && (reason !== 'OTHER' || note.trim().length > 0);
+  return <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+    <Box component="form" onSubmit={(event) => { event.preventDefault(); if (valid && !busy) onSubmit({ amount: numericAmount, reason, note: note.trim() || undefined }); }}>
+      <DialogTitle>Cash Payout</DialogTitle>
+      <DialogContent sx={{ pt: '8px !important' }}><Stack spacing={1.5}>
+        <TextField autoFocus fullWidth required label={`Amount (${currencyCode})`} value={amount} onChange={(event) => setAmount(event.target.value)} type="number" inputProps={{ min: 0.01, step: 0.01, inputMode: 'decimal' }} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} />
+        <TextField select fullWidth required label="Reason" value={reason} onChange={(event) => setReason(event.target.value)}>{payoutReasons.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>
+        <TextField fullWidth required={reason === 'OTHER'} label="Note" value={note} onChange={(event) => setNote(event.target.value)} multiline minRows={2} />
+        {exceedsCash ? <Alert severity="error">Cash payout exceeds expected till cash. Expected cash currently available: {money(expectedCash, currencyCode)}. Requested payout: {money(numericAmount, currencyCode)}.</Alert> : null}
+        {error ? <Alert severity="error">{posErrorMessage(error)}</Alert> : null}
+      </Stack></DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}><Button disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" variant="contained" color="warning" disabled={!valid || busy}>{busy ? 'Recording…' : 'Record Payout'}</Button></DialogActions>
     </Box>
   </Dialog>;
 }
@@ -1074,6 +1107,8 @@ export function PosCartPage() {
   const [printingReceipt, setPrintingReceipt] = React.useState(false);
   const [lotteryAction, setLotteryAction] = React.useState<'SOLD' | 'WIN' | null>(null);
   const [depositPayoutOpen, setDepositPayoutOpen] = React.useState(false);
+  const [cashPayoutOpen, setCashPayoutOpen] = React.useState(false);
+  const [recordedPayout, setRecordedPayout] = React.useState<CashMovement | null>(null);
   const [lotteryNotice, setLotteryNotice] = React.useState<string | null>(null);
   const [payoutConfirmationOpen, setPayoutConfirmationOpen] = React.useState(false);
   const completionKeyRef = React.useRef<string | null>(null);
@@ -1095,6 +1130,28 @@ export function PosCartPage() {
   const current = useQuery({
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier })
+  });
+
+  const cashPayoutMutation = useMutation({
+    mutationFn: async (value: { amount: number; reason: string; note?: string }) => {
+      if (!current.data) throw new Error('No active register session');
+      return createCashMovement(await getValidAccessToken(), {
+        registerSessionId: current.data.id,
+        type: 'PAYOUT',
+        amount: value.amount,
+        reason: value.reason,
+        notes: value.note,
+        occurredAt: new Date().toISOString()
+      });
+    },
+    onSuccess: async (movement) => {
+      setCashPayoutOpen(false);
+      setRecordedPayout(movement);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: registerSessionKeys.current(browserDeviceIdentifier) }),
+        queryClient.invalidateQueries({ queryKey: ['cash-movements'] })
+      ]);
+    }
   });
 
   React.useEffect(() => {
@@ -1835,6 +1892,7 @@ export function PosCartPage() {
                   {currentUser?.permissions?.includes('POS_DEPOSIT_PAYOUT') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setDepositPayoutOpen(true)}>Deposit Payout</Button> : null}
                   {lotteryEnabled && currentUser?.permissions?.includes('LOTTERY_SALE_RECORD') ? <Button size="small" variant="outlined" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setLotteryAction('SOLD')}>Lottery Sold</Button> : null}
                   {lotteryEnabled && currentUser?.permissions?.includes('LOTTERY_PAYOUT_RECORD') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setLotteryAction('WIN')}>Lottery Win</Button> : null}
+                  {currentUser?.permissions?.includes('CASH_MOVEMENT_CREATE') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={Boolean(current.data?.tillSecured) || cashPayoutMutation.isPending} sx={posActionButtonSx} onClick={() => { cashPayoutMutation.reset(); setCashPayoutOpen(true); }}>Payout</Button> : null}
                 </Box>
               </Stack>
             </Paper>
@@ -1935,6 +1993,24 @@ export function PosCartPage() {
         onSubmit={(amount) => lotteryAction && addLotteryItem(lotteryAction, amount)}
       />
       <DepositPayoutDialog open={depositPayoutOpen} currencyCode={currencyCode} onClose={() => setDepositPayoutOpen(false)} onSubmit={addDepositPayout} />
+      <CashPayoutDialog open={cashPayoutOpen} currencyCode={currencyCode} expectedCash={current.data?.expectedCash ?? 0} busy={cashPayoutMutation.isPending} error={cashPayoutMutation.error} onClose={() => setCashPayoutOpen(false)} onSubmit={(value) => cashPayoutMutation.mutate(value)} />
+      <Dialog open={recordedPayout !== null} onClose={() => setRecordedPayout(null)} fullWidth maxWidth="xs">
+        <style>{`@media print { body * { visibility: hidden !important; } [data-payout-slip], [data-payout-slip] * { visibility: visible !important; } [data-payout-slip] { position: fixed; inset: 0 auto auto 0; width: 76mm; padding: 8mm; color: #000; background: #fff; } }`}</style>
+        <DialogTitle>Payout Recorded</DialogTitle>
+        <DialogContent data-payout-slip><Stack spacing={1} sx={{ pt: 1 }}>
+          <Typography variant="h6" textAlign="center">MERCHTYL</Typography>
+          <Typography variant="subtitle1" fontWeight={700} textAlign="center">CASH PAYOUT</Typography>
+          <Typography><strong>Store:</strong> {store?.name ?? 'Current store'}</Typography>
+          <Typography><strong>Amount:</strong> {money(recordedPayout?.amount ?? 0, recordedPayout?.currencyCode ?? currencyCode)}</Typography>
+          <Typography><strong>Reason:</strong> {payoutReasons.find(([value]) => value === recordedPayout?.reason)?.[1] ?? recordedPayout?.reason}</Typography>
+          {recordedPayout?.notes ? <Typography><strong>Note:</strong> {recordedPayout.notes}</Typography> : null}
+          <Typography><strong>Register:</strong> {register?.code ?? 'Current register'}</Typography>
+          <Typography><strong>Recorded By:</strong> {currentUser?.displayName ?? currentUser?.email}</Typography>
+          <Typography><strong>Date/Time:</strong> {recordedPayout ? new Date(recordedPayout.occurredAt).toLocaleString() : ''}</Typography>
+          <Typography sx={{ pt: 3 }}>Signature: __________________</Typography>
+        </Stack></DialogContent>
+        <DialogActions><Button onClick={() => window.print()} startIcon={<PrintOutlinedIcon />}>Print Slip</Button><Button variant="contained" onClick={() => setRecordedPayout(null)}>Done</Button></DialogActions>
+      </Dialog>
       <Dialog open={payoutConfirmationOpen} onClose={completeMutation.isPending ? undefined : () => setPayoutConfirmationOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>{activeSale?.items.some(item => item.lineType === 'DEPOSIT_PAYOUT') ? 'Confirm deposit cash payout' : 'Confirm lottery cash payout'}</DialogTitle>
         <DialogContent>
