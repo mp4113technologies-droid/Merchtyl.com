@@ -72,9 +72,9 @@ public class RegisterBusinessDayCashState extends BaseUuidEntity {
         initializeIdAndTimestamps();
     }
 
-    public void openHandoff(BigDecimal openingCash) {
+    public void openNextShift(BigDecimal openingCash) {
         if (retainedCash.compareTo(openingCash) != 0) {
-            throw new IllegalArgumentException("Session opening balance must equal retained till cash");
+            throw new IllegalArgumentException("Till must be restored to its configured starting amount before opening");
         }
         sessionCount++;
     }

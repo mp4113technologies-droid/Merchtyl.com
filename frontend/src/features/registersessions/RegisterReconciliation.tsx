@@ -96,14 +96,14 @@ export function RegisterReconciliationDialog({ open, session, registerName, curr
       {settlement ? <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1}>
         <Typography>Expected Cash: <strong>{money(settlement.expectedCash, currencyCode)}</strong></Typography>
         <Typography>Variance: <strong>{money(settlement.variance, currencyCode)}</strong></Typography>
-        <Typography>Target Till Float: <strong>{settlement.targetTillFloat == null ? 'Not configured' : money(settlement.targetTillFloat, currencyCode)}</strong></Typography>
-        <Typography>Keep in Till: <strong>{money(settlement.cashToLeave, currencyCode)}</strong></Typography>
-        <Typography variant="h6">Remove From Till: <strong>{money(settlement.cashToRemove, currencyCode)}</strong></Typography>
+        <Typography>Default Till Amount: <strong>{settlement.targetTillFloat == null ? 'Not configured' : money(settlement.targetTillFloat, currencyCode)}</strong></Typography>
+        <Typography>Cash Remaining in Till: <strong>{money(settlement.cashToLeave, currencyCode)}</strong></Typography>
+        <Typography variant="h5" color="error.main">CASH TO BAG: <strong>{money(settlement.cashToRemove, currencyCode)}</strong></Typography>
         {settlement.amountNeededToRestoreFloat > 0 ? <Alert severity="warning">Amount Needed to Restore Float: {money(settlement.amountNeededToRestoreFloat, currencyCode)}</Alert> : null}
       </Stack></Paper> : <Typography>Variance: <strong>{money(variance, currencyCode)}</strong></Typography>}
     </Stack></DialogContent><DialogActions><Button onClick={onClose}>Cancel</Button>
       {active?.status === 'OPEN' ? <Button variant="contained" disabled={start.isPending} onClick={() => start.mutate()}>Start Closing</Button> : settlement
-        ? <Button variant="contained" startIcon={<ReceiptLongOutlinedIcon />} disabled={complete.isPending} onClick={() => complete.mutate()}>Confirm Cash Removed & Close</Button>
+        ? <Button variant="contained" startIcon={<ReceiptLongOutlinedIcon />} disabled={complete.isPending} onClick={() => complete.mutate()}>Confirm Cash Bag & Close Shift</Button>
         : <Button variant="contained" disabled={!active || active.status !== 'CLOSING' || preview.isPending || countedCash === '' || Number(countedCash) < 0} onClick={() => preview.mutate()}>Review Till Settlement</Button>}
     </DialogActions></Dialog>;
 }

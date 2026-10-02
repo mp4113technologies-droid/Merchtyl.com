@@ -232,12 +232,15 @@ public class RegisterSessionService {
                 device,
                 cashier,
                 opening.amount(),
+                RegisterSessionOpeningSource.valueOf(opening.source()),
                 Instant.now(clock));
         RegisterSession saved = save(session);
         if (opening.cashState() != null) {
             registerBusinessDayCashStateRepository.saveAndFlush(opening.cashState());
         }
-        cashLedgerService.appendOpeningFloat(saved, cashier);
+        if (opening.firstPhysicalOpen() && opening.amount().signum() > 0) {
+            cashLedgerService.appendOpeningFloat(saved, cashier);
+        }
         RegisterSessionResponse response = RegisterSessionResponse.from(saved, cashLedgerService.expectedCash(saved));
         auditService.record(new CreateAuditRecordCommand(
                 cashier.getId(),
@@ -276,16 +279,21 @@ public class RegisterSessionService {
             BigDecimal openingCash = register.getEffectiveTillFloat();
             String source = register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE"
                     : openingCash != null ? "STORE_DEFAULT" : "MANUAL_ENTRY";
+            boolean firstRegisterOpening = true;
             if (registerBusinessDayCashStateRepository != null) {
                 var cashState = registerBusinessDayCashStateRepository
                         .findFirstByRegister_IdAndBusinessDay_StatusInOrderByCreatedAtDesc(registerId,
                                 java.util.List.of(BusinessDayStatus.OPEN, BusinessDayStatus.REOPENED));
+                firstRegisterOpening = cashState.isEmpty();
                 if (cashState.isPresent()) {
-                    openingCash = cashState.get().getRetainedCash();
-                    source = "SHIFT_HANDOFF";
+                    BigDecimal target = cashState.get().getTargetFloat();
+                    openingCash = target == null ? cashState.get().getRetainedCash() : target;
+                    source = target == null ? "MANUAL_ENTRY"
+                            : register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE" : "STORE_DEFAULT";
                 }
             }
-            return RegisterAvailabilityResponse.available(registerId, register.getType(), openingCash, source);
+            return RegisterAvailabilityResponse.available(registerId, register.getType(), openingCash, source,
+                    firstRegisterOpening);
         }
         RegisterSession session = active.get();
         boolean own = session.getAssignedCashier().getId().equals(actor.getId());
@@ -293,7 +301,7 @@ public class RegisterSessionService {
         return new RegisterAvailabilityResponse(registerId, register.getType(), own ? "YOUR_SESSION" : "IN_USE",
                 own || management ? session.getId() : null,
                 own || management ? session.getAssignedCashier().getDisplayName() : null,
-                session.getOpenedAt(), own || management ? session.getVersion() : null, null, null);
+                session.getOpenedAt(), own || management ? session.getVersion() : null, null, null, null);
     }
 
     @Transactional
@@ -751,7 +759,7 @@ public class RegisterSessionService {
     private OpeningCashResolution resolveOpeningCash(
             Store store, Register register, BusinessDay businessDay, BigDecimal requestedOpeningCash) {
         if (registerBusinessDayCashStateRepository == null || businessDay == null) {
-            return new OpeningCashResolution(normalizeOpeningCash(requestedOpeningCash), "MANUAL_ENTRY", null);
+            return new OpeningCashResolution(normalizeOpeningCash(requestedOpeningCash), "MANUAL_ENTRY", null, true);
         }
         RegisterBusinessDayCashState state = registerBusinessDayCashStateRepository
                 .findForUpdate(businessDay.getId(), register.getId())
@@ -762,11 +770,19 @@ public class RegisterSessionService {
             String source = configured == null ? "MANUAL_ENTRY"
                     : register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE" : "STORE_DEFAULT";
             return new OpeningCashResolution(openingCash, source, new RegisterBusinessDayCashState(
-                    store, register, businessDay, openingCash, configured));
+                    store, register, businessDay, openingCash, configured), true);
         }
-        BigDecimal openingCash = state.getRetainedCash();
-        state.openHandoff(openingCash);
-        return new OpeningCashResolution(openingCash, "SHIFT_HANDOFF", state);
+        BigDecimal openingCash = state.getTargetFloat() == null
+                ? requireExplicitOpeningCash(requestedOpeningCash)
+                : state.getTargetFloat();
+        String source = state.getTargetFloat() == null ? "MANUAL_ENTRY"
+                : register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE" : "STORE_DEFAULT";
+        try {
+            state.openNextShift(openingCash);
+        } catch (IllegalArgumentException exception) {
+            throw new ConflictException("TILL_RESTORE_REQUIRED");
+        }
+        return new OpeningCashResolution(openingCash, source, state, false);
     }
 
     private RegisterTillSettlementResponse calculateSettlement(
@@ -1039,5 +1055,6 @@ public class RegisterSessionService {
     }
 
     private record OpeningCashResolution(BigDecimal amount, String source,
-                                         RegisterBusinessDayCashState cashState) {}
+                                         RegisterBusinessDayCashState cashState,
+                                         boolean firstPhysicalOpen) {}
 }

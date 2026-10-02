@@ -46,7 +46,8 @@ public record RegisterSessionResponse(
         UUID retentionOverrideByUserId,
         String retentionOverrideByDisplayName,
         String retentionOverrideReason,
-        String currencyCode
+        String currencyCode,
+        RegisterSessionOpeningSource openingSource
 ) {
     public RegisterSessionResponse(
             UUID id, UUID storeId, UUID registerId, UUID deviceId,
@@ -60,7 +61,7 @@ public record RegisterSessionResponse(
                 assignedCashierDisplayName, assignedCashierId, assignedCashierDisplayName, status, openingCash, expectedCash, countedCash,
                 expectedCashAtClose, differenceCash, closedByUserId, closedByEmail, closedByDisplayName,
                 closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false,
-                SalesClassification.zero(), null, null, null, null, null, null, "USD");
+                SalesClassification.zero(), null, null, null, null, null, null, "USD", null);
     }
 
     static RegisterSessionResponse from(RegisterSession session, BigDecimal expectedCash) {
@@ -96,7 +97,7 @@ public record RegisterSessionResponse(
                 session.getTargetFloatAtClose(), session.getCashRetained(), session.getCashRemoved(),
                 session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getId(),
                 session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getDisplayName(),
-                session.getRetentionOverrideReason(), session.getStore().getCurrencyCode());
+                session.getRetentionOverrideReason(), session.getStore().getCurrencyCode(), session.getOpeningSource());
     }
 
     static RegisterSessionResponse from(RegisterSession session, CashLedgerBreakdownResponse reconciliation) {
@@ -137,6 +138,6 @@ public record RegisterSessionResponse(
                 session.getTargetFloatAtClose(), session.getCashRetained(), session.getCashRemoved(),
                 session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getId(),
                 session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getDisplayName(),
-                session.getRetentionOverrideReason(), session.getStore().getCurrencyCode());
+                session.getRetentionOverrideReason(), session.getStore().getCurrencyCode(), session.getOpeningSource());
     }
 }

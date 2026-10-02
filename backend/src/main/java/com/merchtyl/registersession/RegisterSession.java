@@ -53,6 +53,10 @@ public class RegisterSession extends BaseUuidEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal openingCash;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "opening_source", length = 32)
+    private RegisterSessionOpeningSource openingSource;
+
     @Column(nullable = false)
     private Instant openedAt;
 
@@ -111,6 +115,19 @@ public class RegisterSession extends BaseUuidEntity {
             User assignedCashier,
             BigDecimal openingCash,
             Instant openedAt) {
+        this(store, register, businessDay, device, assignedCashier, openingCash,
+                RegisterSessionOpeningSource.MANUAL_ENTRY, openedAt);
+    }
+
+    RegisterSession(
+            Store store,
+            Register register,
+            BusinessDay businessDay,
+            Device device,
+            User assignedCashier,
+            BigDecimal openingCash,
+            RegisterSessionOpeningSource openingSource,
+            Instant openedAt) {
         this.store = store;
         this.register = register;
         this.businessDay = businessDay;
@@ -119,6 +136,7 @@ public class RegisterSession extends BaseUuidEntity {
         this.openedBy = assignedCashier;
         this.status = RegisterSessionStatus.OPEN;
         this.openingCash = openingCash;
+        this.openingSource = openingSource;
         this.openedAt = openedAt;
         initializeIdAndTimestamps();
     }
@@ -173,6 +191,10 @@ public class RegisterSession extends BaseUuidEntity {
 
     public BigDecimal getOpeningCash() {
         return openingCash;
+    }
+
+    public RegisterSessionOpeningSource getOpeningSource() {
+        return openingSource;
     }
 
     public Instant getOpenedAt() {

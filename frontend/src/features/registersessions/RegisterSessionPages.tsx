@@ -169,6 +169,13 @@ function movementLabel(value: CashMovementType) {
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function openingSourceLabel(source: RegisterSession['openingSource']) {
+  if (source === 'STORE_DEFAULT') return 'Store Default Till Amount';
+  if (source === 'REGISTER_OVERRIDE') return 'Register Default Till Amount';
+  if (source === 'MANUAL_ENTRY') return 'Verified Manual Opening Cash';
+  return 'Historical source not recorded';
+}
+
 function SessionMetricCard({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
   return <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, minHeight: 104, height: '100%' }}>
     <Stack spacing={0.75} justifyContent="center" sx={{ height: '100%' }}>
@@ -567,7 +574,7 @@ export function RegisterClosePage() {
                     startIcon={<ReceiptLongOutlinedIcon />}
                     disabled={current.data.status !== 'CLOSING' || closeMutation.isPending || previewMutation.isPending || forceCloseMutation.isPending}
                   >
-                    {settlement ? 'Confirm Cash Removed & Close Register' : 'Review Till Settlement'}
+                    {settlement ? 'Confirm Cash Bag & Close Shift' : 'Review Shift Cash Settlement'}
                   </Button>
                   <Button type="button" variant="outlined" disabled={current.data.status !== 'CLOSING' || cancelClosingMutation.isPending || closeMutation.isPending}
                     onClick={() => cancelClosingMutation.mutate()}>
@@ -598,13 +605,13 @@ export function RegisterClosePage() {
                     <Grid item xs={6}><Typography color="text.secondary">Variance</Typography><Typography variant="h6" color={settlement.variance === 0 ? 'success.main' : 'warning.main'}>{money(settlement.variance)} — {settlement.variance === 0 ? 'BALANCED' : settlement.variance < 0 ? 'SHORT' : 'OVER'}</Typography></Grid>
                   </Grid>
                   <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
-                    <Typography variant="overline">Till Settlement</Typography>
-                    <Typography color="text.secondary">Target Till Float</Typography>
+                    <Typography variant="overline">Shift Cash Settlement</Typography>
+                    <Typography color="text.secondary">Default Till Amount</Typography>
                     <Typography variant="h6">{settlement.targetTillFloat == null ? 'Not configured' : money(settlement.targetTillFloat)}</Typography>
-                    <Typography color="text.secondary" sx={{ mt: 1 }}>Keep in Till</Typography>
+                    <Typography color="text.secondary" sx={{ mt: 1 }}>Cash Remaining in Till</Typography>
                     <Typography variant="h5" fontWeight={700}>{money(settlement.cashToLeave)}</Typography>
-                    <Typography color="text.secondary" sx={{ mt: 1 }}>Remove From Till</Typography>
-                    <Typography variant="h4" fontWeight={800} color="primary.main">{money(settlement.cashToRemove)}</Typography>
+                    <Typography color="error.main" sx={{ mt: 1, fontWeight: 700 }}>CASH TO BAG</Typography>
+                    <Typography variant="h4" fontWeight={800} color="error.main">{money(settlement.cashToRemove)}</Typography>
                     {settlement.amountNeededToRestoreFloat > 0 ? <Alert severity="warning" sx={{ mt: 2 }}>Amount Needed to Restore Float: {money(settlement.amountNeededToRestoreFloat)}. Record any top-up separately as Cash Paid In.</Alert> : null}
                   </Box>
                 </> : <Alert severity="info">Enter the counted cash, then review the backend-calculated settlement. Expected cash remains hidden until review.</Alert>}
@@ -667,12 +674,13 @@ export function RegisterHistoryPage() {
             </Stack>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Session Opening Balance" value={money(session.openingCash, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Opening Source" value={openingSourceLabel(session.openingSource)} /></Grid>
               <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Expected Cash at Close" value={money(session.expectedCashAtClose ?? session.expectedCash, session.currencyCode)} /></Grid>
               <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Counted Cash" value={session.countedCash == null ? 'Not counted' : money(session.countedCash, session.currencyCode)} /></Grid>
               <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Variance" value={session.differenceCash == null ? 'Not reconciled' : money(session.differenceCash, session.currencyCode)} /></Grid>
-              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Target Till Float" value={session.targetFloatAtClose == null ? 'Not configured' : money(session.targetFloatAtClose, session.currencyCode)} /></Grid>
-              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Cash Removed" value={session.cashRemoved == null ? 'Not settled' : money(session.cashRemoved, session.currencyCode)} /></Grid>
-              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Cash Left in Till" value={session.cashRetained == null ? 'Not settled' : money(session.cashRetained, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Default Till Amount" value={session.targetFloatAtClose == null ? 'Not configured' : money(session.targetFloatAtClose, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Cash to Bag" value={session.cashRemoved == null ? 'Not settled' : money(session.cashRemoved, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Cash Remaining in Till" value={session.cashRetained == null ? 'Not settled' : money(session.cashRetained, session.currencyCode)} /></Grid>
               <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Closed By" value={session.closedByDisplayName ?? 'Not recorded'} /></Grid>
             </Grid>
             <Box component="details" sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2 }}>
@@ -1327,12 +1335,10 @@ export function RegisterOpenPage() {
                       inputProps={{ min: 0, step: '0.01' }}
                       disabled={activeSessions.isLoading || availability.isLoading || availability.data?.openingCashSource !== 'MANUAL_ENTRY'}
                       error={Boolean(fieldState.error)}
-                      helperText={fieldState.error?.message ?? (availability.data?.openingCashSource === 'SHIFT_HANDOFF'
-                        ? 'Source: Previous Shift Handoff. This is the cash retained in the physical till.'
-                        : availability.data?.openingCashSource === 'REGISTER_OVERRIDE'
-                        ? 'Source: Register Override. This amount is configured for this physical register.'
+                      helperText={fieldState.error?.message ?? (availability.data?.openingCashSource === 'REGISTER_OVERRIDE'
+                        ? 'Source: Register Default Till Amount. This amount is configured for this physical register.'
                         : availability.data?.openingCashSource === 'STORE_DEFAULT'
-                        ? 'Source: Store Default. This amount is configured for the store.'
+                        ? 'Source: Store Default Till Amount. This amount is configured for the store.'
                         : selectedRegister?.effectiveTillFloat == null
                         ? 'Configured till float: Not configured. Count and enter the cash physically present.'
                         : `Configured till float: ${money(selectedRegister.effectiveTillFloat, selectedStoreId ? stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode : undefined)}. Verify and enter the cash physically present.`)}

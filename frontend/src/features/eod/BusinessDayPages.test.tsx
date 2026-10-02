@@ -347,13 +347,13 @@ describe('Business day pages', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Complete Reconciliation' })[0]);
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start Closing' }));
     await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Review Till Settlement' }));
-    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Confirm Cash Removed & Close' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Confirm Cash Bag & Close Shift' }));
     await waitFor(() => expect(screen.getByText('1 register requires reconciliation before this Business Day can be closed.')).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole('button', { name: 'Complete Reconciliation' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start Closing' }));
     await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Review Till Settlement' }));
-    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Confirm Cash Removed & Close' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Confirm Cash Bag & Close Shift' }));
 
     expect(await screen.findByText('All register sessions reconciled.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Close Business Day' })).not.toHaveAttribute('aria-disabled', 'true');
@@ -614,7 +614,7 @@ describe('Business day pages', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeDisabled());
     await userEvent.click(screen.getByRole('button', { name: 'Complete Reconciliation' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Review Till Settlement' }));
-    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm Cash Removed & Close' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm Cash Bag & Close Shift' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: 'Close Previous Business Day' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close Previous Business Day' }));

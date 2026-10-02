@@ -1777,6 +1777,7 @@ export type RegisterSession = {
   retentionOverrideByDisplayName?: string | null;
   retentionOverrideReason?: string | null;
   currencyCode?: string;
+  openingSource?: 'STORE_DEFAULT' | 'REGISTER_OVERRIDE' | 'MANUAL_ENTRY' | null;
 };
 
 export type RegisterTillSettlement = {
@@ -1802,7 +1803,8 @@ export type RegisterAvailability = {
   openedAt: string | null;
   version: number | null;
   openingCash: number | null;
-  openingCashSource: 'STORE_DEFAULT' | 'REGISTER_OVERRIDE' | 'SHIFT_HANDOFF' | 'MANUAL_ENTRY' | null;
+  openingCashSource: 'STORE_DEFAULT' | 'REGISTER_OVERRIDE' | 'MANUAL_ENTRY' | null;
+  firstRegisterOpeningForBusinessDay?: boolean | null;
 };
 
 export type CashLedgerDirection = 'IN' | 'OUT';

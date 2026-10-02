@@ -390,7 +390,8 @@ class RegisterSessionServiceTest {
 
         assertThat(result.state()).isEqualTo("AVAILABLE");
         assertThat(result.openingCash()).isEqualByComparingTo("440.00");
-        assertThat(result.openingCashSource()).isEqualTo("SHIFT_HANDOFF");
+        assertThat(result.openingCashSource()).isEqualTo("STORE_DEFAULT");
+        assertThat(result.firstRegisterOpeningForBusinessDay()).isFalse();
     }
 
     @Test
@@ -657,7 +658,7 @@ class RegisterSessionServiceTest {
     }
 
     @Test
-    void nextShiftMustOpenWithAuthoritativeRetainedCash() {
+    void nextShiftUsesDefaultTillAmountWithoutAppendingAnotherOpeningFloat() {
         RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
         ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
         when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
@@ -670,9 +671,11 @@ class RegisterSessionServiceTest {
                 STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("440.00")), authentication("ROLE_CASHIER"));
 
         assertThat(response.openingCash()).isEqualByComparingTo("440.00");
+        assertThat(response.openingSource()).isEqualTo(RegisterSessionOpeningSource.STORE_DEFAULT);
         assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
         assertThat(state.getSessionCount()).isEqualTo(2);
         verify(stateRepository).saveAndFlush(state);
+        verify(cashLedgerService, never()).appendOpeningFloat(any(), any());
     }
 
     @Test
@@ -691,6 +694,7 @@ class RegisterSessionServiceTest {
         assertThat(response.openingCash()).isEqualByComparingTo("440.00");
         assertThat(state.getValue().getInitialFloat()).isEqualByComparingTo("440.00");
         assertThat(state.getValue().getTargetFloat()).isEqualByComparingTo("440.00");
+        verify(cashLedgerService).appendOpeningFloat(any(RegisterSession.class), org.mockito.ArgumentMatchers.eq(cashier));
     }
 
     @Test
@@ -706,6 +710,7 @@ class RegisterSessionServiceTest {
                 STORE_ID, REGISTER_ID, DEVICE_ID, null), authentication("ROLE_CASHIER"));
 
         assertThat(response.openingCash()).isEqualByComparingTo("300.00");
+        assertThat(response.openingSource()).isEqualTo(RegisterSessionOpeningSource.REGISTER_OVERRIDE);
     }
 
     @Test
@@ -720,6 +725,8 @@ class RegisterSessionServiceTest {
                 STORE_ID, REGISTER_ID, DEVICE_ID, null), authentication("ROLE_CASHIER"));
 
         assertThat(response.openingCash()).isZero();
+        assertThat(response.openingSource()).isEqualTo(RegisterSessionOpeningSource.STORE_DEFAULT);
+        verify(cashLedgerService, never()).appendOpeningFloat(any(), any());
     }
 
     @Test

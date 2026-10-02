@@ -130,6 +130,7 @@ function registerSession(): RegisterSession {
     openedByDisplayName: 'Cashier One',
     status: 'OPEN',
     openingCash: 125.5,
+    openingSource: 'STORE_DEFAULT',
     expectedCash: 125.5,
     countedCash: null,
     expectedCashAtClose: null,
@@ -361,7 +362,7 @@ describe('Register session pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Close register' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel Closing' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Review Till Settlement' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Review Shift Cash Settlement' })).toBeEnabled();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/start-closing'))).toBe(true);
   });
 
@@ -471,7 +472,7 @@ describe('Register session pages', () => {
       if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse({
         ...availableRegister(physicalRegister),
         openingCash: 440,
-        openingCashSource: 'SHIFT_HANDOFF'
+        openingCashSource: 'STORE_DEFAULT'
       } satisfies RegisterAvailability);
       if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
         return jsonResponse(page<RegisterSession>([]));
@@ -488,7 +489,7 @@ describe('Register session pages', () => {
     const openingCash = await screen.findByLabelText('Actual Opening Cash');
     await waitFor(() => expect(openingCash).toHaveValue(440));
     expect(openingCash).toBeDisabled();
-    expect(screen.getByText(/Previous Shift Handoff/)).toBeInTheDocument();
+    expect(screen.getByText(/Store Default Till Amount/)).toBeInTheDocument();
     await userEvent.click(await screen.findByRole('button', { name: 'Open register' }));
 
     await waitFor(() => {
@@ -695,10 +696,10 @@ describe('Register session pages', () => {
     expect(await screen.findByText(/Expected cash remains hidden/)).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText('Counted cash'));
     await userEvent.type(screen.getByLabelText('Counted cash'), '115.00');
-    await userEvent.click(screen.getByRole('button', { name: 'Review Till Settlement' }));
-    expect(await screen.findByText('Remove From Till')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Review Shift Cash Settlement' }));
+    expect(await screen.findByText('CASH TO BAG')).toBeInTheDocument();
     expect(screen.getByText('$15.00')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm Cash Removed & Close Register' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Cash Bag & Close Shift' }));
 
     await waitFor(() => {
       const closeCall = fetchMock.mock.calls.find(([input, init]) => {
@@ -814,12 +815,14 @@ describe('Register session pages', () => {
     expect(await screen.findByRole('heading', { name: 'Register history' })).toBeInTheDocument();
     expect(await screen.findByText('Cashier One')).toBeInTheDocument();
     expect(screen.getByText('Session Opening Balance')).toBeInTheDocument();
+    expect(screen.getByText('Opening Source')).toBeInTheDocument();
+    expect(screen.getByText('Store Default Till Amount')).toBeInTheDocument();
     expect(screen.getByText('Expected Cash at Close')).toBeInTheDocument();
     expect(screen.getByText('Counted Cash')).toBeInTheDocument();
     expect(screen.getByText('Variance')).toBeInTheDocument();
-    expect(screen.getByText('Target Till Float')).toBeInTheDocument();
-    expect(screen.getByText('Cash Removed')).toBeInTheDocument();
-    expect(screen.getByText('Cash Left in Till')).toBeInTheDocument();
+    expect(screen.getByText('Default Till Amount')).toBeInTheDocument();
+    expect(screen.getByText('Cash to Bag')).toBeInTheDocument();
+    expect(screen.getByText('Cash Remaining in Till')).toBeInTheDocument();
     expect(screen.getByText('Session cash activity')).toBeInTheDocument();
     expect(await screen.findByText('Cash Movement')).toBeInTheDocument();
     expect(await screen.findByText('Other cash out')).toBeInTheDocument();

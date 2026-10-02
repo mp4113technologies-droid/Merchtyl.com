@@ -74,7 +74,7 @@ public class CashLedgerService {
         if (session == null) {
             throw new BadRequestException("registerSession is required");
         }
-        return expectedCash(session.getId());
+        return breakdown(session).expectedCash();
     }
 
     @Transactional(readOnly = true)

@@ -29,12 +29,12 @@ class RegisterBusinessDayCashStateTest {
     }
 
     @Test
-    void twoAndThreeSequentialShiftsAreHandoffsNotNewPhysicalFloat() {
+    void twoAndThreeSequentialShiftsReuseDefaultTillWithoutNewPhysicalFloat() {
         RegisterBusinessDayCashState state = state("440.00");
         state.settle(money("878.00"), money("878.00"), money("440.00"));
-        state.openHandoff(money("440.00"));
+        state.openNextShift(money("440.00"));
         state.settle(money("700.00"), money("700.00"), money("440.00"));
-        state.openHandoff(money("440.00"));
+        state.openNextShift(money("440.00"));
 
         assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
         assertThat(state.getSessionCount()).isEqualTo(3);
@@ -45,7 +45,7 @@ class RegisterBusinessDayCashStateTest {
     void finalShiftReconciliationDoesNotSumIntermediateExpectedOrCountedCash() {
         RegisterBusinessDayCashState state = state("440.00");
         state.settle(money("878.00"), money("878.00"), money("440.00"));
-        state.openHandoff(money("440.00"));
+        state.openNextShift(money("440.00"));
         state.settle(money("600.00"), money("600.00"), money("440.00"));
 
         assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
@@ -56,13 +56,13 @@ class RegisterBusinessDayCashStateTest {
     }
 
     @Test
-    void handoffRejectsOpeningBalanceDifferentFromRetainedCash() {
+    void nextShiftRequiresTillRestoredToConfiguredStartingAmount() {
         RegisterBusinessDayCashState state = state("440.00");
         state.settle(money("878.00"), money("878.00"), money("440.00"));
 
-        assertThatThrownBy(() -> state.openHandoff(money("880.00")))
+        assertThatThrownBy(() -> state.openNextShift(money("880.00")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("retained till cash");
+                .hasMessageContaining("restored to its configured starting amount");
         assertThat(state.getSessionCount()).isEqualTo(1);
     }
 
@@ -71,9 +71,9 @@ class RegisterBusinessDayCashStateTest {
         RegisterBusinessDayCashState first = state("440.00");
         RegisterBusinessDayCashState second = new RegisterBusinessDayCashState(
                 store, mock(Register.class), day, money("300.00"));
-        first.openHandoff(money("440.00"));
-        second.openHandoff(money("300.00"));
-        second.openHandoff(money("300.00"));
+        first.openNextShift(money("440.00"));
+        second.openNextShift(money("300.00"));
+        second.openNextShift(money("300.00"));
 
         assertThat(first.getInitialFloat().add(second.getInitialFloat())).isEqualByComparingTo("740.00");
         assertThat(first.getSessionCount()).isEqualTo(2);
@@ -96,7 +96,7 @@ class RegisterBusinessDayCashStateTest {
         RegisterBusinessDayCashState otherDay = new RegisterBusinessDayCashState(
                 store, register, mock(BusinessDay.class), money("500.00"));
 
-        firstDay.openHandoff(money("440.00"));
+        firstDay.openNextShift(money("440.00"));
 
         assertThat(otherStore.getSessionCount()).isEqualTo(1);
         assertThat(otherDay.getSessionCount()).isEqualTo(1);
@@ -133,12 +133,12 @@ class RegisterBusinessDayCashStateTest {
                 store, mock(Register.class), day, money("300.00"), money("300.00"));
 
         r1.settle(money("700.00"), money("700.00"), money("440.00"));
-        r1.openHandoff(money("440.00"));
+        r1.openNextShift(money("440.00"));
         r1.settle(money("600.00"), money("600.00"), money("440.00"));
-        r1.openHandoff(money("440.00"));
+        r1.openNextShift(money("440.00"));
         r1.settle(money("500.00"), money("500.00"), money("440.00"));
         r2.settle(money("300.00"), money("300.00"), money("300.00"));
-        r2.openHandoff(money("300.00"));
+        r2.openNextShift(money("300.00"));
         r2.settle(money("300.00"), money("300.00"), money("300.00"));
 
         assertThat(r1.getInitialFloat().add(r2.getInitialFloat())).isEqualByComparingTo("740.00");
