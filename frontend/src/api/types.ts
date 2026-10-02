@@ -1801,6 +1801,8 @@ export type RegisterAvailability = {
   operatorDisplayName: string | null;
   openedAt: string | null;
   version: number | null;
+  openingCash: number | null;
+  openingCashSource: 'INITIAL_FLOAT' | 'SHIFT_HANDOFF' | null;
 };
 
 export type CashLedgerDirection = 'IN' | 'OUT';

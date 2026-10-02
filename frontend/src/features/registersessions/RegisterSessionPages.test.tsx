@@ -96,7 +96,9 @@ function availableRegister(current: Register = register()): RegisterAvailability
     sessionId: null,
     operatorDisplayName: null,
     openedAt: null,
-    version: null
+    version: null,
+    openingCash: current.effectiveTillFloat ?? null,
+    openingCashSource: 'INITIAL_FLOAT'
   };
 }
 
@@ -452,6 +454,50 @@ describe('Register session pages', () => {
     expect(screen.queryByLabelText('Actual Opening Cash')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open register' })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/register-sessions/availability'))).toBe(true);
+  });
+
+  it('uses retained till cash for the next shift without manual refresh or a second float entry', async () => {
+    storeSession(['CASHIER']);
+    const mainStore = store();
+    const physicalRegister = register();
+    const opened = { ...registerSession(), openingCash: 440 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser(['CASHIER'], ['REGISTER_SESSION_OPEN', 'REGISTER_SESSION_VIEW', 'POS_ACCESS']));
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([mainStore]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([physicalRegister]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse({
+        ...availableRegister(physicalRegister),
+        openingCash: 440,
+        openingCashSource: 'SHIFT_HANDOFF'
+      } satisfies RegisterAvailability);
+      if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
+        return jsonResponse(page<RegisterSession>([]));
+      }
+      if (url.pathname.endsWith('/api/v1/register-sessions/open') && init?.method === 'POST') {
+        return jsonResponse(opened, 201);
+      }
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse(opened);
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/open']} />);
+
+    const openingCash = await screen.findByLabelText('Actual Opening Cash');
+    await waitFor(() => expect(openingCash).toHaveValue(440));
+    expect(openingCash).toBeDisabled();
+    expect(screen.getByText(/Previous Shift Handoff/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Open register' }));
+
+    await waitFor(() => {
+      const openCall = fetchMock.mock.calls.find(([input, request]) =>
+        new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/register-sessions/open')
+        && request?.method === 'POST');
+      expect(openCall).toBeTruthy();
+      expect(JSON.parse(String(openCall?.[1]?.body)).openingCash).toBe(440);
+    });
   });
 
   it('starts a missing business day from register open and enables register operation immediately', async () => {

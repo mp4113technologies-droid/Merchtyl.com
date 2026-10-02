@@ -16,6 +16,7 @@ import com.merchtyl.common.PageResponse;
 import com.merchtyl.device.Device;
 import com.merchtyl.device.DeviceRepository;
 import com.merchtyl.eod.BusinessDay;
+import com.merchtyl.eod.BusinessDayStatus;
 import com.merchtyl.eod.BusinessDayService;
 import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
@@ -222,7 +223,7 @@ public class RegisterSessionService {
         validateCashier(cashier, register, authentication);
         if (isStoreOperator(authentication)
                 && registerSessionRepository.existsByAssignedCashier_IdAndStatusIn(cashier.getId(), CURRENT_STATUSES)) {
-            throw new ConflictException("CASHIER_ALREADY_HAS_OPEN_SESSION");
+            throw new ConflictException("USER_ALREADY_HAS_ACTIVE_SESSION");
         }
         enforceSingleOpenSession(register.getId(), device == null ? null : device.getId());
 
@@ -273,14 +274,27 @@ public class RegisterSessionService {
         Register register = findRegister(registerId, false);
         if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, register.getStore().getId());
         var active = registerSessionRepository.findFirstByRegister_IdAndStatusInOrderByOpenedAtDesc(registerId, CURRENT_STATUSES);
-        if (active.isEmpty()) return RegisterAvailabilityResponse.available(registerId, register.getType());
+        if (active.isEmpty()) {
+            BigDecimal openingCash = register.getEffectiveTillFloat();
+            String source = "INITIAL_FLOAT";
+            if (registerBusinessDayCashStateRepository != null) {
+                var cashState = registerBusinessDayCashStateRepository
+                        .findFirstByRegister_IdAndBusinessDay_StatusInOrderByCreatedAtDesc(registerId,
+                                java.util.List.of(BusinessDayStatus.OPEN, BusinessDayStatus.REOPENED));
+                if (cashState.isPresent()) {
+                    openingCash = cashState.get().getRetainedCash();
+                    source = "SHIFT_HANDOFF";
+                }
+            }
+            return RegisterAvailabilityResponse.available(registerId, register.getType(), openingCash, source);
+        }
         RegisterSession session = active.get();
         boolean own = session.getAssignedCashier().getId().equals(actor.getId());
         boolean management = isOwner(authentication) || isManager(authentication);
         return new RegisterAvailabilityResponse(registerId, register.getType(), own ? "YOUR_SESSION" : "IN_USE",
                 own || management ? session.getId() : null,
                 own || management ? session.getAssignedCashier().getDisplayName() : null,
-                session.getOpenedAt(), own || management ? session.getVersion() : null);
+                session.getOpenedAt(), own || management ? session.getVersion() : null, null, null);
     }
 
     @Transactional
@@ -1015,6 +1029,6 @@ public class RegisterSessionService {
     }
 
     private static ConflictException alreadyOpen() {
-        return new ConflictException("REGISTER_ALREADY_OPEN");
+        return new ConflictException("REGISTER_ALREADY_IN_USE");
     }
 }

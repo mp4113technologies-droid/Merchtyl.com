@@ -131,7 +131,7 @@ class RegisterSessionControllerAuthorizationTest {
     void registerSessionViewerCanCheckRegisterAvailability() throws Exception {
         when(registerSessionService.availability(any(), any())).thenReturn(new RegisterAvailabilityResponse(
                 REGISTER_ID, com.merchtyl.register.RegisterType.RETAIL, "IN_USE", null, null,
-                Instant.parse("2026-07-21T12:00:00Z"), null));
+                Instant.parse("2026-07-21T12:00:00Z"), null, null, null));
 
         mockMvc.perform(get("/api/v1/register-sessions/availability")
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))

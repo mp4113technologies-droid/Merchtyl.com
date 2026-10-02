@@ -322,7 +322,7 @@ class RegisterSessionServiceTest {
 
         assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_MANAGER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("REGISTER_ALREADY_OPEN");
+                .hasMessage("REGISTER_ALREADY_IN_USE");
 
         verify(registerSessionRepository, never()).saveAndFlush(any());
         verify(auditService, never()).record(any());
@@ -336,7 +336,7 @@ class RegisterSessionServiceTest {
 
         assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_CASHIER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("REGISTER_ALREADY_OPEN");
+                .hasMessage("REGISTER_ALREADY_IN_USE");
 
         verify(cashLedgerService, never()).appendOpeningFloat(any(), any());
         verify(auditService, never()).record(any());
@@ -353,7 +353,7 @@ class RegisterSessionServiceTest {
                 new RegisterSessionOpenRequest(STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("999.00")),
                 authentication("ROLE_TENANT_OWNER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("REGISTER_ALREADY_OPEN");
+                .hasMessage("REGISTER_ALREADY_IN_USE");
 
         assertThat(existing.getOpeningCash()).isEqualByComparingTo("200.00");
         verify(registerSessionRepository, never()).saveAndFlush(any());
@@ -376,6 +376,24 @@ class RegisterSessionServiceTest {
     }
 
     @Test
+    void closedPriorShiftIsAvailableWithAuthoritativeRetainedCash() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"));
+        state.settle(new BigDecimal("878.11"), new BigDecimal("878.11"), new BigDecimal("440.00"));
+        when(stateRepository.findFirstByRegister_IdAndBusinessDay_StatusInOrderByCreatedAtDesc(
+                REGISTER_ID, List.of(com.merchtyl.eod.BusinessDayStatus.OPEN,
+                        com.merchtyl.eod.BusinessDayStatus.REOPENED))).thenReturn(Optional.of(state));
+
+        RegisterAvailabilityResponse result = service.availability(REGISTER_ID, authentication("ROLE_CASHIER"));
+
+        assertThat(result.state()).isEqualTo("AVAILABLE");
+        assertThat(result.openingCash()).isEqualByComparingTo("440.00");
+        assertThat(result.openingCashSource()).isEqualTo("SHIFT_HANDOFF");
+    }
+
+    @Test
     void cashierCannotOpenSecondRegisterSession() {
         when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
         when(registerSessionRepository.existsByAssignedCashier_IdAndStatusIn(cashier.getId(), List.of(
@@ -384,7 +402,7 @@ class RegisterSessionServiceTest {
 
         assertThatThrownBy(() -> service.open(openRequest(), authentication("ROLE_CASHIER")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("CASHIER_ALREADY_HAS_OPEN_SESSION");
+                .hasMessage("USER_ALREADY_HAS_ACTIVE_SESSION");
 
         verify(registerSessionRepository, never()).saveAndFlush(any());
     }

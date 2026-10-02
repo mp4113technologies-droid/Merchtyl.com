@@ -1,6 +1,7 @@
 package com.merchtyl.registersession;
 
 import jakarta.persistence.LockModeType;
+import com.merchtyl.eod.BusinessDayStatus;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -17,6 +18,10 @@ public interface RegisterBusinessDayCashStateRepository extends JpaRepository<Re
     @Query("select state from RegisterBusinessDayCashState state where state.businessDay.id = :businessDayId and state.register.id = :registerId")
     Optional<RegisterBusinessDayCashState> findForUpdate(@Param("businessDayId") UUID businessDayId,
                                                          @Param("registerId") UUID registerId);
+
+    @EntityGraph(attributePaths = {"store", "register", "businessDay"})
+    Optional<RegisterBusinessDayCashState> findFirstByRegister_IdAndBusinessDay_StatusInOrderByCreatedAtDesc(
+            UUID registerId, java.util.Collection<BusinessDayStatus> statuses);
 
     @EntityGraph(attributePaths = {"store", "register", "businessDay"})
     List<RegisterBusinessDayCashState> findAllByBusinessDay_Id(UUID businessDayId);

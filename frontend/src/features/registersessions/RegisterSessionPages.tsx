@@ -437,8 +437,13 @@ export function RegisterClosePage() {
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
-      await queryClient.invalidateQueries({ queryKey: ['register-sessions'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['register-session-current'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-sessions'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['registers'] }),
+        queryClient.invalidateQueries({ queryKey: ['business-day'] })
+      ]);
       navigate('/register/history');
     }
   });
@@ -459,8 +464,13 @@ export function RegisterClosePage() {
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
-      await queryClient.invalidateQueries({ queryKey: ['register-sessions'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['register-session-current'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-sessions'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['registers'] }),
+        queryClient.invalidateQueries({ queryKey: ['business-day'] })
+      ]);
       navigate('/register/history');
     }
   });
@@ -1075,6 +1085,12 @@ export function RegisterOpenPage() {
   const unavailableToCurrentUser = availability.data?.state === 'IN_USE' && !existingSession;
 
   React.useEffect(() => {
+    if (availability.data?.state === 'AVAILABLE' && availability.data.openingCash != null) {
+      form.setValue('openingCash', availability.data.openingCash, { shouldValidate: true });
+    }
+  }, [availability.data, form]);
+
+  React.useEffect(() => {
     setExistingSession(activeSessions.data?.content[0] ?? null);
   }, [activeSessions.data?.content]);
 
@@ -1109,12 +1125,22 @@ export function RegisterOpenPage() {
       ...(deviceEnforcementEnabled && values.deviceId ? { deviceId: values.deviceId } : {})
     }),
     onSuccess: async (session) => {
-      await queryClient.invalidateQueries({ queryKey: ['register-session-current'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['register-session-current'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-sessions'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session-availability'] }),
+        queryClient.invalidateQueries({ queryKey: ['registers'] }),
+        queryClient.invalidateQueries({ queryKey: ['business-day'] })
+      ]);
       navigate(posRouteForRegisterType(session.registerType) ?? '/store-menu');
     },
     onError: async (error, values) => {
       if (!(error instanceof ApiClientError) || error.status !== 409) return;
-      await queryClient.invalidateQueries({ queryKey: ['register-session-availability', values.registerId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['register-session-availability', values.registerId] }),
+        queryClient.invalidateQueries({ queryKey: ['register-sessions'] }),
+        queryClient.invalidateQueries({ queryKey: ['register-session-current'] })
+      ]);
       if (canOverride || canForceClose) {
         const page = await listRegisterSessions(await getValidAccessToken(), {
           registerId: values.registerId,
@@ -1299,9 +1325,11 @@ export function RegisterOpenPage() {
                       label="Actual Opening Cash"
                       type="number"
                       inputProps={{ min: 0, step: '0.01' }}
-                      disabled={activeSessions.isLoading || availability.isLoading}
+                      disabled={activeSessions.isLoading || availability.isLoading || availability.data?.openingCashSource === 'SHIFT_HANDOFF'}
                       error={Boolean(fieldState.error)}
-                      helperText={fieldState.error?.message ?? (selectedRegister?.effectiveTillFloat == null
+                      helperText={fieldState.error?.message ?? (availability.data?.openingCashSource === 'SHIFT_HANDOFF'
+                        ? 'Source: Previous Shift Handoff. This is the cash retained in the physical till.'
+                        : selectedRegister?.effectiveTillFloat == null
                         ? 'Configured till float: Not configured. Count and enter the cash physically present.'
                         : `Configured till float: ${money(selectedRegister.effectiveTillFloat, selectedStoreId ? stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode : undefined)}. Verify and enter the cash physically present.`)}
                       fullWidth
