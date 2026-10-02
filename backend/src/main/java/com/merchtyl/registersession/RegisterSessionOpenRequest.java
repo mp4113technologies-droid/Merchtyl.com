@@ -12,6 +12,7 @@ public record RegisterSessionOpenRequest(
         @NotNull UUID storeId,
         @NotNull UUID registerId,
         @Schema(description = "Optional when register device enforcement is disabled; required when it is enabled.") UUID deviceId,
-        @NotNull @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal openingCash
+        @Schema(description = "Required only when neither a configured till float nor a retained shift handoff exists.")
+        @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal openingCash
 ) {
 }

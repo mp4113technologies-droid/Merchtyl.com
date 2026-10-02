@@ -816,7 +816,7 @@ export type RegisterSessionOpenPayload = {
   storeId: string;
   registerId: string;
   deviceId?: string | null;
-  openingCash: number;
+  openingCash?: number;
 };
 
 export type RegisterSessionClosePayload = {
@@ -1514,6 +1514,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   REGISTER_ALREADY_IN_USE: 'This register is currently in use by another active session.',
   USER_ALREADY_HAS_ACTIVE_SESSION: 'You already have an active register session. Resume or close it before opening another register.',
   REGISTER_HANDOFF_BALANCE_MISMATCH: 'The till balance changed. Current register availability has been refreshed.',
+  OPENING_CASH_REQUIRED: 'Opening cash is required because no default till float or shift handoff is available.',
+  REGISTER_STORE_MISMATCH: 'The selected register does not belong to the selected store. Refresh the register list and select it again.',
   BUSINESS_DAY_ALREADY_EXISTS: 'A business day has already been opened for this date. Refresh the page to see the current status.',
   BUSINESS_DAY_ALREADY_OPEN: 'A business day has already been opened for this date. Refresh the page to see the current status.',
   PREVIOUS_BUSINESS_DAY_STILL_OPEN: "The previous business day is still open. Close it before opening today's business day.",

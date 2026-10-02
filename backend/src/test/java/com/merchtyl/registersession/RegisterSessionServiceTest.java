@@ -676,7 +676,7 @@ class RegisterSessionServiceTest {
     }
 
     @Test
-    void firstOpenSnapshotsEffectiveTargetWithoutFalsifyingActualOpeningCash() {
+    void firstOpenUsesAuthoritativeStoreDefaultInsteadOfClientValue() {
         RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
         ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
         when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
@@ -688,9 +688,51 @@ class RegisterSessionServiceTest {
 
         ArgumentCaptor<RegisterBusinessDayCashState> state = ArgumentCaptor.forClass(RegisterBusinessDayCashState.class);
         verify(stateRepository).saveAndFlush(state.capture());
-        assertThat(response.openingCash()).isEqualByComparingTo("430.00");
-        assertThat(state.getValue().getInitialFloat()).isEqualByComparingTo("430.00");
+        assertThat(response.openingCash()).isEqualByComparingTo("440.00");
+        assertThat(state.getValue().getInitialFloat()).isEqualByComparingTo("440.00");
         assertThat(state.getValue().getTargetFloat()).isEqualByComparingTo("440.00");
+    }
+
+    @Test
+    void firstOpenUsesRegisterOverride() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        when(register.getTillFloatOverride()).thenReturn(new BigDecimal("300.00"));
+        when(register.getEffectiveTillFloat()).thenReturn(new BigDecimal("300.00"));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.empty());
+
+        RegisterSessionResponse response = service.open(new RegisterSessionOpenRequest(
+                STORE_ID, REGISTER_ID, DEVICE_ID, null), authentication("ROLE_CASHIER"));
+
+        assertThat(response.openingCash()).isEqualByComparingTo("300.00");
+    }
+
+    @Test
+    void intentionallyConfiguredZeroFloatIsValid() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        when(register.getEffectiveTillFloat()).thenReturn(new BigDecimal("0.00"));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.empty());
+
+        RegisterSessionResponse response = service.open(new RegisterSessionOpenRequest(
+                STORE_ID, REGISTER_ID, DEVICE_ID, null), authentication("ROLE_CASHIER"));
+
+        assertThat(response.openingCash()).isZero();
+    }
+
+    @Test
+    void unconfiguredFirstOpenRequiresExplicitOpeningCash() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.open(new RegisterSessionOpenRequest(
+                STORE_ID, REGISTER_ID, DEVICE_ID, null), authentication("ROLE_CASHIER")))
+                .isInstanceOf(com.merchtyl.common.BadRequestException.class)
+                .hasMessage("OPENING_CASH_REQUIRED");
     }
 
     @Test

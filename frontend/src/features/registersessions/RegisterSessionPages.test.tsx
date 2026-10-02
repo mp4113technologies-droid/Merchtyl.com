@@ -98,7 +98,7 @@ function availableRegister(current: Register = register()): RegisterAvailability
     openedAt: null,
     version: null,
     openingCash: current.effectiveTillFloat ?? null,
-    openingCashSource: 'INITIAL_FLOAT'
+    openingCashSource: current.effectiveTillFloat == null ? 'MANUAL_ENTRY' : 'STORE_DEFAULT'
   };
 }
 
@@ -496,7 +496,7 @@ describe('Register session pages', () => {
         new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/register-sessions/open')
         && request?.method === 'POST');
       expect(openCall).toBeTruthy();
-      expect(JSON.parse(String(openCall?.[1]?.body)).openingCash).toBe(440);
+      expect(JSON.parse(String(openCall?.[1]?.body))).not.toHaveProperty('openingCash');
     });
   });
 

@@ -38,6 +38,8 @@ final class DomainErrorCatalog {
             entry("CASHIER_ALREADY_HAS_OPEN_SESSION", "You already have an active register session. Resume or close it before opening another register."),
             entry("USER_ALREADY_HAS_ACTIVE_SESSION", "You already have an active register session. Resume or close it before opening another register."),
             entry("REGISTER_HANDOFF_BALANCE_MISMATCH", "The till balance changed. Current register availability has been refreshed."),
+            entry("OPENING_CASH_REQUIRED", "Opening cash is required because no default till float or shift handoff is available."),
+            entry("REGISTER_STORE_MISMATCH", "The selected register does not belong to the selected store. Refresh the register list and select it again."),
             entry("DRAFT_SALES_DISABLED", "Draft sales are disabled. Hold an order explicitly or proceed through checkout."),
             entry("REGISTER_RECONCILIATION_REQUIRED", "Start register closing before completing reconciliation."),
             entry("REGISTER_SESSION_ALREADY_RECONCILED", "This register session has already been reconciled."),

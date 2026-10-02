@@ -1802,7 +1802,7 @@ export type RegisterAvailability = {
   openedAt: string | null;
   version: number | null;
   openingCash: number | null;
-  openingCashSource: 'INITIAL_FLOAT' | 'SHIFT_HANDOFF' | null;
+  openingCashSource: 'STORE_DEFAULT' | 'REGISTER_OVERRIDE' | 'SHIFT_HANDOFF' | 'MANUAL_ENTRY' | null;
 };
 
 export type CashLedgerDirection = 'IN' | 'OUT';

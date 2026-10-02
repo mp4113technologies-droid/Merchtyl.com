@@ -41,7 +41,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BadRequestException.class)
     ResponseEntity<ApiError> badRequest(BadRequestException exception, HttpServletRequest request) {
         DomainMessage domain = domainMessage(exception.getMessage());
-        if (domain != null) return error(HttpStatus.BAD_REQUEST, domain.code(), domain.message(), request, domainViolations(domain));
+        if (domain != null) {
+            log.warn("event=REQUEST_VALIDATION_FAILED code={} exception_type={} method={} path={} correlation_id={}",
+                    domain.code(), exception.getClass().getName(), request.getMethod(), request.getRequestURI(),
+                    MDC.get(CorrelationIdFilter.MDC_KEY));
+            return error(HttpStatus.BAD_REQUEST, domain.code(), domain.message(), request, domainViolations(domain));
+        }
+        log.warn("event=REQUEST_VALIDATION_FAILED code=VALIDATION_FAILED exception_type={} method={} path={} correlation_id={}",
+                exception.getClass().getName(), request.getMethod(), request.getRequestURI(),
+                MDC.get(CorrelationIdFilter.MDC_KEY));
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Please review the information and try again.", request, List.of());
     }
 

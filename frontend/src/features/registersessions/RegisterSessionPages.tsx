@@ -1121,7 +1121,7 @@ export function RegisterOpenPage() {
     mutationFn: async (values: RegisterSessionFormValues) => openRegisterSession(await getValidAccessToken(), {
       storeId: values.storeId,
       registerId: values.registerId,
-      openingCash: values.openingCash,
+      ...(availability.data?.openingCashSource === 'MANUAL_ENTRY' ? { openingCash: values.openingCash } : {}),
       ...(deviceEnforcementEnabled && values.deviceId ? { deviceId: values.deviceId } : {})
     }),
     onSuccess: async (session) => {
@@ -1325,10 +1325,14 @@ export function RegisterOpenPage() {
                       label="Actual Opening Cash"
                       type="number"
                       inputProps={{ min: 0, step: '0.01' }}
-                      disabled={activeSessions.isLoading || availability.isLoading || availability.data?.openingCashSource === 'SHIFT_HANDOFF'}
+                      disabled={activeSessions.isLoading || availability.isLoading || availability.data?.openingCashSource !== 'MANUAL_ENTRY'}
                       error={Boolean(fieldState.error)}
                       helperText={fieldState.error?.message ?? (availability.data?.openingCashSource === 'SHIFT_HANDOFF'
                         ? 'Source: Previous Shift Handoff. This is the cash retained in the physical till.'
+                        : availability.data?.openingCashSource === 'REGISTER_OVERRIDE'
+                        ? 'Source: Register Override. This amount is configured for this physical register.'
+                        : availability.data?.openingCashSource === 'STORE_DEFAULT'
+                        ? 'Source: Store Default. This amount is configured for the store.'
                         : selectedRegister?.effectiveTillFloat == null
                         ? 'Configured till float: Not configured. Count and enter the cash physically present.'
                         : `Configured till float: ${money(selectedRegister.effectiveTillFloat, selectedStoreId ? stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode : undefined)}. Verify and enter the cash physically present.`)}
