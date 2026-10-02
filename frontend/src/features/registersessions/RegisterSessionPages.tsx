@@ -50,6 +50,7 @@ import {
   listStores,
   openRegisterSession,
   openBusinessDay,
+  previewRegisterTillSettlement,
   reverseCashPayout,
   overrideRegisterSession,
   startRegisterSessionClosing
@@ -57,7 +58,7 @@ import {
 import { registerSessionKeys } from './registerSessionKeys';
 import { ReconciliationBreakdown } from './RegisterReconciliation';
 import { ApiClientError } from '../../api/client';
-import type { CashLedgerDirection, CashMovement, CashMovementType, Device, Register, RegisterSession, Store, UserRole } from '../../api/types';
+import type { CashLedgerDirection, CashMovement, CashMovementType, Device, Register, RegisterSession, RegisterTillSettlement, Store, UserRole } from '../../api/types';
 import { getApplicationDeviceIdentifier } from '../../app/deviceIdentity';
 import { useSession } from '../../app/session';
 import { resolveBusinessDayAccess } from '../eod/businessDayAccess';
@@ -107,6 +108,8 @@ type CashMovementFormValues = z.infer<typeof cashMovementSchema>;
 
 const closeSchema = z.object({
   countedCash: z.coerce.number().min(0, 'Counted cash cannot be negative'),
+  retainedCashOverride: z.string().optional(),
+  retentionOverrideReason: z.string().optional(),
   forceCloseReason: z.string().optional()
 });
 
@@ -386,6 +389,7 @@ export function RegisterClosePage() {
   const { getValidAccessToken } = useSession();
   const { canUse, canForceClose } = useRegisterSessionPermissions();
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
+  const [settlement, setSettlement] = React.useState<RegisterTillSettlement | null>(null);
 
   const current = useQuery({
     queryKey: registerSessionKeys.current(browserDeviceIdentifier),
@@ -397,15 +401,28 @@ export function RegisterClosePage() {
     resolver: zodResolver(closeSchema),
     defaultValues: {
       countedCash: 0,
+      retainedCashOverride: '',
+      retentionOverrideReason: '',
       forceCloseReason: ''
     }
   });
 
-  React.useEffect(() => {
-    if (current.data) {
-      form.setValue('countedCash', current.data.expectedCash);
-    }
-  }, [current.data, form]);
+  const countedCash = form.watch('countedCash');
+  const retainedCashOverride = form.watch('retainedCashOverride');
+  const retentionOverrideReason = form.watch('retentionOverrideReason');
+  React.useEffect(() => { setSettlement(null); }, [countedCash, retainedCashOverride, retentionOverrideReason]);
+
+  const previewMutation = useMutation({
+    mutationFn: async (values: CloseFormValues) => {
+      if (!current.data) throw new Error('No current register session');
+      return previewRegisterTillSettlement(await getValidAccessToken(), current.data.id, {
+        countedCash: values.countedCash,
+        ...(values.retainedCashOverride ? { retainedCash: Number(values.retainedCashOverride), overrideReason: values.retentionOverrideReason } : {}),
+        version: current.data.version
+      });
+    },
+    onSuccess: setSettlement
+  });
 
   const closeMutation = useMutation({
     mutationFn: async (values: CloseFormValues) => {
@@ -414,6 +431,8 @@ export function RegisterClosePage() {
       }
       return closeRegisterSession(await getValidAccessToken(), current.data.id, {
         countedCash: values.countedCash,
+        retainedCash: settlement?.cashToLeave,
+        ...(settlement?.override ? { overrideReason: values.retentionOverrideReason } : {}),
         version: current.data.version
       });
     },
@@ -484,6 +503,7 @@ export function RegisterClosePage() {
         </Alert>
       ) : null}
       {closeMutation.isError ? <Alert severity="error">{errorMessage(closeMutation.error)}</Alert> : null}
+      {previewMutation.isError ? <Alert severity="error">{errorMessage(previewMutation.error)}</Alert> : null}
       {forceCloseMutation.isError ? <Alert severity="error">{errorMessage(forceCloseMutation.error)}</Alert> : null}
       {cancelClosingMutation.isError ? <Alert severity="error">{errorMessage(cancelClosingMutation.error)}</Alert> : null}
       {current.data?.status === 'OPEN' ? <Alert severity="info">Start closing from the current register screen before completing reconciliation.</Alert> : null}
@@ -494,7 +514,7 @@ export function RegisterClosePage() {
             <Paper
               component="form"
               elevation={0}
-              onSubmit={form.handleSubmit((values) => closeMutation.mutate(values))}
+              onSubmit={form.handleSubmit((values) => settlement ? closeMutation.mutate(values) : previewMutation.mutate(values))}
               sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}
             >
               <Stack spacing={2.5}>
@@ -521,14 +541,23 @@ export function RegisterClosePage() {
                     <TextField {...field} label="Force-close reason" multiline minRows={2} fullWidth disabled={!canForceClose} />
                   )}
                 />
+                {canForceClose ? <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}>
+                  <Typography variant="subtitle2">Manager retained-float override</Typography>
+                  <Controller name="retainedCashOverride" control={form.control} render={({ field }) => (
+                    <TextField {...field} label="Actual retained cash (optional)" type="number" inputProps={{ min: 0, step: '0.01' }} />
+                  )} />
+                  <Controller name="retentionOverrideReason" control={form.control} render={({ field }) => (
+                    <TextField {...field} label="Retention override reason" required={Boolean(retainedCashOverride)} disabled={!retainedCashOverride} />
+                  )} />
+                </Stack></Paper> : null}
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                   <Button
                     type="submit"
                     variant="contained"
                     startIcon={<ReceiptLongOutlinedIcon />}
-                    disabled={current.data.status !== 'CLOSING' || closeMutation.isPending || forceCloseMutation.isPending}
+                    disabled={current.data.status !== 'CLOSING' || closeMutation.isPending || previewMutation.isPending || forceCloseMutation.isPending}
                   >
-                    Complete Closing
+                    {settlement ? 'Confirm Cash Removed & Close Register' : 'Review Till Settlement'}
                   </Button>
                   <Button type="button" variant="outlined" disabled={current.data.status !== 'CLOSING' || cancelClosingMutation.isPending || closeMutation.isPending}
                     onClick={() => cancelClosingMutation.mutate()}>
@@ -553,7 +582,22 @@ export function RegisterClosePage() {
             <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 3 }}>
               <Stack spacing={2}>
                 <Typography variant="h6">Reconciliation</Typography>
-                <ReconciliationBreakdown session={current.data} />
+                {settlement ? <>
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}><Typography color="text.secondary">Expected Cash</Typography><Typography variant="h6">{money(settlement.expectedCash)}</Typography></Grid>
+                    <Grid item xs={6}><Typography color="text.secondary">Variance</Typography><Typography variant="h6" color={settlement.variance === 0 ? 'success.main' : 'warning.main'}>{money(settlement.variance)} — {settlement.variance === 0 ? 'BALANCED' : settlement.variance < 0 ? 'SHORT' : 'OVER'}</Typography></Grid>
+                  </Grid>
+                  <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+                    <Typography variant="overline">Till Settlement</Typography>
+                    <Typography color="text.secondary">Target Till Float</Typography>
+                    <Typography variant="h6">{settlement.targetTillFloat == null ? 'Not configured' : money(settlement.targetTillFloat)}</Typography>
+                    <Typography color="text.secondary" sx={{ mt: 1 }}>Keep in Till</Typography>
+                    <Typography variant="h5" fontWeight={700}>{money(settlement.cashToLeave)}</Typography>
+                    <Typography color="text.secondary" sx={{ mt: 1 }}>Remove From Till</Typography>
+                    <Typography variant="h4" fontWeight={800} color="primary.main">{money(settlement.cashToRemove)}</Typography>
+                    {settlement.amountNeededToRestoreFloat > 0 ? <Alert severity="warning" sx={{ mt: 2 }}>Amount Needed to Restore Float: {money(settlement.amountNeededToRestoreFloat)}. Record any top-up separately as Cash Paid In.</Alert> : null}
+                  </Box>
+                </> : <Alert severity="info">Enter the counted cash, then review the backend-calculated settlement. Expected cash remains hidden until review.</Alert>}
               </Stack>
             </Paper>
           </Grid>
@@ -611,7 +655,21 @@ export function RegisterHistoryPage() {
               </Box>
               <Chip label={session.status} color={session.status === 'OPEN' ? 'success' : 'default'} />
             </Stack>
-            <ReconciliationBreakdown session={session} />
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Session Opening Balance" value={money(session.openingCash, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Expected Cash at Close" value={money(session.expectedCashAtClose ?? session.expectedCash, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Counted Cash" value={session.countedCash == null ? 'Not counted' : money(session.countedCash, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Variance" value={session.differenceCash == null ? 'Not reconciled' : money(session.differenceCash, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Target Till Float" value={session.targetFloatAtClose == null ? 'Not configured' : money(session.targetFloatAtClose, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Cash Removed" value={session.cashRemoved == null ? 'Not settled' : money(session.cashRemoved, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Cash Left in Till" value={session.cashRetained == null ? 'Not settled' : money(session.cashRetained, session.currencyCode)} /></Grid>
+              <Grid item xs={12} sm={6} md={4}><SessionMetricCard label="Closed By" value={session.closedByDisplayName ?? 'Not recorded'} /></Grid>
+            </Grid>
+            <Box component="details" sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2 }}>
+              <Typography component="summary" fontWeight={700} sx={{ cursor: 'pointer' }}>Session cash activity</Typography>
+              <Box sx={{ pt: 2, overflowX: 'auto' }}><ReconciliationBreakdown session={session} currencyCode={session.currencyCode} /></Box>
+            </Box>
+            {session.retentionOverrideReason ? <Alert severity="info">Retention override by {session.retentionOverrideByDisplayName ?? 'authorized manager'}: {session.retentionOverrideReason}</Alert> : null}
             {session.forceCloseReason ? <Alert severity="warning">Force close: {session.forceCloseReason}</Alert> : null}
           </Stack>
         </Paper>
@@ -985,6 +1043,7 @@ export function RegisterOpenPage() {
     }),
     enabled: canUse && Boolean(selectedStoreId)
   });
+  const selectedRegister = registers.data?.content.find((register) => register.id === selectedRegisterId);
 
   const devices = useQuery({
     queryKey: ['devices', 'register-session-open', selectedStoreId, selectedRegisterId],
@@ -1230,18 +1289,21 @@ export function RegisterOpenPage() {
               {unavailableToCurrentUser ? <Grid item xs={12}>
                 <Alert severity="warning">Register unavailable. This register is currently open in another session. Please choose another register or ask a manager for assistance.</Alert>
               </Grid> : null}
-              {!existingSession && !unavailableToCurrentUser && !activeSessions.isLoading && !availability.isLoading ? <Grid item xs={12} md={6}>
+              {selectedRegisterId && !existingSession && !unavailableToCurrentUser ? <Grid item xs={12} md={6}>
                 <Controller
                   name="openingCash"
                   control={form.control}
                   render={({ field, fieldState }) => (
                     <TextField
                       {...field}
-                      label="Opening cash"
+                      label="Actual Opening Cash"
                       type="number"
                       inputProps={{ min: 0, step: '0.01' }}
+                      disabled={activeSessions.isLoading || availability.isLoading}
                       error={Boolean(fieldState.error)}
-                      helperText={fieldState.error?.message}
+                      helperText={fieldState.error?.message ?? (selectedRegister?.effectiveTillFloat == null
+                        ? 'Configured till float: Not configured. Count and enter the cash physically present.'
+                        : `Configured till float: ${money(selectedRegister.effectiveTillFloat, selectedStoreId ? stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode : undefined)}. Verify and enter the cash physically present.`)}
                       fullWidth
                     />
                   )}

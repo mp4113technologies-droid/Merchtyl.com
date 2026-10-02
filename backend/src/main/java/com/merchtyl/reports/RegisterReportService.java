@@ -6,6 +6,8 @@ import com.merchtyl.common.BadRequestException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
+import com.merchtyl.registersession.RegisterBusinessDayCashState;
+import com.merchtyl.registersession.RegisterBusinessDayCashStateRepository;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.User;
 import com.merchtyl.sales.SalesClassification;
@@ -41,6 +43,8 @@ public class RegisterReportService {
     private final Clock clock;
     @Autowired(required = false)
     private SalesClassificationService salesClassificationService;
+    @Autowired(required = false)
+    private RegisterBusinessDayCashStateRepository registerBusinessDayCashStateRepository;
 
     @Autowired
     public RegisterReportService(
@@ -93,6 +97,7 @@ public class RegisterReportService {
                 .map(session -> row(session, breakdowns.get(session.getId()), classifications.getOrDefault(session.getId(), SalesClassification.zero())))
                 .toList();
 
+        BigDecimal physicalOpeningCash = physicalOpeningCash(sessions, rows);
         return new RegisterReportResponse(
                 filters.storeId(),
                 filters.registerId(),
@@ -100,7 +105,7 @@ public class RegisterReportService {
                 filters.status(),
                 filters.dateFrom(),
                 filters.dateTo(),
-                sum(rows, RegisterReportRow::openingCash),
+                physicalOpeningCash,
                 sum(rows, RegisterReportRow::retailCash),
                 sum(rows, RegisterReportRow::retailCashReceived),
                 sum(rows, RegisterReportRow::retailChange),
@@ -131,6 +136,36 @@ public class RegisterReportService {
                         sessionPage.getTotalElements(), sessionPage.getTotalPages(),
                         sessionPage.isFirst(), sessionPage.isLast()),
                 Instant.now(clock));
+    }
+
+    private BigDecimal physicalOpeningCash(List<RegisterSession> sessions, List<RegisterReportRow> rows) {
+        if (registerBusinessDayCashStateRepository == null) {
+            return sum(rows, RegisterReportRow::openingCash);
+        }
+        Set<UUID> businessDayIds = sessions.stream().map(RegisterSession::getBusinessDay)
+                .filter(java.util.Objects::nonNull).map(value -> value.getId()).collect(Collectors.toSet());
+        if (businessDayIds.isEmpty()) {
+            return sum(rows, RegisterReportRow::openingCash);
+        }
+        Map<String, RegisterBusinessDayCashState> states = registerBusinessDayCashStateRepository
+                .findAllByBusinessDay_IdIn(businessDayIds).stream()
+                .collect(Collectors.toMap(state -> state.getBusinessDay().getId() + ":" + state.getRegister().getId(), state -> state));
+        Map<String, List<RegisterReportRow>> groupedRows = rows.stream().collect(Collectors.groupingBy(row ->
+                (row.businessDate() == null ? "legacy:" + row.registerSessionId() : row.businessDate()) + ":" + row.registerId()));
+        BigDecimal total = BigDecimal.ZERO;
+        Set<String> usedStates = new java.util.HashSet<>();
+        for (RegisterSession session : sessions) {
+            String stateKey = session.getBusinessDay() == null ? null : session.getBusinessDay().getId() + ":" + session.getRegister().getId();
+            if (stateKey != null && states.containsKey(stateKey)) {
+                if (usedStates.add(stateKey)) total = total.add(states.get(stateKey).getInitialFloat());
+            }
+        }
+        Set<String> stateBackedRowKeys = sessions.stream().filter(session -> session.getBusinessDay() != null)
+                .filter(session -> states.containsKey(session.getBusinessDay().getId() + ":" + session.getRegister().getId()))
+                .map(session -> session.getBusinessDay().getBusinessDate() + ":" + session.getRegister().getId()).collect(Collectors.toSet());
+        total = total.add(groupedRows.entrySet().stream().filter(entry -> !stateBackedRowKeys.contains(entry.getKey()))
+                .flatMap(entry -> entry.getValue().stream()).map(RegisterReportRow::openingCash).reduce(BigDecimal.ZERO, BigDecimal::add));
+        return money(total);
     }
 
     private RegisterReportRow row(RegisterSession session, CashLedgerBreakdownResponse breakdown, SalesClassification classification) {

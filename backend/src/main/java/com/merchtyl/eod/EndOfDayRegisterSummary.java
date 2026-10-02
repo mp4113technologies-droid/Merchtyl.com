@@ -3,6 +3,7 @@ package com.merchtyl.eod;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import com.merchtyl.register.Register;
 import com.merchtyl.registersession.RegisterSession;
+import com.merchtyl.registersession.RegisterBusinessDayCashState;
 import com.merchtyl.security.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -98,6 +99,30 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal variance;
 
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal physicalInitialFloat;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal physicalTargetFloat;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal physicalCashRemoved;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal physicalCashRetained;
+
+    @Column(updatable = false)
+    private Integer physicalSessionCount;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal sessionTargetFloat;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal sessionCashRemoved;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal sessionCashRetained;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "opened_by", nullable = false, updatable = false, foreignKey = @ForeignKey(name = "fk_eod_register_summaries_opened_by"))
     private User openedBy;
@@ -127,7 +152,8 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     protected EndOfDayRegisterSummary() {
     }
 
-    public EndOfDayRegisterSummary(EndOfDayReport report, RegisterSession session, RegisterSummaryValues values) {
+    public EndOfDayRegisterSummary(EndOfDayReport report, RegisterSession session, RegisterSummaryValues values,
+                                   RegisterBusinessDayCashState physicalState) {
         this.report = report;
         this.registerSession = session;
         this.register = session.getRegister();
@@ -153,6 +179,16 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
         this.expectedCash = values.expectedCash();
         this.countedCash = values.countedCash();
         this.variance = values.variance();
+        if (physicalState != null) {
+            this.physicalInitialFloat = physicalState.getInitialFloat();
+            this.physicalTargetFloat = physicalState.getTargetFloat();
+            this.physicalCashRemoved = physicalState.getCashRemoved();
+            this.physicalCashRetained = physicalState.getRetainedCash();
+            this.physicalSessionCount = physicalState.getSessionCount();
+        }
+        this.sessionTargetFloat = session.getTargetFloatAtClose();
+        this.sessionCashRemoved = session.getCashRemoved();
+        this.sessionCashRetained = session.getCashRetained();
         this.openedBy = session.getAssignedCashier();
         this.openedByName = displayName(session.getAssignedCashier());
         this.closedBy = session.getClosedBy();
@@ -193,6 +229,14 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     public BigDecimal getExpectedCash() { return expectedCash; }
     public BigDecimal getCountedCash() { return countedCash; }
     public BigDecimal getVariance() { return variance; }
+    public BigDecimal getPhysicalInitialFloat() { return physicalInitialFloat; }
+    public BigDecimal getPhysicalTargetFloat() { return physicalTargetFloat; }
+    public BigDecimal getPhysicalCashRemoved() { return physicalCashRemoved; }
+    public BigDecimal getPhysicalCashRetained() { return physicalCashRetained; }
+    public Integer getPhysicalSessionCount() { return physicalSessionCount; }
+    public BigDecimal getSessionTargetFloat() { return sessionTargetFloat; }
+    public BigDecimal getSessionCashRemoved() { return sessionCashRemoved; }
+    public BigDecimal getSessionCashRetained() { return sessionCashRetained; }
     public User getOpenedBy() { return openedBy; }
     public String getOpenedByName() { return openedByName; }
     public User getClosedBy() { return closedBy; }

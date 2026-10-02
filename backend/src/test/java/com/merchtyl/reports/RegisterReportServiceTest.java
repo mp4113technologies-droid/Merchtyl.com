@@ -7,6 +7,8 @@ import com.merchtyl.register.Register;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
+import com.merchtyl.registersession.RegisterBusinessDayCashState;
+import com.merchtyl.registersession.RegisterBusinessDayCashStateRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
@@ -17,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -212,6 +215,48 @@ class RegisterReportServiceTest {
         assertThat(response.retailCash()).isEqualByComparingTo("4000.00");
     }
 
+    @Test
+    void multipleShiftsUseOnePhysicalOpeningFloatPerRegisterAndBusinessDay() {
+        when(actor.getTenantId()).thenReturn(UUID.randomUUID());
+        when(storeAccessService.currentTenantUser(any())).thenReturn(actor);
+        UUID businessDayId = UUID.randomUUID();
+        LocalDate businessDate = LocalDate.parse("2026-09-30");
+        RegisterSession firstShift = session(UUID.randomUUID(), RegisterSessionStatus.CLOSED,
+                "700.00", "700.00", businessDate, businessDayId);
+        RegisterSession secondShift = session(UUID.randomUUID(), RegisterSessionStatus.CLOSED,
+                "600.00", "600.00", businessDate, businessDayId);
+        when(firstShift.getOpenedAt()).thenReturn(Instant.parse("2026-09-30T08:00:00Z"));
+        when(secondShift.getOpenedAt()).thenReturn(Instant.parse("2026-09-30T16:00:00Z"));
+        List<RegisterSession> sessions = List.of(firstShift, secondShift);
+        when(registerSessionRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(sessions);
+        when(registerSessionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(sessions, PageRequest.of(0, 5), 2));
+        UUID firstShiftId = firstShift.getId();
+        UUID secondShiftId = secondShift.getId();
+        when(cashLedgerService.breakdowns(sessions)).thenReturn(Map.of(
+                firstShiftId, breakdown("440.00", "260.00", "0.00"),
+                secondShiftId, breakdown("440.00", "160.00", "0.00")));
+
+        RegisterBusinessDayCashState state = mock(RegisterBusinessDayCashState.class);
+        RegisterBusinessDayCashStateRepository states = mock(RegisterBusinessDayCashStateRepository.class);
+        BusinessDay reportDay = firstShift.getBusinessDay();
+        Register reportRegister = firstShift.getRegister();
+        when(state.getBusinessDay()).thenReturn(reportDay);
+        when(state.getRegister()).thenReturn(reportRegister);
+        when(state.getInitialFloat()).thenReturn(new BigDecimal("440.00"));
+        when(states.findAllByBusinessDay_IdIn(java.util.Set.of(businessDayId))).thenReturn(List.of(state));
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", states);
+
+        RegisterReportResponse response = service.summarize(new RegisterReportRequest(
+                STORE_ID, REGISTER_ID, null, null, businessDate, businessDate, 0, 5),
+                mock(org.springframework.security.core.Authentication.class));
+
+        assertThat(response.sessionCount()).isEqualTo(2);
+        assertThat(response.openingCash()).isEqualByComparingTo("440.00");
+        assertThat(response.rows().content()).extracting(RegisterReportRow::openingCash)
+                .containsExactly(new BigDecimal("440.00"), new BigDecimal("440.00"));
+    }
+
     private static CashLedgerBreakdownResponse breakdown() {
         return new CashLedgerBreakdownResponse(
                 new BigDecimal("100.00"),
@@ -274,6 +319,11 @@ class RegisterReportServiceTest {
 
     private static RegisterSession session(UUID id, RegisterSessionStatus status, String counted,
                                            String expectedAtClose, LocalDate businessDate) {
+        return session(id, status, counted, expectedAtClose, businessDate, UUID.randomUUID());
+    }
+
+    private static RegisterSession session(UUID id, RegisterSessionStatus status, String counted,
+                                           String expectedAtClose, LocalDate businessDate, UUID businessDayId) {
         RegisterSession session = session();
         when(session.getId()).thenReturn(id);
         when(session.getStatus()).thenReturn(status);
@@ -282,6 +332,7 @@ class RegisterReportServiceTest {
         when(session.getDifferenceCash()).thenReturn(counted == null || expectedAtClose == null ? null
                 : new BigDecimal(counted).subtract(new BigDecimal(expectedAtClose)));
         BusinessDay day = mock(BusinessDay.class);
+        when(day.getId()).thenReturn(businessDayId);
         when(day.getBusinessDate()).thenReturn(businessDate);
         when(session.getBusinessDay()).thenReturn(day);
         return session;

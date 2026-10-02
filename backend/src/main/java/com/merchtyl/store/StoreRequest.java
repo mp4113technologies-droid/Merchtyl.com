@@ -6,6 +6,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.Set;
+import java.math.BigDecimal;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 
 public record StoreRequest(
         @NotBlank @Size(max = 64) String code,
@@ -25,6 +28,7 @@ public record StoreRequest(
         boolean negativeStockAllowed,
         boolean active,
         @NotEmpty Set<StoreCapability> capabilities,
-        @Size(max = 180) String kitchenDisplayName
+        @Size(max = 180) String kitchenDisplayName,
+        @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal defaultTillFloat
 ) {
 }

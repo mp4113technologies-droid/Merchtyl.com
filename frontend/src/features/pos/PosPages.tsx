@@ -140,6 +140,49 @@ function money(value: number, currencyCode = 'USD') {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode }).format(value);
 }
 
+const payoutSlipPrintStyles = {
+  '@media screen': { '.payout-print-slip': { display: 'none !important' } },
+  '@media print': {
+    '@page': { size: 'auto', margin: '3mm' },
+    '.payout-print-slip, .payout-print-slip *': { visibility: 'visible !important' },
+    '.payout-print-slip': {
+      display: 'block !important', position: 'absolute !important', inset: '0 auto auto 0 !important',
+      width: 'calc(100% - 4mm) !important', maxWidth: '74mm !important', margin: '0 !important', padding: '2mm !important', border: '0 !important',
+      boxShadow: 'none !important', color: '#000 !important', background: '#fff !important',
+      fontFamily: 'Arial, sans-serif !important', fontSize: '11px !important', lineHeight: '1.35 !important'
+    }
+  }
+} as const;
+
+type PayoutSlipProps = {
+  storeName: string;
+  registerCode: string;
+  amount: string;
+  reason: string;
+  note?: string | null;
+  recordedBy: string;
+  occurredAt: string;
+};
+
+export const PayoutSlip = React.forwardRef<HTMLElement, PayoutSlipProps>(function PayoutSlip(props, ref) {
+  return <Box component="section" ref={ref} className="payout-print-slip" data-testid="payout-print-slip" aria-hidden="true">
+    <Typography component="div" sx={{ textAlign: 'center', fontWeight: 800, fontSize: '16px !important' }}>MERCHTYL</Typography>
+    <Typography component="div" sx={{ textAlign: 'center', fontWeight: 800, mb: 1.5 }}>CASH PAYOUT</Typography>
+    <Box sx={{ borderTop: '1px dashed #000', mb: 1 }} />
+    <Typography component="div"><strong>Store:</strong> {props.storeName}</Typography>
+    <Typography component="div"><strong>Register:</strong> {props.registerCode}</Typography>
+    <Typography component="div" sx={{ mt: 1 }}><strong>Date/Time:</strong><br />{props.occurredAt}</Typography>
+    <Typography component="div" sx={{ mt: 1 }}><strong>Amount:</strong><br />{props.amount}</Typography>
+    <Typography component="div" sx={{ mt: 1 }}><strong>Reason:</strong><br />{props.reason}</Typography>
+    {props.note ? <Typography component="div" sx={{ mt: 1 }}><strong>Note:</strong><br />{props.note}</Typography> : null}
+    <Typography component="div" sx={{ mt: 1 }}><strong>Recorded By:</strong><br />{props.recordedBy}</Typography>
+    <Box sx={{ borderTop: '1px dashed #000', mt: 1.5, pt: 1 }}>
+      <Typography component="div"><strong>Signature:</strong></Typography>
+      <Typography component="div" sx={{ mt: 2 }}>_______________________________</Typography>
+    </Box>
+  </Box>;
+});
+
 function roundedMoney(value: number) {
   return Number(value.toFixed(2));
 }
@@ -1109,6 +1152,7 @@ export function PosCartPage() {
   const [depositPayoutOpen, setDepositPayoutOpen] = React.useState(false);
   const [cashPayoutOpen, setCashPayoutOpen] = React.useState(false);
   const [recordedPayout, setRecordedPayout] = React.useState<CashMovement | null>(null);
+  const payoutPrintRef = React.useRef<HTMLElement | null>(null);
   const [lotteryNotice, setLotteryNotice] = React.useState<string | null>(null);
   const [payoutConfirmationOpen, setPayoutConfirmationOpen] = React.useState(false);
   const completionKeyRef = React.useRef<string | null>(null);
@@ -1153,6 +1197,15 @@ export function PosCartPage() {
       ]);
     }
   });
+
+  function printPayoutSlip() {
+    const printTarget = payoutPrintRef.current;
+    if (!recordedPayout || !printTarget || !printTarget.innerHTML.trim()) {
+      console.error('PAYOUT_SLIP_PRINT_TARGET_UNAVAILABLE');
+      return;
+    }
+    window.print();
+  }
 
   React.useEffect(() => {
     if (current.data?.registerType === 'FOOD_SERVICE') navigate('/pos/food', { replace: true });
@@ -1719,6 +1772,17 @@ export function PosCartPage() {
     <Stack data-testid="retail-checkout-shell" spacing={1} sx={{ height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden', color: posTokens.colors.text }}>
       <CustomItemDialog open={customItemOpen} initialItem={editingCustomItem} initialDescription={customItemDescription} taxTreatment={customItemTaxTreatment} currencyCode={currencyCode} onClose={closeCustomItem} onAdd={addCustomItem} />
       <GlobalStyles styles={receiptPrintStyles} />
+      <GlobalStyles styles={payoutSlipPrintStyles} />
+      {recordedPayout ? <PayoutSlip
+        ref={payoutPrintRef}
+        storeName={store?.name ?? 'Current store'}
+        registerCode={register?.code ?? 'Current register'}
+        amount={money(recordedPayout.amount, recordedPayout.currencyCode ?? currencyCode)}
+        reason={payoutReasons.find(([value]) => value === recordedPayout.reason)?.[1] ?? recordedPayout.reason}
+        note={recordedPayout.notes}
+        recordedBy={recordedPayout.createdByName ?? currentUser?.displayName ?? currentUser?.email ?? 'Current user'}
+        occurredAt={new Date(recordedPayout.occurredAt).toLocaleString()}
+      /> : null}
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ minHeight: 48, flexShrink: 0 }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h5" component="h1" sx={{ lineHeight: 1.1, color: posTokens.colors.navy, fontSize: { xs: 24, md: 28 } }}>Checkout</Typography>
@@ -1995,9 +2059,8 @@ export function PosCartPage() {
       <DepositPayoutDialog open={depositPayoutOpen} currencyCode={currencyCode} onClose={() => setDepositPayoutOpen(false)} onSubmit={addDepositPayout} />
       <CashPayoutDialog open={cashPayoutOpen} currencyCode={currencyCode} expectedCash={current.data?.expectedCash ?? 0} busy={cashPayoutMutation.isPending} error={cashPayoutMutation.error} onClose={() => setCashPayoutOpen(false)} onSubmit={(value) => cashPayoutMutation.mutate(value)} />
       <Dialog open={recordedPayout !== null} onClose={() => setRecordedPayout(null)} fullWidth maxWidth="xs">
-        <style>{`@media print { body * { visibility: hidden !important; } [data-payout-slip], [data-payout-slip] * { visibility: visible !important; } [data-payout-slip] { position: fixed; inset: 0 auto auto 0; width: 76mm; padding: 8mm; color: #000; background: #fff; } }`}</style>
         <DialogTitle>Payout Recorded</DialogTitle>
-        <DialogContent data-payout-slip><Stack spacing={1} sx={{ pt: 1 }}>
+        <DialogContent><Stack spacing={1} sx={{ pt: 1 }}>
           <Typography variant="h6" textAlign="center">MERCHTYL</Typography>
           <Typography variant="subtitle1" fontWeight={700} textAlign="center">CASH PAYOUT</Typography>
           <Typography><strong>Store:</strong> {store?.name ?? 'Current store'}</Typography>
@@ -2009,7 +2072,7 @@ export function PosCartPage() {
           <Typography><strong>Date/Time:</strong> {recordedPayout ? new Date(recordedPayout.occurredAt).toLocaleString() : ''}</Typography>
           <Typography sx={{ pt: 3 }}>Signature: __________________</Typography>
         </Stack></DialogContent>
-        <DialogActions><Button onClick={() => window.print()} startIcon={<PrintOutlinedIcon />}>Print Slip</Button><Button variant="contained" onClick={() => setRecordedPayout(null)}>Done</Button></DialogActions>
+        <DialogActions><Button onClick={printPayoutSlip} startIcon={<PrintOutlinedIcon />}>Print Slip</Button><Button variant="contained" onClick={() => setRecordedPayout(null)}>Done</Button></DialogActions>
       </Dialog>
       <Dialog open={payoutConfirmationOpen} onClose={completeMutation.isPending ? undefined : () => setPayoutConfirmationOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>{activeSale?.items.some(item => item.lineType === 'DEPOSIT_PAYOUT') ? 'Confirm deposit cash payout' : 'Confirm lottery cash payout'}</DialogTitle>

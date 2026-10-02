@@ -75,6 +75,15 @@ public class RegisterSessionController {
         return registerSessionService.close(id, request, authentication);
     }
 
+    @PostMapping("/{id}/settlement-preview")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_CLOSE)")
+    RegisterTillSettlementResponse previewSettlement(
+            @org.springframework.web.bind.annotation.PathVariable UUID id,
+            @Valid @RequestBody RegisterTillSettlementPreviewRequest request,
+            Authentication authentication) {
+        return registerSessionService.previewSettlement(id, request, authentication);
+    }
+
     @PostMapping("/{id}/start-closing")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_CLOSE)")
     RegisterSessionResponse startClosing(@org.springframework.web.bind.annotation.PathVariable UUID id,

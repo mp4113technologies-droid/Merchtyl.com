@@ -18,6 +18,8 @@ import {
   IconButton,
   MenuItem,
   Paper,
+  Radio,
+  RadioGroup,
   Stack,
   Switch,
   Table,
@@ -66,11 +68,17 @@ const registerSchema = z.object({
     .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Use letters, numbers, underscores, and hyphens'),
   name: z.string().trim().min(1, 'Name is required').max(180, 'Name must be 180 characters or fewer'),
   locationDescription: z.string().max(1000, 'Location description must be 1000 characters or fewer').optional(),
+  tillFloatMode: z.enum(['STORE_DEFAULT', 'CUSTOM']),
+  tillFloatOverride: z.string(),
   active: z.boolean()
+}).superRefine((values, context) => {
+  if (values.tillFloatMode === 'CUSTOM' && !/^\d+(\.\d{1,2})?$/.test(values.tillFloatOverride)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['tillFloatOverride'], message: 'Enter a non-negative amount with up to 2 decimals' });
+  }
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
-type RegisterTextFieldName = Exclude<keyof RegisterFormValues, 'storeId' | 'type' | 'active'>;
+type RegisterTextFieldName = Exclude<keyof RegisterFormValues, 'storeId' | 'type' | 'active' | 'tillFloatMode'>;
 
 const emptyRegisterForm: RegisterFormValues = {
   storeId: '',
@@ -78,6 +86,8 @@ const emptyRegisterForm: RegisterFormValues = {
   code: '',
   name: '',
   locationDescription: '',
+  tillFloatMode: 'STORE_DEFAULT',
+  tillFloatOverride: '',
   active: true
 };
 
@@ -105,6 +115,8 @@ function registerFormValues(register: Register): RegisterFormValues {
     code: register.code,
     name: register.name,
     locationDescription: register.locationDescription ?? '',
+    tillFloatMode: register.tillFloatOverride == null ? 'STORE_DEFAULT' : 'CUSTOM',
+    tillFloatOverride: register.tillFloatOverride == null ? '' : register.tillFloatOverride.toFixed(2),
     active: register.active
   };
 }
@@ -116,7 +128,8 @@ function cleanPayload(values: RegisterFormValues): RegisterPayload {
     code: values.code.trim(),
     name: values.name.trim(),
     locationDescription: optionalText(values.locationDescription),
-    active: values.active
+    active: values.active,
+    tillFloatOverride: values.tillFloatMode === 'CUSTOM' ? Number(values.tillFloatOverride) : null
   };
 }
 
@@ -250,6 +263,23 @@ function RegisterForm({
           />
         </Grid>
       </Grid>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="h6">Opening Cash / Till Float</Typography>
+        <Controller name="tillFloatMode" control={form.control} render={({ field }) => (
+          <Stack>
+            <RadioGroup {...field}>
+              <FormControlLabel value="STORE_DEFAULT" control={<Radio disabled={disabled} />}
+                label={selectedStore?.defaultTillFloat == null ? 'Use Store Default — Not configured' : `Use Store Default — ${new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedStore.currencyCode }).format(selectedStore.defaultTillFloat)}`} />
+              <FormControlLabel value="CUSTOM" control={<Radio disabled={disabled} />} label="Custom Amount" />
+            </RadioGroup>
+            {field.value === 'CUSTOM' ? <Controller name="tillFloatOverride" control={form.control} render={({ field: amount, fieldState }) => (
+              <TextField {...amount} value={amount.value ?? ''} label="Custom Amount" type="number" inputProps={{ min: 0, step: '0.01' }}
+                disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message} sx={{ mt: 1, maxWidth: 360 }} />
+            )} /> : null}
+          </Stack>
+        )} />
+      </Paper>
 
       <Controller
         name="active"

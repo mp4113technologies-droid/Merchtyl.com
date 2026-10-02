@@ -2,6 +2,7 @@ package com.merchtyl.register;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 public record RegisterResponse(
         UUID id,
@@ -13,11 +14,13 @@ public record RegisterResponse(
         RegisterType type,
         Instant createdAt,
         Instant updatedAt,
-        long version
+        long version,
+        BigDecimal tillFloatOverride,
+        BigDecimal effectiveTillFloat
 ) {
     public RegisterResponse(UUID id, UUID storeId, String code, String name, String locationDescription,
                             boolean active, Instant createdAt, Instant updatedAt, long version) {
-        this(id, storeId, code, name, locationDescription, active, RegisterType.RETAIL, createdAt, updatedAt, version);
+        this(id, storeId, code, name, locationDescription, active, RegisterType.RETAIL, createdAt, updatedAt, version, null, null);
     }
 
     static RegisterResponse from(Register register) {
@@ -31,6 +34,8 @@ public record RegisterResponse(
                 register.getType(),
                 register.getCreatedAt(),
                 register.getUpdatedAt(),
-                register.getVersion());
+                register.getVersion(),
+                register.getTillFloatOverride(),
+                register.getEffectiveTillFloat());
     }
 }

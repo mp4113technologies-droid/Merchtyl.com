@@ -126,6 +126,7 @@ public class CashLedgerService {
                 .setScale(MONEY_SCALE);
         BigDecimal totalOut = entries.stream()
                 .filter(entry -> entry.getDirection() == CashLedgerDirection.OUT)
+                .filter(entry -> entry.getSourceType() != CashLedgerSourceType.SESSION_CLOSE_TILL_REMOVAL)
                 .map(CashLedgerEntry::getAmount)
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE), BigDecimal::add)
                 .setScale(MONEY_SCALE);
@@ -235,7 +236,8 @@ public class CashLedgerService {
     private static void validateSourceDirection(CashLedgerSourceType sourceType, CashLedgerDirection direction) {
         switch (sourceType) {
             case SESSION_OPENING_FLOAT, SALE_CASH_RECEIPT, LOTTERY_SALE_CASH, LOTTERY_PAYOUT_REVERSAL -> requireDirection(sourceType, direction, CashLedgerDirection.IN);
-            case SALE_CHANGE_GIVEN, LOTTERY_PAYOUT_CASH, LOTTERY_SALE_CANCELLATION_CASH, DEPOSIT_PAYOUT, CASH_REFUND -> requireDirection(sourceType, direction, CashLedgerDirection.OUT);
+            case SALE_CHANGE_GIVEN, LOTTERY_PAYOUT_CASH, LOTTERY_SALE_CANCELLATION_CASH, DEPOSIT_PAYOUT, CASH_REFUND,
+                    SESSION_CLOSE_TILL_REMOVAL -> requireDirection(sourceType, direction, CashLedgerDirection.OUT);
             case CASH_MOVEMENT, SESSION_CLOSE_ADJUSTMENT -> {
             }
         }

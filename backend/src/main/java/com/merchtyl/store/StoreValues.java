@@ -1,6 +1,7 @@
 package com.merchtyl.store;
 
 import java.util.UUID;
+import java.math.BigDecimal;
 
 record StoreValues(
         String code,
@@ -23,6 +24,7 @@ record StoreValues(
         String taxRegionCode,
         boolean pricesIncludeTax,
         boolean negativeStockAllowed,
-        boolean active
+        boolean active,
+        BigDecimal defaultTillFloat
 ) {
 }

@@ -48,6 +48,8 @@ import com.merchtyl.register.RegisterType;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.registersession.RegisterSessionRepository;
 import com.merchtyl.registersession.RegisterSessionStatus;
+import com.merchtyl.registersession.RegisterBusinessDayCashState;
+import com.merchtyl.registersession.RegisterBusinessDayCashStateRepository;
 import com.merchtyl.sales.Payment;
 import com.merchtyl.sales.PaymentMethod;
 import com.merchtyl.sales.Sale;
@@ -138,6 +140,8 @@ public class BusinessDayService {
     private final Clock clock;
     @Autowired(required = false)
     private StoreAccessService storeAccessService;
+    @Autowired(required = false)
+    private RegisterBusinessDayCashStateRepository registerBusinessDayCashStateRepository;
 
     @Autowired
     public BusinessDayService(
@@ -693,7 +697,10 @@ public class BusinessDayService {
                 Instant.now(clock),
                 generated.totals(),
                 snapshot(generated.snapshot()));
-        generated.registers().forEach(values -> report.addRegisterSummary(new EndOfDayRegisterSummary(report, values.session(), values.values())));
+        Map<UUID, RegisterBusinessDayCashState> physicalStatesByRegister = generated.physicalRegisterStates().stream()
+                .collect(Collectors.toMap(state -> state.getRegister().getId(), Function.identity()));
+        generated.registers().forEach(values -> report.addRegisterSummary(new EndOfDayRegisterSummary(
+                report, values.session(), values.values(), physicalStatesByRegister.get(values.session().getRegister().getId()))));
         generated.payments().forEach(values -> report.addPaymentSummary(new EndOfDayPaymentSummary(report, values.method(), values.collected(), values.refunded(), values.net(), values.cashTendered(), values.changeGiven(), values.transactionCount(), values.splitPaymentCount())));
         generated.taxes().forEach(values -> report.addTaxSummary(new EndOfDayTaxSummary(report, values.componentCode(), values.componentName(), values.taxableSales(), values.exemptSales(), values.zeroRatedSales(), values.outOfScopeSales(), values.taxCollected(), values.taxRefunded(), values.roundingAdjustment())));
         generated.categories().forEach(values -> report.addCategorySalesSummary(new EndOfDayCategorySalesSummary(
@@ -724,6 +731,11 @@ public class BusinessDayService {
     private EndOfDayClosingPreviewResponse previewResponse(BusinessDay day, GeneratedReport generated) {
         EndOfDayReportTotals totals = generated.totals();
         BusinessDayConfiguration configuration = configuration(day.getStore());
+        Map<UUID, RegisterBusinessDayCashState> physicalStates = generated.physicalRegisterStates().stream()
+                .collect(Collectors.toMap(state -> state.getRegister().getId(), Function.identity()));
+        List<EndOfDayRegisterSummaryResponse> registerPreviews = generated.registers().stream()
+                .map(register -> registerPreview(register, physicalStates.get(register.session().getRegister().getId())))
+                .toList();
         return new EndOfDayClosingPreviewResponse(
                 day.getId(),
                 day.getStore().getId(),
@@ -754,6 +766,10 @@ public class BusinessDayService {
                 totals.lowestTransactionValue(),
                 totals.itemsSold(),
                 totals.averageBasketSize(),
+                totals.initialOpeningCash(),
+                totals.cashBeforeFinalSettlement(),
+                totals.cashRemovedFromTills(),
+                totals.cashRetainedInTills(),
                 totals.expectedCash(),
                 totals.countedCash(),
                 totals.cashVariance(),
@@ -761,8 +777,8 @@ public class BusinessDayService {
                 totals.cashVariance().abs().compareTo(configuration.getCashVarianceExplanationThreshold()) > 0,
                 configuration.isRequireManagerSignOff(),
                 totals.currencyCode(),
-                EndOfDayRegisterReconciliationResponse.aggregate(generated.registers().stream().map(BusinessDayService::registerPreview).toList()),
-                generated.registers().stream().map(BusinessDayService::registerPreview).toList(),
+                EndOfDayRegisterReconciliationResponse.aggregate(registerPreviews),
+                registerPreviews,
                 generated.payments().stream().map(BusinessDayService::paymentPreview).toList(),
                 generated.taxes().stream().map(BusinessDayService::taxPreview).toList(),
                 generated.categories(),
@@ -785,7 +801,8 @@ public class BusinessDayService {
                 .reduce(moneyZero(), BigDecimal::add));
     }
 
-    private static EndOfDayRegisterSummaryResponse registerPreview(RegisterValuesWithSession register) {
+    private static EndOfDayRegisterSummaryResponse registerPreview(RegisterValuesWithSession register,
+                                                                    RegisterBusinessDayCashState physicalState) {
         RegisterSession session = register.session();
         RegisterSummaryValues values = register.values();
         return new EndOfDayRegisterSummaryResponse(
@@ -813,6 +830,14 @@ public class BusinessDayService {
                 values.expectedCash(),
                 values.countedCash(),
                 values.variance(),
+                physicalState == null ? null : physicalState.getInitialFloat(),
+                physicalState == null ? null : physicalState.getTargetFloat(),
+                physicalState == null ? null : physicalState.getCashRemoved(),
+                physicalState == null ? null : physicalState.getRetainedCash(),
+                physicalState == null ? null : physicalState.getSessionCount(),
+                session.getTargetFloatAtClose(),
+                session.getCashRemoved(),
+                session.getCashRetained(),
                 session.getAssignedCashier().getId(),
                 display(session.getAssignedCashier()),
                 session.getClosedBy() == null ? null : session.getClosedBy().getId(),
@@ -967,13 +992,38 @@ public class BusinessDayService {
         // When a register is opened more than once in a business day, only its chronologically
         // final reconciled session represents the cash physically present at EOD.
         List<RegisterValuesWithSession> terminalRegisterValues = terminalRegisterValues(registerValues);
-        BigDecimal expectedCash = money(terminalRegisterValues.stream().map(value -> value.values().expectedCash()).reduce(moneyZero(), BigDecimal::add));
-        BigDecimal countedCash = money(terminalRegisterValues.stream().map(value -> value.values().countedCash()).reduce(moneyZero(), BigDecimal::add));
-        BigDecimal variance = money(countedCash.subtract(expectedCash));
+        List<RegisterBusinessDayCashState> physicalRegisterStates = registerBusinessDayCashStateRepository == null
+                ? List.of()
+                : registerBusinessDayCashStateRepository.findAllByBusinessDay_Id(day.getId());
+        boolean authoritativePhysicalStates = !physicalRegisterStates.isEmpty()
+                && physicalRegisterStates.size() == sessions.stream().map(session -> session.getRegister().getId()).distinct().count()
+                && physicalRegisterStates.stream().allMatch(state -> state.getFinalExpectedCash() != null && state.getFinalCountedCash() != null);
+        BigDecimal initialOpeningCash = authoritativePhysicalStates
+                ? money(physicalRegisterStates.stream().map(RegisterBusinessDayCashState::getInitialFloat).reduce(moneyZero(), BigDecimal::add))
+                : money(firstRegisterValues(registerValues).stream().map(value -> value.values().openingFloat()).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal cashBeforeFinalSettlement = authoritativePhysicalStates
+                ? money(physicalRegisterStates.stream().map(RegisterBusinessDayCashState::getFinalExpectedCash).reduce(moneyZero(), BigDecimal::add))
+                : money(terminalRegisterValues.stream().map(value -> value.values().expectedCash()).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal cashRemovedFromTills = authoritativePhysicalStates
+                ? money(physicalRegisterStates.stream().map(RegisterBusinessDayCashState::getCashRemoved).reduce(moneyZero(), BigDecimal::add))
+                : moneyZero();
+        BigDecimal cashRetainedInTills = authoritativePhysicalStates
+                ? money(physicalRegisterStates.stream().map(RegisterBusinessDayCashState::getRetainedCash).reduce(moneyZero(), BigDecimal::add))
+                : cashBeforeFinalSettlement;
+        BigDecimal expectedCash = cashRetainedInTills;
+        BigDecimal countedCash = authoritativePhysicalStates
+                ? money(physicalRegisterStates.stream().map(RegisterBusinessDayCashState::getFinalCountedCash).reduce(moneyZero(), BigDecimal::add))
+                : money(terminalRegisterValues.stream().map(value -> value.values().countedCash()).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal variance = authoritativePhysicalStates
+                ? money(physicalRegisterStates.stream()
+                        .map(state -> state.getFinalCountedCash().subtract(state.getFinalExpectedCash()))
+                        .reduce(moneyZero(), BigDecimal::add))
+                : money(countedCash.subtract(cashBeforeFinalSettlement));
         BigDecimal voidTotal = money(sum(voidedSales, Sale::getTotalAmount));
         EndOfDayReportTotals totals = new EndOfDayReportTotals(grossSales, netSales, discounts, refundTotal, voidTotal,
                 money(saleTax.subtract(refundTax)), depositsCollected, depositPayouts, netDeposits,
                 transactionCount, averageTransaction, highest, lowest, itemsSold, averageBasketSize,
+                initialOpeningCash, cashBeforeFinalSettlement, cashRemovedFromTills, cashRetainedInTills,
                 expectedCash, countedCash, variance, day.getStore().getCurrencyCode());
 
         List<EndOfDayPaymentValues> paymentValues = paymentValues(sales, refunds);
@@ -988,8 +1038,8 @@ public class BusinessDayService {
         EndOfDayInventoryValues inventoryValues = inventoryValues(inventoryTransactions, balances);
         List<EndOfDayCashierValues> cashierValues = cashierValues(sales, refunds, lotterySales, lotteryPayouts);
         List<EndOfDayExceptionValues> exceptionValues = exceptionValues(day, sales, voidedSales, refunds, sessions, cashMovements, lotteryPayouts, reversals, variance);
-        Map<String, Object> snapshot = snapshotMap(day, totals, registerValues, paymentValues, taxValues, categoryValues, lotteryValues, inventoryValues, cashierValues, exceptionValues);
-        return new GeneratedReport(totals, registerValues, paymentValues, taxValues, categoryValues, lotteryValues, inventoryValues, cashierValues, exceptionValues, snapshot);
+        Map<String, Object> snapshot = snapshotMap(day, totals, registerValues, physicalRegisterStates, paymentValues, taxValues, categoryValues, lotteryValues, inventoryValues, cashierValues, exceptionValues);
+        return new GeneratedReport(totals, registerValues, physicalRegisterStates, paymentValues, taxValues, categoryValues, lotteryValues, inventoryValues, cashierValues, exceptionValues, snapshot);
     }
 
     static List<RegisterValuesWithSession> terminalRegisterValues(List<RegisterValuesWithSession> values) {
@@ -1005,6 +1055,13 @@ public class BusinessDayService {
                                 .thenComparing(value -> value.session().getOpenedAt()))
                         .orElseThrow())
                 .toList();
+    }
+
+    static List<RegisterValuesWithSession> firstRegisterValues(List<RegisterValuesWithSession> values) {
+        return values.stream().collect(Collectors.groupingBy(
+                        value -> value.session().getRegister().getId(), LinkedHashMap::new, Collectors.toList()))
+                .values().stream().map(group -> group.stream()
+                        .min(Comparator.comparing(value -> value.session().getOpenedAt())).orElseThrow()).toList();
     }
 
     private ClosingValidationResponse validate(BusinessDay day, boolean force) {
@@ -1614,7 +1671,7 @@ public class BusinessDayService {
         }
     }
 
-    private static Map<String, Object> snapshotMap(BusinessDay day, EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, List<EndOfDayCategorySalesSummaryResponse> categories, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions) {
+    private static Map<String, Object> snapshotMap(BusinessDay day, EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<RegisterBusinessDayCashState> physicalRegisterStates, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, List<EndOfDayCategorySalesSummaryResponse> categories, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("businessDayId", day.getId());
         snapshot.put("storeId", day.getStore().getId());
@@ -1622,6 +1679,7 @@ public class BusinessDayService {
         snapshot.put("generatedFromStatus", day.getStatus());
         snapshot.put("totals", totals);
         snapshot.put("registers", registers.stream().map(RegisterValuesWithSession::values).toList());
+        snapshot.put("physicalRegisters", physicalRegisterStates.stream().map(BusinessDayService::physicalStateSnapshot).toList());
         snapshot.put("payments", payments);
         snapshot.put("taxes", taxes);
         snapshot.put("categorySalesDistribution", categories);
@@ -1630,6 +1688,20 @@ public class BusinessDayService {
         snapshot.put("cashiers", cashiers);
         snapshot.put("exceptions", exceptions);
         return snapshot;
+    }
+
+    private static Map<String, Object> physicalStateSnapshot(RegisterBusinessDayCashState state) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("registerId", state.getRegister().getId());
+        value.put("registerCode", state.getRegister().getCode());
+        value.put("sessionCount", state.getSessionCount());
+        value.put("initialFloat", state.getInitialFloat());
+        value.put("targetFloat", state.getTargetFloat());
+        value.put("cashRemoved", state.getCashRemoved());
+        value.put("cashRetained", state.getRetainedCash());
+        value.put("finalExpectedCash", state.getFinalExpectedCash());
+        value.put("finalCountedCash", state.getFinalCountedCash());
+        return value;
     }
 
     private static ClosingBlockerResponse blocker(String code, String message, UUID relatedId) {
@@ -2024,7 +2096,12 @@ public class BusinessDayService {
     private record EndOfDayExceptionValues(EndOfDayExceptionType type, long count, BigDecimal totalAmount, String details) {
     }
 
-    private record GeneratedReport(EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers, List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes, List<EndOfDayCategorySalesSummaryResponse> categories, EndOfDayLotteryValues lottery, EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers, List<EndOfDayExceptionValues> exceptions, Map<String, Object> snapshot) {
+    private record GeneratedReport(EndOfDayReportTotals totals, List<RegisterValuesWithSession> registers,
+                                   List<RegisterBusinessDayCashState> physicalRegisterStates,
+                                   List<EndOfDayPaymentValues> payments, List<EndOfDayTaxValues> taxes,
+                                   List<EndOfDayCategorySalesSummaryResponse> categories, EndOfDayLotteryValues lottery,
+                                   EndOfDayInventoryValues inventory, List<EndOfDayCashierValues> cashiers,
+                                   List<EndOfDayExceptionValues> exceptions, Map<String, Object> snapshot) {
     }
 
     private static String printableHtml(EndOfDayReportResponse report) {
@@ -2118,15 +2195,23 @@ public class BusinessDayService {
                 List.of("depositsCollected", fmt(report.depositsCollected())),
                 List.of("depositPayouts", fmt(report.depositPayouts())),
                 List.of("netDeposits", fmt(report.netDeposits())),
+                List.of("initialOpeningCash", fmt(report.initialOpeningCash())),
+                List.of("cashBeforeFinalSettlement", fmt(report.cashBeforeFinalSettlement())),
+                List.of("cashBeforeSettlement", fmt(report.cashBeforeFinalSettlement())),
+                List.of("cashRemovedFromTills", fmt(report.cashRemovedFromTills())),
+                List.of("tillSweepAmount", fmt(report.cashRemovedFromTills())),
+                List.of("cashRetainedInTills", fmt(report.cashRetainedInTills())),
                 List.of("expectedCashInTills", fmt(report.expectedCash())),
                 List.of("countedCash", fmt(report.countedCash())),
                 List.of("cashVariance", fmt(report.cashVariance()))));
-        appendCsvSection(csv, "registerReconciliation", List.of("register", "sessions", "expectedCash", "countedCash", "variance"),
-                report.registerReconciliation().stream().map(register -> List.of(register.registerCode(), String.valueOf(register.sessionCount()), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()))).toList());
+        appendCsvSection(csv, "registerReconciliation", List.of("registerId", "registerCode", "registerName", "sessionCount", "initialFloat", "targetFloat", "cashBeforeSettlement", "totalRemoved", "retainedCash", "finalCountedCash", "variance"),
+                report.registerReconciliation().stream().map(register -> List.of(register.registerId().toString(), register.registerCode(), register.registerName(), String.valueOf(register.sessionCount()),
+                        fmt(register.initialFloat()), fmt(register.targetFloat()), fmt(register.cashBeforeSettlement()), fmt(register.cashRemoved()),
+                        fmt(register.cashRetained()), fmt(register.finalCountedCash()), fmt(register.variance()))).toList());
         appendCsvSection(csv, "payments", List.of("method", "collected", "refunded", "net", "cashTendered", "changeGiven"),
                 report.payments().stream().map(payment -> List.of(payment.paymentMethod().name(), fmt(payment.collected()), fmt(payment.refunded()), fmt(payment.net()), fmt(payment.cashTendered()), fmt(payment.changeGiven()))).toList());
-        appendCsvSection(csv, "registers", List.of("register", "openingFloat", "cashPayouts", "payoutReversals", "expectedCash", "countedCash", "variance", "forceClosed", "forceCloseReason"),
-                report.registers().stream().map(register -> List.of(register.registerCode(), fmt(register.openingFloat()), fmt(register.payouts()), fmt(register.payoutReversals()), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()), String.valueOf(register.forceClosed()), nullToEmpty(register.forceCloseReason()))).toList());
+        appendCsvSection(csv, "registerSessions", List.of("registerSessionId", "registerId", "registerCode", "cashier", "openedAt", "closedAt", "sessionOpeningBalance", "expectedCashAtClose", "countedCash", "variance", "targetTillFloat", "cashRemoved", "cashLeftInTill", "cashPayouts", "payoutReversals", "forceClosed", "forceCloseReason"),
+                report.registers().stream().map(register -> List.of(nullToEmpty(register.registerSessionId() == null ? null : register.registerSessionId().toString()), register.registerId().toString(), register.registerCode(), register.openedByName(), register.openedAt().toString(), register.closedAt() == null ? "" : register.closedAt().toString(), fmt(register.openingFloat()), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()), fmt(register.sessionTargetFloat()), fmt(register.sessionCashRemoved()), fmt(register.sessionCashRetained()), fmt(register.payouts()), fmt(register.payoutReversals()), String.valueOf(register.forceClosed()), nullToEmpty(register.forceCloseReason()))).toList());
         appendCsvSection(csv, "taxes", List.of("componentCode", "componentName", "taxableSales", "taxCollected", "taxRefunded", "netTaxCollected"),
                 report.taxes().stream().map(tax -> List.of(tax.componentCode(), tax.componentName(), fmt(tax.taxableSales()), fmt(tax.taxCollected()), fmt(tax.taxRefunded()), fmt(tax.netTaxCollected()))).toList());
         appendCsvSection(csv, "categorySalesByTaxTreatment", List.of("categoryId", "categoryCode", "categoryName", "taxTreatment", "taxCategoryCode", "taxCategoryName", "quantity", "grossSales", "discounts", "refunds", "netSalesBeforeTax", "taxCollected"),
@@ -2291,11 +2376,11 @@ public class BusinessDayService {
     }
 
     private static String fmt(BigDecimal value) {
-        return value == null ? "" : value.stripTrailingZeros().toPlainString();
+        return value == null ? "" : value.setScale(MONEY_SCALE, RoundingMode.HALF_UP).toPlainString();
     }
 
     private static String fmtQuantity(BigDecimal value) {
-        return fmt(value);
+        return value == null ? "" : value.stripTrailingZeros().toPlainString();
     }
 
     private static String fmtPercent(BigDecimal value) {

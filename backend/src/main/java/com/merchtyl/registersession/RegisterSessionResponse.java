@@ -39,7 +39,14 @@ public record RegisterSessionResponse(
         Instant tillSecuredAt,
         Instant tillPinLockedUntil,
         boolean posPinConfigured,
-        SalesClassification salesClassification
+        SalesClassification salesClassification,
+        BigDecimal targetFloatAtClose,
+        BigDecimal cashRetained,
+        BigDecimal cashRemoved,
+        UUID retentionOverrideByUserId,
+        String retentionOverrideByDisplayName,
+        String retentionOverrideReason,
+        String currencyCode
 ) {
     public RegisterSessionResponse(
             UUID id, UUID storeId, UUID registerId, UUID deviceId,
@@ -53,7 +60,7 @@ public record RegisterSessionResponse(
                 assignedCashierDisplayName, assignedCashierId, assignedCashierDisplayName, status, openingCash, expectedCash, countedCash,
                 expectedCashAtClose, differenceCash, closedByUserId, closedByEmail, closedByDisplayName,
                 closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false,
-                SalesClassification.zero());
+                SalesClassification.zero(), null, null, null, null, null, null, "USD");
     }
 
     static RegisterSessionResponse from(RegisterSession session, BigDecimal expectedCash) {
@@ -85,7 +92,11 @@ public record RegisterSessionResponse(
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
                 session.getVersion(), session.isTillSecured(), session.getTillSecuredAt(),
-                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin(), SalesClassification.zero());
+                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin(), SalesClassification.zero(),
+                session.getTargetFloatAtClose(), session.getCashRetained(), session.getCashRemoved(),
+                session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getId(),
+                session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getDisplayName(),
+                session.getRetentionOverrideReason(), session.getStore().getCurrencyCode());
     }
 
     static RegisterSessionResponse from(RegisterSession session, CashLedgerBreakdownResponse reconciliation) {
@@ -108,7 +119,7 @@ public record RegisterSessionResponse(
                 session.getOpenedBy() == null ? null : session.getOpenedBy().getDisplayName(),
                 session.getStatus(),
                 session.getOpeningCash(),
-                reconciliation.expectedCash(),
+                session.getExpectedCashAtClose() == null ? reconciliation.expectedCash() : session.getExpectedCashAtClose(),
                 session.getCountedCash(),
                 session.getExpectedCashAtClose(),
                 session.getDifferenceCash(),
@@ -122,6 +133,10 @@ public record RegisterSessionResponse(
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
                 session.getVersion(), session.isTillSecured(), session.getTillSecuredAt(),
-                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin(), salesClassification);
+                session.getTillPinLockedUntil(), session.getAssignedCashier().hasPosPin(), salesClassification,
+                session.getTargetFloatAtClose(), session.getCashRetained(), session.getCashRemoved(),
+                session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getId(),
+                session.getRetentionOverrideBy() == null ? null : session.getRetentionOverrideBy().getDisplayName(),
+                session.getRetentionOverrideReason(), session.getStore().getCurrencyCode());
     }
 }

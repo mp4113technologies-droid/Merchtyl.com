@@ -131,7 +131,7 @@ describe('Register pages', () => {
 
   it('renders registers and filters by store', async () => {
     storeSession(['OWNER']);
-    const mainStore = store({ capabilities: ['RETAIL', 'FOOD_SERVICE'] });
+    const mainStore = store({ capabilities: ['RETAIL', 'FOOD_SERVICE'], defaultTillFloat: 440 });
     const secondStore = store({
       id: '00000000-0000-0000-0000-000000000903',
       code: 'SECOND',
@@ -197,7 +197,7 @@ describe('Register pages', () => {
 
   it('creates a register and opens the edit page', async () => {
     storeSession(['OWNER']);
-    const mainStore = store({ capabilities: ['RETAIL', 'FOOD_SERVICE'] });
+    const mainStore = store({ capabilities: ['RETAIL', 'FOOD_SERVICE'], defaultTillFloat: 440 });
     const created = register({
       id: '00000000-0000-0000-0000-000000000905',
       code: 'LANE-2',
@@ -225,6 +225,7 @@ describe('Register pages', () => {
     render(<App initialEntries={['/registers/new']} />);
 
     expect(await screen.findByRole('heading', { name: 'New register' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: /Use Store Default.*440\.00/ })).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText('Code'), 'lane-2');
     await userEvent.click(screen.getByLabelText('Register Type'));
     await userEvent.click(await screen.findByRole('option', { name: 'Restaurant / Kitchen POS' }));
@@ -269,6 +270,7 @@ describe('Register pages', () => {
     render(<App initialEntries={[`/registers/${current.id}`]} />);
 
     expect(await screen.findByRole('heading', { name: 'Front Register' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Opening Cash / Till Float' })).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText('Name'));
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('Name is required')).toBeInTheDocument();

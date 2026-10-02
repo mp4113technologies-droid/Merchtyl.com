@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../../app/App';
-import { PaymentDialog } from './PosPages';
+import { PaymentDialog, PayoutSlip } from './PosPages';
 import { applicationDeviceIdentifierKey } from '../../app/deviceIdentity';
 import { clearDraftCartRecovery, loadDraftCartRecovery, saveDraftCartRecovery } from './draftCartRecovery';
 import { barcodeScannerPreferencesKey, defaultBarcodeScannerPreferences } from '../hardware/barcodeScanner';
@@ -450,6 +450,17 @@ describe('POS pages', () => {
     window.localStorage.clear();
     storeSession();
     vi.restoreAllMocks();
+  });
+
+  it('omits an empty note and all controls from the dedicated payout print target', () => {
+    render(<PayoutSlip storeName="adviam" registerCode="12E12" amount="CA$20.00"
+      reason="Vendor Payment" recordedBy="ascdsa asda" occurredAt="Sep 28, 2026, 8:38 PM" />);
+
+    const slip = screen.getByTestId('payout-print-slip');
+    expect(slip.closest('[role="dialog"]')).toBeNull();
+    expect(slip).not.toHaveTextContent('Note:');
+    expect(within(slip).queryByRole('button')).not.toBeInTheDocument();
+    expect(slip).toHaveTextContent('Signature:');
   });
 
   it('starts cash at zero and accumulates CAD denominations before recording only the applied balance', async () => {
@@ -923,12 +934,17 @@ describe('POS pages', () => {
 
   it('records an independent cash payout and preserves the active cart', async () => {
     let payoutBody: any;
+    let payoutWrites = 0;
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = new URL(String(input), window.location.origin);
       if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse({
-        ...currentUser(), permissions: ['CASH_MOVEMENT_CREATE', 'POS_CUSTOM_ITEM']
+        ...currentUser(), displayName: 'ascdsa asda', permissions: ['CASH_MOVEMENT_CREATE', 'POS_CUSTOM_ITEM']
       });
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page([{ ...store(), name: 'adviam', currencyCode: 'CAD' }]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page([{ ...register(), code: '12E12' }]));
       if (url.pathname.endsWith('/api/v1/cash-movements') && init?.method === 'POST') {
+        payoutWrites += 1;
         payoutBody = JSON.parse(String(init.body));
         return jsonResponse({
           id: '00000000-0000-0000-0000-000000000999',
@@ -937,12 +953,12 @@ describe('POS pages', () => {
           registerSessionId: sessionId,
           type: 'PAYOUT',
           direction: 'OUT',
-          amount: 50,
-          currencyCode: 'USD',
+          amount: 20,
+          currencyCode: 'CAD',
           reason: payoutBody.reason,
           notes: payoutBody.notes ?? null,
           createdBy: cashierId,
-          createdByName: 'Cashier One',
+          createdByName: 'ascdsa asda',
           occurredAt: payoutBody.occurredAt,
           approvedBy: null,
           approvedAt: null,
@@ -953,7 +969,7 @@ describe('POS pages', () => {
         }, 201);
       }
       if (url.pathname.endsWith('/api/v1/register-sessions/current')) {
-        return jsonResponse({ ...registerSession(), expectedCash: payoutBody ? 50 : 100 });
+        return jsonResponse({ ...registerSession(), expectedCash: payoutBody ? 80 : 100 });
       }
       return commonApi(input) ?? jsonResponse({}, 404);
     });
@@ -963,26 +979,52 @@ describe('POS pages', () => {
     let dialog = screen.getByRole('dialog', { name: 'Add Custom Item' });
     await userEvent.clear(within(dialog).getByRole('textbox', { name: 'Item Description' }));
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Item Description' }), 'Cart item');
-    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Price (USD)' }), '5');
+    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Price (CAD)' }), '5');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add to Cart' }));
     expect(await screen.findByText('Cart item')).toBeVisible();
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Custom Item' })).not.toBeInTheDocument());
 
     await userEvent.click(screen.getByRole('button', { name: 'Payout' }));
     dialog = screen.getByRole('dialog', { name: 'Cash Payout' });
-    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Amount (USD)' }), '50');
+    await userEvent.type(within(dialog).getByRole('spinbutton', { name: 'Amount (CAD)' }), '20');
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Note' }), 'Milk supplier');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Record Payout' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Payout Recorded' })).toBeVisible();
+    const recordedDialog = await screen.findByRole('dialog', { name: 'Payout Recorded' });
+    expect(recordedDialog).toBeVisible();
+    expect(recordedDialog).toHaveTextContent('adviam');
+    expect(recordedDialog).toHaveTextContent('CA$20.00');
+    expect(recordedDialog).toHaveTextContent('Vendor Payment');
+    expect(recordedDialog).toHaveTextContent('12E12');
+    expect(recordedDialog).toHaveTextContent('ascdsa asda');
     expect(payoutBody).toMatchObject({
       registerSessionId: sessionId,
       type: 'PAYOUT',
-      amount: 50,
+      amount: 20,
       reason: 'VENDOR_PAYMENT',
       notes: 'Milk supplier'
     });
     expect(screen.getByText('Cart item')).toBeVisible();
+    const slip = screen.getByTestId('payout-print-slip');
+    expect(slip).toHaveTextContent('MERCHTYL');
+    expect(slip).toHaveTextContent('CASH PAYOUT');
+    expect(slip).toHaveTextContent('adviam');
+    expect(slip).toHaveTextContent('12E12');
+    expect(slip).toHaveTextContent('CA$20.00');
+    expect(slip).toHaveTextContent('Vendor Payment');
+    expect(slip).toHaveTextContent('Milk supplier');
+    expect(slip).toHaveTextContent('ascdsa asda');
+    expect(within(slip).queryByRole('button')).not.toBeInTheDocument();
+
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Payout Recorded' })).getByRole('button', { name: 'Print Slip' }));
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(payoutWrites).toBe(1);
+    expect(screen.getByRole('dialog', { name: 'Payout Recorded' })).toBeVisible();
+    expect(screen.getByTestId('payout-print-slip')).toHaveTextContent('CA$20.00');
+
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Payout Recorded' })).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Payout Recorded' })).not.toBeInTheDocument());
+    expect(screen.queryByTestId('payout-print-slip')).not.toBeInTheDocument();
   });
 
   it('validates payout precision, available cash, and the Other note before posting', async () => {

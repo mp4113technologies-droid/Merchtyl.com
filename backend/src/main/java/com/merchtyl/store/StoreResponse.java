@@ -3,6 +3,7 @@ package com.merchtyl.store;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.Set;
+import java.math.BigDecimal;
 
 public record StoreResponse(
         UUID id,
@@ -34,7 +35,8 @@ public record StoreResponse(
         Set<StoreCapability> capabilities,
         boolean foodServiceEnabled,
         String kitchenDisplayName,
-        long kitchenUsersCount
+        long kitchenUsersCount,
+        BigDecimal defaultTillFloat
 ) {
     public StoreResponse(UUID id, String code, String name, String legalName, String countryCode, UUID countryId,
                          String administrativeAreaCode, String administrativeDivisionCode, UUID administrativeDivisionId,
@@ -45,7 +47,7 @@ public record StoreResponse(
         this(id, code, name, legalName, countryCode, countryId, administrativeAreaCode, administrativeDivisionCode,
                 administrativeDivisionId, address, phone, email, currencyCode, currencyId, locale, timezone, timezoneId,
                 timezoneName, taxRegionId, taxRegionCode, pricesIncludeTax, negativeStockAllowed, active, createdAt,
-                updatedAt, version, Set.of(StoreCapability.RETAIL), false, null, 0);
+                updatedAt, version, Set.of(StoreCapability.RETAIL), false, null, 0, null);
     }
     static StoreResponse from(Store store) {
         return new StoreResponse(
@@ -74,7 +76,8 @@ public record StoreResponse(
                 store.isActive(),
                 store.getCreatedAt(),
                 store.getUpdatedAt(),
-                store.getVersion(), store.getCapabilities(), store.isFoodServiceEnabled(), store.getKitchenDisplayName(), 0);
+                store.getVersion(), store.getCapabilities(), store.isFoodServiceEnabled(), store.getKitchenDisplayName(), 0,
+                store.getDefaultTillFloat());
     }
 
     StoreResponse withKitchenUsersCount(long count) {
@@ -82,6 +85,6 @@ public record StoreResponse(
                 administrativeDivisionCode, administrativeDivisionId, address, phone, email, currencyCode, currencyId,
                 locale, timezone, timezoneId, timezoneName, taxRegionId, taxRegionCode, pricesIncludeTax,
                 negativeStockAllowed, active, createdAt, updatedAt, version, capabilities, foodServiceEnabled,
-                kitchenDisplayName, count);
+                kitchenDisplayName, count, defaultTillFloat);
     }
 }

@@ -884,9 +884,12 @@ export function EndOfDayReportDetailPage() {
   const registerReconciliation = data.registerReconciliation ?? Array.from(
     data.registers.reduce((groups, row) => {
       const current = groups.get(row.registerId);
-      groups.set(row.registerId, { registerId: row.registerId, registerCode: row.registerCode, registerName: row.registerName, sessionCount: (current?.sessionCount ?? 0) + 1, expectedCash: row.expectedCash, countedCash: row.countedCash, variance: row.variance });
+      groups.set(row.registerId, { registerId: row.registerId, registerCode: row.registerCode, registerName: row.registerName,
+        sessionCount: (current?.sessionCount ?? 0) + 1, initialFloat: current?.initialFloat ?? row.openingFloat,
+        cashRemoved: 0, cashRetained: row.expectedCash, cashBeforeSettlement: row.expectedCash,
+        finalCountedCash: row.countedCash, variance: row.variance });
       return groups;
-    }, new Map<string, { registerId: string; registerCode: string; registerName: string; sessionCount: number; expectedCash: number; countedCash: number; variance: number }>()).values()
+    }, new Map<string, { registerId: string; registerCode: string; registerName: string; sessionCount: number; initialFloat: number; cashRemoved: number; cashRetained: number; cashBeforeSettlement: number; finalCountedCash: number; variance: number }>()).values()
   );
   const payment = (method: string) => data.payments.filter((row) => row.paymentMethod === method).reduce((sum, row) => sum + row.net, 0);
   const knownPayments = ['CASH', 'DEBIT', 'CREDIT', 'GIFT_CARD'];
@@ -910,22 +913,24 @@ export function EndOfDayReportDetailPage() {
         <Grid item xs={12} sm={6} md={3}><Metric label="Total Sales (Incl. Tax)" value={money(totalSales, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Sales Before Tax" value={money(salesBeforeTax, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Total Tax Collected" value={money(totalTax, data.currencyCode)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Expected Cash in Tills" value={money(data.expectedCash, data.currencyCode)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Cash Retained in Tills" value={money(data.cashRetainedInTills ?? data.expectedCash, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Taxable Sales" value={money(data.taxableSales, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Non-Taxable Sales" value={money(data.nonTaxableSales, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Refunds" value={money(data.refundTotal, data.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Cash Variance" value={money(data.cashVariance, data.currencyCode)} tone={data.cashVariance === 0 ? 'success' : 'warning'} /></Grid>
       </Grid>
       <SummarySection title="Cash reconciliation" rows={[
-        ['Opening Cash', money(registerTotal((row) => row.openingFloat), data.currencyCode)],
+        ['Initial Opening Cash', money(data.initialOpeningCash ?? registerReconciliation.reduce((sum, row) => sum + row.initialFloat, 0), data.currencyCode)],
         ['Cash Received', money(registerTotal((row) => row.cashReceipts + row.lotteryCashSales), data.currencyCode)],
         ['Cash Paid In', money(registerTotal((row) => row.cashIn + row.floatAdditions), data.currencyCode)],
         ['Cash Payouts', money(-registerTotal((row) => row.payouts ?? 0), data.currencyCode)],
         ['Payout Reversals', money(registerTotal((row) => row.payoutReversals ?? 0), data.currencyCode)],
         ['Safe Drops', money(-registerTotal((row) => row.safeDrops), data.currencyCode)],
         ['Other Cash Out', money(-registerTotal((row) => row.cashOut + row.expenses + row.floatRemovals), data.currencyCode)],
-        ['Expected Cash in Tills', money(data.expectedCash, data.currencyCode)],
-        ['Counted Cash', money(data.countedCash, data.currencyCode)],
+        ['Cash Before Final Settlement', money(data.cashBeforeFinalSettlement ?? data.expectedCash, data.currencyCode)],
+        ['Till Sweeps / Cash Removed', money(-(data.cashRemovedFromTills ?? 0), data.currencyCode)],
+        ['Cash Retained in Tills', money(data.cashRetainedInTills ?? data.expectedCash, data.currencyCode)],
+        ['Final Counted Cash', money(data.countedCash, data.currencyCode)],
         [data.cashVariance < 0 ? 'Variance — Short' : data.cashVariance > 0 ? 'Variance — Over' : 'Variance — Balanced', money(data.cashVariance, data.currencyCode)]
       ]} />
       <SummarySection title="Tax summary" rows={[
@@ -961,8 +966,8 @@ export function EndOfDayReportDetailPage() {
         ['Gross Merchandise Sales', money(data.grossSales, data.currencyCode)], ['Discounts', money(-Math.abs(data.discountTotal), data.currencyCode)],
         ['Refunds', money(-Math.abs(data.refundTotal), data.currencyCode)], ['Sales Before Tax', money(salesBeforeTax, data.currencyCode)]
       ]} />} />
-      <ReportTable title="Register Reconciliation" rows={<SimpleTable headers={['Register', 'Sessions', 'Expected', 'Counted', 'Variance']} rows={registerReconciliation.map((row) => [row.registerCode, String(row.sessionCount), money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode)])} emptyMessage="No register activity." />} />
-      <ReportTable title="Register Session Detail" rows={<SimpleTable headers={['Register / Session', 'Opening', 'Cash received', 'Change', 'Cash refunds', 'Cash in', 'Cash out', 'Expected', 'Counted', 'Variance']} rows={data.registers.map((row) => [`${row.registerCode} / ${(row.registerSessionId ?? 'legacy').slice(0, 8)}`, money(row.openingFloat, data.currencyCode), money(row.cashReceipts, data.currencyCode), money(row.changeGiven, data.currencyCode), money(row.cashRefunds, data.currencyCode), money(row.cashIn, data.currencyCode), money(row.cashOut, data.currencyCode), money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode)])} />} />
+      <ReportTable title="Register Reconciliation" rows={<SimpleTable headers={['Register', 'Sessions', 'Initial Float', 'Cash Removed', 'Cash Retained', 'Variance']} rows={registerReconciliation.map((row) => [row.registerCode, String(row.sessionCount), money(row.initialFloat, data.currencyCode), money(row.cashRemoved, data.currencyCode), money(row.cashRetained, data.currencyCode), money(row.variance, data.currencyCode)])} emptyMessage="No register activity." />} />
+      <ReportTable title="Register Session Detail" rows={<SimpleTable headers={['Register / Cashier', 'Opened', 'Closed', 'Session Opening', 'Expected at Close', 'Counted', 'Variance', 'Target Float', 'Removed', 'Left in Till']} rows={data.registers.map((row) => [`${row.registerCode} / ${row.openedByName}`, new Date(row.openedAt).toLocaleString(), row.closedAt ? new Date(row.closedAt).toLocaleString() : 'Open', money(row.openingFloat, data.currencyCode), money(row.expectedCash, data.currencyCode), money(row.countedCash, data.currencyCode), money(row.variance, data.currencyCode), row.sessionTargetFloat == null ? 'Not configured' : money(row.sessionTargetFloat, data.currencyCode), row.sessionCashRemoved == null ? '—' : money(row.sessionCashRemoved, data.currencyCode), row.sessionCashRetained == null ? '—' : money(row.sessionCashRetained, data.currencyCode)])} />} />
       <ReportTable title="Cashier Summary" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net Sales', 'Cash Handled']} rows={data.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, data.currencyCode), money(row.cashHandled, data.currencyCode)])} emptyMessage="No activity." />} />
       <ReportTable title="Category Sales by Tax Treatment" rows={<SimpleTable headers={['Category', 'Tax Treatment', 'Qty', 'Sales Before Tax', 'Tax']} rows={categoryRows(data)} emptyMessage="No activity." />} />
       <ReportTable title="Inventory" rows={<SimpleTable headers={['Metric', 'Value']} rows={data.inventory ? [['Units Deducted', quantity(data.inventory.deductedBySales)], ['Units Restored', quantity(data.inventory.restoredByReturns)], ['Value Movement', money(data.inventory.inventoryValueMovement, data.currencyCode)]] : []} emptyMessage="No activity." />} />

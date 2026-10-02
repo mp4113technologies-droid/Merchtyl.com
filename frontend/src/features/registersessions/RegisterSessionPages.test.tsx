@@ -359,7 +359,7 @@ describe('Register session pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Close register' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel Closing' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Complete Closing' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Review Till Settlement' })).toBeEnabled();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/start-closing'))).toBe(true);
   });
 
@@ -402,8 +402,10 @@ describe('Register session pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Open register' })).toBeInTheDocument();
     expect(await screen.findByText('Not required for current browser deployment')).toBeInTheDocument();
-    const openingCash = await screen.findByLabelText('Opening cash');
+    const openingCash = await screen.findByLabelText('Actual Opening Cash');
+    await waitFor(() => expect(openingCash).not.toBeDisabled());
     fireEvent.change(openingCash, { target: { value: '125.50' } });
+    await waitFor(() => expect(openingCash).toHaveValue(125.5));
     await userEvent.click(await screen.findByRole('button', { name: 'Open register' }));
 
     await waitFor(() => {
@@ -447,7 +449,7 @@ describe('Register session pages', () => {
 
     expect(await screen.findByText(/Register unavailable/)).toBeInTheDocument();
     expect(screen.getByText(/currently open in another session/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Opening cash')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Actual Opening Cash')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open register' })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/register-sessions/availability'))).toBe(true);
   });
@@ -525,7 +527,7 @@ describe('Register session pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Register already in use' })).toBeInTheDocument();
     expect(screen.getByText(/currently operated by Cashier One/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Opening cash')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Actual Opening Cash')).not.toBeInTheDocument();
     expect(screen.getByText(/Opening cash:/)).toHaveTextContent('$125.50');
     await userEvent.type(await screen.findByRole('textbox', { name: 'Reason' }), 'Manager required access');
     await userEvent.click(screen.getByRole('button', { name: 'Override Session' }));
@@ -625,6 +627,13 @@ describe('Register session pages', () => {
       if (url.pathname.endsWith('/api/v1/register-sessions/current')) {
         return jsonResponse(opened);
       }
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${opened.id}/settlement-preview`) && init?.method === 'POST') {
+        return jsonResponse({
+          registerSessionId: opened.id, expectedCash: 125.5, countedCash: 115, variance: -10.5,
+          targetTillFloat: 100, cashToLeave: 100, cashToRemove: 15,
+          amountNeededToRestoreFloat: 0, override: false
+        });
+      }
       if (url.pathname.endsWith(`/api/v1/register-sessions/${opened.id}/close`) && init?.method === 'POST') {
         return jsonResponse(closed);
       }
@@ -637,10 +646,13 @@ describe('Register session pages', () => {
     render(<App initialEntries={['/register/close']} />);
 
     expect(await screen.findByRole('heading', { name: 'Close register' })).toBeInTheDocument();
-    expect(await screen.findByText('Expected cash')).toBeInTheDocument();
+    expect(await screen.findByText(/Expected cash remains hidden/)).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText('Counted cash'));
     await userEvent.type(screen.getByLabelText('Counted cash'), '115.00');
-    await userEvent.click(screen.getByRole('button', { name: 'Complete Closing' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Review Till Settlement' }));
+    expect(await screen.findByText('Remove From Till')).toBeInTheDocument();
+    expect(screen.getByText('$15.00')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Cash Removed & Close Register' }));
 
     await waitFor(() => {
       const closeCall = fetchMock.mock.calls.find(([input, init]) => {
@@ -650,6 +662,7 @@ describe('Register session pages', () => {
       expect(closeCall).toBeTruthy();
       expect(JSON.parse(String(closeCall?.[1]?.body))).toEqual({
         countedCash: 115,
+        retainedCash: 100,
         version: 0
       });
     });
@@ -754,6 +767,14 @@ describe('Register session pages', () => {
 
     expect(await screen.findByRole('heading', { name: 'Register history' })).toBeInTheDocument();
     expect(await screen.findByText('Cashier One')).toBeInTheDocument();
+    expect(screen.getByText('Session Opening Balance')).toBeInTheDocument();
+    expect(screen.getByText('Expected Cash at Close')).toBeInTheDocument();
+    expect(screen.getByText('Counted Cash')).toBeInTheDocument();
+    expect(screen.getByText('Variance')).toBeInTheDocument();
+    expect(screen.getByText('Target Till Float')).toBeInTheDocument();
+    expect(screen.getByText('Cash Removed')).toBeInTheDocument();
+    expect(screen.getByText('Cash Left in Till')).toBeInTheDocument();
+    expect(screen.getByText('Session cash activity')).toBeInTheDocument();
     expect(await screen.findByText('Cash Movement')).toBeInTheDocument();
     expect(await screen.findByText('Other cash out')).toBeInTheDocument();
     expect((await screen.findAllByText(/\$10\.00/)).length).toBeGreaterThanOrEqual(2);

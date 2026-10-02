@@ -9,6 +9,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.math.BigDecimal;
 
 @Entity
 @Table(
@@ -35,6 +36,9 @@ public class Register extends BaseUuidEntity {
     @Column(name = "register_type", nullable = false, length = 30)
     private RegisterType type;
 
+    @Column(name = "till_float_override", precision = 12, scale = 2)
+    private BigDecimal tillFloatOverride;
+
     protected Register() {
     }
 
@@ -59,6 +63,7 @@ public class Register extends BaseUuidEntity {
         this.locationDescription = values.locationDescription();
         this.active = values.active();
         this.type = values.type();
+        this.tillFloatOverride = values.tillFloatOverride();
     }
 
     void setActive(boolean active) {
@@ -86,4 +91,10 @@ public class Register extends BaseUuidEntity {
     }
 
     public RegisterType getType() { return type; }
+    public BigDecimal getTillFloatOverride() { return tillFloatOverride; }
+    public BigDecimal getEffectiveTillFloat() {
+        return tillFloatOverride != null ? tillFloatOverride : store.getDefaultTillFloat();
+    }
+
+    void configureTillFloatOverride(BigDecimal value) { this.tillFloatOverride = value; }
 }

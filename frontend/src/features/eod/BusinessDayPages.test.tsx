@@ -149,10 +149,19 @@ function report(): EndOfDayReport {
     lowestTransactionValue: 20,
     itemsSold: 4,
     averageBasketSize: 2,
-    expectedCash: 125,
-    countedCash: 124,
-    cashVariance: -1,
+    initialOpeningCash: 440,
+    cashBeforeFinalSettlement: 878.11,
+    cashRemovedFromTills: 438.11,
+    cashRetainedInTills: 440,
+    expectedCash: 440,
+    countedCash: 878.11,
+    cashVariance: 0,
     currencyCode: 'USD',
+    registerReconciliation: [{
+      registerId: '00000000-0000-0000-0000-000000001206', registerCode: 'FRONT', registerName: 'Front Register',
+      sessionCount: 1, initialFloat: 440, targetFloat: 440, cashRemoved: 438.11, cashRetained: 440,
+      cashBeforeSettlement: 878.11, finalCountedCash: 878.11, variance: 0
+    }],
     registers: [{
       registerSessionId: '00000000-0000-0000-0000-000000001205',
       registerId: '00000000-0000-0000-0000-000000001206',
@@ -176,6 +185,9 @@ function report(): EndOfDayReport {
       expectedCash: 125,
       countedCash: 124,
       variance: -1,
+      sessionTargetFloat: 50,
+      sessionCashRemoved: 74,
+      sessionCashRetained: 50,
       openedBy: '00000000-0000-0000-0000-000000001204',
       openedByName: 'Manager One',
       closedBy: '00000000-0000-0000-0000-000000001204',
@@ -314,6 +326,9 @@ describe('Business day pages', () => {
           states.set(code, 'CLOSING');
           return jsonResponse({ ...session, id: session.registerSessionId, status: 'CLOSING', version: 1, differenceCash: null });
         }
+        if (url.pathname.endsWith(`/api/v1/register-sessions/${session.registerSessionId}/settlement-preview`) && init?.method === 'POST') {
+          return jsonResponse({ registerSessionId: session.registerSessionId, expectedCash: 125, countedCash: 125, variance: 0, targetTillFloat: 100, cashToLeave: 100, cashToRemove: 25, amountNeededToRestoreFloat: 0, override: false });
+        }
         if (url.pathname.endsWith(`/api/v1/register-sessions/${session.registerSessionId}/close`) && init?.method === 'POST') {
           states.set(code, 'CLOSED');
           return jsonResponse({ ...session, id: session.registerSessionId, status: 'CLOSED', version: 2, countedCash: 125, differenceCash: 0 });
@@ -331,16 +346,18 @@ describe('Business day pages', () => {
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Complete Reconciliation' })[0]);
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start Closing' }));
-    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Complete Reconciliation' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Review Till Settlement' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Confirm Cash Removed & Close' }));
     await waitFor(() => expect(screen.getByText('1 register requires reconciliation before this Business Day can be closed.')).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole('button', { name: 'Complete Reconciliation' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start Closing' }));
-    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Complete Reconciliation' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Review Till Settlement' }));
+    await userEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Confirm Cash Removed & Close' }));
 
     expect(await screen.findByText('All register sessions reconciled.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Close Business Day' })).not.toHaveAttribute('aria-disabled', 'true');
-    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/register-sessions/') && init?.method === 'POST')).toHaveLength(4);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes('/register-sessions/') && init?.method === 'POST')).toHaveLength(6);
   });
 
   it('switches Store business-day state and reopens the selected closed day', async () => {
@@ -581,6 +598,9 @@ describe('Business day pages', () => {
         sessionStatus = 'CLOSED';
         return jsonResponse({ ...session, id: session.registerSessionId, status: 'CLOSED', version: 2, countedCash: 125, differenceCash: 0 });
       }
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${session.registerSessionId}/settlement-preview`) && init?.method === 'POST') {
+        return jsonResponse({ registerSessionId: session.registerSessionId, expectedCash: 125, countedCash: 125, variance: 0, targetTillFloat: 100, cashToLeave: 100, cashToRemove: 25, amountNeededToRestoreFloat: 0, override: false });
+      }
       if (url.pathname.endsWith(`/api/v1/business-days/${previous.id}/close`) && init?.method === 'POST') {
         previousOpen = false;
         return jsonResponse(report());
@@ -593,7 +613,8 @@ describe('Business day pages', () => {
     expect(await screen.findByText('2026-09-09 must be closed before opening 2026-09-10.')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeDisabled());
     await userEvent.click(screen.getByRole('button', { name: 'Complete Reconciliation' }));
-    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Complete Reconciliation' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Review Till Settlement' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm Cash Removed & Close' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close Previous Business Day' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: 'Close Previous Business Day' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close Previous Business Day' }));
@@ -713,8 +734,15 @@ describe('Business day pages', () => {
     expect(screen.getByText('Category Sales by Tax Treatment')).toBeInTheDocument();
     expect(screen.getByText('Beverages')).toBeInTheDocument();
     expect(screen.getByText('Custom Items')).toBeInTheDocument();
-    expect(screen.getAllByText('Expected Cash in Tills')).toHaveLength(2);
+    expect(screen.getAllByText('Cash Retained in Tills')).toHaveLength(2);
+    expect(screen.getByText('Initial Opening Cash')).toBeInTheDocument();
+    expect(screen.getByText('Till Sweeps / Cash Removed')).toBeInTheDocument();
+    expect(screen.getAllByText('$440.00').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('-$438.11').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Tax Treatment')).toBeInTheDocument();
+    expect(screen.getByText('Register / Cashier')).toBeInTheDocument();
+    expect(screen.getByText('Session Opening')).toBeInTheDocument();
+    expect(screen.getByText('Left in Till')).toBeInTheDocument();
     expect(screen.getAllByText('Sales Before Tax').length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: 'Export EOD CSV' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/api/v1/end-of-day-reports/${reportId}/export/csv`), expect.any(Object)));

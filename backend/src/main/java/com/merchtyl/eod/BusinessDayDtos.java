@@ -230,11 +230,15 @@ record EndOfDayClosingPreviewResponse(
         BigDecimal lowestTransactionValue,
         BigDecimal itemsSold,
         BigDecimal averageBasketSize,
-        @Schema(description = "Expected cash as a decimal monetary value.", example = "620.00")
+        BigDecimal initialOpeningCash,
+        BigDecimal cashBeforeFinalSettlement,
+        BigDecimal cashRemovedFromTills,
+        BigDecimal cashRetainedInTills,
+        @Schema(description = "Physical cash retained in tills after final settlement.", example = "440.00")
         BigDecimal expectedCash,
-        @Schema(description = "Counted cash as a decimal monetary value.", example = "620.00")
+        @Schema(description = "Final counted cash before till settlement, once per physical register.", example = "620.00")
         BigDecimal countedCash,
-        @Schema(description = "Counted cash minus expected cash as a decimal monetary value.", example = "0.00")
+        @Schema(description = "Final counted cash minus cash expected before settlement, once per physical register.", example = "0.00")
         BigDecimal cashVariance,
         BigDecimal cashVarianceExplanationThreshold,
         boolean varianceExplanationRequired,
@@ -317,11 +321,15 @@ record EndOfDayReportResponse(
         BigDecimal lowestTransactionValue,
         BigDecimal itemsSold,
         BigDecimal averageBasketSize,
-        @Schema(description = "Expected cash as a decimal monetary value.", example = "620.00")
+        BigDecimal initialOpeningCash,
+        BigDecimal cashBeforeFinalSettlement,
+        BigDecimal cashRemovedFromTills,
+        BigDecimal cashRetainedInTills,
+        @Schema(description = "Physical cash retained in tills after final settlement.", example = "440.00")
         BigDecimal expectedCash,
-        @Schema(description = "Counted cash as a decimal monetary value.", example = "620.00")
+        @Schema(description = "Final counted cash before till settlement, once per physical register.", example = "620.00")
         BigDecimal countedCash,
-        @Schema(description = "Cash variance as a decimal monetary value.", example = "0.00")
+        @Schema(description = "Final counted cash minus cash expected before settlement, once per physical register.", example = "0.00")
         BigDecimal cashVariance,
         String currencyCode,
         List<EndOfDayRegisterReconciliationResponse> registerReconciliation,
@@ -375,6 +383,10 @@ record EndOfDayReportResponse(
                 report.getLowestTransactionValue(),
                 report.getItemsSold(),
                 report.getAverageBasketSize(),
+                initialOpeningCash(report),
+                report.getCashBeforeFinalSettlement() == null ? report.getExpectedCash() : report.getCashBeforeFinalSettlement(),
+                report.getCashRemovedFromTills() == null ? BigDecimal.ZERO.setScale(2) : report.getCashRemovedFromTills(),
+                report.getCashRetainedInTills() == null ? report.getExpectedCash() : report.getCashRetainedInTills(),
                 report.getExpectedCash(),
                 report.getCountedCash(),
                 report.getCashVariance(),
@@ -399,6 +411,16 @@ record EndOfDayReportResponse(
                 .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
+    private static BigDecimal initialOpeningCash(EndOfDayReport report) {
+        if (report.getInitialOpeningCash() != null) return report.getInitialOpeningCash();
+        return report.getRegisterSummaries().stream()
+                .collect(java.util.stream.Collectors.groupingBy(value -> value.getRegister().getId(),
+                        java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()))
+                .values().stream().map(group -> group.stream()
+                        .min(java.util.Comparator.comparing(EndOfDayRegisterSummary::getOpenedAt)).orElseThrow().getOpeningFloat())
+                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+    }
+
     private static BigDecimal totalTaxCollected(EndOfDayReport report) {
         return report.getTaxSummaries().stream()
                 .map(EndOfDayTaxSummary::getNetTaxCollected)
@@ -419,8 +441,12 @@ record EndOfDayRegisterReconciliationResponse(
         String registerCode,
         String registerName,
         long sessionCount,
-        BigDecimal expectedCash,
-        BigDecimal countedCash,
+        BigDecimal initialFloat,
+        BigDecimal targetFloat,
+        BigDecimal cashRemoved,
+        BigDecimal cashRetained,
+        BigDecimal cashBeforeSettlement,
+        BigDecimal finalCountedCash,
         BigDecimal variance
 ) {
     static List<EndOfDayRegisterReconciliationResponse> aggregate(List<EndOfDayRegisterSummaryResponse> sessions) {
@@ -437,7 +463,12 @@ record EndOfDayRegisterReconciliationResponse(
                                     .thenComparing(EndOfDayRegisterSummaryResponse::openedAt))
                             .orElseThrow();
                     return new EndOfDayRegisterReconciliationResponse(
-                            latest.registerId(), latest.registerCode(), latest.registerName(), group.size(),
+                            latest.registerId(), latest.registerCode(), latest.registerName(),
+                            latest.physicalSessionCount() == null ? group.size() : latest.physicalSessionCount(),
+                            latest.physicalInitialFloat() == null ? group.get(0).openingFloat() : latest.physicalInitialFloat(),
+                            latest.physicalTargetFloat(),
+                            latest.physicalCashRemoved() == null ? BigDecimal.ZERO.setScale(2) : latest.physicalCashRemoved(),
+                            latest.physicalCashRetained() == null ? latest.expectedCash() : latest.physicalCashRetained(),
                             latest.expectedCash(), latest.countedCash(), latest.variance());
                 })
                 .sorted(java.util.Comparator.comparing(EndOfDayRegisterReconciliationResponse::registerCode))
@@ -505,6 +536,14 @@ record EndOfDayRegisterSummaryResponse(
         BigDecimal expectedCash,
         BigDecimal countedCash,
         BigDecimal variance,
+        BigDecimal physicalInitialFloat,
+        BigDecimal physicalTargetFloat,
+        BigDecimal physicalCashRemoved,
+        BigDecimal physicalCashRetained,
+        Integer physicalSessionCount,
+        BigDecimal sessionTargetFloat,
+        BigDecimal sessionCashRemoved,
+        BigDecimal sessionCashRetained,
         UUID openedBy,
         String openedByName,
         UUID closedBy,
@@ -540,6 +579,14 @@ record EndOfDayRegisterSummaryResponse(
                 summary.getExpectedCash(),
                 summary.getCountedCash(),
                 summary.getVariance(),
+                summary.getPhysicalInitialFloat(),
+                summary.getPhysicalTargetFloat(),
+                summary.getPhysicalCashRemoved(),
+                summary.getPhysicalCashRetained(),
+                summary.getPhysicalSessionCount(),
+                summary.getSessionTargetFloat(),
+                summary.getSessionCashRemoved(),
+                summary.getSessionCashRetained(),
                 summary.getOpenedBy().getId(),
                 summary.getOpenedByName(),
                 summary.getClosedBy() == null ? null : summary.getClosedBy().getId(),

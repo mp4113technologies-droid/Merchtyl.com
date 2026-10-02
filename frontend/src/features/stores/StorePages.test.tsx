@@ -309,6 +309,8 @@ describe('Store pages', () => {
     render(<App initialEntries={[`/stores/${current.id}`]} />);
 
     expect(await screen.findByRole('heading', { name: 'Main Store' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Till / Cash Settings' })).toBeInTheDocument();
+    expect(screen.getByText('Default till float not configured.')).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText('Name'));
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('Name is required')).toBeInTheDocument();

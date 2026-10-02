@@ -371,6 +371,7 @@ export type StorePayload = {
   active: boolean;
   capabilities: Array<'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY'>;
   kitchenDisplayName?: string;
+  defaultTillFloat?: number | null;
 };
 
 export type StoreUpdatePayload = StorePayload & {
@@ -548,6 +549,7 @@ export type RegisterPayload = {
   locationDescription?: string;
   active: boolean;
   type: 'RETAIL' | 'FOOD_SERVICE';
+  tillFloatOverride?: number | null;
 };
 
 export type RegisterUpdatePayload = RegisterPayload & {
@@ -819,8 +821,12 @@ export type RegisterSessionOpenPayload = {
 
 export type RegisterSessionClosePayload = {
   countedCash: number;
+  retainedCash?: number;
+  overrideReason?: string;
   version: number;
 };
+
+export type RegisterTillSettlementPreviewPayload = RegisterSessionClosePayload;
 
 export type RegisterSessionTransitionPayload = { version: number };
 
@@ -2674,6 +2680,12 @@ export function closeRegisterSession(token: string, id: string, payload: Registe
   return request<RegisterSession>(`/register-sessions/${id}/close`, {
     method: 'POST',
     body: JSON.stringify(payload)
+  }, token);
+}
+
+export function previewRegisterTillSettlement(token: string, id: string, payload: RegisterTillSettlementPreviewPayload) {
+  return request<import('./types').RegisterTillSettlement>(`/register-sessions/${id}/settlement-preview`, {
+    method: 'POST', body: JSON.stringify(payload)
   }, token);
 }
 

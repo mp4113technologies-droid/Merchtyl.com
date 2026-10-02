@@ -65,6 +65,22 @@ public class RegisterSession extends BaseUuidEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal differenceCash;
 
+    @Column(name = "target_float_at_close", precision = 12, scale = 2)
+    private BigDecimal targetFloatAtClose;
+
+    @Column(name = "cash_retained", precision = 12, scale = 2)
+    private BigDecimal cashRetained;
+
+    @Column(name = "cash_removed", precision = 12, scale = 2)
+    private BigDecimal cashRemoved;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "retention_override_by_user_id")
+    private User retentionOverrideBy;
+
+    @Column(name = "retention_override_reason", length = 1000)
+    private String retentionOverrideReason;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "closed_by_user_id")
     private User closedBy;
@@ -175,6 +191,12 @@ public class RegisterSession extends BaseUuidEntity {
         return differenceCash;
     }
 
+    public BigDecimal getTargetFloatAtClose() { return targetFloatAtClose; }
+    public BigDecimal getCashRetained() { return cashRetained; }
+    public BigDecimal getCashRemoved() { return cashRemoved; }
+    public User getRetentionOverrideBy() { return retentionOverrideBy; }
+    public String getRetentionOverrideReason() { return retentionOverrideReason; }
+
     public User getClosedBy() {
         return closedBy;
     }
@@ -218,6 +240,11 @@ public class RegisterSession extends BaseUuidEntity {
         this.countedCash = null;
         this.expectedCashAtClose = null;
         this.differenceCash = null;
+        this.targetFloatAtClose = null;
+        this.cashRetained = null;
+        this.cashRemoved = null;
+        this.retentionOverrideBy = null;
+        this.retentionOverrideReason = null;
         this.closedBy = null;
         this.closedAt = null;
         this.forceCloseReason = null;
@@ -231,6 +258,15 @@ public class RegisterSession extends BaseUuidEntity {
         this.closedBy = closedBy;
         this.closedAt = closedAt;
         this.forceCloseReason = null;
+    }
+
+    void recordTillSettlement(BigDecimal targetFloat, BigDecimal retainedCash, BigDecimal removedCash,
+                              User overrideBy, String overrideReason) {
+        this.targetFloatAtClose = targetFloat;
+        this.cashRetained = retainedCash;
+        this.cashRemoved = removedCash;
+        this.retentionOverrideBy = overrideBy;
+        this.retentionOverrideReason = overrideReason;
     }
 
     void forceClose(BigDecimal countedCash, BigDecimal expectedCash, User closedBy, Instant closedAt, String forceCloseReason) {

@@ -33,6 +33,8 @@ import java.util.Currency;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Service
 public class StoreService {
@@ -99,6 +101,7 @@ public class StoreService {
                 values.pricesIncludeTax(),
                 values.negativeStockAllowed(),
                 values.active());
+        store.configureDefaultTillFloat(values.defaultTillFloat());
         UUID tenantId = currentTenantId(authentication);
         activateNewEntitlements(tenantId, Set.of(), request.capabilities());
         store.assignTenant(tenantId);
@@ -308,7 +311,7 @@ public class StoreService {
                 geography.taxRegion().getCode(),
                 request.pricesIncludeTax(),
                 request.negativeStockAllowed(),
-                request.active());
+                request.active(), normalizeTillFloat(request.defaultTillFloat()));
     }
 
     private StoreValues values(StoreUpdateRequest request, Authentication authentication) {
@@ -347,7 +350,7 @@ public class StoreService {
                 geography.taxRegion().getCode(),
                 request.pricesIncludeTax(),
                 request.negativeStockAllowed(),
-                request.active());
+                request.active(), normalizeTillFloat(request.defaultTillFloat()));
     }
 
     private StoreGeographySelection validateGeography(
@@ -556,6 +559,16 @@ public class StoreService {
     private static String normalizeEmail(String value) {
         String email = cleanOptional(value);
         return email == null ? null : email.toLowerCase(Locale.ROOT);
+    }
+
+    private static BigDecimal normalizeTillFloat(BigDecimal value) {
+        if (value == null) return null;
+        if (value.signum() < 0) throw new BadRequestException("defaultTillFloat must be greater than or equal to 0.00");
+        try {
+            return value.setScale(2, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException exception) {
+            throw new BadRequestException("defaultTillFloat may include no more than 2 decimal places");
+        }
     }
 
     private static String cleanRequired(String value, String fieldName) {

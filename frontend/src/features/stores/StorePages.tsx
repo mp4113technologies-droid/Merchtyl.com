@@ -98,6 +98,7 @@ const storeSchema = z.object({
   active: z.boolean()
   ,capabilities: z.array(z.enum(['RETAIL', 'FOOD_SERVICE', 'LOTTERY'])).min(1, 'Select at least one operation'),
   kitchenDisplayName: z.string().max(180, 'Kitchen name must be 180 characters or fewer').optional()
+  ,defaultTillFloat: z.string().refine((value) => value === '' || (/^\d+(\.\d{1,2})?$/.test(value) && Number(value) >= 0), 'Enter a non-negative amount with up to 2 decimals')
 });
 
 type StoreFormValues = z.infer<typeof storeSchema>;
@@ -121,6 +122,7 @@ const emptyStoreForm: StoreFormValues = {
   active: true,
   capabilities: ['RETAIL'],
   kitchenDisplayName: ''
+  ,defaultTillFloat: ''
 };
 
 function canViewStores(roles: UserRole[]) {
@@ -150,6 +152,7 @@ function storeFormValues(store: Store): StoreFormValues {
     active: store.active,
     capabilities: store.capabilities ?? ['RETAIL'],
     kitchenDisplayName: store.kitchenDisplayName ?? ''
+    ,defaultTillFloat: store.defaultTillFloat == null ? '' : store.defaultTillFloat.toFixed(2)
   };
 }
 
@@ -164,6 +167,7 @@ function storeDefaultsForm(defaults?: StoreDefaults): StoreFormValues {
     taxRegionCode: defaults?.taxRegionCode ?? '',
     capabilities: defaults?.capabilities ?? ['RETAIL'],
     kitchenDisplayName: defaults?.kitchenDisplayName ?? ''
+    ,defaultTillFloat: ''
   };
 }
 
@@ -186,7 +190,8 @@ function cleanPayload(values: StoreFormValues): StorePayload {
     negativeStockAllowed: values.negativeStockAllowed,
     active: values.active,
     capabilities: values.capabilities,
-    kitchenDisplayName: values.capabilities.includes('FOOD_SERVICE') ? optionalText(values.kitchenDisplayName) : undefined
+    kitchenDisplayName: values.capabilities.includes('FOOD_SERVICE') ? optionalText(values.kitchenDisplayName) : undefined,
+    defaultTillFloat: values.defaultTillFloat === '' ? null : Number(values.defaultTillFloat)
   };
 }
 
@@ -435,6 +440,17 @@ function StoreForm({
         )} />
         {capabilities.includes('FOOD_SERVICE') ? <Box sx={{ mt: 2 }}><TextInput control={form.control} name="kitchenDisplayName" label="Kitchen / Food Service Name" disabled={disabled} /></Box> : null}
         {pricingPreview.data ? <Alert severity={capabilities.includes('FOOD_SERVICE')?'warning':'info'} sx={{mt:2}}>{capabilities.includes('FOOD_SERVICE')?'This location includes the Food Service add-on. ':''}Additional Store: {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(pricingPreview.data.additionalStoreMonthlyPrice)}/month. {pricingPreview.data.capabilityCharges.map(charge=>`${charge.description}: +${new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyPricePerStore)} / ${charge.billingUnit.replace('PER_','').toLowerCase()} / month. `)}Estimated Monthly Subscription: {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(pricingPreview.data.estimatedMonthlySubscription)}.</Alert>:null}
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="h6">Till / Cash Settings</Typography>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>Default amount of cash to keep in each till between shifts.</Typography>
+        <Controller name="defaultTillFloat" control={form.control} render={({ field, fieldState }) => (
+          <TextField {...field} value={field.value ?? ''} label="Default Till Float" type="number"
+            inputProps={{ min: 0, step: '0.01' }} disabled={disabled} error={Boolean(fieldState.error)}
+            helperText={fieldState.error?.message ?? (field.value === '' ? 'Default till float not configured.' : `Store currency: ${currencyCode}`)}
+            fullWidth sx={{ maxWidth: 360 }} />
+        )} />
       </Paper>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

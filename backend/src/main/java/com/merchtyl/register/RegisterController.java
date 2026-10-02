@@ -42,14 +42,15 @@ public class RegisterController {
             @RequestParam(required = false) String name,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return registerService.search(new RegisterSearchRequest(storeId, code, name, active, page, size));
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return registerService.search(new RegisterSearchRequest(storeId, code, name, active, page, size), authentication);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_VIEW)")
-    RegisterResponse get(@PathVariable UUID id) {
-        return registerService.get(id);
+    RegisterResponse get(@PathVariable UUID id, Authentication authentication) {
+        return registerService.get(id, authentication);
     }
 
     @PutMapping("/{id}")

@@ -5,8 +5,8 @@ import {
 } from '@mui/material';
 import { useMutation } from '@tanstack/react-query';
 import * as React from 'react';
-import { closeRegisterSession, startRegisterSessionClosing } from '../../api/client';
-import type { CashLedgerBreakdown, CashLedgerSourceType, RegisterSessionStatus } from '../../api/types';
+import { closeRegisterSession, previewRegisterTillSettlement, startRegisterSessionClosing } from '../../api/client';
+import type { CashLedgerBreakdown, CashLedgerSourceType, RegisterSessionStatus, RegisterTillSettlement } from '../../api/types';
 import { useSession } from '../../app/session';
 
 export type ReconciliationSession = {
@@ -74,21 +74,36 @@ export function RegisterReconciliationDialog({ open, session, registerName, curr
   const { getValidAccessToken } = useSession();
   const [active, setActive] = React.useState<ReconciliationSession | null>(session);
   const [countedCash, setCountedCash] = React.useState('');
-  React.useEffect(() => { setActive(session); setCountedCash(session ? String(session.expectedCash) : ''); }, [session, open]);
+  const [settlement, setSettlement] = React.useState<RegisterTillSettlement | null>(null);
+  React.useEffect(() => { setActive(session); setCountedCash(session ? String(session.expectedCash) : ''); setSettlement(null); }, [session, open]);
+  React.useEffect(() => { setSettlement(null); }, [countedCash]);
   const start = useMutation({ mutationFn: async () => startRegisterSessionClosing(await getValidAccessToken(), active!.id, { version: active!.version }), onSuccess: setActive });
+  const preview = useMutation({
+    mutationFn: async () => previewRegisterTillSettlement(await getValidAccessToken(), active!.id, { countedCash: Number(countedCash), version: active!.version }),
+    onSuccess: setSettlement
+  });
   const complete = useMutation({
-    mutationFn: async () => closeRegisterSession(await getValidAccessToken(), active!.id, { countedCash: Number(countedCash), version: active!.version }),
+    mutationFn: async () => closeRegisterSession(await getValidAccessToken(), active!.id, { countedCash: Number(countedCash), retainedCash: settlement?.cashToLeave, version: active!.version }),
     onSuccess: async () => { await onCompleted(); onClose(); }
   });
-  const error = start.error ?? complete.error;
+  const error = start.error ?? preview.error ?? complete.error;
   const variance = active ? Number(countedCash || 0) - active.expectedCash : 0;
   return <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" transitionDuration={0}>
     <DialogTitle>Complete Register Reconciliation</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
       <Typography variant="h6">{registerName}</Typography>{error ? <Alert severity="error">{error instanceof Error ? error.message : 'Reconciliation failed'}</Alert> : null}
       {active ? <ReconciliationBreakdown session={active} currencyCode={currencyCode} /> : null}
       <TextField label="Actual cash count" type="number" inputProps={{ min: 0, step: '0.01' }} value={countedCash} onChange={(event) => setCountedCash(event.target.value)} required />
-      <Typography>Variance: <strong>{money(variance, currencyCode)}</strong></Typography>
+      {settlement ? <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1}>
+        <Typography>Expected Cash: <strong>{money(settlement.expectedCash, currencyCode)}</strong></Typography>
+        <Typography>Variance: <strong>{money(settlement.variance, currencyCode)}</strong></Typography>
+        <Typography>Target Till Float: <strong>{settlement.targetTillFloat == null ? 'Not configured' : money(settlement.targetTillFloat, currencyCode)}</strong></Typography>
+        <Typography>Keep in Till: <strong>{money(settlement.cashToLeave, currencyCode)}</strong></Typography>
+        <Typography variant="h6">Remove From Till: <strong>{money(settlement.cashToRemove, currencyCode)}</strong></Typography>
+        {settlement.amountNeededToRestoreFloat > 0 ? <Alert severity="warning">Amount Needed to Restore Float: {money(settlement.amountNeededToRestoreFloat, currencyCode)}</Alert> : null}
+      </Stack></Paper> : <Typography>Variance: <strong>{money(variance, currencyCode)}</strong></Typography>}
     </Stack></DialogContent><DialogActions><Button onClick={onClose}>Cancel</Button>
-      {active?.status === 'OPEN' ? <Button variant="contained" disabled={start.isPending} onClick={() => start.mutate()}>Start Closing</Button> : <Button variant="contained" startIcon={<ReceiptLongOutlinedIcon />} disabled={!active || active.status !== 'CLOSING' || complete.isPending || countedCash === '' || Number(countedCash) < 0} onClick={() => complete.mutate()}>Complete Reconciliation</Button>}
+      {active?.status === 'OPEN' ? <Button variant="contained" disabled={start.isPending} onClick={() => start.mutate()}>Start Closing</Button> : settlement
+        ? <Button variant="contained" startIcon={<ReceiptLongOutlinedIcon />} disabled={complete.isPending} onClick={() => complete.mutate()}>Confirm Cash Removed & Close</Button>
+        : <Button variant="contained" disabled={!active || active.status !== 'CLOSING' || preview.isPending || countedCash === '' || Number(countedCash) < 0} onClick={() => preview.mutate()}>Review Till Settlement</Button>}
     </DialogActions></Dialog>;
 }

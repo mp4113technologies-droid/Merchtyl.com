@@ -100,6 +100,18 @@ public class EndOfDayReport extends BaseUuidEntity {
     @Column(nullable = false, updatable = false, precision = 19, scale = 4)
     private BigDecimal averageBasketSize;
 
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal initialOpeningCash;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashBeforeFinalSettlement;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashRemovedFromTills;
+
+    @Column(updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashRetainedInTills;
+
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal expectedCash;
 
@@ -181,6 +193,10 @@ public class EndOfDayReport extends BaseUuidEntity {
         this.lowestTransactionValue = totals.lowestTransactionValue();
         this.itemsSold = totals.itemsSold();
         this.averageBasketSize = totals.averageBasketSize();
+        this.initialOpeningCash = totals.initialOpeningCash();
+        this.cashBeforeFinalSettlement = totals.cashBeforeFinalSettlement();
+        this.cashRemovedFromTills = totals.cashRemovedFromTills();
+        this.cashRetainedInTills = totals.cashRetainedInTills();
         this.expectedCash = totals.expectedCash();
         this.countedCash = totals.countedCash();
         this.cashVariance = totals.cashVariance();
@@ -310,6 +326,11 @@ public class EndOfDayReport extends BaseUuidEntity {
     public BigDecimal getAverageBasketSize() {
         return averageBasketSize;
     }
+
+    public BigDecimal getInitialOpeningCash() { return initialOpeningCash; }
+    public BigDecimal getCashBeforeFinalSettlement() { return cashBeforeFinalSettlement; }
+    public BigDecimal getCashRemovedFromTills() { return cashRemovedFromTills; }
+    public BigDecimal getCashRetainedInTills() { return cashRetainedInTills; }
 
     public BigDecimal getExpectedCash() {
         return expectedCash;

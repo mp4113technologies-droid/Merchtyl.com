@@ -499,6 +499,183 @@ class RegisterSessionServiceTest {
     }
 
     @Test
+    void closeSettlesPhysicalDrawerToTargetFloatForNextShift() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"));
+        RegisterSession session = new RegisterSession(
+                store, register, businessDay, device, cashier, new BigDecimal("440.00"), NOW);
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+        when(cashLedgerService.breakdown(session)).thenReturn(new CashLedgerBreakdownResponse(
+                new BigDecimal("440.00"), new BigDecimal("438.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, new BigDecimal("438.00"), BigDecimal.ZERO, new BigDecimal("878.00"), List.of()));
+
+        service.close(session.getId(), new RegisterSessionCloseRequest(new BigDecimal("878.00"), 0L),
+                authentication("ROLE_CASHIER"));
+
+        assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("440.00");
+        assertThat(state.getCashRemoved()).isEqualByComparingTo("438.00");
+        assertThat(state.getFinalExpectedCash()).isEqualByComparingTo("878.00");
+        assertThat(session.getTargetFloatAtClose()).isEqualByComparingTo("440.00");
+        assertThat(session.getCashRetained()).isEqualByComparingTo("440.00");
+        assertThat(session.getCashRemoved()).isEqualByComparingTo("438.00");
+        ArgumentCaptor<com.merchtyl.cash.CashLedgerEntryCommand> removal =
+                ArgumentCaptor.forClass(com.merchtyl.cash.CashLedgerEntryCommand.class);
+        verify(cashLedgerService).append(removal.capture());
+        assertThat(removal.getValue().sourceType()).isEqualTo(com.merchtyl.cash.CashLedgerSourceType.SESSION_CLOSE_TILL_REMOVAL);
+        assertThat(removal.getValue().direction()).isEqualTo(com.merchtyl.cash.CashLedgerDirection.OUT);
+        assertThat(removal.getValue().amount()).isEqualByComparingTo("438.00");
+        verify(stateRepository).saveAndFlush(state);
+    }
+
+    @Test
+    void exactBalancedCloseKeepsTargetAndRemovesExcess() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"), new BigDecimal("440.00"));
+        RegisterSession session = new RegisterSession(
+                store, register, businessDay, device, cashier, new BigDecimal("440.00"), NOW);
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+        when(cashLedgerService.breakdown(session)).thenReturn(breakdown("440.00", "438.11", "0.00", "878.11"));
+
+        RegisterSessionResponse response = service.close(session.getId(),
+                new RegisterSessionCloseRequest(new BigDecimal("878.11"), 0L), authentication("ROLE_CASHIER"));
+
+        assertThat(response.expectedCashAtClose()).isEqualByComparingTo("878.11");
+        assertThat(response.countedCash()).isEqualByComparingTo("878.11");
+        assertThat(response.differenceCash()).isZero();
+        assertThat(response.targetFloatAtClose()).isEqualByComparingTo("440.00");
+        assertThat(response.cashRetained()).isEqualByComparingTo("440.00");
+        assertThat(response.cashRemoved()).isEqualByComparingTo("438.11");
+    }
+
+    @Test
+    void settlementPreviewHandlesCountAboveEqualAndBelowTarget() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"), new BigDecimal("440.00"));
+        RegisterSession session = new RegisterSession(
+                store, register, businessDay, device, cashier, new BigDecimal("440.00"), NOW);
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+
+        RegisterTillSettlementResponse above = service.previewSettlement(session.getId(),
+                new RegisterTillSettlementPreviewRequest(new BigDecimal("878.11"), null, null, 0L),
+                authentication("ROLE_CASHIER"));
+        RegisterTillSettlementResponse equal = service.previewSettlement(session.getId(),
+                new RegisterTillSettlementPreviewRequest(new BigDecimal("440.00"), null, null, 0L),
+                authentication("ROLE_CASHIER"));
+        RegisterTillSettlementResponse below = service.previewSettlement(session.getId(),
+                new RegisterTillSettlementPreviewRequest(new BigDecimal("420.00"), null, null, 0L),
+                authentication("ROLE_CASHIER"));
+
+        assertThat(above.cashToLeave()).isEqualByComparingTo("440.00");
+        assertThat(above.cashToRemove()).isEqualByComparingTo("438.11");
+        assertThat(equal.cashToLeave()).isEqualByComparingTo("440.00");
+        assertThat(equal.cashToRemove()).isZero();
+        assertThat(below.cashToLeave()).isEqualByComparingTo("420.00");
+        assertThat(below.cashToRemove()).isZero();
+        assertThat(below.amountNeededToRestoreFloat()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    void belowTargetSettlementKeepsActualCashAndReportsIndependentVarianceAndRestoreAmount() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"), new BigDecimal("440.00"));
+        RegisterSession session = new RegisterSession(
+                store, register, businessDay, device, cashier, new BigDecimal("440.00"), NOW);
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+        when(cashLedgerService.breakdown(session)).thenReturn(breakdown("440.00", "0.00", "15.00", "425.00"));
+
+        RegisterTillSettlementResponse result = service.previewSettlement(session.getId(),
+                new RegisterTillSettlementPreviewRequest(new BigDecimal("420.00"), null, null, 0L),
+                authentication("ROLE_CASHIER"));
+
+        assertThat(result.expectedCash()).isEqualByComparingTo("425.00");
+        assertThat(result.countedCash()).isEqualByComparingTo("420.00");
+        assertThat(result.variance()).isEqualByComparingTo("-5.00");
+        assertThat(result.cashToRemove()).isZero();
+        assertThat(result.cashToLeave()).isEqualByComparingTo("420.00");
+        assertThat(result.amountNeededToRestoreFloat()).isEqualByComparingTo("20.00");
+        verify(cashLedgerService, never()).append(any());
+    }
+
+    @Test
+    void cashierCannotOverrideRetainedCashButAuthorizedManagerCanWithReason() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"), new BigDecimal("440.00"));
+        RegisterSession session = new RegisterSession(
+                store, register, businessDay, device, cashier, new BigDecimal("440.00"), NOW);
+        session.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+        RegisterTillSettlementPreviewRequest request = new RegisterTillSettlementPreviewRequest(
+                new BigDecimal("878.11"), new BigDecimal("500.00"), "Weekend float", 0L);
+
+        assertThatThrownBy(() -> service.previewSettlement(session.getId(), request, authentication("ROLE_CASHIER")))
+                .isInstanceOf(ForbiddenOperationException.class);
+
+        RegisterTillSettlementResponse manager = service.previewSettlement(session.getId(), request,
+                authentication("REGISTER_SESSION_FORCE_CLOSE"));
+        assertThat(manager.override()).isTrue();
+        assertThat(manager.cashToLeave()).isEqualByComparingTo("500.00");
+        assertThat(manager.cashToRemove()).isEqualByComparingTo("378.11");
+    }
+
+    @Test
+    void nextShiftMustOpenWithAuthoritativeRetainedCash() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"));
+        state.settle(new BigDecimal("878.00"), new BigDecimal("878.00"), new BigDecimal("440.00"));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+
+        RegisterSessionResponse response = service.open(new RegisterSessionOpenRequest(
+                STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("440.00")), authentication("ROLE_CASHIER"));
+
+        assertThat(response.openingCash()).isEqualByComparingTo("440.00");
+        assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
+        assertThat(state.getSessionCount()).isEqualTo(2);
+        verify(stateRepository).saveAndFlush(state);
+    }
+
+    @Test
+    void firstOpenSnapshotsEffectiveTargetWithoutFalsifyingActualOpeningCash() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(cashier, REGISTER_ID)).thenReturn(true);
+        when(register.getEffectiveTillFloat()).thenReturn(new BigDecimal("440.00"));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.empty());
+
+        RegisterSessionResponse response = service.open(new RegisterSessionOpenRequest(
+                STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("430.00")), authentication("ROLE_CASHIER"));
+
+        ArgumentCaptor<RegisterBusinessDayCashState> state = ArgumentCaptor.forClass(RegisterBusinessDayCashState.class);
+        verify(stateRepository).saveAndFlush(state.capture());
+        assertThat(response.openingCash()).isEqualByComparingTo("430.00");
+        assertThat(state.getValue().getInitialFloat()).isEqualByComparingTo("430.00");
+        assertThat(state.getValue().getTargetFloat()).isEqualByComparingTo("440.00");
+    }
+
+    @Test
     void closeRejectsStaleVersion() {
         RegisterSession session = new RegisterSession(
                 store,
@@ -577,7 +754,7 @@ class RegisterSessionServiceTest {
                 cashier,
                 new BigDecimal("125.50"),
                 NOW);
-        when(registerSessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
         RegisterSessionResponse response = service.forceClose(
                 session.getId(),
@@ -591,6 +768,29 @@ class RegisterSessionServiceTest {
         ArgumentCaptor<CreateAuditRecordCommand> audit = ArgumentCaptor.forClass(CreateAuditRecordCommand.class);
         verify(auditService, org.mockito.Mockito.atLeastOnce()).record(audit.capture());
         assertThat(audit.getAllValues().getLast().action()).isEqualTo(AuditAction.REGISTER_SESSION_FORCE_CLOSED);
+    }
+
+    @Test
+    void forceCloseSettlesExistingPhysicalRegisterStateWithoutCreatingAnotherFloat() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        RegisterBusinessDayCashState state = new RegisterBusinessDayCashState(
+                store, register, businessDay, new BigDecimal("440.00"), new BigDecimal("440.00"));
+        RegisterSession session = new RegisterSession(
+                store, register, businessDay, device, cashier, new BigDecimal("440.00"), NOW);
+        when(registerSessionRepository.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+        when(stateRepository.findForUpdate(businessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(state));
+        when(cashLedgerService.breakdown(session)).thenReturn(breakdown("440.00", "60.00", "0.00", "500.00"));
+
+        RegisterSessionResponse response = service.forceClose(session.getId(),
+                new RegisterSessionForceCloseRequest(new BigDecimal("500.00"), "Device failed", 0L),
+                authentication("REGISTER_SESSION_FORCE_CLOSE"));
+
+        assertThat(response.status()).isEqualTo(RegisterSessionStatus.FORCE_CLOSED);
+        assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
+        assertThat(state.getSessionCount()).isEqualTo(1);
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("440.00");
+        assertThat(state.getCashRemoved()).isEqualByComparingTo("60.00");
     }
 
     @Test
@@ -642,6 +842,14 @@ class RegisterSessionServiceTest {
 
     private static RegisterSessionOpenRequest openRequest() {
         return new RegisterSessionOpenRequest(STORE_ID, REGISTER_ID, DEVICE_ID, new BigDecimal("125.50"));
+    }
+
+    private static CashLedgerBreakdownResponse breakdown(String opening, String cashIn, String cashOut, String expected) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(2);
+        return new CashLedgerBreakdownResponse(
+                new BigDecimal(opening), new BigDecimal(cashIn), zero, zero, zero, zero, zero, zero,
+                zero, new BigDecimal(cashOut), new BigDecimal(cashIn), new BigDecimal(cashOut),
+                new BigDecimal(expected), List.of());
     }
 
     private static UsernamePasswordAuthenticationToken authentication(String role) {

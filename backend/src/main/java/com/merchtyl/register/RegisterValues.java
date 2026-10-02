@@ -1,6 +1,7 @@
 package com.merchtyl.register;
 
 import com.merchtyl.store.Store;
+import java.math.BigDecimal;
 
 record RegisterValues(
         Store store,
@@ -8,6 +9,7 @@ record RegisterValues(
         String name,
         String locationDescription,
         boolean active,
-        RegisterType type
+        RegisterType type,
+        BigDecimal tillFloatOverride
 ) {
 }

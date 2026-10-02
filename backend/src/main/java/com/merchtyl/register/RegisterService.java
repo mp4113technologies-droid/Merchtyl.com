@@ -14,6 +14,8 @@ import com.merchtyl.store.StoreRepository;
 import com.merchtyl.store.StoreCapability;
 import com.merchtyl.platform.billing.CommercialCapability;
 import com.merchtyl.platform.billing.SubscriptionEntitlementService;
+import com.merchtyl.security.StoreAccessService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -25,6 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
 import java.util.UUID;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Service
 public class RegisterService {
@@ -36,6 +42,8 @@ public class RegisterService {
     private final AuditService auditService;
     private final SubscriptionEntitlementService entitlements;
     private final JdbcTemplate jdbcTemplate;
+    @Autowired(required = false)
+    private StoreAccessService storeAccessService;
 
     public RegisterService(
             RegisterRepository registerRepository,
@@ -54,6 +62,7 @@ public class RegisterService {
     public RegisterResponse create(RegisterRequest request, Authentication authentication) {
         RegisterValues values = values(request);
         UUID storeId = values.store().getId();
+        if (storeAccessService != null) storeAccessService.requireStoreManagement(authentication, storeId);
         if (registerRepository.existsByStore_IdAndCodeIgnoreCase(storeId, values.code())) {
             throw duplicateCode();
         }
@@ -64,6 +73,7 @@ public class RegisterService {
                 values.name(),
                 values.locationDescription(),
                 values.active(), values.type());
+        register.configureTillFloatOverride(values.tillFloatOverride());
         RegisterResponse response = RegisterResponse.from(save(register));
         audit(authentication, AuditAction.REGISTER_CREATED, response.storeId(), response.id(), null, response, null);
         return response;
@@ -71,11 +81,21 @@ public class RegisterService {
 
     @Transactional(readOnly = true)
     public PageResponse<RegisterResponse> search(RegisterSearchRequest request) {
+        return search(request, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<RegisterResponse> search(RegisterSearchRequest request, Authentication authentication) {
+        if (storeAccessService != null && request.storeId() != null) {
+            storeAccessService.requireStoreAccess(authentication, request.storeId());
+        }
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var pageable = PageRequest.of(pageNumber, pageSize,
                 Sort.by(Sort.Direction.ASC, "name").and(Sort.by(Sort.Direction.ASC, "id")));
-        var page = registerRepository.findAll(specification(request), pageable);
+        Set<UUID> accessibleStoreIds = storeAccessService == null ? null : storeAccessService
+                .assignedStores(authentication).stream().map(value -> value.storeId()).collect(Collectors.toSet());
+        var page = registerRepository.findAll(specification(request, accessibleStoreIds), pageable);
         return new PageResponse<>(
                 page.getContent().stream().map(RegisterResponse::from).toList(),
                 page.getNumber(),
@@ -91,12 +111,23 @@ public class RegisterService {
         return RegisterResponse.from(find(id));
     }
 
+    @Transactional(readOnly = true)
+    public RegisterResponse get(UUID id, Authentication authentication) {
+        Register register = find(id);
+        if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, register.getStore().getId());
+        return RegisterResponse.from(register);
+    }
+
     @Transactional
     public RegisterResponse update(UUID id, RegisterUpdateRequest request, Authentication authentication) {
         Register register = find(id);
+        if (storeAccessService != null) storeAccessService.requireStoreManagement(authentication, register.getStore().getId());
         requireCurrentVersion(register, request.version());
         RegisterValues values = values(request);
         UUID storeId = values.store().getId();
+        if (storeAccessService != null && !storeId.equals(register.getStore().getId())) {
+            storeAccessService.requireStoreManagement(authentication, storeId);
+        }
         if (registerRepository.existsByStore_IdAndCodeIgnoreCaseAndIdNot(storeId, values.code(), id)) {
             throw duplicateCode();
         }
@@ -112,6 +143,7 @@ public class RegisterService {
     @Transactional
     public RegisterResponse updateStatus(UUID id, RegisterStatusRequest request, Authentication authentication) {
         Register register = find(id);
+        if (storeAccessService != null) storeAccessService.requireStoreManagement(authentication, register.getStore().getId());
         requireCurrentVersion(register, request.version());
 
         RegisterResponse before = RegisterResponse.from(register);
@@ -141,7 +173,7 @@ public class RegisterService {
                 normalizeCode(request.code()),
                 cleanRequired(request.name(), "name"),
                 cleanOptional(request.locationDescription()),
-                request.active(), validateType(store, request.type()));
+                request.active(), validateType(store, request.type()), normalizeTillFloat(request.tillFloatOverride()));
     }
 
     private RegisterValues values(RegisterUpdateRequest request) {
@@ -151,7 +183,7 @@ public class RegisterService {
                 normalizeCode(request.code()),
                 cleanRequired(request.name(), "name"),
                 cleanOptional(request.locationDescription()),
-                request.active(), validateType(store, request.type()));
+                request.active(), validateType(store, request.type()), normalizeTillFloat(request.tillFloatOverride()));
     }
 
     private RegisterType validateType(Store store, RegisterType type) {
@@ -175,12 +207,19 @@ public class RegisterService {
                 .orElseThrow(() -> new NotFoundException("Store not found"));
     }
 
-    private Specification<Register> specification(RegisterSearchRequest request) {
+    private Specification<Register> specification(RegisterSearchRequest request, Set<UUID> accessibleStoreIds) {
         return Specification
-                .where(equalStore(request.storeId()))
+                .where(inStores(accessibleStoreIds))
+                .and(equalStore(request.storeId()))
                 .and(equalString("code", normalizeCodeFilter(request.code())))
                 .and(containsString("name", request.name()))
                 .and(equalBoolean("active", request.active()));
+    }
+
+    private static Specification<Register> inStores(Set<UUID> storeIds) {
+        if (storeIds == null) return null;
+        if (storeIds.isEmpty()) return (root, query, criteriaBuilder) -> criteriaBuilder.disjunction();
+        return (root, query, criteriaBuilder) -> root.get("store").get("id").in(storeIds);
     }
 
     private void requireCurrentVersion(Register register, Long requestedVersion) {
@@ -273,6 +312,16 @@ public class RegisterService {
             return null;
         }
         return value.trim();
+    }
+
+    private static BigDecimal normalizeTillFloat(BigDecimal value) {
+        if (value == null) return null;
+        if (value.signum() < 0) throw new BadRequestException("tillFloatOverride must be greater than or equal to 0.00");
+        try {
+            return value.setScale(2, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException exception) {
+            throw new BadRequestException("tillFloatOverride may include no more than 2 decimal places");
+        }
     }
 
     private static ConflictException duplicateCode() {

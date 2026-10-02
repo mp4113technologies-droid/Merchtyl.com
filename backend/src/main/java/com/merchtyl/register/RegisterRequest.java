@@ -5,6 +5,9 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
+import java.math.BigDecimal;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 
 public record RegisterRequest(
         @NotNull UUID storeId,
@@ -12,6 +15,10 @@ public record RegisterRequest(
         @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String locationDescription,
         boolean active,
-        @NotNull RegisterType type
+        @NotNull RegisterType type,
+        @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal tillFloatOverride
 ) {
+    public RegisterRequest(UUID storeId, String code, String name, String locationDescription, boolean active, RegisterType type) {
+        this(storeId, code, name, locationDescription, active, type, null);
+    }
 }

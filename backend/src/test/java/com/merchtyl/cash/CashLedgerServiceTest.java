@@ -157,6 +157,35 @@ class CashLedgerServiceTest {
     }
 
     @Test
+    void integratedCashActivityAffectsPhysicalTillExactlyOnceAndNonCashTenderDoesNotEnterLedger() {
+        when(session.getOpeningCash()).thenReturn(new BigDecimal("440.00"));
+        when(cashLedgerRepository.findByRegisterSession_IdOrderByOccurredAtAscCreatedAtAsc(SESSION_ID))
+                .thenReturn(List.of(
+                        entry(CashLedgerSourceType.SESSION_OPENING_FLOAT, CashLedgerDirection.IN, "440.00"),
+                        entry(CashLedgerSourceType.SALE_CASH_RECEIPT, CashLedgerDirection.IN, "60.00"),
+                        entry(CashLedgerSourceType.CASH_MOVEMENT, CashLedgerDirection.OUT, "20.00"),
+                        entry(CashLedgerSourceType.LOTTERY_SALE_CASH, CashLedgerDirection.IN, "30.00"),
+                        entry(CashLedgerSourceType.LOTTERY_PAYOUT_CASH, CashLedgerDirection.OUT, "10.00"),
+                        entry(CashLedgerSourceType.DEPOSIT_PAYOUT, CashLedgerDirection.OUT, "5.00"),
+                        entry(CashLedgerSourceType.CASH_MOVEMENT, CashLedgerDirection.OUT, "15.00")));
+
+        CashLedgerBreakdownResponse breakdown = service.breakdown(session);
+
+        assertThat(breakdown.expectedCash()).isEqualByComparingTo("480.00");
+        assertThat(breakdown.retailCashReceived()).isEqualByComparingTo("60.00");
+        assertThat(breakdown.lotteryCashSales()).isEqualByComparingTo("30.00");
+        assertThat(breakdown.lotteryPayouts()).isEqualByComparingTo("10.00");
+        assertThat(breakdown.depositPayouts()).isEqualByComparingTo("5.00");
+        assertThat(breakdown.otherCashOut()).isEqualByComparingTo("35.00");
+        assertThat(breakdown.sourceBreakdown()).extracting(CashLedgerSourceBreakdownResponse::sourceType)
+                .doesNotContainNull()
+                .doesNotContain(CashLedgerSourceType.SESSION_CLOSE_TILL_REMOVAL);
+        // Debit/credit and the non-cash portion of split tender create no cash-ledger entry.
+        assertThat(breakdown.totalIn()).isEqualByComparingTo("90.00");
+        assertThat(breakdown.totalOut()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
     void bulkBreakdownsReadLedgerEntriesOnceForAllSessions() {
         UUID secondSessionId = UUID.fromString("00000000-0000-0000-0000-000000000906");
         RegisterSession secondSession = mock(RegisterSession.class);

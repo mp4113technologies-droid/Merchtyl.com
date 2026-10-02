@@ -92,12 +92,12 @@ class RegisterControllerAuthorizationTest {
                         .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
-        verify(registerService, never()).search(any());
+        verify(registerService, never()).search(any(), any());
     }
 
     @Test
     void registerViewerCanListRegisters() throws Exception {
-        when(registerService.search(any())).thenReturn(new PageResponse<>(
+        when(registerService.search(any(), any())).thenReturn(new PageResponse<>(
                 List.of(response(true, 0)),
                 0,
                 20,

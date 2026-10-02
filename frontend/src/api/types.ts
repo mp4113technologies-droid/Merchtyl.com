@@ -660,6 +660,14 @@ export type EndOfDayRegisterSummary = {
   expectedCash: number;
   countedCash: number;
   variance: number;
+  physicalInitialFloat?: number | null;
+  physicalTargetFloat?: number | null;
+  physicalCashRemoved?: number | null;
+  physicalCashRetained?: number | null;
+  physicalSessionCount?: number | null;
+  sessionTargetFloat?: number | null;
+  sessionCashRemoved?: number | null;
+  sessionCashRetained?: number | null;
   openedBy: string;
   openedByName: string;
   closedBy: string | null;
@@ -788,8 +796,12 @@ export type EndOfDayRegisterReconciliation = {
   registerCode: string;
   registerName: string;
   sessionCount: number;
-  expectedCash: number;
-  countedCash: number;
+  initialFloat: number;
+  targetFloat?: number | null;
+  cashRemoved: number;
+  cashRetained: number;
+  cashBeforeSettlement: number;
+  finalCountedCash: number;
   variance: number;
 };
 
@@ -831,6 +843,10 @@ export type EndOfDayReport = {
   lowestTransactionValue: number;
   itemsSold: number;
   averageBasketSize: number;
+  initialOpeningCash?: number;
+  cashBeforeFinalSettlement?: number;
+  cashRemovedFromTills?: number;
+  cashRetainedInTills?: number;
   expectedCash: number;
   countedCash: number;
   cashVariance: number;
@@ -893,6 +909,7 @@ export type Store = {
   foodServiceEnabled?: boolean;
   kitchenDisplayName?: string | null;
   kitchenUsersCount?: number;
+  defaultTillFloat?: number | null;
 };
 
 export type StoreCapability = 'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY';
@@ -1195,6 +1212,8 @@ export type Register = {
   locationDescription: string | null;
   active: boolean;
   type?: 'RETAIL' | 'FOOD_SERVICE';
+  tillFloatOverride?: number | null;
+  effectiveTillFloat?: number | null;
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -1751,6 +1770,25 @@ export type RegisterSession = {
   tillPinLockedUntil?: string | null;
   posPinConfigured?: boolean;
   salesClassification?: SalesClassification;
+  targetFloatAtClose?: number | null;
+  cashRetained?: number | null;
+  cashRemoved?: number | null;
+  retentionOverrideByUserId?: string | null;
+  retentionOverrideByDisplayName?: string | null;
+  retentionOverrideReason?: string | null;
+  currencyCode?: string;
+};
+
+export type RegisterTillSettlement = {
+  registerSessionId: string;
+  expectedCash: number;
+  countedCash: number;
+  variance: number;
+  targetTillFloat: number | null;
+  cashToLeave: number;
+  cashToRemove: number;
+  amountNeededToRestoreFloat: number;
+  override: boolean;
 };
 
 export type RegisterSessionListResponse = PageResponse<RegisterSession>;
@@ -1778,7 +1816,8 @@ export type CashLedgerSourceType =
   | 'LOTTERY_SALE_CANCELLATION_CASH'
   | 'CASH_REFUND'
   | 'CASH_MOVEMENT'
-  | 'SESSION_CLOSE_ADJUSTMENT';
+  | 'SESSION_CLOSE_ADJUSTMENT'
+  | 'SESSION_CLOSE_TILL_REMOVAL';
 
 export type CashLedgerSourceBreakdown = {
   sourceType: CashLedgerSourceType;

@@ -15,6 +15,7 @@ import jakarta.persistence.UniqueConstraint;
 import java.util.UUID;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.math.BigDecimal;
 
 @Entity
 @Table(
@@ -83,6 +84,9 @@ public class Store extends BaseUuidEntity {
 
     @Column(nullable = false)
     private boolean active;
+
+    @Column(name = "default_till_float", precision = 12, scale = 2)
+    private BigDecimal defaultTillFloat;
 
     @Column(name = "tenant_id")
     private UUID tenantId;
@@ -215,6 +219,7 @@ public class Store extends BaseUuidEntity {
         this.pricesIncludeTax = values.pricesIncludeTax();
         this.negativeStockAllowed = values.negativeStockAllowed();
         this.active = values.active();
+        this.defaultTillFloat = values.defaultTillFloat();
     }
 
     void setActive(boolean active) {
@@ -331,4 +336,8 @@ public class Store extends BaseUuidEntity {
     public boolean isActive() {
         return active;
     }
+
+    public BigDecimal getDefaultTillFloat() { return defaultTillFloat; }
+
+    void configureDefaultTillFloat(BigDecimal defaultTillFloat) { this.defaultTillFloat = defaultTillFloat; }
 }

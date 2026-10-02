@@ -76,7 +76,7 @@ final class EndOfDayPdfRenderer {
         kpi(cards, "TOTAL SALES", report.totalSales(), report.currencyCode());
         kpi(cards, "SALES BEFORE TAX", report.totalSalesBeforeTax(), report.currencyCode());
         kpi(cards, "TOTAL TAX", report.totalTaxCollected(), report.currencyCode());
-        kpi(cards, "EXPECTED CASH IN TILLS", report.expectedCash(), report.currencyCode());
+        kpi(cards, "CASH RETAINED IN TILLS", report.cashRetainedInTills(), report.currencyCode());
         document.add(cards);
         financialRows(document, List.of(
                 moneyRow("Taxable Sales", report.taxableSales()), moneyRow("Non-Taxable Sales", report.nonTaxableSales()),
@@ -84,15 +84,17 @@ final class EndOfDayPdfRenderer {
 
         sectionTitle(document, "CASH RECONCILIATION");
         financialRows(document, List.of(
-                moneyRow("Opening Cash", registerTotal(report, EndOfDayRegisterSummaryResponse::openingFloat)),
+                moneyRow("Initial Opening Cash", report.initialOpeningCash()),
                 moneyRow("Cash Received", registerTotal(report, row -> row.cashReceipts().add(row.lotteryCashSales()))),
                 moneyRow("Cash Paid In", registerTotal(report, row -> row.cashIn().add(row.floatAdditions()))),
                 moneyRow("Cash Payouts", registerTotal(report, EndOfDayRegisterSummaryResponse::payouts).negate()),
                 moneyRow("Payout Reversals", registerTotal(report, EndOfDayRegisterSummaryResponse::payoutReversals)),
                 moneyRow("Safe Drops", registerTotal(report, EndOfDayRegisterSummaryResponse::safeDrops).negate()),
                 moneyRow("Other Cash Out", registerTotal(report, row -> row.cashOut().add(row.expenses()).add(row.floatRemovals())).negate()),
-                moneyRow("Expected Cash in Tills", report.expectedCash()),
-                moneyRow("Counted Cash", report.countedCash()), moneyRow(varianceLabel(report.cashVariance()), report.cashVariance())), report.currencyCode());
+                moneyRow("Cash Before Final Settlement", report.cashBeforeFinalSettlement()),
+                moneyRow("Till Sweeps / Cash Removed", report.cashRemovedFromTills().negate()),
+                moneyRow("Cash Retained in Tills", report.cashRetainedInTills()),
+                moneyRow("Final Counted Cash", report.countedCash()), moneyRow(varianceLabel(report.cashVariance()), report.cashVariance())), report.currencyCode());
 
         sectionTitle(document, "TAX SUMMARY");
         financialRows(document, List.of(moneyRow("General Tax", tax(report, "GENERAL_TAX")), moneyRow("Vape Tax", tax(report, "VAPE_TAX")),
@@ -115,8 +117,18 @@ final class EndOfDayPdfRenderer {
 
     private static void renderOperationalDetails(Document document, EndOfDayReportResponse report, String timezone) throws DocumentException {
         sectionTitle(document, "REGISTER RECONCILIATION");
-        table(document, List.of("Register", "Sessions", "Expected", "Counted", "Variance"),
-                report.registerReconciliation().stream().map(row -> List.of(row.registerCode(), String.valueOf(row.sessionCount()), money(row.expectedCash(), report.currencyCode()), money(row.countedCash(), report.currencyCode()), money(row.variance(), report.currencyCode()))).toList());
+        table(document, List.of("Register", "Sessions", "Initial", "Target", "Removed", "Retained", "Variance"),
+                report.registerReconciliation().stream().map(row -> List.of(row.registerCode(), String.valueOf(row.sessionCount()),
+                        money(row.initialFloat(), report.currencyCode()), money(row.targetFloat(), report.currencyCode()), money(row.cashRemoved(), report.currencyCode()),
+                        money(row.cashRetained(), report.currencyCode()), money(row.variance(), report.currencyCode()))).toList());
+        sectionTitle(document, "REGISTER SESSION DETAIL");
+        table(document, List.of("Register / Cashier", "Opened", "Closed", "Opening", "Expected", "Counted", "Variance", "Removed", "Left"),
+                report.registers().stream().map(row -> List.of(
+                        row.registerCode() + " / " + row.openedByName(), formatTime(row.openedAt(), timezone),
+                        row.closedAt() == null ? "Open" : formatTime(row.closedAt(), timezone),
+                        money(row.openingFloat(), report.currencyCode()), money(row.expectedCash(), report.currencyCode()),
+                        money(row.countedCash(), report.currencyCode()), money(row.variance(), report.currencyCode()),
+                        money(row.sessionCashRemoved(), report.currencyCode()), money(row.sessionCashRetained(), report.currencyCode()))).toList());
         sectionTitle(document, "SALES DETAILS");
         financialRows(document, List.of(moneyRow("Gross Merchandise Sales", report.grossSales()), moneyRow("Discounts", report.discountTotal().negate()),
                 moneyRow("Refunds", report.refundTotal().negate()), moneyRow("Sales Before Tax", report.totalSalesBeforeTax())), report.currencyCode());
