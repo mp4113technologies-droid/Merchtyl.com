@@ -79,6 +79,22 @@ public class RegisterBusinessDayCashState extends BaseUuidEntity {
         sessionCount++;
     }
 
+    public BigDecimal restoreRequired() {
+        if (targetFloat == null) return BigDecimal.ZERO.setScale(2);
+        return targetFloat.subtract(retainedCash).max(BigDecimal.ZERO).setScale(2);
+    }
+
+    public void restore(BigDecimal amount) {
+        BigDecimal required = restoreRequired();
+        if (required.signum() == 0) {
+            throw new IllegalArgumentException("Till does not require restoration");
+        }
+        if (amount == null || amount.compareTo(required) != 0) {
+            throw new IllegalArgumentException("Till restore amount must equal the amount required");
+        }
+        retainedCash = retainedCash.add(amount).setScale(2);
+    }
+
     public void settle(BigDecimal expectedCash, BigDecimal countedCash, BigDecimal retainedCash) {
         if (retainedCash.signum() < 0 || retainedCash.compareTo(countedCash) > 0) {
             throw new IllegalArgumentException("Retained cash must be between zero and counted cash");

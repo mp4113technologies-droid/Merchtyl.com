@@ -30,6 +30,7 @@ public record RegisterSessionResponse(
         String closedByDisplayName,
         Instant closedAt,
         String forceCloseReason,
+        String varianceExplanation,
         CashLedgerBreakdownResponse reconciliation,
         Instant openedAt,
         Instant createdAt,
@@ -60,7 +61,7 @@ public record RegisterSessionResponse(
         this(id, storeId, registerId, RegisterType.RETAIL, deviceId, null, assignedCashierId, assignedCashierEmail,
                 assignedCashierDisplayName, assignedCashierId, assignedCashierDisplayName, status, openingCash, expectedCash, countedCash,
                 expectedCashAtClose, differenceCash, closedByUserId, closedByEmail, closedByDisplayName,
-                closedAt, forceCloseReason, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false,
+                closedAt, forceCloseReason, null, reconciliation, openedAt, createdAt, updatedAt, version, false, null, null, false,
                 SalesClassification.zero(), null, null, null, null, null, null, "USD", null);
     }
 
@@ -88,6 +89,7 @@ public record RegisterSessionResponse(
                 session.getClosedBy() == null ? null : session.getClosedBy().getDisplayName(),
                 session.getClosedAt(),
                 session.getForceCloseReason(),
+                session.getVarianceExplanation(),
                 null,
                 session.getOpenedAt(),
                 session.getCreatedAt(),
@@ -129,6 +131,7 @@ public record RegisterSessionResponse(
                 session.getClosedBy() == null ? null : session.getClosedBy().getDisplayName(),
                 session.getClosedAt(),
                 session.getForceCloseReason(),
+                session.getVarianceExplanation(),
                 reconciliation,
                 session.getOpenedAt(),
                 session.getCreatedAt(),

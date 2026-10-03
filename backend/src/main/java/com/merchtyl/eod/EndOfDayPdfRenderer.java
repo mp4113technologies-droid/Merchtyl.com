@@ -143,6 +143,15 @@ final class EndOfDayPdfRenderer {
         if (report.inventory() == null) noActivity(document); else financialRows(document, List.of(moneyRow("Units Deducted", report.inventory().deductedBySales()), moneyRow("Units Restored", report.inventory().restoredByReturns()), moneyRow("Value Movement", report.inventory().inventoryValueMovement())), report.currencyCode());
         sectionTitle(document, "EXCEPTIONS");
         if (report.exceptions().isEmpty()) paragraph(document, "No exceptions recorded."); else table(document, List.of("Type", "Count", "Amount", "Details"), report.exceptions().stream().map(row -> List.of(title(row.exceptionType().name()), String.valueOf(row.count()), money(row.totalAmount(), report.currencyCode()), row.details() == null ? "" : row.details())).toList());
+        List<List<String>> varianceRows = report.registers().stream()
+                .filter(row -> row.variance().compareTo(BigDecimal.ZERO) != 0 || row.forceClosed())
+                .map(row -> List.of(row.registerCode() + " / " + row.openedByName(),
+                        money(row.variance(), report.currencyCode()), row.forceClosed() ? "Yes" : "No",
+                        blankAsNone(row.forceCloseReason()), blankAsNone(row.varianceExplanation())))
+                .toList();
+        if (!varianceRows.isEmpty()) {
+            table(document, List.of("Register / Cashier", "Variance", "Force Closed", "Force-close reason", "Variance explanation"), varianceRows);
+        }
         sectionTitle(document, "CLOSED / SIGNED BY");
         if (report.signOff() != null) financialTextRows(document, List.of(
                 List.of("Name", report.signOff().managerName()), List.of("Date / Time", formatTime(report.signOff().signedAt(), timezone)),

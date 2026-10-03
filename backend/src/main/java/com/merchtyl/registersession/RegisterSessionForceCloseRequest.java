@@ -11,9 +11,10 @@ public record RegisterSessionForceCloseRequest(
         @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal retainedCash,
         String overrideReason,
         @NotNull String reason,
+        String varianceExplanation,
         @NotNull Long version
 ) {
     public RegisterSessionForceCloseRequest(BigDecimal countedCash, String reason, Long version) {
-        this(countedCash, null, null, reason, version);
+        this(countedCash, null, null, reason, null, version);
     }
 }

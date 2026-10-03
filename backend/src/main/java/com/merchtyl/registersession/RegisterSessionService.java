@@ -290,6 +290,10 @@ public class RegisterSessionService {
                     openingCash = target == null ? cashState.get().getRetainedCash() : target;
                     source = target == null ? "MANUAL_ENTRY"
                             : register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE" : "STORE_DEFAULT";
+                    if (cashState.get().restoreRequired().signum() > 0) {
+                        return RegisterAvailabilityResponse.restoreRequired(registerId, register.getType(), target,
+                                cashState.get().getRetainedCash(), source);
+                    }
                 }
             }
             return RegisterAvailabilityResponse.available(registerId, register.getType(), openingCash, source,
@@ -301,7 +305,43 @@ public class RegisterSessionService {
         return new RegisterAvailabilityResponse(registerId, register.getType(), own ? "YOUR_SESSION" : "IN_USE",
                 own || management ? session.getId() : null,
                 own || management ? session.getAssignedCashier().getDisplayName() : null,
-                session.getOpenedAt(), own || management ? session.getVersion() : null, null, null, null);
+                session.getOpenedAt(), own || management ? session.getVersion() : null, null, null, null,
+                null, null, null);
+    }
+
+    @Transactional
+    public RegisterAvailabilityResponse restoreTill(RegisterTillRestoreRequest request, Authentication authentication) {
+        Register register = findRegister(request.registerId(), true);
+        Store store = register.getStore();
+        User actor = currentUser(authentication);
+        if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, store.getId());
+        BusinessDay businessDay = businessDayService.requireOpenBusinessDayForUpdate(store.getId());
+        if (registerSessionRepository.existsByRegister_IdAndStatusIn(register.getId(), CURRENT_STATUSES)) {
+            throw alreadyOpen();
+        }
+        RegisterBusinessDayCashState state = registerBusinessDayCashStateRepository
+                .findForUpdate(businessDay.getId(), register.getId())
+                .orElseThrow(() -> new ConflictException("REGISTER_DAY_CASH_STATE_MISSING"));
+        BigDecimal amount = normalizeCountedCash(request.amount());
+        BigDecimal required = state.restoreRequired();
+        if (required.signum() == 0) throw new ConflictException("TILL_RESTORE_NOT_REQUIRED");
+        if (amount.compareTo(required) != 0) throw new BadRequestException("TILL_RESTORE_AMOUNT_MISMATCH");
+        cashLedgerService.append(new CashLedgerEntryCommand(
+                store, register, null, CashLedgerSourceType.TILL_RESTORE, state.getId(), CashLedgerDirection.IN,
+                amount, store.getCurrencyCode(), businessDay.getBusinessDate(), Instant.now(clock), actor,
+                request.operationId(), "Till restoration before next shift"));
+        state.restore(amount);
+        registerBusinessDayCashStateRepository.saveAndFlush(state);
+        auditService.record(new CreateAuditRecordCommand(actor.getId(), AuditAction.TILL_RESTORED,
+                "REGISTER_BUSINESS_DAY_CASH_STATE", state.getId(), store.getId(), register.getId(), null,
+                Map.of("targetTillAmount", state.getTargetFloat(), "restoredAmount", amount,
+                        "currentTillAmount", state.getRetainedCash()), null));
+        log.info("register_event event=REGISTER_TILL_RESTORED tenant_id={} store_id={} register_id={} target_till={} restored_amount={} current_till={} actor_user_id={}",
+                actor.getTenantId(), store.getId(), register.getId(), state.getTargetFloat(), amount,
+                state.getRetainedCash(), actor.getId());
+        String source = register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE" : "STORE_DEFAULT";
+        return RegisterAvailabilityResponse.available(register.getId(), register.getType(), state.getTargetFloat(),
+                source, false);
     }
 
     @Transactional
@@ -580,10 +620,13 @@ public class RegisterSessionService {
         }
         BigDecimal countedCash = normalizeCountedCash(request.countedCash());
         CashLedgerBreakdownResponse reconciliation = cashLedgerService.breakdown(session);
+        ensureCashStateForClosing(session);
         RegisterTillSettlementResponse settlement = calculateSettlement(session, reconciliation.expectedCash(), countedCash,
                 request.retainedCash(), request.overrideReason(), authentication);
         applyTillSettlement(session, settlement, closingUser, request.overrideReason());
-        session.close(countedCash, reconciliation.expectedCash(), closingUser, Instant.now(clock));
+        String varianceExplanation = requiredVarianceExplanation(
+                countedCash.subtract(reconciliation.expectedCash()), request.varianceExplanation());
+        session.close(countedCash, reconciliation.expectedCash(), closingUser, Instant.now(clock), varianceExplanation);
         RegisterSession saved = saveClosing(session);
         if (refreshTokenService != null && !session.getAssignedCashier().getId().equals(closingUser.getId())) {
             refreshTokenService.revokeActiveTokensForUser(session.getAssignedCashier(), Instant.now(clock));
@@ -621,10 +664,14 @@ public class RegisterSessionService {
         BigDecimal countedCash = normalizeCountedCash(request.countedCash());
         String reason = cleanRequired(request.reason(), "reason");
         CashLedgerBreakdownResponse reconciliation = cashLedgerService.breakdown(session);
+        String varianceExplanation = requiredVarianceExplanation(
+                countedCash.subtract(reconciliation.expectedCash()), request.varianceExplanation());
+        ensureCashStateForClosing(session);
         RegisterTillSettlementResponse settlement = calculateSettlement(session, reconciliation.expectedCash(), countedCash,
                 request.retainedCash(), request.overrideReason(), authentication);
         applyTillSettlement(session, settlement, closingUser, request.overrideReason());
-        session.forceClose(countedCash, reconciliation.expectedCash(), closingUser, Instant.now(clock), reason);
+        session.forceClose(countedCash, reconciliation.expectedCash(), closingUser, Instant.now(clock), reason,
+                varianceExplanation);
         RegisterSession saved = saveClosing(session);
         if (refreshTokenService != null && !session.getAssignedCashier().getId().equals(closingUser.getId())) {
             refreshTokenService.revokeActiveTokensForUser(session.getAssignedCashier(), Instant.now(clock));
@@ -777,11 +824,16 @@ public class RegisterSessionService {
                 : state.getTargetFloat();
         String source = state.getTargetFloat() == null ? "MANUAL_ENTRY"
                 : register.getTillFloatOverride() != null ? "REGISTER_OVERRIDE" : "STORE_DEFAULT";
-        try {
-            state.openNextShift(openingCash);
-        } catch (IllegalArgumentException exception) {
+        if (state.getRetainedCash().compareTo(openingCash) < 0) {
+            BigDecimal required = state.restoreRequired();
+            log.warn("register_event event=REGISTER_OPEN_TILL_RESTORE_REQUIRED store_id={} register_id={} target_till={} current_till={} restore_amount={}",
+                    store.getId(), register.getId(), state.getTargetFloat(), state.getRetainedCash(), required);
             throw new ConflictException("TILL_RESTORE_REQUIRED");
         }
+        if (state.getRetainedCash().compareTo(openingCash) > 0) {
+            throw new ConflictException("TILL_SETTLEMENT_REQUIRED");
+        }
+        state.openNextShift(openingCash);
         return new OpeningCashResolution(openingCash, source, state, false);
     }
 
@@ -816,6 +868,19 @@ public class RegisterSessionService {
                 countedCash.subtract(expectedCash).setScale(MONEY_SCALE), target, retainedCash, removed, restore, override);
     }
 
+    private void ensureCashStateForClosing(RegisterSession session) {
+        if (registerBusinessDayCashStateRepository == null || session.getBusinessDay() == null) return;
+        if (registerBusinessDayCashStateRepository
+                .findForUpdate(session.getBusinessDay().getId(), session.getRegister().getId()).isPresent()) return;
+        BigDecimal historicalOpening = normalizeOpeningCash(session.getOpeningCash());
+        RegisterBusinessDayCashState recovered = new RegisterBusinessDayCashState(
+                session.getStore(), session.getRegister(), session.getBusinessDay(), historicalOpening, historicalOpening);
+        registerBusinessDayCashStateRepository.saveAndFlush(recovered);
+        log.warn("register_event event=REGISTER_DAY_CASH_STATE_RECOVERED store_id={} register_id={} business_day_id={} session_id={} initial_float={} target_float={} reason=missing_legacy_state",
+                session.getStore().getId(), session.getRegister().getId(), session.getBusinessDay().getId(),
+                session.getId(), historicalOpening, historicalOpening);
+    }
+
     private void applyTillSettlement(RegisterSession session, RegisterTillSettlementResponse settlement,
                                      User closingUser, String overrideReason) {
         if (registerBusinessDayCashStateRepository == null || session.getBusinessDay() == null) return;
@@ -840,6 +905,9 @@ public class RegisterSessionService {
                     session.getBusinessDay().getBusinessDate(), Instant.now(clock), closingUser, operationId,
                     "Register close till removal"));
         }
+        log.info("register_event event=REGISTER_SHIFT_SETTLED store_id={} register_id={} session_id={} counted_cash={} cash_to_bag={} cash_retained={} restore_required={}",
+                session.getStore().getId(), session.getRegister().getId(), session.getId(), settlement.countedCash(),
+                settlement.cashToRemove(), settlement.cashToLeave(), settlement.amountNeededToRestoreFloat());
     }
 
     private Device findDevice(UUID deviceId, boolean lock) {
@@ -1032,6 +1100,13 @@ public class RegisterSessionService {
             throw new BadRequestException(fieldName + " is required");
         }
         return value.trim();
+    }
+
+    private static String requiredVarianceExplanation(BigDecimal variance, String explanation) {
+        if (variance.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return cleanRequired(explanation, "varianceExplanation");
     }
 
     private static boolean hasAuthority(Authentication authentication, String authority) {

@@ -823,6 +823,7 @@ export type RegisterSessionClosePayload = {
   countedCash: number;
   retainedCash?: number;
   overrideReason?: string;
+  varianceExplanation?: string;
   version: number;
 };
 
@@ -832,6 +833,7 @@ export type RegisterSessionTransitionPayload = { version: number };
 
 export type RegisterSessionForceClosePayload = RegisterSessionClosePayload & {
   reason: string;
+  varianceExplanation?: string;
 };
 
 export type RegisterSessionTransferPayload = {
@@ -2660,6 +2662,12 @@ export async function getCurrentRegisterSession(token: string, params: { deviceI
 
 export function getRegisterAvailability(token: string, registerId: string) {
   return request<import('./types').RegisterAvailability>(`/register-sessions/availability${queryString({ registerId })}`, undefined, token);
+}
+
+export function restoreRegisterTill(token: string, payload: { registerId: string; amount: number; operationId: string }) {
+  return request<import('./types').RegisterAvailability>('/register-sessions/restore-till', {
+    method: 'POST', body: JSON.stringify(payload)
+  }, token);
 }
 
 export function secureTill(token: string, registerSessionId: string) {

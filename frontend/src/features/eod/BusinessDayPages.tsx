@@ -151,7 +151,7 @@ function errorMessage(error: unknown) {
   if (error instanceof ApiClientError) {
     if (error.code === 'BUSINESS_DAY_HAS_OPEN_REGISTER_SESSIONS') return 'Close all open registers before closing the business day.';
     if (error.code === 'BUSINESS_DAY_STATE_CHANGED' || error.code === 'RECORD_UPDATED_BY_ANOTHER_USER') return 'The business day changed. Refresh and try again.';
-    if (error.code === 'VARIANCE_EXPLANATION_REQUIRED') return 'Please explain the cash variance before closing.';
+    if (error.code === 'VARIANCE_EXPLANATION_REQUIRED') return 'One or more cash variances need an explanation before the Business Day can be closed. Review the affected Registers below.';
     if (error.code === 'BUSINESS_DAY_RECONCILIATION_INCOMPLETE') return 'Complete register reconciliation before closing the business day.';
     if (error.code === 'SALE_HAS_RECORDED_PAYMENTS') return 'This draft has recorded payments and cannot be cancelled. Open the sale to review its payments.';
   }
@@ -631,11 +631,13 @@ export function BusinessDayClosePage() {
               {forceMode ? <TextField label="Force-close reason" value={forceReason} onChange={(event) => setForceReason(event.target.value)} required fullWidth multiline minRows={2} /> : null}
               <TextField label="Manager notes" value={managerNotes} onChange={(event) => setManagerNotes(event.target.value)} fullWidth multiline minRows={2} />
               <TextField
-                label="Variance explanation"
+                label="Business Day variance explanation"
                 value={varianceExplanation}
                 onChange={(event) => setVarianceExplanation(event.target.value)}
                 required={varianceExplanationRequired}
-                helperText={varianceExplanationRequired ? `Required because variance exceeds ${money(preview.data?.cashVarianceExplanationThreshold, preview.data?.currencyCode)}` : undefined}
+                helperText={varianceExplanationRequired
+                  ? `Explain the remaining ${money(preview.data?.unexplainedCashVariance, preview.data?.currencyCode)} not accounted for by Register explanations.`
+                  : preview.data && preview.data.cashVariance !== 0 ? 'All Register variance is already accounted for.' : undefined}
                 fullWidth
                 multiline
                 minRows={2}
@@ -727,6 +729,8 @@ function ClosingPreview({ preview }: { preview: EndOfDayClosingPreview }) {
         <Grid item xs={12} sm={6} md={3}><Metric label="Merchandise Net Sales" value={money(preview.merchandiseNetSales, preview.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Payments net" value={money(preview.payments.reduce((total, row) => total + row.net, 0), preview.currencyCode)} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Cash variance" value={money(preview.cashVariance, preview.currencyCode)} tone={preview.cashVariance === 0 ? 'success' : 'warning'} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Explained" value={money(preview.explainedRegisterVariance, preview.currencyCode)} tone="success" /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Unexplained" value={money(preview.unexplainedCashVariance, preview.currencyCode)} tone={preview.unexplainedCashVariance === 0 ? 'success' : 'warning'} /></Grid>
       </Grid>
       <TableContainer>
         <Table size="small" aria-label="Closing preview sections">
@@ -736,7 +740,14 @@ function ClosingPreview({ preview }: { preview: EndOfDayClosingPreview }) {
           </TableBody>
         </Table>
       </TableContainer>
-      <ReportTable title="Register reconciliation preview" rows={<SimpleTable headers={['Register', 'Expected', 'Counted', 'Variance']} rows={preview.registers.map((row) => [row.registerCode, money(row.expectedCash, preview.currencyCode), money(row.countedCash, preview.currencyCode), money(row.variance, preview.currencyCode)])} />} />
+      <ReportTable title="Cash variance review" rows={<SimpleTable headers={['Register / Cashier', 'Expected', 'Counted', 'Variance', 'Status', 'Explanation']} rows={preview.registers.map((row) => [
+        `${row.registerCode} / ${row.openedByName}`,
+        money(row.expectedCash, preview.currencyCode),
+        money(row.countedCash, preview.currencyCode),
+        money(row.variance, preview.currencyCode),
+        row.variance === 0 ? 'Balanced' : row.varianceExplanation ? 'Explained' : 'Needs explanation',
+        row.varianceExplanation ?? '—'
+      ])} />} />
       <ReportTable title="Payment preview" rows={<SimpleTable headers={['Method', 'Collected', 'Refunded', 'Net']} rows={preview.payments.map((row) => [row.paymentMethod, money(row.collected, preview.currencyCode), money(row.refunded, preview.currencyCode), money(row.net, preview.currencyCode)])} />} />
       <ReportTable title="Tax preview" rows={<SimpleTable headers={['Component', 'Taxable', 'Collected', 'Refunded', 'Net']} rows={preview.taxes.map((row) => [row.componentCode, money(row.taxableSales, preview.currencyCode), money(row.taxCollected, preview.currencyCode), money(row.taxRefunded, preview.currencyCode), money(row.netTaxCollected, preview.currencyCode)])} />} />
       <ReportTable title="Deposits preview" rows={<SimpleTable headers={['Deposits Collected', 'Deposit Payouts', 'Net Deposits']} rows={[[money(preview.depositsCollected, preview.currencyCode), money(preview.depositPayouts, preview.currencyCode), money(preview.netDeposits, preview.currencyCode)]]} />} />

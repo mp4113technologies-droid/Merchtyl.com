@@ -66,6 +66,13 @@ public class RegisterSessionController {
         return registerSessionService.availability(registerId, authentication);
     }
 
+    @PostMapping("/restore-till")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).CASH_MOVEMENT_CREATE)")
+    RegisterAvailabilityResponse restoreTill(
+            @Valid @RequestBody RegisterTillRestoreRequest request, Authentication authentication) {
+        return registerSessionService.restoreTill(request, authentication);
+    }
+
     @PostMapping("/{id}/close")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REGISTER_SESSION_CLOSE)")
     RegisterSessionResponse close(

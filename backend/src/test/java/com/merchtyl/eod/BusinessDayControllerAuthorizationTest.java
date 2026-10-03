@@ -197,6 +197,8 @@ class BusinessDayControllerAuthorizationTest {
                 new BigDecimal("125.00"),
                 new BigDecimal("124.00"),
                 new BigDecimal("-1.00"),
+                BigDecimal.ZERO.setScale(2),
+                new BigDecimal("-1.00"),
                 new BigDecimal("0.50"),
                 true,
                 true,

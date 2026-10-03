@@ -23,12 +23,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LotterySalesReportServiceTest {
@@ -57,7 +57,8 @@ class LotterySalesReportServiceTest {
         when(sale.getItems()).thenReturn(List.of(ticket, manual, win));
         when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class))).thenReturn(List.of(sale));
         Receipt receipt = mock(Receipt.class); when(receipt.getReceiptNumber()).thenReturn("RCT-1001");
-        when(receipts.findBySale_Id(saleId)).thenReturn(Optional.of(receipt));
+        when(receipt.getSale()).thenReturn(sale);
+        when(receipts.findBySale_IdIn(List.of(saleId))).thenReturn(List.of(receipt));
         when(cashLedger.sumLotteryCashPayouts(any(),
                 org.mockito.ArgumentMatchers.nullable(UUID.class),
                 org.mockito.ArgumentMatchers.nullable(UUID.class),
@@ -77,6 +78,7 @@ class LotterySalesReportServiceTest {
         assertThat(result.netLottery()).isEqualByComparingTo("40.00");
         assertThat(result.actualCashPayouts()).isEqualByComparingTo("7.00");
         assertThat(result.activities()).hasSize(3).allSatisfy(row -> assertThat(row.receiptNumber()).isEqualTo("RCT-1001"));
+        verify(receipts).findBySale_IdIn(List.of(saleId));
     }
 
     @Test
@@ -112,6 +114,39 @@ class LotterySalesReportServiceTest {
         assertThat(result.totalLotterySold()).isEqualByComparingTo("100.00");
         assertThat(result.lotteryWins()).isEqualByComparingTo("15.00");
         assertThat(result.netLottery()).isEqualByComparingTo("85.00");
+    }
+
+    @Test
+    void twoClosedShiftsOnSameRegisterBothContributeToDashboardReportTotals() {
+        SaleRepository sales = mock(SaleRepository.class);
+        ReceiptRepository receipts = mock(ReceiptRepository.class);
+        CashLedgerRepository cashLedger = mock(CashLedgerRepository.class);
+        StoreAccessService access = mock(StoreAccessService.class);
+        User actor = mock(User.class);
+        UUID tenantId = UUID.randomUUID();
+        UUID storeId = UUID.randomUUID();
+        when(actor.getTenantId()).thenReturn(tenantId);
+        when(actor.getId()).thenReturn(UUID.randomUUID());
+        when(access.currentTenantUser(any(Authentication.class))).thenReturn(actor);
+        when(access.canAccessStore(actor.getId(), storeId)).thenReturn(true);
+        when(access.assignedStores(any(Authentication.class))).thenReturn(List.of(
+                new AssignedStoreResponse(storeId, "STR001", "Store", null, null, null, java.util.Set.of())));
+        Sale shiftA = lotterySale(storeId, "R1", "0", "100", "20");
+        Sale shiftB = lotterySale(storeId, "R1", "0", "50", "10");
+        when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(shiftA, shiftB));
+
+        LotterySalesReportResponse result = new LotterySalesReportService(
+                sales, receipts, access, mock(FeatureService.class), cashLedger,
+                Clock.fixed(Instant.parse("2026-10-02T15:00:00Z"), ZoneOffset.UTC))
+                .summarize(new LotterySalesReportRequest(storeId, null, null,
+                        LocalDate.parse("2026-10-02"), LocalDate.parse("2026-10-02"), "ALL", "ALL"),
+                        mock(Authentication.class));
+
+        assertThat(result.totalLotterySold()).isEqualByComparingTo("150.00");
+        assertThat(result.lotteryWins()).isEqualByComparingTo("30.00");
+        assertThat(result.netLottery()).isEqualByComparingTo("120.00");
+        assertThat(result.activities()).filteredOn(row -> row.amount().signum() != 0).hasSize(4);
     }
 
     private static Sale lotterySale(UUID storeId, String registerCode, String physical, String manual, String win) {

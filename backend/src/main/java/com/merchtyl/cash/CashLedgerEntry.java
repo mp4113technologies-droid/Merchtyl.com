@@ -33,8 +33,8 @@ public class CashLedgerEntry extends BaseUuidEntity {
     @JoinColumn(name = "register_id", nullable = false, updatable = false)
     private Register register;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "register_session_id", nullable = false, updatable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "register_session_id", updatable = false)
     private RegisterSession registerSession;
 
     @Enumerated(EnumType.STRING)

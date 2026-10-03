@@ -501,6 +501,66 @@ describe('Register session pages', () => {
     });
   });
 
+  it('shows an actionable short-till state and opens after an explicit restore', async () => {
+    storeSession(['CASHIER']);
+    let restored = false;
+    const opened = { ...registerSession(), openingCash: 440 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) {
+        return jsonResponse(currentUser(['CASHIER'], [
+          'REGISTER_SESSION_OPEN', 'REGISTER_SESSION_VIEW', 'POS_ACCESS', 'CASH_MOVEMENT_CREATE'
+        ]));
+      }
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([{ ...store(), currencyCode: 'CAD' }]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/restore-till') && init?.method === 'POST') {
+        restored = true;
+        return jsonResponse({
+          ...availableRegister(), openingCash: 440, openingCashSource: 'STORE_DEFAULT',
+          targetTillAmount: 440, currentTillAmount: 440, restoreRequiredAmount: 0
+        } satisfies RegisterAvailability);
+      }
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse(restored ? {
+        ...availableRegister(), openingCash: 440, openingCashSource: 'STORE_DEFAULT',
+        targetTillAmount: 440, currentTillAmount: 440, restoreRequiredAmount: 0
+      } satisfies RegisterAvailability : {
+        ...availableRegister(), state: 'RESTORE_REQUIRED', openingCash: 440,
+        openingCashSource: 'STORE_DEFAULT', targetTillAmount: 440,
+        currentTillAmount: 425, restoreRequiredAmount: 15
+      } satisfies RegisterAvailability);
+      if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
+        return jsonResponse(page<RegisterSession>([]));
+      }
+      if (url.pathname.endsWith('/api/v1/register-sessions/open') && init?.method === 'POST') return jsonResponse(opened, 201);
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return jsonResponse(opened);
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/open']} />);
+
+    expect(await screen.findByText('Till restoration required')).toBeInTheDocument();
+    expect(screen.getByText(/currently has CA\$425\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/configured till amount is CA\$440\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/Add CA\$15\.00/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open register' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Restore Till' }));
+    expect(await screen.findByRole('button', { name: 'Open register' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Open register' }));
+
+    await waitFor(() => {
+      const restoreCall = fetchMock.mock.calls.find(([input, request]) =>
+        new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/register-sessions/restore-till')
+        && request?.method === 'POST');
+      expect(restoreCall).toBeTruthy();
+      expect(JSON.parse(String(restoreCall?.[1]?.body))).toMatchObject({ registerId: register().id, amount: 15 });
+      expect(fetchMock.mock.calls.some(([input, request]) =>
+        new URL(String(input), window.location.origin).pathname.endsWith('/api/v1/register-sessions/open')
+        && request?.method === 'POST')).toBe(true);
+    });
+  });
+
   it('starts a missing business day from register open and enables register operation immediately', async () => {
     storeSession(['CASHIER']);
     let businessDayOpen = false;
@@ -576,7 +636,7 @@ describe('Register session pages', () => {
     expect(screen.getByText(/currently operated by Cashier One/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Actual Opening Cash')).not.toBeInTheDocument();
     expect(screen.getByText(/Opening cash:/)).toHaveTextContent('$125.50');
-    await userEvent.type(await screen.findByRole('textbox', { name: 'Reason' }), 'Manager required access');
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Override reason' }), 'Manager required access');
     await userEvent.click(screen.getByRole('button', { name: 'Override Session' }));
 
     await waitFor(() => {
@@ -586,6 +646,56 @@ describe('Register session pages', () => {
       expect(overrideCall).toBeTruthy();
       expect(JSON.parse(String(overrideCall?.[1]?.body))).toEqual({
         reason: 'Manager required access',
+        version: activeSession.version
+      });
+    });
+  });
+
+  it('requires a separate variance explanation in the register-in-use force-close path', async () => {
+    storeSession(['TENANT_OWNER']);
+    const activeSession = { ...registerSession(), expectedCash: 878.11 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser(['TENANT_OWNER']));
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse(page<Store>([store()]));
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse(page<Register>([register()]));
+      if (url.pathname.endsWith('/api/v1/register-sessions/availability')) return jsonResponse({
+        ...availableRegister(), state: 'IN_USE', sessionId: activeSession.id,
+        operatorDisplayName: activeSession.assignedCashierDisplayName,
+        openedAt: activeSession.openedAt, version: activeSession.version
+      });
+      if (url.pathname.endsWith('/api/v1/register-sessions/open') && init?.method === 'POST') {
+        return apiError('Register already has an open session', 409, 'conflict');
+      }
+      if (url.pathname.endsWith('/api/v1/register-sessions') && url.searchParams.get('status') === 'OPEN') {
+        return jsonResponse(page<RegisterSession>([activeSession]));
+      }
+      if (url.pathname.endsWith(`/api/v1/register-sessions/${activeSession.id}/force-close`) && init?.method === 'POST') {
+        return jsonResponse({ ...activeSession, status: 'FORCE_CLOSED' });
+      }
+      return apiError('Unexpected request');
+    });
+
+    render(<App initialEntries={['/register/open']} />);
+    await screen.findByRole('heading', { name: 'Register already in use' });
+    const countedCash = screen.getByRole('spinbutton', { name: 'Counted cash' });
+    await userEvent.clear(countedCash);
+    await userEvent.type(countedCash, '870.11');
+    expect(screen.getByText(/Variance:/)).toHaveTextContent('-$8.00 — SHORT');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Force-close reason' }), 'Cashier left unexpectedly');
+    expect(screen.getByRole('button', { name: 'Force Close Register' })).toBeDisabled();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Variance explanation' }), 'Drawer short by CA$8 during manager count');
+    await userEvent.click(screen.getByRole('button', { name: 'Force Close Register' }));
+
+    await waitFor(() => {
+      const forceCloseCall = fetchMock.mock.calls.find(([input, init]) =>
+        new URL(String(input), window.location.origin).pathname.endsWith(`/${activeSession.id}/force-close`)
+        && init?.method === 'POST');
+      expect(forceCloseCall).toBeTruthy();
+      expect(JSON.parse(String(forceCloseCall?.[1]?.body))).toEqual({
+        countedCash: 870.11,
+        reason: 'Cashier left unexpectedly',
+        varianceExplanation: 'Drawer short by CA$8 during manager count',
         version: activeSession.version
       });
     });
@@ -699,6 +809,7 @@ describe('Register session pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Review Shift Cash Settlement' }));
     expect(await screen.findByText('CASH TO BAG')).toBeInTheDocument();
     expect(screen.getByText('$15.00')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Variance explanation' }), 'Drawer short by $10.50');
     await userEvent.click(screen.getByRole('button', { name: 'Confirm Cash Bag & Close Shift' }));
 
     await waitFor(() => {
@@ -710,6 +821,7 @@ describe('Register session pages', () => {
       expect(JSON.parse(String(closeCall?.[1]?.body))).toEqual({
         countedCash: 115,
         retainedCash: 100,
+        varianceExplanation: 'Drawer short by $10.50',
         version: 0
       });
     });

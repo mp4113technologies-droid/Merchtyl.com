@@ -95,6 +95,9 @@ public class RegisterSession extends BaseUuidEntity {
     @Column(length = 1000)
     private String forceCloseReason;
 
+    @Column(length = 1000)
+    private String varianceExplanation;
+
     @Column(name = "till_secured_at")
     private Instant tillSecuredAt;
 
@@ -231,6 +234,10 @@ public class RegisterSession extends BaseUuidEntity {
         return forceCloseReason;
     }
 
+    public String getVarianceExplanation() {
+        return varianceExplanation;
+    }
+
     public Instant getTillSecuredAt() { return tillSecuredAt; }
     public int getTillPinFailedAttempts() { return tillPinFailedAttempts; }
     public Instant getTillPinLockedUntil() { return tillPinLockedUntil; }
@@ -270,9 +277,10 @@ public class RegisterSession extends BaseUuidEntity {
         this.closedBy = null;
         this.closedAt = null;
         this.forceCloseReason = null;
+        this.varianceExplanation = null;
     }
 
-    void close(BigDecimal countedCash, BigDecimal expectedCash, User closedBy, Instant closedAt) {
+    void close(BigDecimal countedCash, BigDecimal expectedCash, User closedBy, Instant closedAt, String varianceExplanation) {
         this.status = RegisterSessionStatus.CLOSED;
         this.countedCash = countedCash;
         this.expectedCashAtClose = expectedCash;
@@ -280,6 +288,7 @@ public class RegisterSession extends BaseUuidEntity {
         this.closedBy = closedBy;
         this.closedAt = closedAt;
         this.forceCloseReason = null;
+        this.varianceExplanation = varianceExplanation;
     }
 
     void recordTillSettlement(BigDecimal targetFloat, BigDecimal retainedCash, BigDecimal removedCash,
@@ -291,7 +300,8 @@ public class RegisterSession extends BaseUuidEntity {
         this.retentionOverrideReason = overrideReason;
     }
 
-    void forceClose(BigDecimal countedCash, BigDecimal expectedCash, User closedBy, Instant closedAt, String forceCloseReason) {
+    void forceClose(BigDecimal countedCash, BigDecimal expectedCash, User closedBy, Instant closedAt,
+                    String forceCloseReason, String varianceExplanation) {
         this.status = RegisterSessionStatus.FORCE_CLOSED;
         this.countedCash = countedCash;
         this.expectedCashAtClose = expectedCash;
@@ -299,5 +309,6 @@ public class RegisterSession extends BaseUuidEntity {
         this.closedBy = closedBy;
         this.closedAt = closedAt;
         this.forceCloseReason = forceCloseReason;
+        this.varianceExplanation = varianceExplanation;
     }
 }

@@ -214,9 +214,6 @@ public class CashLedgerService {
         if (command.register() == null) {
             throw new BadRequestException("register is required");
         }
-        if (command.registerSession() == null) {
-            throw new BadRequestException("registerSession is required");
-        }
         if (command.createdBy() == null) {
             throw new BadRequestException("createdBy is required");
         }
@@ -225,17 +222,24 @@ public class CashLedgerService {
         if (!command.register().getStore().getId().equals(storeId)) {
             throw new BadRequestException("register must belong to store");
         }
-        if (!command.registerSession().getStore().getId().equals(storeId)) {
-            throw new BadRequestException("registerSession must belong to store");
-        }
-        if (!command.registerSession().getRegister().getId().equals(registerId)) {
-            throw new BadRequestException("registerSession must belong to register");
+        if (command.registerSession() == null) {
+            if (command.sourceType() != CashLedgerSourceType.TILL_RESTORE) {
+                throw new BadRequestException("registerSession is required");
+            }
+        } else {
+            if (!command.registerSession().getStore().getId().equals(storeId)) {
+                throw new BadRequestException("registerSession must belong to store");
+            }
+            if (!command.registerSession().getRegister().getId().equals(registerId)) {
+                throw new BadRequestException("registerSession must belong to register");
+            }
         }
     }
 
     private static void validateSourceDirection(CashLedgerSourceType sourceType, CashLedgerDirection direction) {
         switch (sourceType) {
-            case SESSION_OPENING_FLOAT, SALE_CASH_RECEIPT, LOTTERY_SALE_CASH, LOTTERY_PAYOUT_REVERSAL -> requireDirection(sourceType, direction, CashLedgerDirection.IN);
+            case SESSION_OPENING_FLOAT, SALE_CASH_RECEIPT, LOTTERY_SALE_CASH, LOTTERY_PAYOUT_REVERSAL,
+                    TILL_RESTORE -> requireDirection(sourceType, direction, CashLedgerDirection.IN);
             case SALE_CHANGE_GIVEN, LOTTERY_PAYOUT_CASH, LOTTERY_SALE_CANCELLATION_CASH, DEPOSIT_PAYOUT, CASH_REFUND,
                     SESSION_CLOSE_TILL_REMOVAL -> requireDirection(sourceType, direction, CashLedgerDirection.OUT);
             case CASH_MOVEMENT, SESSION_CLOSE_ADJUSTMENT -> {

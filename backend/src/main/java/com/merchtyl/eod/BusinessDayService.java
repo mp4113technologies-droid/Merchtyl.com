@@ -686,7 +686,14 @@ public class BusinessDayService {
             String forceCloseReason) {
         GeneratedReport generated = aggregate(day);
         BusinessDayConfiguration configuration = configuration(day.getStore());
-        validateSignOff(configuration, generated.totals.cashVariance(), notes, varianceExplanation, confirmationAccepted);
+        BigDecimal unexplainedVariance = unexplainedVariance(generated);
+        validateSignOff(
+                configuration,
+                unexplainedVariance,
+                hasUnexplainedRegisterVariance(generated),
+                notes,
+                varianceExplanation,
+                confirmationAccepted);
         int revision = reportRepository.maxRevision(day.getId()) + 1;
         String reportNumber = "%s-%s-R%d".formatted(day.getStore().getCode(), day.getBusinessDate(), revision);
         EndOfDayReport report = new EndOfDayReport(
@@ -736,6 +743,8 @@ public class BusinessDayService {
         List<EndOfDayRegisterSummaryResponse> registerPreviews = generated.registers().stream()
                 .map(register -> registerPreview(register, physicalStates.get(register.session().getRegister().getId())))
                 .toList();
+        BigDecimal explainedRegisterVariance = explainedRegisterVariance(generated);
+        BigDecimal unexplainedCashVariance = money(totals.cashVariance().subtract(explainedRegisterVariance));
         return new EndOfDayClosingPreviewResponse(
                 day.getId(),
                 day.getStore().getId(),
@@ -773,8 +782,10 @@ public class BusinessDayService {
                 totals.expectedCash(),
                 totals.countedCash(),
                 totals.cashVariance(),
+                explainedRegisterVariance,
+                unexplainedCashVariance,
                 configuration.getCashVarianceExplanationThreshold(),
-                totals.cashVariance().abs().compareTo(configuration.getCashVarianceExplanationThreshold()) > 0,
+                unexplainedCashVariance.compareTo(BigDecimal.ZERO) != 0 || hasUnexplainedRegisterVariance(generated),
                 configuration.isRequireManagerSignOff(),
                 totals.currencyCode(),
                 EndOfDayRegisterReconciliationResponse.aggregate(registerPreviews),
@@ -845,7 +856,8 @@ public class BusinessDayService {
                 session.getOpenedAt(),
                 session.getClosedAt(),
                 session.getStatus() == RegisterSessionStatus.FORCE_CLOSED,
-                session.getForceCloseReason());
+                session.getForceCloseReason(),
+                session.getVarianceExplanation());
     }
 
     private static EndOfDayPaymentSummaryResponse paymentPreview(EndOfDayPaymentValues payment) {
@@ -1154,7 +1166,7 @@ public class BusinessDayService {
                     session.getOpenedBy() == null ? null : session.getOpenedBy().getId(),
                     session.getOpenedBy() == null ? null : session.getOpenedBy().getDisplayName(),
                     session.getOpenedAt(), session.getOpeningCash(), breakdown.expectedCash(),
-                    session.getCountedCash(), session.getDifferenceCash(), session.getVersion(),
+                    session.getCountedCash(), session.getDifferenceCash(), session.getVarianceExplanation(), session.getVersion(),
                     !complete, complete, canReconcile, breakdown);
         }).toList();
     }
@@ -1584,13 +1596,56 @@ public class BusinessDayService {
         return registerSessionRepository.findAll(registerSessionSpec(day), Sort.by("openedAt").and(Sort.by("id")));
     }
 
-    private void validateSignOff(BusinessDayConfiguration configuration, BigDecimal cashVariance, String notes, String varianceExplanation, Boolean confirmationAccepted) {
+    private void validateSignOff(
+            BusinessDayConfiguration configuration,
+            BigDecimal unexplainedVariance,
+            boolean hasUnexplainedRegisterVariance,
+            String notes,
+            String varianceExplanation,
+            Boolean confirmationAccepted) {
         if (configuration.isRequireManagerSignOff() && !Boolean.TRUE.equals(confirmationAccepted)) {
             throw new BadRequestException("confirmationAccepted must be true");
         }
-        if (cashVariance.abs().compareTo(configuration.getCashVarianceExplanationThreshold()) > 0 && cleanOptional(varianceExplanation) == null) {
+        if ((unexplainedVariance.compareTo(BigDecimal.ZERO) != 0 || hasUnexplainedRegisterVariance)
+                && cleanOptional(varianceExplanation) == null) {
             throw new BadRequestException("VARIANCE_EXPLANATION_REQUIRED");
         }
+    }
+
+    private static BigDecimal explainedRegisterVariance(GeneratedReport generated) {
+        return explainedRegisterVariance(generated.registers().stream()
+                .map(RegisterValuesWithSession::session)
+                .toList());
+    }
+
+    static BigDecimal explainedRegisterVariance(List<RegisterSession> sessions) {
+        return money(sessions.stream()
+                .filter(session -> cleanOptional(session.getVarianceExplanation()) != null)
+                .map(RegisterSession::getDifferenceCash)
+                .filter(Objects::nonNull)
+                .reduce(moneyZero(), BigDecimal::add));
+    }
+
+    private static BigDecimal unexplainedVariance(GeneratedReport generated) {
+        return unexplainedVariance(generated.totals().cashVariance(), generated.registers().stream()
+                .map(RegisterValuesWithSession::session)
+                .toList());
+    }
+
+    static BigDecimal unexplainedVariance(BigDecimal storeVariance, List<RegisterSession> sessions) {
+        return money(storeVariance.subtract(explainedRegisterVariance(sessions)));
+    }
+
+    private static boolean hasUnexplainedRegisterVariance(GeneratedReport generated) {
+        return hasUnexplainedRegisterVariance(generated.registers().stream()
+                .map(RegisterValuesWithSession::session)
+                .toList());
+    }
+
+    static boolean hasUnexplainedRegisterVariance(List<RegisterSession> sessions) {
+        return sessions.stream().anyMatch(session -> session.getDifferenceCash() != null
+                && session.getDifferenceCash().compareTo(BigDecimal.ZERO) != 0
+                && cleanOptional(session.getVarianceExplanation()) == null);
     }
 
     private BusinessDay saveDay(BusinessDay day) {
@@ -2210,8 +2265,8 @@ public class BusinessDayService {
                         fmt(register.cashRetained()), fmt(register.finalCountedCash()), fmt(register.variance()))).toList());
         appendCsvSection(csv, "payments", List.of("method", "collected", "refunded", "net", "cashTendered", "changeGiven"),
                 report.payments().stream().map(payment -> List.of(payment.paymentMethod().name(), fmt(payment.collected()), fmt(payment.refunded()), fmt(payment.net()), fmt(payment.cashTendered()), fmt(payment.changeGiven()))).toList());
-        appendCsvSection(csv, "registerSessions", List.of("registerSessionId", "registerId", "registerCode", "cashier", "openedAt", "closedAt", "sessionOpeningBalance", "expectedCashAtClose", "countedCash", "variance", "targetTillFloat", "cashRemoved", "cashLeftInTill", "cashPayouts", "payoutReversals", "forceClosed", "forceCloseReason"),
-                report.registers().stream().map(register -> List.of(nullToEmpty(register.registerSessionId() == null ? null : register.registerSessionId().toString()), register.registerId().toString(), register.registerCode(), register.openedByName(), register.openedAt().toString(), register.closedAt() == null ? "" : register.closedAt().toString(), fmt(register.openingFloat()), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()), fmt(register.sessionTargetFloat()), fmt(register.sessionCashRemoved()), fmt(register.sessionCashRetained()), fmt(register.payouts()), fmt(register.payoutReversals()), String.valueOf(register.forceClosed()), nullToEmpty(register.forceCloseReason()))).toList());
+        appendCsvSection(csv, "registerSessions", List.of("registerSessionId", "registerId", "registerCode", "cashier", "openedAt", "closedAt", "sessionOpeningBalance", "expectedCashAtClose", "countedCash", "variance", "targetTillFloat", "cashRemoved", "cashLeftInTill", "cashPayouts", "payoutReversals", "forceClosed", "forceCloseReason", "varianceExplanation"),
+                report.registers().stream().map(register -> List.of(nullToEmpty(register.registerSessionId() == null ? null : register.registerSessionId().toString()), register.registerId().toString(), register.registerCode(), register.openedByName(), register.openedAt().toString(), register.closedAt() == null ? "" : register.closedAt().toString(), fmt(register.openingFloat()), fmt(register.expectedCash()), fmt(register.countedCash()), fmt(register.variance()), fmt(register.sessionTargetFloat()), fmt(register.sessionCashRemoved()), fmt(register.sessionCashRetained()), fmt(register.payouts()), fmt(register.payoutReversals()), String.valueOf(register.forceClosed()), nullToEmpty(register.forceCloseReason()), nullToEmpty(register.varianceExplanation()))).toList());
         appendCsvSection(csv, "taxes", List.of("componentCode", "componentName", "taxableSales", "taxCollected", "taxRefunded", "netTaxCollected"),
                 report.taxes().stream().map(tax -> List.of(tax.componentCode(), tax.componentName(), fmt(tax.taxableSales()), fmt(tax.taxCollected()), fmt(tax.taxRefunded()), fmt(tax.netTaxCollected()))).toList());
         appendCsvSection(csv, "categorySalesByTaxTreatment", List.of("categoryId", "categoryCode", "categoryName", "taxTreatment", "taxCategoryCode", "taxCategoryName", "quantity", "grossSales", "discounts", "refunds", "netSalesBeforeTax", "taxCollected"),

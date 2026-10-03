@@ -108,6 +108,7 @@ function reconciliation(registerCode: string, status: 'OPEN' | 'CLOSING' | 'CLOS
     expectedCash: 125,
     countedCash: complete ? 125 : null,
     variance: complete ? 0 : null,
+    varianceExplanation: null,
     version: status === 'OPEN' ? 0 : status === 'CLOSING' ? 1 : 2,
     reconciliationRequired: !complete,
     reconciliationComplete: complete,
@@ -195,7 +196,8 @@ function report(): EndOfDayReport {
       openedAt: '2026-07-29T08:00:00Z',
       closedAt: '2026-07-29T23:00:00Z',
       forceClosed: false,
-      forceCloseReason: null
+      forceCloseReason: null,
+      varianceExplanation: null
     }],
     payments: [{ paymentMethod: 'CASH', collected: 100, refunded: 10, net: 90, cashTendered: 120, changeGiven: 20, transactionCount: 2, splitPaymentCount: 0 }],
     taxes: [{ componentCode: 'SALES_TAX', componentName: 'Sales tax', taxableSales: 95, exemptSales: 0, zeroRatedSales: 0, outOfScopeSales: 0, taxCollected: 6, taxRefunded: 0, roundingAdjustment: 0, netTaxCollected: 6 }],
@@ -241,6 +243,8 @@ function closingPreview(): EndOfDayClosingPreview {
     expectedCash: finalReport.expectedCash,
     countedCash: finalReport.countedCash,
     cashVariance: finalReport.cashVariance,
+    explainedRegisterVariance: 0,
+    unexplainedCashVariance: finalReport.cashVariance,
     cashVarianceExplanationThreshold: 0.5,
     varianceExplanationRequired: true,
     managerSignOffRequired: true,
@@ -805,8 +809,8 @@ describe('Business day pages', () => {
     expect(await screen.findByRole('heading', { name: 'Close business day' })).toBeInTheDocument();
     expect((await screen.findAllByText('$100.00')).length).toBeGreaterThan(0);
     expect(await screen.findByText('Payment preview')).toBeInTheDocument();
-    expect(await screen.findByText('Register reconciliation preview')).toBeInTheDocument();
-    await userEvent.type(screen.getByRole('textbox', { name: 'Variance explanation' }), 'Verified one dollar drawer variance');
+    expect(await screen.findByText('Cash variance review')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Business Day variance explanation' }), 'Verified one dollar drawer variance');
     await userEvent.click(screen.getByRole('checkbox'));
     await userEvent.click(screen.getByRole('button', { name: 'Close and generate report' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>

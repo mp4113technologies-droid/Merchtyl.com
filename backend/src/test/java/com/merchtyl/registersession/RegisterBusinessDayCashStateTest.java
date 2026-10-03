@@ -89,6 +89,56 @@ class RegisterBusinessDayCashStateTest {
     }
 
     @Test
+    void shortTillReportsExactRestoreAndExplicitRestoreMakesItReady() {
+        RegisterBusinessDayCashState state = state("440.00");
+        state.settle(money("430.00"), money("425.00"), money("425.00"));
+
+        assertThat(state.getCashRemoved()).isZero();
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("425.00");
+        assertThat(state.restoreRequired()).isEqualByComparingTo("15.00");
+
+        state.restore(money("15.00"));
+        state.openNextShift(money("440.00"));
+
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("440.00");
+        assertThat(state.restoreRequired()).isZero();
+        assertThat(state.getInitialFloat()).isEqualByComparingTo("440.00");
+        assertThat(state.getSessionCount()).isEqualTo(2);
+    }
+
+    @Test
+    void negativeVarianceAboveTargetDoesNotRequireRestore() {
+        RegisterBusinessDayCashState state = state("440.00");
+        state.settle(money("878.11"), money("870.11"), money("440.00"));
+
+        assertThat(state.getCashRemoved()).isEqualByComparingTo("430.11");
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("440.00");
+        assertThat(state.restoreRequired()).isZero();
+        state.openNextShift(money("440.00"));
+    }
+
+    @Test
+    void positiveVarianceChangesBagAmountButNotRetainedTarget() {
+        RegisterBusinessDayCashState state = state("440.00");
+        state.settle(money("878.11"), money("883.11"), money("440.00"));
+
+        assertThat(state.getCashRemoved()).isEqualByComparingTo("443.11");
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("440.00");
+        assertThat(state.restoreRequired()).isZero();
+    }
+
+    @Test
+    void restoreMustExactlyMatchCurrentShortfall() {
+        RegisterBusinessDayCashState state = state("440.00");
+        state.settle(money("425.00"), money("425.00"), money("425.00"));
+
+        assertThatThrownBy(() -> state.restore(money("10.00")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must equal");
+        assertThat(state.getRetainedCash()).isEqualByComparingTo("425.00");
+    }
+
+    @Test
     void separateStoreAndBusinessDayInstancesHaveIndependentPhysicalState() {
         RegisterBusinessDayCashState firstDay = state("440.00");
         RegisterBusinessDayCashState otherStore = new RegisterBusinessDayCashState(

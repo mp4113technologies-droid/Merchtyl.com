@@ -51,6 +51,7 @@ import {
   openRegisterSession,
   openBusinessDay,
   previewRegisterTillSettlement,
+  restoreRegisterTill,
   reverseCashPayout,
   overrideRegisterSession,
   startRegisterSessionClosing
@@ -110,7 +111,8 @@ const closeSchema = z.object({
   countedCash: z.coerce.number().min(0, 'Counted cash cannot be negative'),
   retainedCashOverride: z.string().optional(),
   retentionOverrideReason: z.string().optional(),
-  forceCloseReason: z.string().optional()
+  forceCloseReason: z.string().optional(),
+  varianceExplanation: z.string().optional()
 });
 
 type CloseFormValues = z.infer<typeof closeSchema>;
@@ -410,7 +412,8 @@ export function RegisterClosePage() {
       countedCash: 0,
       retainedCashOverride: '',
       retentionOverrideReason: '',
-      forceCloseReason: ''
+      forceCloseReason: '',
+      varianceExplanation: ''
     }
   });
 
@@ -436,10 +439,15 @@ export function RegisterClosePage() {
       if (!current.data) {
         throw new Error('No current register session');
       }
+      const varianceExplanation = values.varianceExplanation?.trim();
+      if (settlement?.variance !== 0 && !varianceExplanation) {
+        throw new Error('Variance explanation is required when counted cash does not match expected cash');
+      }
       return closeRegisterSession(await getValidAccessToken(), current.data.id, {
         countedCash: values.countedCash,
         retainedCash: settlement?.cashToLeave,
         ...(settlement?.override ? { overrideReason: values.retentionOverrideReason } : {}),
+        ...(varianceExplanation ? { varianceExplanation } : {}),
         version: current.data.version
       });
     },
@@ -464,9 +472,16 @@ export function RegisterClosePage() {
       if (!reason) {
         throw new Error('Force-close reason is required');
       }
+      const varianceExplanation = values.varianceExplanation?.trim();
+      if (settlement?.variance !== 0 && !varianceExplanation) {
+        throw new Error('Variance explanation is required when counted cash does not match expected cash');
+      }
       return forceCloseRegisterSession(await getValidAccessToken(), current.data.id, {
         countedCash: values.countedCash,
+        retainedCash: settlement?.cashToLeave,
+        ...(settlement?.override ? { overrideReason: values.retentionOverrideReason } : {}),
         reason,
+        ...(varianceExplanation ? { varianceExplanation } : {}),
         version: current.data.version
       });
     },
@@ -558,6 +573,16 @@ export function RegisterClosePage() {
                     <TextField {...field} label="Force-close reason" multiline minRows={2} fullWidth disabled={!canForceClose} />
                   )}
                 />
+                {settlement && settlement.variance !== 0 ? (
+                  <Controller
+                    name="varianceExplanation"
+                    control={form.control}
+                    render={({ field }) => (
+                      <TextField {...field} label="Variance explanation" required multiline minRows={2} fullWidth
+                        helperText="Explain why counted cash does not match expected cash." />
+                    )}
+                  />
+                ) : null}
                 {canForceClose ? <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}>
                   <Typography variant="subtitle2">Manager retained-float override</Typography>
                   <Controller name="retainedCashOverride" control={form.control} render={({ field }) => (
@@ -572,7 +597,9 @@ export function RegisterClosePage() {
                     type="submit"
                     variant="contained"
                     startIcon={<ReceiptLongOutlinedIcon />}
-                    disabled={current.data.status !== 'CLOSING' || closeMutation.isPending || previewMutation.isPending || forceCloseMutation.isPending}
+                    disabled={current.data.status !== 'CLOSING' || closeMutation.isPending || previewMutation.isPending
+                      || forceCloseMutation.isPending
+                      || Boolean(settlement && settlement.variance !== 0 && !form.watch('varianceExplanation')?.trim())}
                   >
                     {settlement ? 'Confirm Cash Bag & Close Shift' : 'Review Shift Cash Settlement'}
                   </Button>
@@ -585,7 +612,8 @@ export function RegisterClosePage() {
                       type="button"
                       variant="outlined"
                       color="warning"
-                      disabled={closeMutation.isPending || forceCloseMutation.isPending}
+                      disabled={!settlement || closeMutation.isPending || forceCloseMutation.isPending
+                        || (settlement.variance !== 0 && !form.watch('varianceExplanation')?.trim())}
                       onClick={form.handleSubmit((values) => forceCloseMutation.mutate(values))}
                     >
                       Force close
@@ -689,6 +717,7 @@ export function RegisterHistoryPage() {
             </Box>
             {session.retentionOverrideReason ? <Alert severity="info">Retention override by {session.retentionOverrideByDisplayName ?? 'authorized manager'}: {session.retentionOverrideReason}</Alert> : null}
             {session.forceCloseReason ? <Alert severity="warning">Force close: {session.forceCloseReason}</Alert> : null}
+            {session.varianceExplanation ? <Alert severity="info">Variance explanation: {session.varianceExplanation}</Alert> : null}
           </Stack>
         </Paper>
       ))}
@@ -1005,6 +1034,8 @@ export function RegisterOpenPage() {
   const { canUse, canForceClose, canOverride } = useRegisterSessionPermissions();
   const [existingSession, setExistingSession] = React.useState<RegisterSession | null>(null);
   const [overrideReason, setOverrideReason] = React.useState('');
+  const [forceCloseReason, setForceCloseReason] = React.useState('');
+  const [forceVarianceExplanation, setForceVarianceExplanation] = React.useState('');
   const [forceClosingCash, setForceClosingCash] = React.useState(0);
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const deviceEnforcementEnabled = registerDeviceEnforcementEnabled();
@@ -1091,6 +1122,8 @@ export function RegisterOpenPage() {
     enabled: canUse && Boolean(selectedRegisterId)
   });
   const unavailableToCurrentUser = availability.data?.state === 'IN_USE' && !existingSession;
+  const restoreRequired = availability.data?.state === 'RESTORE_REQUIRED';
+  const canRestoreTill = currentUser?.permissions?.includes('CASH_MOVEMENT_CREATE') ?? false;
 
   React.useEffect(() => {
     if (availability.data?.state === 'AVAILABLE' && availability.data.openingCash != null) {
@@ -1161,6 +1194,22 @@ export function RegisterOpenPage() {
     }
   });
 
+  const restoreTillMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedRegisterId || !availability.data?.restoreRequiredAmount) {
+        throw new Error('Till restore amount is unavailable');
+      }
+      return restoreRegisterTill(await getValidAccessToken(), {
+        registerId: selectedRegisterId,
+        amount: availability.data.restoreRequiredAmount,
+        operationId: crypto.randomUUID()
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['register-session-availability', selectedRegisterId] });
+    }
+  });
+
   const overrideMutation = useMutation({
     mutationFn: async () => {
       if (!existingSession) throw new Error('Open register session is required');
@@ -1182,7 +1231,8 @@ export function RegisterOpenPage() {
       if (!existingSession) throw new Error('Open register session is required');
       return forceCloseRegisterSession(await getValidAccessToken(), existingSession.id, {
         countedCash: forceClosingCash,
-        reason: overrideReason,
+        reason: forceCloseReason.trim(),
+        ...(forceVarianceExplanation.trim() ? { varianceExplanation: forceVarianceExplanation.trim() } : {}),
         version: existingSession.version
       });
     },
@@ -1195,6 +1245,10 @@ export function RegisterOpenPage() {
   if (!canUse) {
     return <Navigate to="/unauthorized" replace />;
   }
+
+  const forceCloseVariance = existingSession
+    ? Math.round((forceClosingCash - existingSession.expectedCash) * 100) / 100
+    : 0;
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 900 }}>
@@ -1212,7 +1266,9 @@ export function RegisterOpenPage() {
 
       {stores.isLoading ? <LoadingPanel label="Loading register setup" /> : null}
       {stores.isError ? <Alert severity="error">{errorMessage(stores.error)}</Alert> : null}
-      {mutation.isError ? <Alert severity="error">{errorMessage(mutation.error)}</Alert> : null}
+      {mutation.isError && (!(mutation.error instanceof ApiClientError) || mutation.error.code !== 'TILL_RESTORE_REQUIRED')
+        ? <Alert severity="error">{errorMessage(mutation.error)}</Alert> : null}
+      {restoreTillMutation.isError ? <Alert severity="error">{errorMessage(restoreTillMutation.error)}</Alert> : null}
       {startBusinessDay.isError ? <Alert severity="error">{errorMessage(startBusinessDay.error)}</Alert> : null}
 
       {businessDay.data?.state === 'PREVIOUS_DAY_STILL_OPEN' ? (
@@ -1323,7 +1379,19 @@ export function RegisterOpenPage() {
               {unavailableToCurrentUser ? <Grid item xs={12}>
                 <Alert severity="warning">Register unavailable. This register is currently open in another session. Please choose another register or ask a manager for assistance.</Alert>
               </Grid> : null}
-              {selectedRegisterId && !existingSession && !unavailableToCurrentUser ? <Grid item xs={12} md={6}>
+              {restoreRequired ? <Grid item xs={12}>
+                <Alert severity="warning">
+                  <Typography fontWeight={700}>Till restoration required</Typography>
+                  <Typography>This register currently has {money(availability.data?.currentTillAmount ?? 0, stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode)}.</Typography>
+                  <Typography>The configured till amount is {money(availability.data?.targetTillAmount ?? 0, stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode)}.</Typography>
+                  <Typography>Add {money(availability.data?.restoreRequiredAmount ?? 0, stores.data?.content.find((store) => store.id === selectedStoreId)?.currencyCode)} before starting this shift.</Typography>
+                  {canRestoreTill ? <Button sx={{ mt: 1 }} variant="contained" color="warning"
+                    disabled={restoreTillMutation.isPending} onClick={() => restoreTillMutation.mutate()}>
+                    Restore Till
+                  </Button> : null}
+                </Alert>
+              </Grid> : null}
+              {selectedRegisterId && !existingSession && !unavailableToCurrentUser && !restoreRequired ? <Grid item xs={12} md={6}>
                 <Controller
                   name="openingCash"
                   control={form.control}
@@ -1350,7 +1418,7 @@ export function RegisterOpenPage() {
             </Grid>
             {registers.isError ? <Alert severity="error">{errorMessage(registers.error)}</Alert> : null}
             {deviceEnforcementEnabled && devices.isError ? <Alert severity="error">{errorMessage(devices.error)}</Alert> : null}
-            {!existingSession && !unavailableToCurrentUser && !activeSessions.isLoading && !availability.isLoading ? <Button
+            {!existingSession && !unavailableToCurrentUser && !restoreRequired && !activeSessions.isLoading && !availability.isLoading ? <Button
               type="submit"
               variant="contained"
               startIcon={<LockOpenOutlinedIcon />}
@@ -1375,8 +1443,8 @@ export function RegisterOpenPage() {
             <Typography>Opened: {existingSession ? new Date(existingSession.openedAt).toLocaleString() : '—'}</Typography>
             <Typography>Opened by: {existingSession?.openedByDisplayName ?? 'Operator not recorded'}</Typography>
             <Typography>Opening cash: {existingSession ? money(existingSession.openingCash) : '—'}</Typography>
-            {canOverride || canForceClose ? <TextField
-              label="Reason"
+            {canOverride ? <TextField
+              label="Override reason"
               value={overrideReason}
               onChange={(event) => setOverrideReason(event.target.value)}
               required
@@ -1384,13 +1452,38 @@ export function RegisterOpenPage() {
               minRows={2}
             /> : null}
             {canForceClose ? (
-              <TextField
-                label="Closing cash"
-                type="number"
-                value={forceClosingCash}
-                onChange={(event) => setForceClosingCash(Number(event.target.value))}
-                inputProps={{ min: 0, step: '0.01' }}
-              />
+              <Stack spacing={2}>
+                <TextField
+                  label="Counted cash"
+                  type="number"
+                  value={forceClosingCash}
+                  onChange={(event) => setForceClosingCash(Number(event.target.value))}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  required
+                />
+                <Typography>Expected cash: {money(existingSession?.expectedCash ?? 0)}</Typography>
+                <Typography color={forceCloseVariance === 0 ? 'success.main' : 'warning.main'}>
+                  Variance: {money(forceCloseVariance)}{forceCloseVariance < 0 ? ' — SHORT' : forceCloseVariance > 0 ? ' — OVER' : ''}
+                </Typography>
+                <TextField
+                  label="Force-close reason"
+                  value={forceCloseReason}
+                  onChange={(event) => setForceCloseReason(event.target.value)}
+                  required
+                  multiline
+                  minRows={2}
+                  helperText="Explain why this Register Session must be force closed."
+                />
+                {forceCloseVariance !== 0 ? <TextField
+                  label="Variance explanation"
+                  value={forceVarianceExplanation}
+                  onChange={(event) => setForceVarianceExplanation(event.target.value)}
+                  required
+                  multiline
+                  minRows={2}
+                  helperText="Explain why counted cash does not match expected cash."
+                /> : null}
+              </Stack>
             ) : null}
             {overrideMutation.isError ? <Alert severity="error">{errorMessage(overrideMutation.error)}</Alert> : null}
             {forceCloseMutation.isError ? <Alert severity="error">{errorMessage(forceCloseMutation.error)}</Alert> : null}
@@ -1403,7 +1496,7 @@ export function RegisterOpenPage() {
             <Button variant="contained" disabled={!posRouteForRegisterType(existingSession?.registerType)} onClick={() => navigate(posRouteForRegisterType(existingSession?.registerType) ?? '/store-menu')}>Resume Register</Button>
           ) : null}
           {canForceClose ? (
-            <Button color="error" disabled={!overrideReason.trim() || forceCloseMutation.isPending} onClick={() => forceCloseMutation.mutate()}>
+            <Button color="error" disabled={!forceCloseReason.trim() || (forceCloseVariance !== 0 && !forceVarianceExplanation.trim()) || forceCloseMutation.isPending} onClick={() => forceCloseMutation.mutate()}>
               Force Close Register
             </Button>
           ) : null}

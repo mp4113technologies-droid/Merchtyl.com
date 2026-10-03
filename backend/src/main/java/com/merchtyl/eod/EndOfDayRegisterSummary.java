@@ -149,6 +149,9 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     @Column(updatable = false, length = 1000)
     private String forceCloseReason;
 
+    @Column(updatable = false, length = 1000)
+    private String varianceExplanation;
+
     protected EndOfDayRegisterSummary() {
     }
 
@@ -197,6 +200,7 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
         this.closedAt = session.getClosedAt();
         this.forceClosed = session.getStatus().name().equals("FORCE_CLOSED");
         this.forceCloseReason = session.getForceCloseReason();
+        this.varianceExplanation = session.getVarianceExplanation();
         initializeIdAndTimestamps();
     }
 
@@ -245,4 +249,5 @@ public class EndOfDayRegisterSummary extends BaseUuidEntity {
     public Instant getClosedAt() { return closedAt; }
     public boolean isForceClosed() { return forceClosed; }
     public String getForceCloseReason() { return forceCloseReason; }
+    public String getVarianceExplanation() { return varianceExplanation; }
 }

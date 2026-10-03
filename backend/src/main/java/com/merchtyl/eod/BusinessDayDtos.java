@@ -175,6 +175,7 @@ record RegisterReconciliationResponse(
         BigDecimal expectedCash,
         BigDecimal countedCash,
         BigDecimal variance,
+        String varianceExplanation,
         long version,
         boolean reconciliationRequired,
         boolean reconciliationComplete,
@@ -240,6 +241,8 @@ record EndOfDayClosingPreviewResponse(
         BigDecimal countedCash,
         @Schema(description = "Final counted cash minus cash expected before settlement, once per physical register.", example = "0.00")
         BigDecimal cashVariance,
+        BigDecimal explainedRegisterVariance,
+        BigDecimal unexplainedCashVariance,
         BigDecimal cashVarianceExplanationThreshold,
         boolean varianceExplanationRequired,
         boolean managerSignOffRequired,
@@ -551,7 +554,8 @@ record EndOfDayRegisterSummaryResponse(
         Instant openedAt,
         Instant closedAt,
         boolean forceClosed,
-        String forceCloseReason
+        String forceCloseReason,
+        String varianceExplanation
 ) {
     static EndOfDayRegisterSummaryResponse from(EndOfDayRegisterSummary summary) {
         return new EndOfDayRegisterSummaryResponse(
@@ -594,7 +598,8 @@ record EndOfDayRegisterSummaryResponse(
                 summary.getOpenedAt(),
                 summary.getClosedAt(),
                 summary.isForceClosed(),
-                summary.getForceCloseReason());
+                summary.getForceCloseReason(),
+                summary.getVarianceExplanation());
     }
 }
 

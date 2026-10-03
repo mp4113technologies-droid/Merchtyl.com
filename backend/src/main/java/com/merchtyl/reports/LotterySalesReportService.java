@@ -5,6 +5,7 @@ import com.merchtyl.cash.CashLedgerRepository;
 import com.merchtyl.features.FeatureCode;
 import com.merchtyl.features.FeatureService;
 import com.merchtyl.receipts.ReceiptRepository;
+import com.merchtyl.receipts.Receipt;
 import com.merchtyl.sales.Sale;
 import com.merchtyl.sales.SaleItem;
 import com.merchtyl.sales.LotterySaleLineClassifier;
@@ -19,6 +20,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,12 +30,15 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
 public class LotterySalesReportService {
+    private static final Logger log = LoggerFactory.getLogger(LotterySalesReportService.class);
     private final SaleRepository sales;
     private final ReceiptRepository receipts;
     private final StoreAccessService storeAccess;
@@ -66,8 +72,14 @@ public class LotterySalesReportService {
         BigDecimal physical = zero(), manual = zero(), wins = zero();
         List<LotterySalesActivityRow> rows = new ArrayList<>();
         String currency = posted.stream().findFirst().map(Sale::getCurrencyCode).orElse("CAD");
+        Map<UUID, Receipt> receiptsBySaleId = posted.isEmpty() ? Map.of() : receipts
+                .findBySale_IdIn(posted.stream().map(Sale::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(receipt -> receipt.getSale().getId(), Function.identity()));
         for (Sale sale : posted) {
-            String receipt = receipts.findBySale_Id(sale.getId()).map(value -> value.getReceiptNumber()).orElse(null);
+            String receipt = receiptsBySaleId.containsKey(sale.getId())
+                    ? receiptsBySaleId.get(sale.getId()).getReceiptNumber()
+                    : null;
             for (SaleItem item : sale.getItems()) {
                 boolean ticket = LotterySaleLineClassifier.isPhysicalTicket(item);
                 boolean sold = LotterySaleLineClassifier.isManualSold(item);
@@ -98,6 +110,9 @@ public class LotterySalesReportService {
                 .filter(value -> value != null)
                 .reduce(zero(), BigDecimal::add);
         BigDecimal actualCashPayouts = money(cashPayoutTotal == null ? zero() : cashPayoutTotal);
+        log.debug("lottery_dashboard_summary tenant_id={} store_id={} date_from={} date_to={} sold={} wins={} net={} activity_count={}",
+                actor.getTenantId(), request.storeId(), request.dateFrom(), request.dateTo(), total, wins,
+                money(total.subtract(wins)), rows.size());
         return new LotterySalesReportResponse(request.storeId(), request.registerId(), request.cashierId(),
                 request.dateFrom(), request.dateTo(), type, source, physical, manual, total, wins,
                 money(total.subtract(wins)), actualCashPayouts, currency, List.copyOf(rows), Instant.now(clock));

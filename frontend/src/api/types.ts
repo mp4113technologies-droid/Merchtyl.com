@@ -628,6 +628,7 @@ export type RegisterReconciliation = {
   expectedCash: number;
   countedCash: number | null;
   variance: number | null;
+  varianceExplanation: string | null;
   version: number;
   reconciliationRequired: boolean;
   reconciliationComplete: boolean;
@@ -676,6 +677,7 @@ export type EndOfDayRegisterSummary = {
   closedAt: string | null;
   forceClosed: boolean;
   forceCloseReason: string | null;
+  varianceExplanation: string | null;
 };
 
 export type EndOfDayPaymentSummary = {
@@ -870,6 +872,8 @@ export type EndOfDayClosingPreview = Omit<
   'id' | 'reportNumber' | 'revision' | 'generatedAt' | 'generatedBy' | 'generatedByName' | 'signOff' | 'reportSnapshot' | 'version'
 > & {
   cashVarianceExplanationThreshold: number;
+  explainedRegisterVariance: number;
+  unexplainedCashVariance: number;
   varianceExplanationRequired: boolean;
   managerSignOffRequired: boolean;
 };
@@ -1760,6 +1764,7 @@ export type RegisterSession = {
   closedByDisplayName: string | null;
   closedAt: string | null;
   forceCloseReason: string | null;
+  varianceExplanation?: string | null;
   reconciliation: CashLedgerBreakdown | null;
   openedAt: string;
   createdAt: string;
@@ -1797,7 +1802,7 @@ export type RegisterSessionListResponse = PageResponse<RegisterSession>;
 export type RegisterAvailability = {
   registerId: string;
   registerType: 'RETAIL' | 'FOOD_SERVICE';
-  state: 'AVAILABLE' | 'YOUR_SESSION' | 'IN_USE';
+  state: 'AVAILABLE' | 'YOUR_SESSION' | 'IN_USE' | 'RESTORE_REQUIRED';
   sessionId: string | null;
   operatorDisplayName: string | null;
   openedAt: string | null;
@@ -1805,6 +1810,9 @@ export type RegisterAvailability = {
   openingCash: number | null;
   openingCashSource: 'STORE_DEFAULT' | 'REGISTER_OVERRIDE' | 'MANUAL_ENTRY' | null;
   firstRegisterOpeningForBusinessDay?: boolean | null;
+  targetTillAmount?: number | null;
+  currentTillAmount?: number | null;
+  restoreRequiredAmount?: number | null;
 };
 
 export type CashLedgerDirection = 'IN' | 'OUT';
@@ -1821,7 +1829,8 @@ export type CashLedgerSourceType =
   | 'CASH_REFUND'
   | 'CASH_MOVEMENT'
   | 'SESSION_CLOSE_ADJUSTMENT'
-  | 'SESSION_CLOSE_TILL_REMOVAL';
+  | 'SESSION_CLOSE_TILL_REMOVAL'
+  | 'TILL_RESTORE';
 
 export type CashLedgerSourceBreakdown = {
   sourceType: CashLedgerSourceType;

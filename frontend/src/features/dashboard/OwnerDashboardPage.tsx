@@ -34,14 +34,13 @@ import {
 } from 'recharts';
 import {
   getInventoryReport,
-  getLotteryReport,
+  getLotterySalesReport,
   getSalesReport,
+  listStores,
   listRegisterSessions
 } from '../../api/client';
-import type { SalesReport, UserRole } from '../../api/types';
+import type { LotterySalesReport, SalesReport, UserRole } from '../../api/types';
 import { useSession } from '../../app/session';
-
-const today = new Date().toISOString().slice(0, 10);
 
 function canViewOwnerDashboard(roles: UserRole[]) {
   return roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
@@ -116,31 +115,80 @@ function paymentChartRows(report?: SalesReport) {
     }));
 }
 
+function storeLocalDate(timezone?: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function lotteryChartRows(report: LotterySalesReport | undefined, timezone?: string) {
+  const hourly = new Map<number, { hour: string; sold: number; wins: number; net: number }>();
+  for (const activity of report?.activities ?? []) {
+    const hour = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit', hourCycle: 'h23'
+    }).format(new Date(activity.occurredAt)));
+    const row = hourly.get(hour) ?? { hour: `${String(hour).padStart(2, '0')}:00`, sold: 0, wins: 0, net: 0 };
+    if (activity.type === 'SOLD') row.sold += activity.amount;
+    else row.wins += activity.amount;
+    row.net = row.sold - row.wins;
+    hourly.set(hour, row);
+  }
+  if (hourly.size === 0) return [];
+  const hours = [...hourly.keys()];
+  const first = Math.min(...hours);
+  const last = Math.max(...hours);
+  return Array.from({ length: last - first + 1 }, (_, index) => {
+    const hour = first + index;
+    return hourly.get(hour) ?? { hour: `${String(hour).padStart(2, '0')}:00`, sold: 0, wins: 0, net: 0 };
+  });
+}
+
 export function OwnerDashboardPage() {
   const muiTheme = useTheme();
   const { currentUser, session, getValidAccessToken } = useSession();
   const roles = currentUser?.roles ?? session?.roles ?? [];
   const canView = canViewOwnerDashboard(roles);
+  const stores = useQuery({
+    queryKey: ['dashboard', 'stores'],
+    queryFn: async () => listStores(await getValidAccessToken(), { page: 0, size: 100 }),
+    enabled: canView
+  });
+  const requestedStoreId = window.localStorage.getItem('merchtyl.activeStoreId');
+  const activeStore = stores.data?.content.find((store) => store.id === requestedStoreId)
+    ?? stores.data?.content[0];
+  const today = storeLocalDate(activeStore?.timezone);
 
   const sales = useQuery({
-    queryKey: ['dashboard', 'sales', today],
-    queryFn: async () => getSalesReport(await getValidAccessToken(), { dateFrom: today, dateTo: today }),
-    enabled: canView
+    queryKey: ['dashboard', 'sales', activeStore?.id, today],
+    enabled: canView && stores.isSuccess,
+    queryFn: async () => getSalesReport(await getValidAccessToken(), {
+      storeId: activeStore?.id, dateFrom: today, dateTo: today
+    })
   });
   const lottery = useQuery({
-    queryKey: ['dashboard', 'lottery', today],
-    queryFn: async () => getLotteryReport(await getValidAccessToken(), { dateFrom: today, dateTo: today }),
-    enabled: canView
+    queryKey: ['dashboard', 'lottery', activeStore?.id, today],
+    queryFn: async () => getLotterySalesReport(await getValidAccessToken(), {
+      storeId: activeStore?.id, dateFrom: today, dateTo: today
+    }),
+    enabled: canView && stores.isSuccess
   });
   const inventory = useQuery({
-    queryKey: ['dashboard', 'inventory-alerts'],
-    queryFn: async () => getInventoryReport(await getValidAccessToken(), { lowStockThreshold: 5 }),
-    enabled: canView
+    queryKey: ['dashboard', 'inventory-alerts', activeStore?.id],
+    queryFn: async () => getInventoryReport(await getValidAccessToken(), {
+      storeId: activeStore?.id, lowStockThreshold: 5
+    }),
+    enabled: canView && stores.isSuccess
   });
   const openRegisters = useQuery({
-    queryKey: ['dashboard', 'open-registers'],
-    queryFn: async () => listRegisterSessions(await getValidAccessToken(), { status: 'OPEN', page: 0, size: 100 }),
-    enabled: canView
+    queryKey: ['dashboard', 'open-registers', activeStore?.id],
+    queryFn: async () => listRegisterSessions(await getValidAccessToken(), {
+      storeId: activeStore?.id, status: 'OPEN', page: 0, size: 100
+    }),
+    enabled: canView && stores.isSuccess
   });
 
   if (!canView) {
@@ -152,24 +200,22 @@ export function OwnerDashboardPage() {
     );
   }
 
-  const loading = sales.isLoading || lottery.isLoading || inventory.isLoading || openRegisters.isLoading;
-  const error = sales.error ?? lottery.error ?? inventory.error ?? openRegisters.error;
+  const loading = stores.isLoading || sales.isLoading || lottery.isLoading || inventory.isLoading || openRegisters.isLoading;
+  const error = stores.error ?? sales.error ?? lottery.error ?? inventory.error ?? openRegisters.error;
   const salesData = sales.data;
   const lotteryData = lottery.data;
   const inventoryData = inventory.data;
   const openRegisterCount = openRegisters.data?.totalElements ?? 0;
   const inventoryAlertCount = (inventoryData?.lowStockCount ?? 0) + (inventoryData?.negativeStockCount ?? 0);
-  const currencyCode = salesData?.paymentBreakdown[0]?.method ? 'USD' : 'USD';
-  const lotteryNet = (lotteryData?.sales ?? 0)
-    - (lotteryData?.payouts ?? 0)
-    - (lotteryData?.cancellations ?? 0)
-    + (lotteryData?.reversals ?? 0);
+  const currencyCode = activeStore?.currencyCode ?? lotteryData?.currencyCode ?? 'CAD';
+  const lotteryTrend = lotteryChartRows(lotteryData, activeStore?.timezone);
 
   const refresh = () => {
     void sales.refetch();
     void lottery.refetch();
     void inventory.refetch();
     void openRegisters.refetch();
+    void stores.refetch();
   };
 
   return (
@@ -209,8 +255,8 @@ export function OwnerDashboardPage() {
             <Grid item xs={12} sm={6} lg={4}>
               <MetricCard
                 title="Today's lottery"
-                value={money(lotteryNet, currencyCode)}
-                detail={`Sales ${money(lotteryData?.sales ?? 0, currencyCode)} - payouts ${money(lotteryData?.payouts ?? 0, currencyCode)}`}
+                value={money(lotteryData?.netLottery ?? 0, currencyCode)}
+                detail={`Net Lottery · Sold ${money(lotteryData?.totalLotterySold ?? 0, currencyCode)} • Wins ${money(lotteryData?.lotteryWins ?? 0, currencyCode)}`}
                 icon={<ConfirmationNumberOutlinedIcon />}
               />
             </Grid>
@@ -269,18 +315,20 @@ export function OwnerDashboardPage() {
             </Grid>
             <Grid item xs={12} lg={6}>
               <DashboardChart title="Lottery trend">
-                <ResponsiveContainer width="100%" height="88%">
-                  <LineChart data={lotteryData?.chartRows ?? []} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                {lotteryTrend.length === 0 ? <Stack alignItems="center" justifyContent="center" sx={{ height: '82%' }}>
+                  <Typography color="text.secondary">No lottery activity today</Typography>
+                </Stack> : <ResponsiveContainer width="100%" height="88%">
+                  <LineChart data={lotteryTrend} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
+                    <XAxis dataKey="hour" />
                     <YAxis />
                     <RechartsTooltip formatter={(value) => money(Number(value), currencyCode)} />
                     <Legend />
-                    <Line type="monotone" dataKey="sales" name="Sales" stroke={muiTheme.palette.primary.main} strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="payouts" name="Payouts" stroke={muiTheme.palette.warning.main} strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="settlement" name="Settlement" stroke={muiTheme.palette.success.main} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="sold" name="Sold" stroke={muiTheme.palette.primary.main} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="wins" name="Wins" stroke={muiTheme.palette.warning.main} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="net" name="Net" stroke={muiTheme.palette.success.main} strokeWidth={2} dot={false} />
                   </LineChart>
-                </ResponsiveContainer>
+                </ResponsiveContainer>}
               </DashboardChart>
             </Grid>
           </Grid>

@@ -641,7 +641,7 @@ class BusinessDayServiceTest {
         BusinessDayConfiguration configuration = BusinessDayConfiguration.defaults(store);
 
         ReflectionTestUtils.invokeMethod(service, "validateSignOff", configuration,
-                BigDecimal.ZERO, "Recovery close", "", true);
+                BigDecimal.ZERO, false, "Recovery close", "", true);
     }
 
     @Test
@@ -649,9 +649,48 @@ class BusinessDayServiceTest {
         BusinessDayConfiguration configuration = BusinessDayConfiguration.defaults(store);
 
         assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(service, "validateSignOff", configuration,
-                new BigDecimal("5.01"), "Recovery close", "", true))
+                new BigDecimal("5.01"), false, "Recovery close", "", true))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("VARIANCE_EXPLANATION_REQUIRED");
+    }
+
+    @Test
+    void explainedRegisterVarianceEliminatesDuplicateBusinessDayExplanation() {
+        RegisterSession session = mock(RegisterSession.class);
+        when(session.getDifferenceCash()).thenReturn(new BigDecimal("-8.00"));
+        when(session.getVarianceExplanation()).thenReturn("Drawer short by CA$8 during manager count");
+
+        assertThat(BusinessDayService.unexplainedVariance(new BigDecimal("-8.00"), List.of(session)))
+                .isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void additionalStoreVarianceRemainsUnexplained() {
+        RegisterSession session = mock(RegisterSession.class);
+        when(session.getDifferenceCash()).thenReturn(new BigDecimal("-8.00"));
+        when(session.getVarianceExplanation()).thenReturn("Drawer short by CA$8 during manager count");
+
+        assertThat(BusinessDayService.unexplainedVariance(new BigDecimal("-13.00"), List.of(session)))
+                .isEqualByComparingTo("-5.00");
+    }
+
+    @Test
+    void sessionVarianceWithoutExplanationIsNotAccountedFor() {
+        RegisterSession session = mock(RegisterSession.class);
+        when(session.getVarianceExplanation()).thenReturn(null);
+
+        assertThat(BusinessDayService.unexplainedVariance(new BigDecimal("-8.00"), List.of(session)))
+                .isEqualByComparingTo("-8.00");
+    }
+
+    @Test
+    void offsettingUnexplainedRegisterVariancesStillRequireAttention() {
+        RegisterSession shortSession = mock(RegisterSession.class);
+        when(shortSession.getDifferenceCash()).thenReturn(new BigDecimal("-5.00"));
+        RegisterSession overSession = mock(RegisterSession.class);
+
+        assertThat(BusinessDayService.hasUnexplainedRegisterVariance(List.of(shortSession, overSession)))
+                .isTrue();
     }
 
     @Test

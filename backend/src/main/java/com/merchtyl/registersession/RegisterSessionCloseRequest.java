@@ -10,9 +10,10 @@ public record RegisterSessionCloseRequest(
         @NotNull @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal countedCash,
         @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal retainedCash,
         String overrideReason,
+        String varianceExplanation,
         @NotNull Long version
 ) {
     public RegisterSessionCloseRequest(BigDecimal countedCash, Long version) {
-        this(countedCash, null, null, version);
+        this(countedCash, null, null, null, version);
     }
 }
