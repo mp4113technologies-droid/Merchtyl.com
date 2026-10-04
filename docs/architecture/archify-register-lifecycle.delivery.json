@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "531c78e5-1708-4484-8ee3-2b3996f60428",
+  "status": "current",
+  "command": "deliver",
+  "type": "lifecycle",
+  "input": "/tmp/merchtyl-archify-candidates/archify-register-lifecycle.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-lifecycle.html",
+  "specification": {
+    "sha256": "8927a6ac401b97c162156ada5ebd5fe62ac2676cebd4f067ded989618c85203d",
+    "bytes": 4777
+  },
+  "artifact": {
+    "sha256": "3106307e71fac415de9a30fe17b6ddf986565e04e695ca1627c26d98be0ce648",
+    "bytes": 759808
+  }
+}

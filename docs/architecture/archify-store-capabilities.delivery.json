@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "fc733771-3b1b-4c09-a495-20ea3cb98af1",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-store-capabilities.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.html",
+  "specification": {
+    "sha256": "41502ff641b3983e93c5e8d932e291bc769160dfacce9b156f72346b6259b6d3",
+    "bytes": 6960
+  },
+  "artifact": {
+    "sha256": "b46d3b406a3afb09034afd41587dbf72d5462c4a3d8ebe42c3f6794e85f5c659",
+    "bytes": 765409
+  }
+}

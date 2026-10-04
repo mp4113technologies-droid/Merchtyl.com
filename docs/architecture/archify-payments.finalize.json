@@ -1,0 +1,485 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-02T04:07:45.583Z",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-payments.json",
+    "sha256": "acbf596d64a7e9ef02508a9643f23cb8db7152d5173e18ab703c18e5315c634f",
+    "bytes": 6374
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+    "sha256": "57aedc5fccc625865530965fb027d21996cca09114e7e5d892ff8e46f8aaac51",
+    "bytes": 762284
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-payments.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "acbf596d64a7e9ef02508a9643f23cb8db7152d5173e18ab703c18e5315c634f",
+          "bytes": 6374
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 221,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-payments.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "dced47a4-4620-4c85-8c1b-dfc1a86bc513",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "/tmp/merchtyl-archify-candidates/archify-payments.json",
+        "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+        "specification": {
+          "sha256": "acbf596d64a7e9ef02508a9643f23cb8db7152d5173e18ab703c18e5315c634f",
+          "bytes": 6374
+        },
+        "artifact": {
+          "sha256": "57aedc5fccc625865530965fb027d21996cca09114e7e5d892ff8e46f8aaac51",
+          "bytes": 762284
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/mp4113technologies-droid/Merchtyl.com",
+          "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad",
+          "references": 9
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 79,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+        "artifact": {
+          "sha256": "57aedc5fccc625865530965fb027d21996cca09114e7e5d892ff8e46f8aaac51",
+          "bytes": 762284
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 2,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": null,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6.1,
+            "maxBends": 4,
+            "routesOverSuggestedBends": 4,
+            "maxStretch": 1.348,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 16,
+            "minInteriorSegmentPx": 16,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [
+              {
+                "left": {
+                  "id": "d",
+                  "from": "validate",
+                  "to": "record",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "right": {
+                  "id": "g",
+                  "from": "balance",
+                  "to": "request",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "point": [
+                  672.5,
+                  169
+                ]
+              },
+              {
+                "left": {
+                  "id": "e",
+                  "from": "cash",
+                  "to": "record",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "right": {
+                  "id": "g",
+                  "from": "balance",
+                  "to": "request",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "point": [
+                  807.5,
+                  169
+                ]
+              }
+            ],
+            "detours": [
+              {
+                "relationship": {
+                  "id": "f",
+                  "from": "record",
+                  "to": "balance",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "bends": 4,
+                "stretch": 1.348
+              },
+              {
+                "relationship": {
+                  "id": "g",
+                  "from": "balance",
+                  "to": "request",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "bends": 4,
+                "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "h",
+                  "from": "balance",
+                  "to": "complete",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "bends": 3,
+                "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "j",
+                  "from": "complete",
+                  "to": "db",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "bends": 4,
+                "stretch": 1.146,
+                "directCorridorBlockers": [
+                  {
+                    "id": "ledger",
+                    "label": "Cash Ledger",
+                    "box": [
+                      850,
+                      474,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 90,
+            "emptyTopRatio": 0.145,
+            "occupiedTop": 90,
+            "viewBoxTop": 0,
+            "canvasHeight": 621,
+            "typicalNodeHeight": 76,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1345,
+            "actualBudgetPx": 1345,
+            "actualReaderWidth": 1375,
+            "desiredReaderWidth": 1375,
+            "viewportCap": 1376,
+            "limit": "source-size",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": false,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "node",
+              "id": "ledger"
+            },
+            "minimumSourceTextPx": 6.1,
+            "minimumProjectedTextPx": 6.1,
+            "semanticTextCount": 18
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "dced47a4-4620-4c85-8c1b-dfc1a86bc513"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 10,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "dced47a4-4620-4c85-8c1b-dfc1a86bc513",
+        "artifact": {
+          "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+          "sha256": "57aedc5fccc625865530965fb027d21996cca09114e7e5d892ff8e46f8aaac51",
+          "bytes": 762284
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "available",
+          "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/browser-check-runtime",
+            "severity": "error",
+            "message": "browser-check could not complete its Chrome inspection.",
+            "subject": {
+              "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html"
+            },
+            "evidence": {
+              "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98730, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+            },
+            "supportedFixes": [
+              "resolve the reported Chrome inspection error, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "archify-payments.browser-check.json",
+          "files": []
+        },
+        "error": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98730, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98730, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-02T04:07:45.979Z",
+  "durationMs": 396,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

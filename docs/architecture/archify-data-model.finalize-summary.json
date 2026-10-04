@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-data-model.json",
+    "sha256": "3f199c7a13d34c5bb609496374c7ed1d7e8b7f5aaae0782db90fa01bd03b6c22",
+    "bytes": 9825
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.html"
+  },
+  "gates": {
+    "validate": "fail",
+    "deliver": "not-run",
+    "check": "not-run",
+    "browser-check": "not-run"
+  },
+  "failedStage": "validate",
+  "diagnostics": [
+    {
+      "code": "repository-evidence/line-out-of-range",
+      "severity": "error",
+      "message": "/components/12/sources/0 requests line 140, but backend/src/main/resources/db/migration/V39__create_lottery_sales.sql has 79 lines at revision fbebd405a5be4d0effa6ef6e27f4a8b2771060ad.",
+      "subject": {
+        "surface": "repository-evidence",
+        "path": "/components/12/sources/0",
+        "diagramType": "architecture",
+        "collection": "components",
+        "nodeId": "lottery",
+        "componentId": "lottery"
+      },
+      "evidence": {
+        "sourcePath": "backend/src/main/resources/db/migration/V39__create_lottery_sales.sql",
+        "requestedLine": 140,
+        "lineCount": 79,
+        "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad"
+      },
+      "supportedFixes": [
+        "use a line range that exists at the pinned revision"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.finalize-summary.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 176,
+  "nextAction": {
+    "action": "edit-in-place",
+    "candidate": "/tmp/merchtyl-archify-candidates/archify-data-model.json",
+    "constraint": "Preserve all semantics and user-fixed geometry. Use references/architecture-layout-repair.md to choose a local repair or connected-scene reflow; edit the existing candidate.",
+    "then": "finalize-once"
+  }
+}

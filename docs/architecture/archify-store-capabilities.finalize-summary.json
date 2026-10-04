@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-store-capabilities.json",
+    "sha256": "41502ff641b3983e93c5e8d932e291bc769160dfacce9b156f72346b6259b6d3",
+    "bytes": 6960
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.html",
+    "sha256": "b46d3b406a3afb09034afd41587dbf72d5462c4a3d8ebe42c3f6794e85f5c659",
+    "bytes": 765409
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.browser-check.json\".",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.html",
+        "evidencePath": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-store-capabilities.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 388
+}

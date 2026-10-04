@@ -1,0 +1,382 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-02T04:07:44.255Z",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-inventory.json",
+    "sha256": "56af539296a6a277d4ddf50d05bb0b86c85e2aaa46e86a618125961b3f77aa7e",
+    "bytes": 6363
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+    "sha256": "05770891d627b754e4adce6b696ab02831f849b3b5a94f9e61b49df32b9ec3ae",
+    "bytes": 760944
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-inventory.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "56af539296a6a277d4ddf50d05bb0b86c85e2aaa46e86a618125961b3f77aa7e",
+          "bytes": 6363
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 216,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-inventory.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "66d48e71-aa40-44b6-bd01-925f9e33cf6d",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "/tmp/merchtyl-archify-candidates/archify-inventory.json",
+        "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "specification": {
+          "sha256": "56af539296a6a277d4ddf50d05bb0b86c85e2aaa46e86a618125961b3f77aa7e",
+          "bytes": 6363
+        },
+        "artifact": {
+          "sha256": "05770891d627b754e4adce6b696ab02831f849b3b5a94f9e61b49df32b9ec3ae",
+          "bytes": 760944
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/mp4113technologies-droid/Merchtyl.com",
+          "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad",
+          "references": 9
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 75,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "artifact": {
+          "sha256": "05770891d627b754e4adce6b696ab02831f849b3b5a94f9e61b49df32b9ec3ae",
+          "bytes": 760944
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 0,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": null,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6.1,
+            "maxBends": 2,
+            "routesOverSuggestedBends": 0,
+            "maxStretch": 1,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 42.5,
+            "minInteriorSegmentPx": 185,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [],
+            "detours": []
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 90,
+            "emptyTopRatio": 0.146,
+            "occupiedTop": 90,
+            "viewBoxTop": 0,
+            "canvasHeight": 618,
+            "typicalNodeHeight": 76,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "legacy-930",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 930,
+            "actualBudgetPx": 930,
+            "limit": "legacy",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": false,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "node",
+              "id": "negative"
+            },
+            "minimumSourceTextPx": 6.1,
+            "minimumProjectedTextPx": 6.1,
+            "semanticTextCount": 18
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "66d48e71-aa40-44b6-bd01-925f9e33cf6d"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 4,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "66d48e71-aa40-44b6-bd01-925f9e33cf6d",
+        "artifact": {
+          "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+          "sha256": "05770891d627b754e4adce6b696ab02831f849b3b5a94f9e61b49df32b9ec3ae",
+          "bytes": 760944
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "not-checked",
+          "executable": null
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/evidence-path-conflict",
+            "severity": "error",
+            "message": "browser-check will not replace the existing unowned evidence path \"/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json\".",
+            "subject": {
+              "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+              "evidencePath": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json"
+            },
+            "evidence": {
+              "reason": {
+                "code": "ownership-artifact-mismatch"
+              }
+            },
+            "supportedFixes": [
+              "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "archify-inventory.browser-check.json",
+          "files": []
+        },
+        "error": "browser-check will not replace the existing unowned evidence path \"/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json\"."
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json\".",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "evidencePath": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-02T04:07:44.629Z",
+  "durationMs": 373,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

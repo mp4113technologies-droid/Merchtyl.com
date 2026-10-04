@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-inventory.json",
+    "sha256": "56af539296a6a277d4ddf50d05bb0b86c85e2aaa46e86a618125961b3f77aa7e",
+    "bytes": 6363
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+    "sha256": "05770891d627b754e4adce6b696ab02831f849b3b5a94f9e61b49df32b9ec3ae",
+    "bytes": 760944
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json\".",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+        "evidencePath": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 373
+}

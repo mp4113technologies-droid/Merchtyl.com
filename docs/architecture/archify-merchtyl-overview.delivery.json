@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "f03b4f23-2b72-4ca9-9fae-eacd43718bed",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-merchtyl-overview.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+  "specification": {
+    "sha256": "c57e18da47c855c791db54e6ed905c92b1d391c9d4a5a1b723955b0b171ab6cd",
+    "bytes": 9083
+  },
+  "artifact": {
+    "sha256": "9d487e9d84e640dfdd66f4deec45381eef8f3c9ac5d9ebdb19e1248dceee9767",
+    "bytes": 775399
+  }
+}

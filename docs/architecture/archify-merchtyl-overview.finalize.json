@@ -1,0 +1,675 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-02T04:07:45.118Z",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-merchtyl-overview.json",
+    "sha256": "c57e18da47c855c791db54e6ed905c92b1d391c9d4a5a1b723955b0b171ab6cd",
+    "bytes": 9083
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+    "sha256": "9d487e9d84e640dfdd66f4deec45381eef8f3c9ac5d9ebdb19e1248dceee9767",
+    "bytes": 775399
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-merchtyl-overview.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "c57e18da47c855c791db54e6ed905c92b1d391c9d4a5a1b723955b0b171ab6cd",
+          "bytes": 9083
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 241,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-merchtyl-overview.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "6ee73426-79d4-4a1b-83f9-8610c78bdf60",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "/tmp/merchtyl-archify-candidates/archify-merchtyl-overview.json",
+        "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+        "specification": {
+          "sha256": "c57e18da47c855c791db54e6ed905c92b1d391c9d4a5a1b723955b0b171ab6cd",
+          "bytes": 9083
+        },
+        "artifact": {
+          "sha256": "9d487e9d84e640dfdd66f4deec45381eef8f3c9ac5d9ebdb19e1248dceee9767",
+          "bytes": 775399
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/mp4113technologies-droid/Merchtyl.com",
+          "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad",
+          "references": 13
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 81,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+        "artifact": {
+          "sha256": "9d487e9d84e640dfdd66f4deec45381eef8f3c9ac5d9ebdb19e1248dceee9767",
+          "bytes": 775399
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 10,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": null,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6.1,
+            "maxBends": 4,
+            "routesOverSuggestedBends": 5,
+            "maxStretch": 1.348,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 16,
+            "minInteriorSegmentPx": 16,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [
+              {
+                "left": {
+                  "id": "c",
+                  "from": "security",
+                  "to": "platform",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "f",
+                  "from": "organization",
+                  "to": "restaurant",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "point": [
+                  529.5,
+                  258
+                ]
+              },
+              {
+                "left": {
+                  "id": "c",
+                  "from": "security",
+                  "to": "platform",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "p",
+                  "from": "hosting",
+                  "to": "clients",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "point": [
+                  307,
+                  279
+                ]
+              },
+              {
+                "left": {
+                  "id": "d",
+                  "from": "security",
+                  "to": "organization",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "right": {
+                  "id": "f",
+                  "from": "organization",
+                  "to": "restaurant",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "point": [
+                  537.5,
+                  258
+                ],
+                "sharedNode": "organization"
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "commerce",
+                  "to": "operations",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "i",
+                  "from": "platform",
+                  "to": "persistence",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "point": [
+                  548,
+                  416
+                ]
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "commerce",
+                  "to": "operations",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "j",
+                  "from": "organization",
+                  "to": "persistence",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  548,
+                  450
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "restaurant",
+                  "to": "operations",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "m",
+                  "from": "persistence",
+                  "to": "postgres",
+                  "label": "",
+                  "collectionIndex": 12,
+                  "artifactIndex": 13
+                },
+                "point": [
+                  826,
+                  505
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "restaurant",
+                  "to": "operations",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "p",
+                  "from": "hosting",
+                  "to": "clients",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "point": [
+                  672.5,
+                  574
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "restaurant",
+                  "to": "operations",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "q",
+                  "from": "hosting",
+                  "to": "postgres",
+                  "label": "",
+                  "collectionIndex": 16,
+                  "artifactIndex": 17
+                },
+                "point": [
+                  826,
+                  519
+                ]
+              },
+              {
+                "left": {
+                  "id": "i",
+                  "from": "platform",
+                  "to": "persistence",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "right": {
+                  "id": "j",
+                  "from": "organization",
+                  "to": "persistence",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  402.5,
+                  416
+                ],
+                "sharedNode": "persistence"
+              },
+              {
+                "left": {
+                  "id": "i",
+                  "from": "platform",
+                  "to": "persistence",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "right": {
+                  "id": "p",
+                  "from": "hosting",
+                  "to": "clients",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "point": [
+                  307,
+                  416
+                ]
+              }
+            ],
+            "detours": [
+              {
+                "relationship": {
+                  "id": "c",
+                  "from": "security",
+                  "to": "platform",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "bends": 4,
+                "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "e",
+                  "from": "organization",
+                  "to": "commerce",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "bends": 4,
+                "stretch": 1.348
+              },
+              {
+                "relationship": {
+                  "id": "f",
+                  "from": "organization",
+                  "to": "restaurant",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "bends": 3,
+                "stretch": 1.1,
+                "directCorridorBlockers": [
+                  {
+                    "id": "commerce",
+                    "label": "Commerce",
+                    "box": [
+                      580,
+                      282,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              },
+              {
+                "relationship": {
+                  "id": "h",
+                  "from": "restaurant",
+                  "to": "operations",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "bends": 3,
+                "stretch": 1.072
+              },
+              {
+                "relationship": {
+                  "id": "p",
+                  "from": "hosting",
+                  "to": "clients",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "bends": 4,
+                "stretch": 1
+              }
+            ]
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 66,
+            "emptyTopRatio": 0.081,
+            "occupiedTop": 66,
+            "viewBoxTop": 0,
+            "canvasHeight": 810,
+            "typicalNodeHeight": 76,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1345,
+            "actualBudgetPx": 1345,
+            "actualReaderWidth": 1375,
+            "desiredReaderWidth": 1375,
+            "viewportCap": 1376,
+            "limit": "source-size",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": false,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "node",
+              "id": "organization"
+            },
+            "minimumSourceTextPx": 6.1,
+            "minimumProjectedTextPx": 6.1,
+            "semanticTextCount": 26
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "6ee73426-79d4-4a1b-83f9-8610c78bdf60"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 9,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "6ee73426-79d4-4a1b-83f9-8610c78bdf60",
+        "artifact": {
+          "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html",
+          "sha256": "9d487e9d84e640dfdd66f4deec45381eef8f3c9ac5d9ebdb19e1248dceee9767",
+          "bytes": 775399
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "available",
+          "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/browser-check-runtime",
+            "severity": "error",
+            "message": "browser-check could not complete its Chrome inspection.",
+            "subject": {
+              "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html"
+            },
+            "evidence": {
+              "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98669, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+            },
+            "supportedFixes": [
+              "resolve the reported Chrome inspection error, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "archify-merchtyl-overview.browser-check.json",
+          "files": []
+        },
+        "error": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98669, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98669, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-merchtyl-overview.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-02T04:07:45.528Z",
+  "durationMs": 409,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

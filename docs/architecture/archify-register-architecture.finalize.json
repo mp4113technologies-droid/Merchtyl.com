@@ -1,0 +1,451 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-02T04:07:46.037Z",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-register-architecture.json",
+    "sha256": "1436edd5cde85927f691ab3a175731a1fa9cca5f80c9e8488230598d767af4c1",
+    "bytes": 7528
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+    "sha256": "c507e40b688a9f2abfb79de27a0d6307eea48e87673860f64b4c0591bbc44144",
+    "bytes": 765097
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-register-architecture.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "1436edd5cde85927f691ab3a175731a1fa9cca5f80c9e8488230598d767af4c1",
+          "bytes": 7528
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 235,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-register-architecture.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "854fbd3e-b384-44cb-b4c1-e1a2ba8b9054",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "/tmp/merchtyl-archify-candidates/archify-register-architecture.json",
+        "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+        "specification": {
+          "sha256": "1436edd5cde85927f691ab3a175731a1fa9cca5f80c9e8488230598d767af4c1",
+          "bytes": 7528
+        },
+        "artifact": {
+          "sha256": "c507e40b688a9f2abfb79de27a0d6307eea48e87673860f64b4c0591bbc44144",
+          "bytes": 765097
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/mp4113technologies-droid/Merchtyl.com",
+          "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad",
+          "references": 11
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 77,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+        "artifact": {
+          "sha256": "c507e40b688a9f2abfb79de27a0d6307eea48e87673860f64b4c0591bbc44144",
+          "bytes": 765097
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 1,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": null,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6,
+            "maxBends": 4,
+            "routesOverSuggestedBends": 2,
+            "maxStretch": 1.188,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 24,
+            "minInteriorSegmentPx": 34,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [
+              {
+                "left": {
+                  "id": "life4",
+                  "from": "settlement",
+                  "to": "eod",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "right": {
+                  "id": "persist",
+                  "from": "session",
+                  "to": "db",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  1088,
+                  320
+                ]
+              }
+            ],
+            "detours": [
+              {
+                "relationship": {
+                  "id": "hier3",
+                  "from": "store",
+                  "to": "businessDay",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "bends": 4,
+                "stretch": 1.188,
+                "directCorridorBlockers": [
+                  {
+                    "id": "register",
+                    "label": "Register",
+                    "box": [
+                      580,
+                      90,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              },
+              {
+                "relationship": {
+                  "id": "hier4",
+                  "from": "register",
+                  "to": "session",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "bends": 3,
+                "stretch": 1.102,
+                "directCorridorBlockers": [
+                  {
+                    "id": "businessDay",
+                    "label": "BusinessDay",
+                    "box": [
+                      850,
+                      90,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 66,
+            "emptyTopRatio": 0.107,
+            "occupiedTop": 66,
+            "viewBoxTop": 0,
+            "canvasHeight": 618,
+            "typicalNodeHeight": 76,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1345,
+            "actualBudgetPx": 1345,
+            "actualReaderWidth": 1375,
+            "desiredReaderWidth": 1375,
+            "viewportCap": 1376,
+            "limit": "source-size",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": false,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "node",
+              "id": "db"
+            },
+            "minimumSourceTextPx": 6,
+            "minimumProjectedTextPx": 6,
+            "semanticTextCount": 22
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "854fbd3e-b384-44cb-b4c1-e1a2ba8b9054"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 10,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "854fbd3e-b384-44cb-b4c1-e1a2ba8b9054",
+        "artifact": {
+          "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+          "sha256": "c507e40b688a9f2abfb79de27a0d6307eea48e87673860f64b4c0591bbc44144",
+          "bytes": 765097
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "available",
+          "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/browser-check-runtime",
+            "severity": "error",
+            "message": "browser-check could not complete its Chrome inspection.",
+            "subject": {
+              "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html"
+            },
+            "evidence": {
+              "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98785, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+            },
+            "supportedFixes": [
+              "resolve the reported Chrome inspection error, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "archify-register-architecture.browser-check.json",
+          "files": []
+        },
+        "error": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98785, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98785, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-02T04:07:46.443Z",
+  "durationMs": 405,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

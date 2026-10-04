@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "74315227-cefd-4dc0-aa87-fba063a0f8ee",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-restaurant-pos.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-restaurant-pos.html",
+  "specification": {
+    "sha256": "d435b2fa95d1b90f81cf5e714daacb2bcbe580616dd68474656d28a40fca29dd",
+    "bytes": 7030
+  },
+  "artifact": {
+    "sha256": "2d38fb4f56bf802afcc4bb5d7e350a404c13996a60522dab3eba8621f00b7e56",
+    "bytes": 764257
+  }
+}

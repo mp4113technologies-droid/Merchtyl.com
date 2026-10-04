@@ -287,7 +287,7 @@ function CurrentSessionSummary({
 }
 
 export function RegisterCurrentPage() {
-  const { getValidAccessToken } = useSession();
+  const { currentUser, getValidAccessToken } = useSession();
   const { canUse } = useRegisterSessionPermissions();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -295,7 +295,7 @@ export function RegisterCurrentPage() {
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
 
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     enabled: canUse
   });
@@ -395,13 +395,13 @@ export function RegisterCurrentPage() {
 export function RegisterClosePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { getValidAccessToken } = useSession();
+  const { currentUser, getValidAccessToken } = useSession();
   const { canUse, canForceClose } = useRegisterSessionPermissions();
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
   const [settlement, setSettlement] = React.useState<RegisterTillSettlement | null>(null);
 
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     enabled: canUse
   });
@@ -780,7 +780,7 @@ export function CashMovementPage() {
   const browserDeviceIdentifier = React.useMemo(() => getApplicationDeviceIdentifier(), []);
 
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     enabled: canUse
   });

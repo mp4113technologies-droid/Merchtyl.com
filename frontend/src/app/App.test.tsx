@@ -290,6 +290,7 @@ describe('App authentication', () => {
 
   it('logs out and revokes the refresh token', async () => {
     window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse()));
+    window.localStorage.setItem('merchtyl.activeStoreId', 'previous-user-store');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith('/api/v1/auth/me')) {
@@ -308,7 +309,94 @@ describe('App authentication', () => {
 
     expect(await screen.findByRole('heading', { name: 'Merchtyl' })).toBeInTheDocument();
     expect(window.localStorage.getItem('merchtyl.session')).toBeNull();
+    expect(window.localStorage.getItem('merchtyl.activeStoreId')).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/logout', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('shows an open business day and register selection when the next user has no active session', async () => {
+    const storeId = '00000000-0000-0000-0000-000000000301';
+    window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse({
+      userId: '00000000-0000-0000-0000-000000000202',
+      email: 'second.cashier@example.local',
+      displayName: 'Second Cashier',
+      roles: ['CASHIER']
+    })));
+    window.localStorage.setItem('merchtyl.activeStoreId', storeId);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser({
+        userId: '00000000-0000-0000-0000-000000000202',
+        email: 'second.cashier@example.local',
+        displayName: 'Second Cashier',
+        roles: ['CASHIER'],
+        permissions: ['BUSINESS_DAY_VIEW', 'REGISTER_SESSION_OPEN', 'POS_ACCESS']
+      }));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return noContentResponse();
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse({
+        content: [{ id: storeId, code: 'MAIN', name: 'Main Store', capabilities: ['RETAIL'] }],
+        page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true
+      });
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse({
+        content: [], page: 0, size: 100, totalElements: 0, totalPages: 0, first: true, last: true
+      });
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) return jsonResponse({
+        storeId,
+        currentBusinessDate: '2026-10-03',
+        currentBusinessDay: { id: 'day-id', storeId, businessDate: '2026-10-03', status: 'OPEN' },
+        previousBusinessDay: null,
+        state: 'OPEN',
+        availableAction: 'NONE'
+      });
+      return apiError('Unexpected request', 500, 'unexpected');
+    });
+
+    render(<App initialEntries={['/store-menu']} />);
+
+    expect(await screen.findByText('Business Day Open')).toBeInTheDocument();
+    expect(screen.getByText('No active register')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open / Select Register' })).toBeInTheDocument();
+    expect(screen.queryByText("Today's business day has been closed. Ask a Manager or Owner to reopen it.")).not.toBeInTheDocument();
+  });
+
+  it('ignores a previous user\'s inaccessible closed store when resolving the next user\'s business day', async () => {
+    const previousStoreId = '00000000-0000-0000-0000-000000000399';
+    const assignedStoreId = '00000000-0000-0000-0000-000000000301';
+    window.localStorage.setItem('merchtyl.session', JSON.stringify(authResponse({ roles: ['CASHIER'] })));
+    window.localStorage.setItem('merchtyl.activeStoreId', previousStoreId);
+    const operationalStateStoreIds: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith('/api/v1/auth/me')) return jsonResponse(currentUser({
+        roles: ['CASHIER'], permissions: ['BUSINESS_DAY_VIEW', 'REGISTER_SESSION_OPEN', 'POS_ACCESS']
+      }));
+      if (url.pathname.endsWith('/api/v1/register-sessions/current')) return noContentResponse();
+      if (url.pathname.endsWith('/api/v1/stores')) return jsonResponse({
+        content: [{ id: assignedStoreId, code: 'ASSIGNED', name: 'Assigned Store', capabilities: ['RETAIL'] }],
+        page: 0, size: 100, totalElements: 1, totalPages: 1, first: true, last: true
+      });
+      if (url.pathname.endsWith('/api/v1/registers')) return jsonResponse({
+        content: [], page: 0, size: 100, totalElements: 0, totalPages: 0, first: true, last: true
+      });
+      if (url.pathname.endsWith('/api/v1/business-days/operational-state')) {
+        const storeId = url.searchParams.get('storeId') ?? '';
+        operationalStateStoreIds.push(storeId);
+        return jsonResponse({
+          storeId,
+          currentBusinessDate: '2026-10-03',
+          currentBusinessDay: { id: 'assigned-day', storeId, businessDate: '2026-10-03', status: 'OPEN' },
+          previousBusinessDay: null,
+          state: 'OPEN',
+          availableAction: 'NONE'
+        });
+      }
+      return apiError('Unexpected request', 500, 'unexpected');
+    });
+
+    render(<App initialEntries={['/store-menu']} />);
+
+    expect(await screen.findByText('Business Day Open')).toBeInTheDocument();
+    expect(operationalStateStoreIds).toContain(assignedStoreId);
+    expect(operationalStateStoreIds).not.toContain(previousStoreId);
   });
 
   it('protects shell routes from anonymous users', async () => {

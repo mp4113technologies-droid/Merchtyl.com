@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "c69a3541-0586-4269-bffc-1c942702ee02",
+  "status": "current",
+  "command": "deliver",
+  "type": "lifecycle",
+  "input": "/tmp/merchtyl-archify-candidates/archify-business-day.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-business-day.html",
+  "specification": {
+    "sha256": "98d49cf1d4b14e516502fa74a159744bc50eb3b963dfd81db75923f3f3c9e016",
+    "bytes": 4755
+  },
+  "artifact": {
+    "sha256": "f93b5445fcbcf5a7e7ff3016d6d808967c87446a5ac6f883c11733bab8c6162d",
+    "bytes": 758297
+  }
+}

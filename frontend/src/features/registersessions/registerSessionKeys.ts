@@ -1,3 +1,7 @@
 export const registerSessionKeys = {
-  current: (deviceIdentifier?: string) => ['register-session-current', deviceIdentifier ?? 'operator'] as const
+  current: (deviceIdentifier?: string, userId?: string) => [
+    'register-session-current',
+    userId ?? 'anonymous',
+    deviceIdentifier ?? 'operator'
+  ] as const
 };

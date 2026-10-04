@@ -1,0 +1,1208 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-02T04:07:41.364Z",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-api-map.json",
+    "sha256": "13bf85b61dc79977f8f945b729c3523c78aff39cf6945397458c81d288d23d18",
+    "bytes": 8377
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+    "sha256": "b8beeda96d8d3a03004b37a51184a5494c00d0d173fabd5154f573cd50711ac9",
+    "bytes": 773198
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-api-map.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "13bf85b61dc79977f8f945b729c3523c78aff39cf6945397458c81d288d23d18",
+          "bytes": 8377
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 250,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-api-map.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "cab4c870-0401-412e-a50b-731fe6a88382",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "/tmp/merchtyl-archify-candidates/archify-api-map.json",
+        "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+        "specification": {
+          "sha256": "13bf85b61dc79977f8f945b729c3523c78aff39cf6945397458c81d288d23d18",
+          "bytes": 8377
+        },
+        "artifact": {
+          "sha256": "b8beeda96d8d3a03004b37a51184a5494c00d0d173fabd5154f573cd50711ac9",
+          "bytes": 773198
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/mp4113technologies-droid/Merchtyl.com",
+          "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad",
+          "references": 12
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 76,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+        "artifact": {
+          "sha256": "b8beeda96d8d3a03004b37a51184a5494c00d0d173fabd5154f573cd50711ac9",
+          "bytes": 773198
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 30,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": null,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6,
+            "maxBends": 4,
+            "routesOverSuggestedBends": 8,
+            "maxStretch": 1.322,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 21,
+            "minInteriorSegmentPx": 21,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [
+              {
+                "left": {
+                  "id": "c",
+                  "from": "frontend",
+                  "to": "org",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "d",
+                  "from": "frontend",
+                  "to": "catalog",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "point": [
+                  160.5,
+                  190
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "c",
+                  "from": "frontend",
+                  "to": "org",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "e",
+                  "from": "frontend",
+                  "to": "pos",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "point": [
+                  249,
+                  190
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "c",
+                  "from": "frontend",
+                  "to": "org",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "f",
+                  "from": "frontend",
+                  "to": "food",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "point": [
+                  118.5,
+                  190
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "c",
+                  "from": "frontend",
+                  "to": "org",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "point": [
+                  132.5,
+                  190
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "c",
+                  "from": "frontend",
+                  "to": "org",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "right": {
+                  "id": "h",
+                  "from": "frontend",
+                  "to": "eod",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "point": [
+                  146.5,
+                  190
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "d",
+                  "from": "frontend",
+                  "to": "catalog",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "right": {
+                  "id": "e",
+                  "from": "frontend",
+                  "to": "pos",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "point": [
+                  249,
+                  224
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "d",
+                  "from": "frontend",
+                  "to": "catalog",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "right": {
+                  "id": "i",
+                  "from": "auth",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "point": [
+                  402.5,
+                  224
+                ]
+              },
+              {
+                "left": {
+                  "id": "d",
+                  "from": "frontend",
+                  "to": "catalog",
+                  "label": "",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "right": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  519,
+                  224
+                ]
+              },
+              {
+                "left": {
+                  "id": "e",
+                  "from": "frontend",
+                  "to": "pos",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "right": {
+                  "id": "i",
+                  "from": "auth",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "point": [
+                  402.5,
+                  250
+                ]
+              },
+              {
+                "left": {
+                  "id": "e",
+                  "from": "frontend",
+                  "to": "pos",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "right": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  519,
+                  250
+                ]
+              },
+              {
+                "left": {
+                  "id": "f",
+                  "from": "frontend",
+                  "to": "food",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "right": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "point": [
+                  132.5,
+                  512
+                ],
+                "sharedNode": "frontend"
+              },
+              {
+                "left": {
+                  "id": "f",
+                  "from": "frontend",
+                  "to": "food",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "right": {
+                  "id": "i",
+                  "from": "auth",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "point": [
+                  278,
+                  512
+                ]
+              },
+              {
+                "left": {
+                  "id": "f",
+                  "from": "frontend",
+                  "to": "food",
+                  "label": "",
+                  "collectionIndex": 5,
+                  "artifactIndex": 6
+                },
+                "right": {
+                  "id": "k",
+                  "from": "org",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 10,
+                  "artifactIndex": 11
+                },
+                "point": [
+                  286,
+                  512
+                ]
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "i",
+                  "from": "auth",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "point": [
+                  278,
+                  574
+                ]
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  519,
+                  574
+                ]
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "k",
+                  "from": "org",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 10,
+                  "artifactIndex": 11
+                },
+                "point": [
+                  286,
+                  574
+                ]
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "l",
+                  "from": "catalog",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 11,
+                  "artifactIndex": 12
+                },
+                "point": [
+                  537.5,
+                  574
+                ]
+              },
+              {
+                "left": {
+                  "id": "g",
+                  "from": "frontend",
+                  "to": "lottery",
+                  "label": "",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "right": {
+                  "id": "n",
+                  "from": "food",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 13,
+                  "artifactIndex": 14
+                },
+                "point": [
+                  402.5,
+                  574
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "frontend",
+                  "to": "eod",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "i",
+                  "from": "auth",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "point": [
+                  278,
+                  450
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "frontend",
+                  "to": "eod",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "point": [
+                  519,
+                  450
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "frontend",
+                  "to": "eod",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "k",
+                  "from": "org",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 10,
+                  "artifactIndex": 11
+                },
+                "point": [
+                  286,
+                  450
+                ]
+              },
+              {
+                "left": {
+                  "id": "h",
+                  "from": "frontend",
+                  "to": "eod",
+                  "label": "",
+                  "collectionIndex": 7,
+                  "artifactIndex": 8
+                },
+                "right": {
+                  "id": "l",
+                  "from": "catalog",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 11,
+                  "artifactIndex": 12
+                },
+                "point": [
+                  537.5,
+                  450
+                ]
+              },
+              {
+                "left": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "right": {
+                  "id": "m",
+                  "from": "pos",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 12,
+                  "artifactIndex": 13
+                },
+                "point": [
+                  519,
+                  642
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "right": {
+                  "id": "o",
+                  "from": "lottery",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 14,
+                  "artifactIndex": 15
+                },
+                "point": [
+                  519,
+                  608
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "right": {
+                  "id": "p",
+                  "from": "eod",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "point": [
+                  519,
+                  600
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "l",
+                  "from": "catalog",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 11,
+                  "artifactIndex": 12
+                },
+                "right": {
+                  "id": "m",
+                  "from": "pos",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 12,
+                  "artifactIndex": 13
+                },
+                "point": [
+                  537.5,
+                  642
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "l",
+                  "from": "catalog",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 11,
+                  "artifactIndex": 12
+                },
+                "right": {
+                  "id": "o",
+                  "from": "lottery",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 14,
+                  "artifactIndex": 15
+                },
+                "point": [
+                  537.5,
+                  608
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "l",
+                  "from": "catalog",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 11,
+                  "artifactIndex": 12
+                },
+                "right": {
+                  "id": "p",
+                  "from": "eod",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "point": [
+                  537.5,
+                  600
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "l",
+                  "from": "catalog",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 11,
+                  "artifactIndex": 12
+                },
+                "right": {
+                  "id": "q",
+                  "from": "services",
+                  "to": "repos",
+                  "label": "",
+                  "collectionIndex": 16,
+                  "artifactIndex": 17
+                },
+                "point": [
+                  537.5,
+                  704
+                ],
+                "sharedNode": "services"
+              },
+              {
+                "left": {
+                  "id": "m",
+                  "from": "pos",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 12,
+                  "artifactIndex": 13
+                },
+                "right": {
+                  "id": "p",
+                  "from": "eod",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 15,
+                  "artifactIndex": 16
+                },
+                "point": [
+                  451.5,
+                  642
+                ],
+                "sharedNode": "services"
+              }
+            ],
+            "crowdedSides": [
+              {
+                "node": "frontend",
+                "label": "React Feature Modules",
+                "side": "right",
+                "relationships": 7,
+                "sidePx": 76,
+                "neededPx": 116
+              }
+            ],
+            "detours": [
+              {
+                "relationship": {
+                  "id": "a",
+                  "from": "frontend",
+                  "to": "auth",
+                  "label": "",
+                  "collectionIndex": 0,
+                  "artifactIndex": 1
+                },
+                "bends": 3,
+                "stretch": 1.223
+              },
+              {
+                "relationship": {
+                  "id": "b",
+                  "from": "frontend",
+                  "to": "platform",
+                  "label": "",
+                  "collectionIndex": 1,
+                  "artifactIndex": 2
+                },
+                "bends": 4,
+                "stretch": 1.322,
+                "directCorridorBlockers": [
+                  {
+                    "id": "auth",
+                    "label": "Authentication APIs",
+                    "box": [
+                      310,
+                      90,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              },
+              {
+                "relationship": {
+                  "id": "c",
+                  "from": "frontend",
+                  "to": "org",
+                  "label": "",
+                  "collectionIndex": 2,
+                  "artifactIndex": 3
+                },
+                "bends": 3,
+                "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "e",
+                  "from": "frontend",
+                  "to": "pos",
+                  "label": "",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "bends": 4,
+                "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "i",
+                  "from": "auth",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 8,
+                  "artifactIndex": 9
+                },
+                "bends": 4,
+                "stretch": 1.275,
+                "directCorridorBlockers": [
+                  {
+                    "id": "org",
+                    "label": "Stores, Users, Registers",
+                    "box": [
+                      310,
+                      282,
+                      185,
+                      76
+                    ]
+                  },
+                  {
+                    "id": "food",
+                    "label": "Food + Kitchen",
+                    "box": [
+                      310,
+                      474,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              },
+              {
+                "relationship": {
+                  "id": "j",
+                  "from": "platform",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "bends": 3,
+                "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "k",
+                  "from": "org",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 10,
+                  "artifactIndex": 11
+                },
+                "bends": 3,
+                "stretch": 1.109,
+                "directCorridorBlockers": [
+                  {
+                    "id": "food",
+                    "label": "Food + Kitchen",
+                    "box": [
+                      310,
+                      474,
+                      185,
+                      76
+                    ]
+                  }
+                ]
+              },
+              {
+                "relationship": {
+                  "id": "m",
+                  "from": "pos",
+                  "to": "services",
+                  "label": "",
+                  "collectionIndex": 12,
+                  "artifactIndex": 13
+                },
+                "bends": 3,
+                "stretch": 1.051
+              }
+            ]
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 58,
+            "emptyTopRatio": 0.072,
+            "occupiedTop": 58,
+            "viewBoxTop": 0,
+            "canvasHeight": 810,
+            "typicalNodeHeight": 76,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1345,
+            "actualBudgetPx": 1345,
+            "actualReaderWidth": 1375,
+            "desiredReaderWidth": 1375,
+            "viewportCap": 1376,
+            "limit": "source-size",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": false,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "node",
+              "id": "platform"
+            },
+            "minimumSourceTextPx": 6,
+            "minimumProjectedTextPx": 6,
+            "semanticTextCount": 24
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "cab4c870-0401-412e-a50b-731fe6a88382"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 9,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "cab4c870-0401-412e-a50b-731fe6a88382",
+        "artifact": {
+          "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html",
+          "sha256": "b8beeda96d8d3a03004b37a51184a5494c00d0d173fabd5154f573cd50711ac9",
+          "bytes": 773198
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "available",
+          "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/browser-check-runtime",
+            "severity": "error",
+            "message": "browser-check could not complete its Chrome inspection.",
+            "subject": {
+              "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html"
+            },
+            "evidence": {
+              "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98164, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+            },
+            "supportedFixes": [
+              "resolve the reported Chrome inspection error, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "archify-api-map.browser-check.json",
+          "files": []
+        },
+        "error": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98164, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome transport: Node v25.2.1, libuv 1.51.0, darwin; pid=98164, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.finalize-summary.json",
+    "browserCheckReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-api-map.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-02T04:07:41.776Z",
+  "durationMs": 411,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

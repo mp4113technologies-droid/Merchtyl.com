@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "291a5b3c-1c63-499e-a8e8-ae5ff24de8c3",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-register-architecture.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-register-architecture.html",
+  "specification": {
+    "sha256": "1436edd5cde85927f691ab3a175731a1fa9cca5f80c9e8488230598d767af4c1",
+    "bytes": 7528
+  },
+  "artifact": {
+    "sha256": "c507e40b688a9f2abfb79de27a0d6307eea48e87673860f64b4c0591bbc44144",
+    "bytes": 765097
+  }
+}

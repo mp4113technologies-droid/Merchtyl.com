@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "364ae7f5-606d-411e-a508-08879d4ec314",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-retail-pos.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-retail-pos.html",
+  "specification": {
+    "sha256": "a4f92aa90fa1471bdc8955eab04a8fb28c260d6be6142e961644836909440141",
+    "bytes": 7090
+  },
+  "artifact": {
+    "sha256": "c84065366a6b26e1a273553d979e33dc69d58bfd75987b0343a0fb5d9b5643ce",
+    "bytes": 765595
+  }
+}

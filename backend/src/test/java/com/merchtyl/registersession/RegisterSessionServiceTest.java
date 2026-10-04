@@ -539,9 +539,11 @@ class RegisterSessionServiceTest {
 
     @Test
     void closesOpenSessionWithLedgerExpectedCashAndAudits() {
+        BusinessDay openBusinessDay = new BusinessDay(store, java.time.LocalDate.of(2026, 7, 21), "UTC", cashier, NOW.minusSeconds(7200));
         RegisterSession session = new RegisterSession(
                 store,
                 register,
+                openBusinessDay,
                 device,
                 cashier,
                 new BigDecimal("125.50"),
@@ -560,6 +562,7 @@ class RegisterSessionServiceTest {
         assertThat(response.differenceCash()).isEqualByComparingTo("-0.50");
         assertThat(response.closedByUserId()).isEqualTo(cashier.getId());
         assertThat(response.closedAt()).isEqualTo(NOW);
+        assertThat(openBusinessDay.getStatus()).isEqualTo(com.merchtyl.eod.BusinessDayStatus.OPEN);
 
         ArgumentCaptor<CreateAuditRecordCommand> audit = ArgumentCaptor.forClass(CreateAuditRecordCommand.class);
         verify(auditService, org.mockito.Mockito.atLeastOnce()).record(audit.capture());
@@ -599,6 +602,43 @@ class RegisterSessionServiceTest {
         assertThat(removal.getValue().direction()).isEqualTo(com.merchtyl.cash.CashLedgerDirection.OUT);
         assertThat(removal.getValue().amount()).isEqualByComparingTo("438.00");
         verify(stateRepository).saveAndFlush(state);
+    }
+
+    @Test
+    void nextUserCanOpenSameRegisterAfterPriorUserClosesWhileBusinessDayStaysOpen() {
+        RegisterBusinessDayCashStateRepository stateRepository = mock(RegisterBusinessDayCashStateRepository.class);
+        ReflectionTestUtils.setField(service, "registerBusinessDayCashStateRepository", stateRepository);
+        BusinessDay openBusinessDay = new BusinessDay(store, java.time.LocalDate.of(2026, 7, 21), "UTC", cashier,
+                NOW.minusSeconds(7200));
+        RegisterBusinessDayCashState cashState = new RegisterBusinessDayCashState(
+                store, register, openBusinessDay, new BigDecimal("125.50"));
+        RegisterSession firstShift = new RegisterSession(
+                store, register, openBusinessDay, device, cashier, new BigDecimal("125.50"), NOW.minusSeconds(3600));
+        firstShift.startClosing();
+        when(registerSessionRepository.findByIdForUpdate(firstShift.getId())).thenReturn(Optional.of(firstShift));
+        when(stateRepository.findForUpdate(openBusinessDay.getId(), REGISTER_ID)).thenReturn(Optional.of(cashState));
+
+        service.close(firstShift.getId(),
+                new RegisterSessionCloseRequest(new BigDecimal("130.50"), 0L), authentication("ROLE_CASHIER"));
+
+        User nextCashier = new User("next.cashier@example.local", "Next Cashier", "hash");
+        nextCashier.assignTenant(cashier.getTenantId());
+        when(userRepository.findByEmailIgnoreCase("next.cashier@example.local")).thenReturn(Optional.of(nextCashier));
+        when(rolePermissionRepository.findPermissionCodesByUser(nextCashier)).thenReturn(List.of("POS_ACCESS"));
+        when(userRegisterAssignmentRepository.existsByUserAndRegister_Id(nextCashier, REGISTER_ID)).thenReturn(true);
+        when(businessDayService.requireOpenBusinessDayForUpdate(STORE_ID)).thenReturn(openBusinessDay);
+
+        RegisterSessionResponse nextShift = service.open(openRequest(),
+                authentication("next.cashier@example.local", "ROLE_CASHIER"));
+
+        assertThat(firstShift.getStatus()).isEqualTo(RegisterSessionStatus.CLOSED);
+        assertThat(openBusinessDay.getStatus()).isEqualTo(com.merchtyl.eod.BusinessDayStatus.OPEN);
+        assertThat(nextShift.status()).isEqualTo(RegisterSessionStatus.OPEN);
+        assertThat(nextShift.assignedCashierId()).isEqualTo(nextCashier.getId());
+        assertThat(nextShift.openingCash()).isEqualByComparingTo("125.50");
+        ArgumentCaptor<RegisterSession> saved = ArgumentCaptor.forClass(RegisterSession.class);
+        verify(registerSessionRepository, org.mockito.Mockito.atLeastOnce()).saveAndFlush(saved.capture());
+        assertThat(saved.getAllValues().getLast().getBusinessDay()).isSameAs(openBusinessDay);
     }
 
     @Test
@@ -1019,8 +1059,12 @@ class RegisterSessionServiceTest {
     }
 
     private static UsernamePasswordAuthenticationToken authentication(String role) {
+        return authentication("cashier@example.local", role);
+    }
+
+    private static UsernamePasswordAuthenticationToken authentication(String email, String role) {
         return new UsernamePasswordAuthenticationToken(
-                "cashier@example.local",
+                email,
                 "n/a",
                 List.of(new SimpleGrantedAuthority(role)));
     }

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-02T04:07:42.687Z",
+  "specification": {
+    "path": "/tmp/merchtyl-archify-candidates/archify-data-model.json",
+    "sha256": "3f199c7a13d34c5bb609496374c7ed1d7e8b7f5aaae0782db90fa01bd03b6c22",
+    "bytes": 9825
+  },
+  "artifact": {
+    "path": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.html"
+  },
+  "stages": {
+    "validate": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": null,
+      "command": [
+        "/usr/local/bin/node",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/tmp/merchtyl-archify-candidates/archify-data-model.json",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/Users/aditya/MP4113_Workspace/Merchtyl.com",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "deliver",
+        "receiptId": "c910cb8a-bbb7-44d1-a2c6-07e2dc72ba99",
+        "stage": "render",
+        "type": "architecture",
+        "input": "/tmp/merchtyl-archify-candidates/archify-data-model.json",
+        "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.html",
+        "error": "/components/12/sources/0 requests line 140, but backend/src/main/resources/db/migration/V39__create_lottery_sales.sql has 79 lines at revision fbebd405a5be4d0effa6ef6e27f4a8b2771060ad.",
+        "diagnostics": [
+          {
+            "code": "repository-evidence/line-out-of-range",
+            "severity": "error",
+            "message": "/components/12/sources/0 requests line 140, but backend/src/main/resources/db/migration/V39__create_lottery_sales.sql has 79 lines at revision fbebd405a5be4d0effa6ef6e27f4a8b2771060ad.",
+            "subject": {
+              "surface": "repository-evidence",
+              "path": "/components/12/sources/0",
+              "diagramType": "architecture",
+              "collection": "components",
+              "nodeId": "lottery",
+              "componentId": "lottery"
+            },
+            "evidence": {
+              "sourcePath": "backend/src/main/resources/db/migration/V39__create_lottery_sales.sql",
+              "requestedLine": 140,
+              "lineCount": 79,
+              "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad"
+            },
+            "supportedFixes": [
+              "use a line range that exists at the pinned revision"
+            ]
+          }
+        ],
+        "provenance": "absent",
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      },
+      "execution": "embedded-in-deliver"
+    },
+    "deliver": {
+      "status": "not-run",
+      "execution": "blocked-by-validate"
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "repository-evidence/line-out-of-range",
+      "severity": "error",
+      "message": "/components/12/sources/0 requests line 140, but backend/src/main/resources/db/migration/V39__create_lottery_sales.sql has 79 lines at revision fbebd405a5be4d0effa6ef6e27f4a8b2771060ad.",
+      "subject": {
+        "surface": "repository-evidence",
+        "path": "/components/12/sources/0",
+        "diagramType": "architecture",
+        "collection": "components",
+        "nodeId": "lottery",
+        "componentId": "lottery"
+      },
+      "evidence": {
+        "sourcePath": "backend/src/main/resources/db/migration/V39__create_lottery_sales.sql",
+        "requestedLine": 140,
+        "lineCount": 79,
+        "revision": "fbebd405a5be4d0effa6ef6e27f4a8b2771060ad"
+      },
+      "supportedFixes": [
+        "use a line range that exists at the pinned revision"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.finalize.json",
+    "summaryReceipt": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-data-model.finalize-summary.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "validate",
+  "finishedAt": "2026-10-02T04:07:42.864Z",
+  "durationMs": 176,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

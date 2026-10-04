@@ -85,6 +85,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const clearSession = useCallback((expiredSession = false) => {
     storeSession(null);
+    window.localStorage.removeItem('merchtyl.activeStoreId');
     setSession(null);
     setCurrentUser(null);
     setStatus('anonymous');

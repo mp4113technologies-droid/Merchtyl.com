@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "b581bc37-f811-4a7c-b28f-6a5859e45354",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-users-roles.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-users-roles.html",
+  "specification": {
+    "sha256": "2e36c58f04849ebb1e3aa1f55718216becf5943783a4f1c34df7dd336fdfb41f",
+    "bytes": 6954
+  },
+  "artifact": {
+    "sha256": "818044ecac316fee9ed1da77d93f56de0a987ac3f5d1ada56885aa7c65c84e88",
+    "bytes": 764513
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "ea0fc837-bab3-48ad-8ad8-dd7b660709c4",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-inventory.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-inventory.html",
+  "specification": {
+    "sha256": "56af539296a6a277d4ddf50d05bb0b86c85e2aaa46e86a618125961b3f77aa7e",
+    "bytes": 6363
+  },
+  "artifact": {
+    "sha256": "05770891d627b754e4adce6b696ab02831f849b3b5a94f9e61b49df32b9ec3ae",
+    "bytes": 760944
+  }
+}

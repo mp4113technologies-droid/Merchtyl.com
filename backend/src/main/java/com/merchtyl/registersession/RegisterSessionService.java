@@ -252,8 +252,10 @@ public class RegisterSessionService {
                 null,
                 response,
                 null));
-        log.info("register_event event=REGISTER_OPENED tenant_id={} store_id={} register_id={} user_id={} device_id={} device_enforcement_enabled={}",
-                cashier.getTenantId(), response.storeId(), response.registerId(), cashier.getId(), response.deviceId(), enforcementEnabled);
+        log.info("register_event event=REGISTER_OPENED tenant_id={} store_id={} register_id={} user_id={} device_id={} business_day_id={} business_day_status={} register_available=true device_enforcement_enabled={}",
+                cashier.getTenantId(), response.storeId(), response.registerId(), cashier.getId(), response.deviceId(),
+                businessDay == null ? null : businessDay.getId(), businessDay == null ? null : businessDay.getStatus(),
+                enforcementEnabled);
         return response;
     }
 
@@ -644,8 +646,11 @@ public class RegisterSessionService {
                 null,
                 response,
                 null));
-        log.info("register_event event=REGISTER_SESSION_CLOSED tenant_id={} store_id={} register_id={} session_id={} actor_user_id={} operator_user_id={}",
-                closingUser.getTenantId(), response.storeId(), response.registerId(), response.id(), closingUser.getId(), session.getAssignedCashier().getId());
+        log.info("register_event event=REGISTER_SESSION_CLOSED tenant_id={} store_id={} register_id={} session_id={} business_day_id={} business_day_status={} actor_user_id={} operator_user_id={}",
+                closingUser.getTenantId(), response.storeId(), response.registerId(), response.id(),
+                session.getBusinessDay() == null ? null : session.getBusinessDay().getId(),
+                session.getBusinessDay() == null ? null : session.getBusinessDay().getStatus(),
+                closingUser.getId(), session.getAssignedCashier().getId());
         return response;
     }
 
@@ -689,8 +694,11 @@ public class RegisterSessionService {
                 null,
                 response,
                 reason));
-        log.info("register_event event=REGISTER_SESSION_FORCE_CLOSED tenant_id={} store_id={} register_id={} session_id={} actor_user_id={} operator_user_id={}",
-                closingUser.getTenantId(), response.storeId(), response.registerId(), response.id(), closingUser.getId(), session.getAssignedCashier().getId());
+        log.info("register_event event=REGISTER_SESSION_FORCE_CLOSED tenant_id={} store_id={} register_id={} session_id={} business_day_id={} business_day_status={} actor_user_id={} operator_user_id={}",
+                closingUser.getTenantId(), response.storeId(), response.registerId(), response.id(),
+                session.getBusinessDay() == null ? null : session.getBusinessDay().getId(),
+                session.getBusinessDay() == null ? null : session.getBusinessDay().getStatus(),
+                closingUser.getId(), session.getAssignedCashier().getId());
         return response;
     }
 

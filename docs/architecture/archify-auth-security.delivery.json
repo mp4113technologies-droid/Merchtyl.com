@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "b609787c-df56-45f6-be3e-dc7b3db67db0",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-auth-security.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-auth-security.html",
+  "specification": {
+    "sha256": "4e04d03697ad67397bea854e0e71a1f06587ee1695202f7efdb192e7c16be1c2",
+    "bytes": 8729
+  },
+  "artifact": {
+    "sha256": "0ae953f01dbf04e000196964d64d938d95c9f50dcb95201274619a261f7b2d97",
+    "bytes": 769704
+  }
+}

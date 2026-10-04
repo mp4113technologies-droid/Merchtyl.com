@@ -1172,7 +1172,7 @@ export function PosCartPage() {
   }, [activeSale]);
 
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier })
   });
 
@@ -1192,7 +1192,7 @@ export function PosCartPage() {
       setCashPayoutOpen(false);
       setRecordedPayout(movement);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: registerSessionKeys.current(browserDeviceIdentifier) }),
+        queryClient.invalidateQueries({ queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId) }),
         queryClient.invalidateQueries({ queryKey: ['cash-movements'] })
       ]);
     }

@@ -268,7 +268,7 @@ function PosLayout() {
   const location = useLocation();
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId ?? session?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     refetchInterval: 15_000
   });
@@ -325,7 +325,7 @@ function PosModeRouteGuard({ expectedType, children }: { expectedType: PosRegist
     ? currentUser?.permissions?.includes('FOOD_POS_ACCESS')
     : currentUser?.permissions?.includes('POS_ACCESS');
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     enabled: hasModePermission === true
   });
@@ -351,7 +351,7 @@ function StoreMenuPage() {
   const businessDayAccess = resolveBusinessDayAccess(roles, currentUser?.permissions);
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const current = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId ?? session?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     refetchInterval: 15_000
   });
@@ -364,8 +364,12 @@ function StoreMenuPage() {
     queryFn: async () => listRegisters(await getValidAccessToken(), { page: 0, size: 100 })
   });
   const activeSession = current.data?.status === 'OPEN' ? current.data : null;
+  const persistedStoreId = window.localStorage.getItem('merchtyl.activeStoreId');
+  const accessiblePersistedStoreId = stores.data?.content.some((store) => store.id === persistedStoreId)
+    ? persistedStoreId
+    : null;
   const selectedStoreId = activeSession?.storeId
-    ?? window.localStorage.getItem('merchtyl.activeStoreId')
+    ?? accessiblePersistedStoreId
     ?? stores.data?.content[0]?.id
     ?? '';
   const canViewBusinessDay = businessDayAccess.canView;
@@ -504,7 +508,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const canViewFeatures = roles.some((role) => role === 'OWNER' || role === 'TENANT_OWNER' || role === 'MANAGER' || role === 'STORE_MANAGER');
   const browserDeviceIdentifier = getApplicationDeviceIdentifier();
   const activeRegister = useQuery({
-    queryKey: registerSessionKeys.current(browserDeviceIdentifier),
+    queryKey: registerSessionKeys.current(browserDeviceIdentifier, currentUser?.userId ?? session?.userId),
     queryFn: async () => getCurrentRegisterSession(await getValidAccessToken(), { deviceIdentifier: browserDeviceIdentifier }),
     enabled: canViewRegisters,
     refetchInterval: 30_000

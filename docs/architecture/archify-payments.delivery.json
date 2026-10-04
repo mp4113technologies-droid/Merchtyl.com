@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "47dd6078-ec95-4c23-a264-6335f7d02f44",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/tmp/merchtyl-archify-candidates/archify-payments.json",
+  "output": "/Users/aditya/MP4113_Workspace/Merchtyl.com/docs/architecture/archify-payments.html",
+  "specification": {
+    "sha256": "acbf596d64a7e9ef02508a9643f23cb8db7152d5173e18ab703c18e5315c634f",
+    "bytes": 6374
+  },
+  "artifact": {
+    "sha256": "57aedc5fccc625865530965fb027d21996cca09114e7e5d892ff8e46f8aaac51",
+    "bytes": 762284
+  }
+}
