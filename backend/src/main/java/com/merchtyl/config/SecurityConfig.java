@@ -110,6 +110,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/reset-password",
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
+                                "/api/v1/public/contact",
                                 "/api/v1/auth/first-login/change-password",
                                 "/api/v1/platform/auth/login",
                                 "/api/v1/platform/admins/activate",

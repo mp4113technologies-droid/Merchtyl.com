@@ -66,6 +66,27 @@ class AuthRateLimitingFilterTest {
     }
 
     @Test
+    void appliesTheDedicatedContactFormLimitByRemoteAddress() throws Exception {
+        AuthRateLimitingFilter filter = new AuthRateLimitingFilter(
+                new SecurityProperties(
+                        new SecurityProperties.Cors(List.of()),
+                        new SecurityProperties.RateLimit(true, 20, Duration.ofMinutes(1), 1, Duration.ofMinutes(10)),
+                        null),
+                objectMapper,
+                Clock.fixed(Instant.parse("2026-07-29T12:00:00Z"), ZoneOffset.UTC));
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(request("/api/v1/public/contact"), new MockHttpServletResponse(), chain);
+        MockHttpServletResponse limited = new MockHttpServletResponse();
+        filter.doFilter(request("/api/v1/public/contact"), limited, chain);
+
+        verify(chain, times(1)).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat(limited.getStatus()).isEqualTo(429);
+        assertThat(limited.getHeader("Retry-After")).isEqualTo("600");
+        assertThat(limited.getContentAsString()).contains("Too many contact requests");
+    }
+
+    @Test
     void boundsTrackedRemoteAddressesDuringDistributedTraffic() throws Exception {
         AuthRateLimitingFilter filter = new AuthRateLimitingFilter(
                 new SecurityProperties(

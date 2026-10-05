@@ -83,6 +83,8 @@ merchtyl:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
       auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
       auth-window: ${MERCHTYL_RATE_LIMIT_AUTH_WINDOW:1m}
+      contact-max-attempts: ${MERCHTYL_RATE_LIMIT_CONTACT_MAX_ATTEMPTS:5}
+      contact-window: ${MERCHTYL_RATE_LIMIT_CONTACT_WINDOW:10m}
     temporary-password:
       length: ${MERCHTYL_TEMPORARY_PASSWORD_LENGTH:20}
       expiry-hours: ${MERCHTYL_TEMPORARY_PASSWORD_EXPIRY_HOURS:24}
@@ -126,6 +128,9 @@ merchtyl:
     resend:
       enabled: ${RESEND_ENABLED:false}
       api-key: ${RESEND_API_KEY:}
+  contact:
+    email-to: ${MERCHTYL_CONTACT_EMAIL_TO:}
+    email-from: ${MERCHTYL_CONTACT_EMAIL_FROM:}
   portal:
     public-base-domain: ${MERCHTYL_PUBLIC_BASE_DOMAIN:localhost}
     platform-base-url: ${MERCHTYL_PLATFORM_BASE_URL:http://localhost:5173}

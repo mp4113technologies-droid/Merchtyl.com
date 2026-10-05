@@ -1688,6 +1688,13 @@ export function getHealth() {
   return request<HealthResponse>('/health');
 }
 
+export function submitPublicContact(payload: import('./types').PublicContactPayload) {
+  return request<import('./types').PublicContactResponse>('/public/contact', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 export function register(payload: AuthRegisterPayload) {
   return request<AuthResponse>('/auth/register', {
     method: 'POST',

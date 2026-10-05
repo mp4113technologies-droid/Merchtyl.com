@@ -27,7 +27,7 @@ public record SecurityProperties(
     @ConstructorBinding
     public SecurityProperties {
         cors = cors == null ? new Cors(List.of(), List.of()) : cors;
-        rateLimit = rateLimit == null ? new RateLimit(true, 20, Duration.ofMinutes(1)) : rateLimit;
+        rateLimit = rateLimit == null ? new RateLimit(true, 20, Duration.ofMinutes(1), 5, Duration.ofMinutes(10)) : rateLimit;
         temporaryPassword = temporaryPassword == null ? new TemporaryPassword(20, 24, 10) : temporaryPassword;
         login = login == null ? new Login(3, true) : login;
         passwordReset = passwordReset == null ? new PasswordReset(30, 5, 5) : passwordReset;
@@ -56,12 +56,22 @@ public record SecurityProperties(
     public record RateLimit(
             boolean enabled,
             @Min(1) int authMaxAttempts,
-            @NotNull Duration authWindow
+            @NotNull Duration authWindow,
+            @Min(1) int contactMaxAttempts,
+            @NotNull Duration contactWindow
     ) {
+        public RateLimit(boolean enabled, int authMaxAttempts, Duration authWindow) {
+            this(enabled, authMaxAttempts, authWindow, 5, Duration.ofMinutes(10));
+        }
+
         public RateLimit {
             authWindow = authWindow == null ? Duration.ofMinutes(1) : authWindow;
+            contactWindow = contactWindow == null ? Duration.ofMinutes(10) : contactWindow;
             if (authWindow.isZero() || authWindow.isNegative()) {
                 throw new IllegalArgumentException("authWindow must be positive");
+            }
+            if (contactWindow.isZero() || contactWindow.isNegative()) {
+                throw new IllegalArgumentException("contactWindow must be positive");
             }
         }
     }

@@ -1,0 +1,62 @@
+.public-landing-root {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+  background: #fff;
+}
+
+.public-landing-root [hidden] {
+  display: none !important;
+}
+
+.public-landing-root input:focus-visible,
+.public-landing-root select:focus-visible,
+.public-landing-root textarea:focus-visible,
+.public-landing-root button:focus-visible,
+.public-landing-root a:focus-visible {
+  outline: 3px solid #8cc0ff;
+  outline-offset: 3px;
+}
+
+.public-landing-root button:disabled {
+  cursor: wait !important;
+  opacity: 0.72;
+}
+
+.landing-honeypot {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.landing-form-status {
+  min-height: 1.5em;
+  margin: -6px 0 0;
+  color: #a12525;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (max-width: 430px) {
+  .public-landing-root section,
+  .public-landing-root header,
+  .public-landing-root footer {
+    max-width: 100vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-landing-root *,
+  .public-landing-root *::before,
+  .public-landing-root *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

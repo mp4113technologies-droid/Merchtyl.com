@@ -2845,3 +2845,22 @@ export type ApiError = {
   violations: Array<{ field: string; code: string; message: string }>;
   timestamp: string;
 };
+export type PublicContactPayload = {
+  name: string;
+  business: string;
+  email: string;
+  phone?: string;
+  businessType: 'convenience' | 'retail' | 'takeout' | 'retail_restaurant' | 'other';
+  province?: string;
+  stores?: '1' | '2–3' | '4–10' | 'More than 10';
+  registers?: '1' | '2' | '3–5' | '6 or more';
+  needs: Array<'Retail POS' | 'Restaurant POS' | 'Lottery' | 'Inventory and reporting'>;
+  message?: string;
+  demo: boolean;
+  website?: string;
+};
+
+export type PublicContactResponse = {
+  success: boolean;
+  message: string;
+};

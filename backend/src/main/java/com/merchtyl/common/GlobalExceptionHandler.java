@@ -110,6 +110,14 @@ public class GlobalExceptionHandler {
                 domain == null ? "The uploaded file is too large." : domain.message(), request, List.of());
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    ResponseEntity<ApiError> serviceUnavailable(ServiceUnavailableException exception, HttpServletRequest request) {
+        log.warn("event=EXTERNAL_SERVICE_UNAVAILABLE method={} path={} correlation_id={}",
+                request.getMethod(), request.getRequestURI(), MDC.get(CorrelationIdFilter.MDC_KEY));
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                "We couldn't send your message right now. Please try again in a moment.", request, List.of());
+    }
+
     @ExceptionHandler({ForbiddenOperationException.class, AccessDeniedException.class})
     ResponseEntity<ApiError> forbidden(RuntimeException exception, HttpServletRequest request) {
         log.warn("authorization_event event={} user={} tenant={} endpoint={} method={} exception_type={}",

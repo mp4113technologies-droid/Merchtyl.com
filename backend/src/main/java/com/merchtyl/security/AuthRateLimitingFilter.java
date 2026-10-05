@@ -31,7 +31,8 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
             "/api/v1/auth/refresh",
-            "/api/v1/auth/first-login/change-password");
+            "/api/v1/auth/first-login/change-password",
+            "/api/v1/public/contact");
 
     private final SecurityProperties.RateLimit properties;
     private final ObjectMapper objectMapper;
@@ -66,14 +67,15 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
                 : requestedKey;
         AtomicReference<Bucket> updated = new AtomicReference<>();
         buckets.compute(key, (ignored, current) -> {
+            Duration window = windowFor(request.getServletPath());
             Bucket next = current == null || !now.isBefore(current.resetAt())
-                    ? new Bucket(now.plus(properties.authWindow()), 1)
+                    ? new Bucket(now.plus(window), 1)
                     : new Bucket(current.resetAt(), current.count() + 1);
             updated.set(next);
             return next;
         });
         Bucket bucket = updated.get();
-        if (bucket.count() <= properties.authMaxAttempts()) {
+        if (bucket.count() <= maxAttemptsFor(request.getServletPath())) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -97,13 +99,23 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
         response.setHeader("Retry-After", Long.toString(retryAfterSeconds));
         objectMapper.writeValue(response.getOutputStream(), new ApiError(
                 "rate_limited",
-                "Too many authentication attempts",
+                request.getServletPath().equals("/api/v1/public/contact")
+                        ? "Too many contact requests. Please try again later."
+                        : "Too many authentication attempts",
                 HttpStatus.TOO_MANY_REQUESTS.value(),
                 request.getRequestURI(),
                 request.getMethod(),
                 correlationId,
                 List.of(),
                 now));
+    }
+
+    private int maxAttemptsFor(String path) {
+        return path.equals("/api/v1/public/contact") ? properties.contactMaxAttempts() : properties.authMaxAttempts();
+    }
+
+    private Duration windowFor(String path) {
+        return path.equals("/api/v1/public/contact") ? properties.contactWindow() : properties.authWindow();
     }
 
     private void cleanExpiredBuckets(Instant now) {

@@ -1,14 +1,13 @@
 spring:
   config:
-    # For local execution, copy this file to application-local.yml or keep an
-    # ignored application-local.yml containing local secrets. The optional
-    # import lets SPRING_PROFILES_ACTIVE=local.example use that file without
-    # committing credentials to this example.
+    # Reuse the developer's ignored local datasource and provider settings when
+    # this example profile is selected. Environment variables can still override them.
     import: optional:classpath:application-local.yml
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/merchtyl}
+    # Safe fallback used only when application-local.yml does not provide a datasource.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/merchtyl}
     username: ${SPRING_DATASOURCE_USERNAME:merchtyl}
-    password: ${SPRING_DATASOURCE_PASSWORD:}
+    password: ${SPRING_DATASOURCE_PASSWORD:merchtyl_dev_password}
 
 management:
   endpoint:
@@ -28,7 +27,7 @@ merchtyl:
     secret: ${MERCHTYL_JWT_SECRET:replace-with-a-local-secret-at-least-32-characters}
   security:
     cors:
-      allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080
+      allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1.nip.io:5173,http://localhost:8080
   testing:
     user-provisioning:
       enabled: true
@@ -41,6 +40,9 @@ merchtyl:
     resend:
       enabled: ${RESEND_ENABLED:false}
       api-key: ${RESEND_API_KEY:}
+  contact:
+    email-to: ${MERCHTYL_CONTACT_EMAIL_TO:adviamcreatives@gmail.com}
+    email-from: ${MERCHTYL_CONTACT_EMAIL_FROM:onboarding@resend.dev}
 
 springdoc:
   api-docs:

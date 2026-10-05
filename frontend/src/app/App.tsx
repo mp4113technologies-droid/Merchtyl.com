@@ -139,7 +139,7 @@ import { MerchtylLogo } from './MerchtylLogo';
 import { useDeviceEnvironment } from './deviceEnvironment';
 import { isMobileManagementRoute, isMobileNavigationRoute } from './mobileAccessPolicy';
 import { MobileManagementRouteGuard, MobilePortalGuard } from './MobileAccessGuards';
-import { PublicComingSoonPage } from '../features/public/PublicComingSoonPage';
+import { PublicLandingPage } from '../features/public/PublicLandingPage';
 import { registerSessionKeys } from '../features/registersessions/registerSessionKeys';
 import { activeSessionAllowsPos, posRouteForRegisterType, type PosRegisterType } from '../features/pos/posRouting';
 import { useBusinessDayBoundaryRefresh } from '../features/eod/useBusinessDayBoundaryRefresh';
@@ -190,7 +190,7 @@ function PortalBoundary({ children }: { children: React.ReactNode }) {
   const { portalContext: context, merchant, loading, error } = useMerchantPortal();
   const location = useLocation();
   const merchantPortal = context.type === 'MERCHANT' || (context.type === 'DEVELOPMENT' && Boolean(context.merchantSlug));
-  if (context.type === 'PUBLIC') return <PublicComingSoonPage />;
+  if (context.type === 'PUBLIC') return <PublicLandingPage />;
   if (context.type === 'UNKNOWN') return <UnknownPortal />;
   const platformPublicAuthPath = ['/login', '/forgot-password', '/reset-password', '/activate-platform-admin']
     .includes(location.pathname);
