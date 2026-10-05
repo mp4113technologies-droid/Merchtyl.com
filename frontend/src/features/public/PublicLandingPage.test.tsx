@@ -85,6 +85,11 @@ describe('PublicLandingPage', () => {
     mockApi(() => response({}, 202));
     render(<PublicLandingPage />);
     expect(document.querySelectorAll('section')).toHaveLength(8);
+    expect(document.querySelector('.hero-showcase-grid')).toBeInTheDocument();
+    expect(document.querySelectorAll('.hero-pos-card')).toHaveLength(2);
+    expect(document.querySelector('.hero-receipt')).toBeInTheDocument();
+    expect(document.querySelectorAll('.product-visual')).toHaveLength(4);
+    expect(document.querySelector('.quote-form-grid')).toBeInTheDocument();
     expect(document.querySelector('meta[property="og:url"]')).toHaveAttribute('content', 'https://merchtyl.com/');
     await waitFor(() => expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute('href', 'https://merchtyl.com/'));
   });

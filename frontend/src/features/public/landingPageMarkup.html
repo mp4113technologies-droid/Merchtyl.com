@@ -459,25 +459,23 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(5,104,238,.28);ou
 a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3px}
 ::placeholder{color:#7A8A9C}
 @media (max-width:900px){.navlinks{display:none !important}}
-@media (max-width:1180px){.hero-receipt{position:relative !important;left:auto !important;bottom:auto !important;transform:none !important;margin:-48px auto 0 !important}}
-@media (max-width:640px){.mk{zoom:.62}.hero-stage{zoom:.6}}
 </style>
 </div>
 
 <div style="min-height: 100vh; background: #FFFFFF" data-canvas-width="1440" data-canvas-height="7900">
 
 <header style="position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,0.94); backdrop-filter: saturate(160%) blur(12px); border-bottom: 1px solid #E3EAF2">
-<div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px">
-<a href="#top" aria-label="Merchtyl home" style="display: flex; align-items: center"><img src="/landing/merchtyl-logo.svg" alt="Merchtyl" style="height: 46px; width: auto; display: block; margin-left: -12px"></a>
+<div class="landing-header-inner" style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px">
+<a class="landing-header-logo" href="#top" aria-label="Merchtyl home" style="display: flex; align-items: center"><img src="/landing/merchtyl-logo.svg" alt="Merchtyl" style="height: 46px; width: auto; display: block; margin-left: -12px"></a>
 <nav class="navlinks" aria-label="Main" style="display: flex; align-items: center; gap: 32px; font-size: 15px; font-weight: 500">
 <a class="navlink" href="#product" style="color: #2A3B4F; text-decoration: none">Product</a>
 <a class="navlink" href="#eod" style="color: #2A3B4F; text-decoration: none">End of day</a>
 <a class="navlink" href="#how-it-works" style="color: #2A3B4F; text-decoration: none">How it works</a>
 <a class="navlink" href="#quote" style="color: #2A3B4F; text-decoration: none">Pricing</a>
 </nav>
-<div style="display: flex; align-items: center; gap: 20px">
+<div class="landing-header-actions" style="display: flex; align-items: center; gap: 20px">
 <a class="navlink navlinks" href="https://platform.merchtyl.com/login" style="color: #2A3B4F; text-decoration: none; font-size: 15px; font-weight: 500">Log in</a>
-<a class="btn-primary" href="#quote" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; background: #0568EE; color: #FFFFFF; text-decoration: none; font-size: 15px; font-weight: 600">Get a quote</a>
+<a class="btn-primary landing-header-cta" href="#quote" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; background: #0568EE; color: #FFFFFF; text-decoration: none; font-size: 15px; font-weight: 600">Get a quote</a>
 </div>
 </div>
 </header>
@@ -500,9 +498,9 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 </div>
 
 <div class="hero-stage" style="max-width: 1200px; margin: 64px auto 0; padding: 0 clamp(20px, 4vw, 32px); position: relative">
-<div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px">
+<div class="hero-showcase-grid" style="display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px">
 
-<div role="img" aria-label="Merchtyl Retail POS showing a sale with coffee, an energy drink, two scratch tickets and a lottery win" style="width: 540px; flex: none; border-radius: 14px; background: #FFFFFF; border: 1px solid #D5E0EC; box-shadow: 0 1px 2px rgba(11,31,51,0.06), 0 28px 56px -16px rgba(11,31,51,0.22); overflow: hidden; text-align: left">
+<div class="hero-pos-card hero-pos-card-retail" role="img" aria-label="Merchtyl Retail POS showing a sale with coffee, an energy drink, two scratch tickets and a lottery win" style="width: 540px; flex: none; border-radius: 14px; background: #FFFFFF; border: 1px solid #D5E0EC; box-shadow: 0 1px 2px rgba(11,31,51,0.06), 0 28px 56px -16px rgba(11,31,51,0.22); overflow: hidden; text-align: left">
 <div style="height: 40px; background: #0B2E52; color: #FFFFFF; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 12px">
 <span style="padding: 3px 9px; border-radius: 6px; background: rgba(255,255,255,0.14); font-weight: 600">R1 · Retail</span>
 <span style="font-weight: 600">Maple Street Market</span>
@@ -563,7 +561,7 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 </div>
 </div>
 
-<div role="img" aria-label="Merchtyl Restaurant POS showing a phone order with a cheeseburger, poutine and pizza slices, plus the pickup queue" style="width: 540px; flex: none; margin-top: 40px; border-radius: 14px; background: #FFFFFF; border: 1px solid #D5E0EC; box-shadow: 0 1px 2px rgba(11,31,51,0.06), 0 28px 56px -16px rgba(11,31,51,0.22); overflow: hidden; text-align: left">
+<div class="hero-pos-card hero-pos-card-restaurant" role="img" aria-label="Merchtyl Restaurant POS showing a phone order with a cheeseburger, poutine and pizza slices, plus the pickup queue" style="width: 540px; flex: none; margin-top: 40px; border-radius: 14px; background: #FFFFFF; border: 1px solid #D5E0EC; box-shadow: 0 1px 2px rgba(11,31,51,0.06), 0 28px 56px -16px rgba(11,31,51,0.22); overflow: hidden; text-align: left">
 <div style="height: 40px; background: #0B2E52; color: #FFFFFF; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 12px">
 <span style="padding: 3px 9px; border-radius: 6px; background: rgba(255,255,255,0.14); font-weight: 600">R2 · Food service</span>
 <span style="font-weight: 600">Maple Street Market</span>
@@ -715,7 +713,7 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 <li style="display: flex; gap: 12px; align-items: flex-start"><span style="flex: none; width: 22px; height: 22px; border-radius: 999px; background: #EAF2FD; color: #0568EE; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Hold a sale and serve the next customer</span></li>
 </ul>
 </div>
-<div style="flex: 1 1 520px; min-width: 0; background: #EEF4FB; border-radius: 28px; padding: clamp(20px, 3.4vw, 44px); display: flex; justify-content: center">
+<div class="product-visual" style="flex: 1 1 520px; min-width: 0; background: #EEF4FB; border-radius: 28px; padding: clamp(20px, 3.4vw, 44px); display: flex; justify-content: center">
 <div class="mk" role="img" aria-label="Checkout screen showing a multi-buy deal, a container deposit, a custom item and a payment split between debit and cash" style="width: 480px; flex: none; background: #FFFFFF; border-radius: 16px; border: 1px solid #D5E0EC; box-shadow: 0 24px 48px -18px rgba(11,31,51,0.22); overflow: hidden">
 <div style="padding: 16px 20px; border-bottom: 1px solid #E6EDF4; display: flex; justify-content: space-between; align-items: center">
 <span style="font-size: 15px; font-weight: 600; color: #0B1F33">Checkout</span>
@@ -761,7 +759,7 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 </div>
 
 <div style="margin-top: clamp(72px, 9vw, 120px); display: flex; flex-wrap: wrap-reverse; align-items: center; gap: 64px">
-<div style="flex: 1 1 520px; min-width: 0; background: #EEF4FB; border-radius: 28px; padding: clamp(20px, 3.4vw, 44px); display: flex; justify-content: center">
+<div class="product-visual" style="flex: 1 1 520px; min-width: 0; background: #EEF4FB; border-radius: 28px; padding: clamp(20px, 3.4vw, 44px); display: flex; justify-content: center">
 <div class="mk" role="img" aria-label="Restaurant menu with an item dialog for a cheeseburger: single size, no tomato, extra bacon and a note" style="width: 480px; height: 392px; flex: none; position: relative">
 <div style="position: absolute; inset: 0; background: #FFFFFF; border-radius: 16px; border: 1px solid #D5E0EC; box-shadow: 0 24px 48px -18px rgba(11,31,51,0.22); overflow: hidden; padding: 16px">
 <div style="display: flex; gap: 6px; font-size: 12px; font-weight: 500; color: #2A3B4F">
@@ -834,7 +832,7 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 <li style="display: flex; gap: 12px; align-items: flex-start"><span style="flex: none; width: 22px; height: 22px; border-radius: 999px; background: #EAF2FD; color: #0568EE; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Sold, wins and net lottery in your daily reports</span></li>
 </ul>
 </div>
-<div style="flex: 1 1 520px; min-width: 0; background: #EEF4FB; border-radius: 28px; padding: clamp(20px, 3.4vw, 44px); display: flex; justify-content: center">
+<div class="product-visual" style="flex: 1 1 520px; min-width: 0; background: #EEF4FB; border-radius: 28px; padding: clamp(20px, 3.4vw, 44px); display: flex; justify-content: center">
 <div class="mk" role="img" aria-label="Today's lottery card showing net lottery of 410 dollars from 1,240 sold and 830 in wins, next to a receipt where a 5 dollar win is taken off a 30 dollar ticket" style="width: 480px; height: 360px; flex: none; position: relative">
 <div style="position: absolute; left: 0; top: 0; width: 310px; background: #FFFFFF; border-radius: 16px; border: 1px solid #D5E0EC; box-shadow: 0 24px 48px -18px rgba(11,31,51,0.22); padding: 22px; color: #0B1F33">
 <div style="font-size: 13px; font-weight: 600; color: #3B4D61">Today’s lottery</div>
@@ -895,7 +893,7 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 </ul>
 <p style="margin: 24px 0 0; font-size: 15px; line-height: 1.55; color: #A9BFD8">Need to reopen a day? The new report is saved as a revision, so the original stays on record.</p>
 </div>
-<div style="flex: 1 1 540px; min-width: 0; display: flex; justify-content: center">
+<div class="product-visual product-visual-eod" style="flex: 1 1 540px; min-width: 0; display: flex; justify-content: center">
 <div class="mk" role="img" aria-label="Business day close-out for Saturday October 3 with three registers: one balanced, one short two dollars with a reason, one over fifty cents" style="width: 540px; flex: none; background: #FFFFFF; border-radius: 20px; padding: 24px; color: #0B1F33; box-shadow: 0 40px 80px -24px rgba(0,0,0,0.5)">
 <div style="display: flex; justify-content: space-between; align-items: flex-start">
 <div><div style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6B7E">Business day</div><div style="margin-top: 4px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em">Sat, Oct 3, 2026</div></div>
@@ -1096,7 +1094,7 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 <h3 id="form-title" style="margin: 0; font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: #0B1F33">Request your quote</h3>
 <p style="margin: 6px 0 0; font-size: 15px; color: #44566A">Takes about a minute. Fields marked * are required.</p>
 </div>
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 16px">
+<div class="quote-form-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 16px">
 <div>
 <label for="q-name" style="display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: #0B1F33">Full name *</label>
 <input id="q-name" name="name" type="text" minlength="2" maxlength="120" autocomplete="name" required="required" style="width: 100%; height: 48px; padding: 0 14px; border-radius: 10px; border: 1px solid #B8C7D8; background: #FFFFFF; font-family: inherit; font-size: 16px; color: #0B1F33">
@@ -1237,7 +1235,6 @@ a:focus-visible,button:focus-visible{outline:3px solid #0568EE;outline-offset:3p
 
 </div>
 </div>
-
 
 
 
