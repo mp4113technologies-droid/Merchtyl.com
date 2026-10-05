@@ -2851,7 +2851,8 @@ export type PublicContactPayload = {
   email: string;
   phone?: string;
   businessType: 'convenience' | 'retail' | 'takeout' | 'retail_restaurant' | 'other';
-  province?: string;
+  countryCode: 'CA' | 'US';
+  regionCode: string;
   stores?: '1' | '2–3' | '4–10' | 'More than 10';
   registers?: '1' | '2' | '3–5' | '6 or more';
   needs: Array<'Retail POS' | 'Restaurant POS' | 'Lottery' | 'Inventory and reporting'>;
@@ -2859,6 +2860,9 @@ export type PublicContactPayload = {
   demo: boolean;
   website?: string;
 };
+
+export type PublicCountry = { code: 'CA' | 'US'; name: string; regionLabel: string };
+export type PublicRegion = { code: string; name: string };
 
 export type PublicContactResponse = {
   success: boolean;

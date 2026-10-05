@@ -1695,6 +1695,14 @@ export function submitPublicContact(payload: import('./types').PublicContactPayl
   });
 }
 
+export function getPublicCountries() {
+  return request<import('./types').PublicCountry[]>('/public/geography/countries');
+}
+
+export function getPublicRegions(countryCode: string) {
+  return request<import('./types').PublicRegion[]>(`/public/geography/countries/${encodeURIComponent(countryCode)}/regions`);
+}
+
 export function register(payload: AuthRegisterPayload) {
   return request<AuthResponse>('/auth/register', {
     method: 'POST',

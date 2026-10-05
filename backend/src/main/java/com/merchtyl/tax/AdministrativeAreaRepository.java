@@ -8,6 +8,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface AdministrativeAreaRepository extends JpaRepository<AdministrativeArea, UUID>, JpaSpecificationExecutor<AdministrativeArea> {
@@ -25,4 +26,6 @@ public interface AdministrativeAreaRepository extends JpaRepository<Administrati
 
     @EntityGraph(attributePaths = {"country", "defaultTimezone", "defaultTaxRegion"})
     Optional<AdministrativeArea> findByCountryAndCodeIgnoreCase(Country country, String code);
+
+    List<AdministrativeArea> findByCountryAndActiveTrueOrderByDisplayOrderAscNameAsc(Country country);
 }

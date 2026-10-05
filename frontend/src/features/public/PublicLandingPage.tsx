@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { submitPublicContact } from '../../api/client';
-import type { PublicContactPayload } from '../../api/types';
+import { getPublicCountries, getPublicRegions, submitPublicContact } from '../../api/client';
+import type { PublicContactPayload, PublicCountry } from '../../api/types';
 import landingMarkup from './landingPageMarkup.html?raw';
 import './publicLandingPage.css';
 
 type SubmitState = 'idle' | 'submitting' | 'success' | 'error';
 
-const pageTitle = 'Merchtyl — Retail and restaurant POS for Canadian stores';
-const pageDescription = 'One system for Canadian retail, restaurant, lottery, inventory, registers, and end-of-day reporting.';
+const pageTitle = 'Merchtyl — Retail and restaurant POS for Canada and the United States';
+const pageDescription = 'One system for merchants across Canada and the United States: retail, restaurant, lottery, inventory, registers, and end-of-day reporting.';
 
 function setMeta(selector: string, attribute: 'name' | 'property', key: string, content: string) {
   let element = document.head.querySelector<HTMLMetaElement>(selector);
@@ -27,7 +27,8 @@ function formPayload(form: HTMLFormElement): PublicContactPayload {
     email: String(values.get('email') ?? '').trim(),
     phone: String(values.get('phone') ?? '').trim() || undefined,
     businessType: String(values.get('business_type') ?? '') as PublicContactPayload['businessType'],
-    province: String(values.get('province') ?? '').trim() || undefined,
+    countryCode: String(values.get('countryCode') ?? '') as PublicContactPayload['countryCode'],
+    regionCode: String(values.get('regionCode') ?? '').trim(),
     stores: (String(values.get('stores') ?? '') || undefined) as PublicContactPayload['stores'],
     registers: (String(values.get('registers') ?? '') || undefined) as PublicContactPayload['registers'],
     needs: values.getAll('needs').map(String) as PublicContactPayload['needs'],
@@ -66,6 +67,48 @@ export function PublicLandingPage() {
     const form = root.querySelector<HTMLFormElement>('[data-public-contact-form]');
     const reset = root.querySelector<HTMLButtonElement>('[data-contact-reset]');
     if (!form || !reset) return;
+    const country = form.elements.namedItem('countryCode') as HTMLSelectElement | null;
+    const region = form.elements.namedItem('regionCode') as HTMLSelectElement | null;
+    const regionLabel = form.querySelector<HTMLElement>('[data-region-label]');
+    let countries: PublicCountry[] = [];
+    let regionRequest = 0;
+
+    const setOptions = (select: HTMLSelectElement, placeholder: string,
+      options: Array<{ code: string; name: string }>) => {
+      select.replaceChildren(new Option(placeholder, ''), ...options.map(option => new Option(option.name, option.code)));
+    };
+    const loadCountries = async () => {
+      if (!country) return;
+      try {
+        countries = await getPublicCountries();
+        country.setCustomValidity('');
+        setOptions(country, 'Select country', countries);
+      } catch {
+        country.setCustomValidity('Countries could not be loaded. Please refresh and try again.');
+      }
+    };
+    const onCountryChange = async () => {
+      if (!country || !region) return;
+      const requestId = ++regionRequest;
+      region.disabled = true;
+      country.setCustomValidity('');
+      setOptions(region, country.value ? 'Loading…' : 'Select country first', []);
+      const selected = countries.find(item => item.code === country.value);
+      if (regionLabel) regionLabel.textContent = selected ? `${selected.regionLabel} *` : 'Province / Territory or State *';
+      if (!selected) return;
+      try {
+        const regions = await getPublicRegions(selected.code);
+        if (requestId !== regionRequest || country.value !== selected.code) return;
+        setOptions(region, selected.code === 'CA' ? 'Select province or territory' : 'Select state', regions);
+        region.disabled = false;
+      } catch {
+        if (requestId !== regionRequest) return;
+        setOptions(region, 'Regions could not be loaded', []);
+        country.setCustomValidity('Regions could not be loaded. Please try selecting the country again.');
+      }
+    };
+    void loadCountries();
+    country?.addEventListener('change', onCountryChange);
 
     const honeypot = document.createElement('div');
     honeypot.className = 'landing-honeypot';
@@ -99,6 +142,7 @@ export function PublicLandingPage() {
           ? `Thanks, ${firstName} — we’ve got your details.`
           : 'Thanks — we’ve got your details.';
         form.reset();
+        void onCountryChange();
         setSubmitState('success');
       } catch {
         status.textContent = "We couldn't send your message right now. Please try again in a moment.";
@@ -115,6 +159,7 @@ export function PublicLandingPage() {
     return () => {
       form.removeEventListener('submit', onSubmit);
       reset.removeEventListener('click', onReset);
+      country?.removeEventListener('change', onCountryChange);
     };
   }, []);
 

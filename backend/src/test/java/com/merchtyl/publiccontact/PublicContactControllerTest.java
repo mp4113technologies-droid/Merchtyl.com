@@ -46,7 +46,7 @@ class PublicContactControllerTest {
     private static String validJson() {
         return """
                 {"name":"Ada Lovelace","business":"Analytical Engines","email":"visitor@example.test",
-                 "businessType":"retail","province":"New Brunswick","stores":"1","registers":"2",
+                 "businessType":"retail","countryCode":"CA","regionCode":"NB","stores":"1","registers":"2",
                  "needs":["Retail POS"],"message":"Hello","demo":true,"website":""}
                 """;
     }
