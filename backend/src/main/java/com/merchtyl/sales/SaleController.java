@@ -56,8 +56,8 @@ public class SaleController {
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_VIEW)")
-    SaleResponse get(@PathVariable UUID id) {
-        return saleService.get(id);
+    SaleResponse get(@PathVariable UUID id, Authentication authentication) {
+        return saleService.get(id, authentication);
     }
 
     @GetMapping
@@ -70,8 +70,9 @@ public class SaleController {
             @RequestParam(required = false) UUID createdBy,
             @RequestParam(required = false) SaleStatus status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return saleService.search(new SaleSearchRequest(storeId, registerId, registerSessionId, createdBy, status, page, size));
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return saleService.search(new SaleSearchRequest(storeId, registerId, registerSessionId, createdBy, status, page, size), authentication);
     }
 
     @PostMapping("/{id}/items")

@@ -70,7 +70,7 @@ class LotterySaleControllerAuthorizationTest {
     @Test
     void recordRequiresLotterySaleRecordPermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/sales")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "lottery-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(SALE_JSON))
@@ -89,7 +89,7 @@ class LotterySaleControllerAuthorizationTest {
                 false));
 
         mockMvc.perform(post("/api/v1/lottery/sales")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_SALE_RECORD")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_SALE_RECORD")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "lottery-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(SALE_JSON))
@@ -101,7 +101,7 @@ class LotterySaleControllerAuthorizationTest {
     @Test
     void cancelRequiresLotterySaleCancelPermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/sales/{id}/cancel", "00000000-0000-0000-0000-000000000900")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_SALE_RECORD")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_SALE_RECORD")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "cancel-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Customer request\"}"))
@@ -120,7 +120,7 @@ class LotterySaleControllerAuthorizationTest {
                 false));
 
         mockMvc.perform(post("/api/v1/lottery/sales/{id}/cancel", "00000000-0000-0000-0000-000000000900")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_SALE_CANCEL")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_SALE_CANCEL")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "cancel-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Customer request\"}"))
@@ -141,7 +141,7 @@ class LotterySaleControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/lottery/sales")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk());
     }
 
@@ -170,7 +170,7 @@ class LotterySaleControllerAuthorizationTest {
                         .param("occurredTo", "2026-07-28T23:59:59Z")
                         .param("page", "1")
                         .param("size", "10")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<LotterySaleSearchRequest> request = ArgumentCaptor.forClass(LotterySaleSearchRequest.class);

@@ -2,6 +2,7 @@ package com.merchtyl.config;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
@@ -27,10 +28,10 @@ public record SecurityProperties(
     @ConstructorBinding
     public SecurityProperties {
         cors = cors == null ? new Cors(List.of(), List.of()) : cors;
-        rateLimit = rateLimit == null ? new RateLimit(true, 20, Duration.ofMinutes(1), 5, Duration.ofMinutes(10)) : rateLimit;
+        rateLimit = rateLimit == null ? new RateLimit(true, 5, Duration.ofMinutes(1), 3, Duration.ofHours(1), 5, Duration.ofMinutes(10)) : rateLimit;
         temporaryPassword = temporaryPassword == null ? new TemporaryPassword(20, 24, 10) : temporaryPassword;
         login = login == null ? new Login(3, true) : login;
-        passwordReset = passwordReset == null ? new PasswordReset(30, 5, 5) : passwordReset;
+        passwordReset = passwordReset == null ? new PasswordReset(15, 5, 5) : passwordReset;
     }
 
     public record Cors(List<String> allowedOrigins, List<String> allowedOriginPatterns) {
@@ -57,21 +58,32 @@ public record SecurityProperties(
             boolean enabled,
             @Min(1) int authMaxAttempts,
             @NotNull Duration authWindow,
+            @Min(1) int passwordResetMaxAttempts,
+            @NotNull Duration passwordResetWindow,
             @Min(1) int contactMaxAttempts,
             @NotNull Duration contactWindow
     ) {
         public RateLimit(boolean enabled, int authMaxAttempts, Duration authWindow) {
-            this(enabled, authMaxAttempts, authWindow, 5, Duration.ofMinutes(10));
+            this(enabled, authMaxAttempts, authWindow, 3, Duration.ofHours(1), 5, Duration.ofMinutes(10));
+        }
+
+        public RateLimit(boolean enabled, int authMaxAttempts, Duration authWindow,
+                         int contactMaxAttempts, Duration contactWindow) {
+            this(enabled, authMaxAttempts, authWindow, 3, Duration.ofHours(1), contactMaxAttempts, contactWindow);
         }
 
         public RateLimit {
             authWindow = authWindow == null ? Duration.ofMinutes(1) : authWindow;
+            passwordResetWindow = passwordResetWindow == null ? Duration.ofHours(1) : passwordResetWindow;
             contactWindow = contactWindow == null ? Duration.ofMinutes(10) : contactWindow;
             if (authWindow.isZero() || authWindow.isNegative()) {
                 throw new IllegalArgumentException("authWindow must be positive");
             }
             if (contactWindow.isZero() || contactWindow.isNegative()) {
                 throw new IllegalArgumentException("contactWindow must be positive");
+            }
+            if (passwordResetWindow.isZero() || passwordResetWindow.isNegative()) {
+                throw new IllegalArgumentException("passwordResetWindow must be positive");
             }
         }
     }
@@ -99,7 +111,7 @@ public record SecurityProperties(
     public record Login(@Min(1) int maxFailedAttempts, boolean accountLockEmailEnabled) {
     }
 
-    public record PasswordReset(@Min(1) long tokenExpiryMinutes, @Min(1) int forgotMaxPerHour, @Min(1) int adminMaxPerHour) {
+    public record PasswordReset(@Min(1) @Max(15) long tokenExpiryMinutes, @Min(1) int forgotMaxPerHour, @Min(1) int adminMaxPerHour) {
         public Duration tokenTtl() {
             return Duration.ofMinutes(tokenExpiryMinutes);
         }

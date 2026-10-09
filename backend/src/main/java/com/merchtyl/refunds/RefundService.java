@@ -34,6 +34,7 @@ import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.PermissionCode;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import jakarta.persistence.OptimisticLockException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -77,6 +78,7 @@ public class RefundService {
     private final RefundProperties properties;
     private final TransactionOperations transactions;
     private final Clock clock;
+    @Autowired private StoreAccessService storeAccessService;
 
     @Autowired
     public RefundService(
@@ -158,6 +160,7 @@ public class RefundService {
         }
         Sale sale = saleRepository.findByIdForUpdate(returnRecord.getOriginalSale().getId())
                 .orElseThrow(() -> new NotFoundException("Original sale not found"));
+        if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, sale.getStore().getId());
         requireRefundableSale(sale);
         requireOpenRegisterSession(sale);
         validateUserCanUseSession(actor, sale, authentication);
@@ -191,21 +194,25 @@ public class RefundService {
     }
 
     @Transactional(readOnly = true)
-    public RefundResponse get(UUID id) {
+    public RefundResponse get(UUID id, Authentication authentication) {
         Refund refund = refundRepository.findById(required(id, "refund id"))
                 .orElseThrow(() -> new NotFoundException("Refund not found"));
+        storeAccessService.requireStoreAccess(authentication, refund.getStore().getId());
         return RefundResponse.from(refund);
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<RefundResponse> search(RefundSearchRequest request) {
+    public PageResponse<RefundResponse> search(RefundSearchRequest request, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        if (request.storeId() != null) storeAccessService.requireStoreAccess(authentication, request.storeId());
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var page = refundRepository.findAll(
                 Specification.where(equalUuid("originalSale", "id", request.originalSaleId()))
                         .and(equalUuid("returnRecord", "id", request.returnId()))
                         .and(equalUuid("store", "id", request.storeId()))
-                        .and(equalUuid("registerSession", "id", request.registerSessionId())),
+                        .and(equalUuid("registerSession", "id", request.registerSessionId()))
+                        .and((root, query, cb) -> cb.equal(root.get("store").get("tenantId"), tenantId)),
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.DESC, "occurredAt").and(Sort.by(Sort.Direction.DESC, "id"))));
         return new PageResponse<>(

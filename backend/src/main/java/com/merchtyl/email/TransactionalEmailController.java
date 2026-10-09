@@ -58,7 +58,7 @@ public class TransactionalEmailController {
         return emailDeliveryService.providerStatus();
     }
 
-    @PostMapping("/email/test")
+    @PostMapping("/email/diagnostics/send")
     @PreAuthorize("@authorizationService.hasPlatformPermission(authentication, T(com.merchtyl.security.PermissionCode).EMAIL_DELIVERY_RETRY)")
     @Operation(summary = "Send a platform transactional email configuration test")
     EmailDeliveryResponse sendTestEmail(@Valid @RequestBody TestEmailRequest request, Authentication authentication) {

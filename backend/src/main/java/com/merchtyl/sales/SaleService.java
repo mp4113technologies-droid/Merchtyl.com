@@ -484,16 +484,23 @@ public class SaleService {
     }
 
     @Transactional(readOnly = true)
-    public SaleResponse get(UUID id) {
-        return SaleResponse.from(findSale(id));
+    public SaleResponse get(UUID id, Authentication authentication) {
+        Sale sale = findSale(id);
+        storeAccessService.requireStoreAccess(authentication, sale.getStore().getId());
+        return SaleResponse.from(sale);
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<SaleResponse> search(SaleSearchRequest request) {
+    public PageResponse<SaleResponse> search(SaleSearchRequest request, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        if (request.storeId() != null) {
+            storeAccessService.requireStoreAccess(authentication, request.storeId());
+        }
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var page = saleRepository.findAll(
-                specification(request),
+                specification(request).and((root, query, criteriaBuilder) ->
+                        criteriaBuilder.equal(root.get("store").get("tenantId"), tenantId)),
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.DESC, "updatedAt").and(Sort.by(Sort.Direction.DESC, "id"))));
         return new PageResponse<>(

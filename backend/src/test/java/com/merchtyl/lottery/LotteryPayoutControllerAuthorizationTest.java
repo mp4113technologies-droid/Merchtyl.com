@@ -77,7 +77,7 @@ class LotteryPayoutControllerAuthorizationTest {
     @Test
     void createRequiresPayoutRecordPermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/payouts")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
                 .andExpect(status().isForbidden());
@@ -91,14 +91,14 @@ class LotteryPayoutControllerAuthorizationTest {
         when(lotteryPayoutService.validate(any(), any(), any())).thenReturn(response(LotteryPayoutStatus.VALIDATED));
 
         mockMvc.perform(post("/api/v1/lottery/payouts")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"));
 
         mockMvc.perform(post("/api/v1/lottery/payouts/{id}/validate", PAYOUT_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -116,7 +116,7 @@ class LotteryPayoutControllerAuthorizationTest {
     @Test
     void rejectRequiresPayoutApprovePermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/payouts/{id}/reject", PAYOUT_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"version\":0,\"reason\":\"Ticket failed validation\"}"))
                 .andExpect(status().isForbidden());
@@ -136,7 +136,7 @@ class LotteryPayoutControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/lottery/payouts")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(PAYOUT_ID.toString()));
     }
@@ -155,7 +155,7 @@ class LotteryPayoutControllerAuthorizationTest {
         mockMvc.perform(get("/api/v1/lottery/payouts/available-cash")
                         .param("registerSessionId", SESSION_ID.toString())
                         .param("operatorId", OPERATOR_ID.toString())
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.availablePayoutCash").value(175.00));
     }
@@ -164,7 +164,7 @@ class LotteryPayoutControllerAuthorizationTest {
     void completeCashRequiresPayoutRecordPermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/payouts/{id}/complete-cash", PAYOUT_ID)
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "pay-key")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(lotteryPayoutService, never()).completeCashIdempotently(any(), any(), any());
@@ -174,7 +174,7 @@ class LotteryPayoutControllerAuthorizationTest {
     void reverseRequiresPayoutApprovePermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/payouts/{id}/reverse", PAYOUT_ID)
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "reverse-key")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Manager correction\"}"))
                 .andExpect(status().isForbidden());
@@ -193,7 +193,7 @@ class LotteryPayoutControllerAuthorizationTest {
 
         mockMvc.perform(post("/api/v1/lottery/payouts/{id}/reverse", PAYOUT_ID)
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "reverse-key")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_PAYOUT_APPROVE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_PAYOUT_APPROVE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Manager correction\"}"))
                 .andExpect(status().isOk())
@@ -212,7 +212,7 @@ class LotteryPayoutControllerAuthorizationTest {
 
         mockMvc.perform(post("/api/v1/lottery/payouts/{id}/complete-cash", PAYOUT_ID)
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "pay-key")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_PAYOUT_RECORD"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAID"))
                 .andExpect(result -> assertThat(result.getResponse().getHeader("Idempotency-Replayed")).isEqualTo("true"));

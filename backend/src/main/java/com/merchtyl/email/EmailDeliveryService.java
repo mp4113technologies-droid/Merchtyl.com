@@ -85,25 +85,7 @@ public class EmailDeliveryService {
             audit(event.platformActorId(), AuditAction.ACTIVATION_EMAIL_QUEUED, deliveryId, event.tenantId(), event.recipient(), null);
             sendOwnerInvitationDelivery(deliveryId, event, event.rawToken());
         } catch (RuntimeException exception) {
-            log.error("Failed to process owner invitation email event for tenant {}", event.tenantId(), exception);
-        }
-    }
-
-    @TransactionalEventListener
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void sendOwnerTemporaryCredentialsAfterCommit(OwnerTemporaryCredentialsEmailEvent event) {
-        try {
-            UUID deliveryId = createDelivery(event.tenantId(), null, event.recipient(), event.templateCode(),
-                    event.platformActorId(), event.reason(), event.notes());
-            jdbcTemplate.update("""
-                    update security_users
-                    set credentials_delivery_status = 'PENDING', updated_at = now(), version = version + 1
-                    where id = ?
-                    """, event.ownerUserId());
-            audit(event.platformActorId(), AuditAction.TEMPORARY_OWNER_CREDENTIALS_EMAIL_QUEUED, deliveryId, event.tenantId(), event.recipient(), null);
-            sendOwnerTemporaryCredentialsDelivery(deliveryId, event);
-        } catch (RuntimeException exception) {
-            log.error("Failed to process owner temporary credentials email event for tenant {}", event.tenantId(), exception);
+            log.error("Failed to process owner invitation email event for tenant {} exception_type={}", event.tenantId(), exception.getClass().getName());
         }
     }
 
@@ -116,7 +98,7 @@ public class EmailDeliveryService {
             audit(event.platformActorId(), AuditAction.MERCHANT_NOTIFICATION_EMAIL_QUEUED, deliveryId, event.tenantId(), event.recipient(), null);
             sendMerchantNotificationDelivery(deliveryId, event);
         } catch (RuntimeException exception) {
-            log.error("Failed to process merchant notification email event for tenant {}", event.tenantId(), exception);
+            log.error("Failed to process merchant notification email event for tenant {} exception_type={}", event.tenantId(), exception.getClass().getName());
         }
     }
 
@@ -140,10 +122,9 @@ public class EmailDeliveryService {
     @Transactional
     public EmailDeliveryResponse retryDelivery(UUID deliveryId, UUID actorId) {
         EmailDeliveryResponse delivery = getDelivery(deliveryId);
-        log.info("email_event event=Email Retried delivery_id={} provider={} recipient={} template={} tenant_id={} attempt_count={}",
+        log.info("email_event event=Email Retried delivery_id={} provider={} recipient=[REDACTED] template={} tenant_id={} attempt_count={}",
                 deliveryId,
                 delivery.provider(),
-                delivery.recipient(),
                 delivery.templateCode(),
                 delivery.tenantId(),
                 delivery.attemptCount() + 1);
@@ -207,78 +188,7 @@ public class EmailDeliveryService {
     }
 
     private EmailDeliveryResponse reissueTemporaryCredentialsForRetry(EmailDeliveryResponse failedDelivery, UUID actorId) {
-        if (failedDelivery.tenantId() == null) {
-            throw new ConflictException("Temporary credentials delivery is not linked to a tenant");
-        }
-        Map<String, Object> owner = jdbcTemplate.queryForMap("""
-                select users.id as owner_user_id, users.email, users.display_name as owner_name,
-                       users.password_change_required, tenants.tenant_code, tenants.display_name as merchant_name,
-                       tenants.status as tenant_status
-                from security_users users
-                join tenants tenants on tenants.id = users.tenant_id
-                where users.tenant_id = ? and lower(users.email) = lower(?)
-                """, failedDelivery.tenantId(), failedDelivery.recipient());
-        String tenantStatus = (String) owner.get("tenant_status");
-        if (List.of("CLOSED", "SUSPENDED", "REJECTED").contains(tenantStatus)) {
-            throw new ConflictException("Temporary credentials cannot be reissued while tenant status is " + tenantStatus);
-        }
-        Boolean passwordChangeRequired = (Boolean) owner.get("password_change_required");
-        if (!Boolean.TRUE.equals(passwordChangeRequired)) {
-            throw new ConflictException("Merchant owner has already completed first-login password change.");
-        }
-
-        UUID ownerUserId = (UUID) owner.get("owner_user_id");
-        Instant now = Instant.now();
-        Instant expiresAt = now.plus(securityProperties.temporaryPassword().expiry());
-        String temporaryPassword = temporaryPasswordGenerator.generate();
-        jdbcTemplate.update("""
-                update security_users
-                set password_hash = ?, enabled = true, password_change_required = true,
-                    temporary_password_issued_at = ?, temporary_password_expires_at = ?,
-                    credentials_issued_at = ?, credentials_delivery_status = 'PENDING',
-                    updated_at = now(), version = version + 1
-                where id = ?
-                """,
-                passwordEncoder.encode(temporaryPassword),
-                timestamp(now),
-                timestamp(expiresAt),
-                timestamp(now),
-                ownerUserId);
-        jdbcTemplate.update("""
-                update security_refresh_tokens
-                set revoked_at = ?, updated_at = now(), version = version + 1
-                where user_id = ? and revoked_at is null and expires_at > ?
-                """, timestamp(now), ownerUserId, timestamp(now));
-        jdbcTemplate.update("""
-                update first_login_password_change_tokens
-                set revoked_at = ?, updated_at = now(), version = version + 1
-                where user_id = ? and used_at is null and revoked_at is null
-                """, timestamp(now), ownerUserId);
-
-        UUID newDeliveryId = createDelivery(
-                failedDelivery.tenantId(),
-                null,
-                failedDelivery.recipient(),
-                EmailTemplateCode.MERCHANT_OWNER_TEMPORARY_CREDENTIALS_RESEND,
-                actorId,
-                "Retry failed temporary credentials delivery by reissue",
-                failedDelivery.requestedNotes());
-        audit(actorId, AuditAction.TEMPORARY_CREDENTIALS_REISSUED, newDeliveryId, failedDelivery.tenantId(), failedDelivery.recipient(),
-                Map.of("ownerUserId", String.valueOf(ownerUserId), "expiresAt", expiresAt.toString(), "retryOfDeliveryId", failedDelivery.id().toString()));
-        sendOwnerTemporaryCredentialsDelivery(newDeliveryId, new OwnerTemporaryCredentialsEmailEvent(
-                failedDelivery.tenantId(),
-                (String) owner.get("tenant_code"),
-                (String) owner.get("merchant_name"),
-                ownerUserId,
-                failedDelivery.recipient(),
-                (String) owner.get("owner_name"),
-                temporaryPassword,
-                expiresAt,
-                EmailTemplateCode.MERCHANT_OWNER_TEMPORARY_CREDENTIALS_RESEND,
-                actorId,
-                "Retry failed temporary credentials delivery by reissue",
-                failedDelivery.requestedNotes()));
-        return getDelivery(newDeliveryId);
+        throw new ConflictException("Plaintext credential delivery is disabled; resend an activation link instead");
     }
 
     @Transactional
@@ -335,29 +245,6 @@ public class EmailDeliveryService {
                 event.templateCode(),
                 Map.of("activationUrl", activationUrl, "tenantCode", event.tenantCode()));
         send(deliveryId, message, event.platformActorId());
-    }
-
-    private void sendOwnerTemporaryCredentialsDelivery(UUID deliveryId, OwnerTemporaryCredentialsEmailEvent event) {
-        String loginUrl = merchantPortalUrl(event.tenantId()) + "/login";
-        RenderedEmailTemplate rendered = templateRenderer.render(event.templateCode(), Map.of(
-                "merchantOperatingName", event.merchantOperatingName(),
-                "ownerName", event.ownerName(),
-                "loginEmail", event.recipient(),
-                "temporaryPassword", event.temporaryPassword(),
-                "loginUrl", loginUrl,
-                "expiresAt", event.expiresAt().toString()));
-        EmailMessage message = message(
-                List.of(new EmailRecipient(event.recipient(), event.ownerName())),
-                rendered,
-                event.templateCode(),
-                Map.of("tenantCode", event.tenantCode()));
-        send(deliveryId, message, event.platformActorId());
-        EmailDeliveryResponse delivery = getDelivery(deliveryId);
-        jdbcTemplate.update("""
-                update security_users
-                set credentials_delivery_status = ?, updated_at = now(), version = version + 1
-                where id = ?
-                """, delivery.status().name(), event.ownerUserId());
     }
 
     private EmailDeliveryResponse resendMerchantNotification(EmailDeliveryResponse delivery, UUID actorId) {
@@ -440,11 +327,10 @@ public class EmailDeliveryService {
                     before.tenantId(),
                     before.recipient(),
                     Map.of("provider", result.provider().name(), "providerMessageId", String.valueOf(result.providerMessageId())));
-            log.info("email_event event=Email Sent delivery_id={} provider={} provider_message_id={} recipient={} template={} tenant_id={} attempt={} duration_ms={}",
+            log.info("email_event event=Email Sent delivery_id={} provider={} provider_message_id={} recipient=[REDACTED] template={} tenant_id={} attempt={} duration_ms={}",
                     deliveryId,
                     result.provider(),
                     result.providerMessageId(),
-                    before.recipient(),
                     before.templateCode(),
                     before.tenantId(),
                     attempt,
@@ -477,11 +363,10 @@ public class EmailDeliveryService {
                 before.tenantId(),
                 before.recipient(),
                 Map.of("status", retryScheduled ? "RETRY_SCHEDULED" : "FAILED", "failureCode", String.valueOf(result.failureCode())));
-        log.warn("email_event event={} delivery_id={} provider={} recipient={} template={} tenant_id={} attempt={} duration_ms={} failure_code={}",
+        log.warn("email_event event={} delivery_id={} provider={} recipient=[REDACTED] template={} tenant_id={} attempt={} duration_ms={} failure_code={}",
                 retryScheduled ? "Email Retried" : "Email Failed",
                 deliveryId,
                 result.provider(),
-                before.recipient(),
                 before.templateCode(),
                 before.tenantId(),
                 attempt,
@@ -531,10 +416,9 @@ public class EmailDeliveryService {
                 actorId,
                 clean(reason, 1000),
                 clean(notes, 2000));
-        log.info("email_event event=Email Queued delivery_id={} provider={} recipient={} template={} tenant_id={}",
+        log.info("email_event event=Email Queued delivery_id={} provider={} recipient=[REDACTED] template={} tenant_id={}",
                 id,
                 emailSender.provider(),
-                normalizeRecipient(recipient),
                 templateCode,
                 tenantId);
         return id;

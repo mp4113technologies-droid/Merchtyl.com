@@ -84,7 +84,7 @@ class LotteryCommissionRuleControllerAuthorizationTest {
     @Test
     void listRequiresLotteryViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/lottery/commission-rules")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(lotteryCommissionRuleService, never()).search(any());
@@ -102,7 +102,7 @@ class LotteryCommissionRuleControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/lottery/commission-rules")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].name").value("Sales commission"))
                 .andExpect(jsonPath("$.content[0].ruleType").value("PERCENT_OF_SALES"));
@@ -111,7 +111,7 @@ class LotteryCommissionRuleControllerAuthorizationTest {
     @Test
     void createRequiresCommissionRuleManagePermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/commission-rules")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RULE_JSON))
                 .andExpect(status().isForbidden());
@@ -124,7 +124,7 @@ class LotteryCommissionRuleControllerAuthorizationTest {
         when(lotteryCommissionRuleService.create(any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/lottery/commission-rules")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_COMMISSION_RULE_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_COMMISSION_RULE_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RULE_JSON))
                 .andExpect(status().isCreated())
@@ -135,7 +135,7 @@ class LotteryCommissionRuleControllerAuthorizationTest {
     @Test
     void updateRequiresCommissionRuleManagePermission() throws Exception {
         mockMvc.perform(put("/api/v1/lottery/commission-rules/{id}", RULE_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RULE_UPDATE_JSON))
                 .andExpect(status().isForbidden());
@@ -146,7 +146,7 @@ class LotteryCommissionRuleControllerAuthorizationTest {
     @Test
     void deleteRequiresCommissionRuleManagePermission() throws Exception {
         mockMvc.perform(delete("/api/v1/lottery/commission-rules/{id}?version=0", RULE_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(lotteryCommissionRuleService, never()).delete(any(), any(), any());

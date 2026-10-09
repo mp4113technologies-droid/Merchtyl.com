@@ -11,4 +11,8 @@ public interface SupplierRepository extends JpaRepository<Supplier, UUID>, JpaSp
     boolean existsByCodeIgnoreCase(String code);
 
     boolean existsByCodeIgnoreCaseAndIdNot(String code, UUID id);
+    java.util.List<Supplier> findAllByTenantId(UUID tenantId);
+    java.util.Optional<Supplier> findByIdAndTenantId(UUID id, UUID tenantId);
+    boolean existsByTenantIdAndCodeIgnoreCase(UUID tenantId, String code);
+    boolean existsByTenantIdAndCodeIgnoreCaseAndIdNot(UUID tenantId, String code, UUID id);
 }

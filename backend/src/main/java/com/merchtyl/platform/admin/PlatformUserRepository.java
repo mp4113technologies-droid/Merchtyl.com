@@ -45,6 +45,15 @@ public class PlatformUserRepository {
         return users.stream().findFirst();
     }
 
+    public Optional<Instant> credentialsInvalidatedAt(String email) {
+        return jdbcTemplate.query("select credentials_invalidated_at from platform_users where lower(email)=lower(?)",
+                        (rs, row) -> {
+                            Timestamp value = rs.getTimestamp(1);
+                            return value == null ? null : value.toInstant();
+                        }, email)
+                .stream().findFirst();
+    }
+
     public List<PlatformUserAccount> findAll() {
         return jdbcTemplate.query("""
                 select id, email, display_name, password_hash, role, enabled, locked, password_change_required,

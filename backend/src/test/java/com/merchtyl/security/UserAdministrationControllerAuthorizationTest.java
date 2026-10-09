@@ -68,7 +68,7 @@ class UserAdministrationControllerAuthorizationTest {
     @Test
     void userViewerCannotCreateUser() throws Exception {
         mockMvc.perform(post("/api/v1/users")
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("USER_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -83,7 +83,7 @@ class UserAdministrationControllerAuthorizationTest {
         when(userAdministrationService.create(any(), any())).thenReturn(response(true, 0));
 
         mockMvc.perform(post("/api/v1/users")
-                        .with(user("owner").authorities(
+                        .with(user("owner").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("USER_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -96,7 +96,7 @@ class UserAdministrationControllerAuthorizationTest {
     @Test
     void userListRequiresViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/users")
-                        .with(user("cashier").authorities(
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("STORE_VIEW"))))
                 .andExpect(status().isForbidden());
@@ -116,7 +116,7 @@ class UserAdministrationControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/users")
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("USER_VIEW"))))
                 .andExpect(status().isOk())
@@ -126,7 +126,7 @@ class UserAdministrationControllerAuthorizationTest {
     @Test
     void mutatingExistingUserRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/users/{id}/status", USER_ID)
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("USER_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -139,7 +139,7 @@ class UserAdministrationControllerAuthorizationTest {
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/v1/users/{id}/reset-password", USER_ID)
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("USER_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -152,7 +152,7 @@ class UserAdministrationControllerAuthorizationTest {
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/v1/users/{id}/roles", USER_ID)
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("USER_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -174,7 +174,7 @@ class UserAdministrationControllerAuthorizationTest {
     @Test
     void roleListRequiresRoleViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/roles")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("USER_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("USER_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(roleAdministrationService, never()).list();
@@ -191,7 +191,7 @@ class UserAdministrationControllerAuthorizationTest {
                 0)));
 
         mockMvc.perform(get("/api/v1/roles")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("ROLE_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("ROLE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("OWNER"));
     }

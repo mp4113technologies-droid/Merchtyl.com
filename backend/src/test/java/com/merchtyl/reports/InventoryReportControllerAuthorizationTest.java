@@ -51,7 +51,7 @@ class InventoryReportControllerAuthorizationTest {
     @Test
     void inventoryReportRequiresInventoryViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/reports/inventory")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(inventoryReportService, never()).summarize(any());
@@ -68,7 +68,7 @@ class InventoryReportControllerAuthorizationTest {
                         .param("dateFrom", "2026-07-01")
                         .param("dateTo", "2026-07-31")
                         .param("lowStockThreshold", "8")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStock").value(14.0000))
                 .andExpect(jsonPath("$.inventoryValue").value(21.40))

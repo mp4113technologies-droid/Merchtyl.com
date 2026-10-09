@@ -81,8 +81,10 @@ merchtyl:
       allowed-origin-patterns: ${MERCHTYL_CORS_ALLOWED_ORIGIN_PATTERNS:}
     rate-limit:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
-      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
+      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:5}
       auth-window: ${MERCHTYL_RATE_LIMIT_AUTH_WINDOW:1m}
+      password-reset-max-attempts: ${MERCHTYL_RATE_LIMIT_PASSWORD_RESET_MAX_ATTEMPTS:3}
+      password-reset-window: ${MERCHTYL_RATE_LIMIT_PASSWORD_RESET_WINDOW:1h}
       contact-max-attempts: ${MERCHTYL_RATE_LIMIT_CONTACT_MAX_ATTEMPTS:5}
       contact-window: ${MERCHTYL_RATE_LIMIT_CONTACT_WINDOW:10m}
     temporary-password:
@@ -93,7 +95,7 @@ merchtyl:
       max-failed-attempts: ${MERCHTYL_LOGIN_MAX_FAILED_ATTEMPTS:3}
       account-lock-email-enabled: ${MERCHTYL_ACCOUNT_LOCK_EMAIL_ENABLED:true}
     password-reset:
-      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:30}
+      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:15}
       forgot-max-per-hour: ${MERCHTYL_PASSWORD_RESET_FORGOT_MAX_PER_HOUR:5}
       admin-max-per-hour: ${MERCHTYL_PASSWORD_RESET_ADMIN_MAX_PER_HOUR:5}
   platform:

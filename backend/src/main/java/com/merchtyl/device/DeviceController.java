@@ -44,7 +44,8 @@ public class DeviceController {
             @RequestParam(required = false) String deviceType,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
         return deviceService.search(new DeviceSearchRequest(
                 storeId,
                 registerId,
@@ -53,13 +54,13 @@ public class DeviceController {
                 deviceType,
                 active,
                 page,
-                size));
+                size), authentication);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).DEVICE_VIEW)")
-    DeviceResponse get(@PathVariable UUID id) {
-        return deviceService.get(id);
+    DeviceResponse get(@PathVariable UUID id, Authentication authentication) {
+        return deviceService.get(id, authentication);
     }
 
     @PutMapping("/{id}")
@@ -82,7 +83,7 @@ public class DeviceController {
 
     @PostMapping("/{id}/heartbeat")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).DEVICE_VIEW)")
-    DeviceResponse heartbeat(@PathVariable UUID id) {
-        return deviceService.heartbeat(id);
+    DeviceResponse heartbeat(@PathVariable UUID id, Authentication authentication) {
+        return deviceService.heartbeat(id, authentication);
     }
 }

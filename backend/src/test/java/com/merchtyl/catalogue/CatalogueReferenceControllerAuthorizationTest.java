@@ -67,7 +67,7 @@ class CatalogueReferenceControllerAuthorizationTest {
     @Test
     void categoryViewerCannotCreateCategory() throws Exception {
         mockMvc.perform(post("/api/v1/categories")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(REFERENCE_JSON))
                 .andExpect(status().isForbidden());
@@ -80,7 +80,7 @@ class CatalogueReferenceControllerAuthorizationTest {
         when(categoryService.create(any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/categories")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("PRODUCT_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(REFERENCE_JSON))
                 .andExpect(status().isCreated())
@@ -95,14 +95,14 @@ class CatalogueReferenceControllerAuthorizationTest {
         when(unitOfMeasureService.search(any(), any())).thenReturn(page());
 
         mockMvc.perform(get("/api/v1/categories")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("GROCERY"));
         mockMvc.perform(get("/api/v1/brands")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/units")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk());
     }
 
@@ -122,7 +122,7 @@ class CatalogueReferenceControllerAuthorizationTest {
         when(categoryService.getSystemCategory(any(), any())).thenReturn(lottery);
 
         mockMvc.perform(get("/api/v1/categories/system/LOTTERY")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(REFERENCE_ID.toString()))
                 .andExpect(jsonPath("$.code").value("ADV01-CAT-004"))
@@ -132,7 +132,7 @@ class CatalogueReferenceControllerAuthorizationTest {
     @Test
     void statusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/categories/{id}/status", REFERENCE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

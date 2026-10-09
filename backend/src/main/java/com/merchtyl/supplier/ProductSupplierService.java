@@ -10,6 +10,8 @@ import com.merchtyl.product.Product;
 import com.merchtyl.product.ProductRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -30,6 +32,7 @@ public class ProductSupplierService {
     private final SupplierRepository supplierRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    @Autowired private StoreAccessService storeAccessService;
 
     public ProductSupplierService(
             ProductSupplierRepository productSupplierRepository,
@@ -46,7 +49,8 @@ public class ProductSupplierService {
 
     @Transactional
     public ProductSupplierResponse create(ProductSupplierRequest request, Authentication authentication) {
-        ProductSupplierValues values = values(request);
+        UUID tenantId = currentTenantId(authentication);
+        ProductSupplierValues values = values(request, tenantId);
         if (productSupplierRepository.existsByProductIdAndSupplier(values.product().getId(), values.supplier())) {
             throw duplicateAssociation();
         }
@@ -56,11 +60,12 @@ public class ProductSupplierService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ProductSupplierResponse> search(ProductSupplierSearchRequest request) {
+    public PageResponse<ProductSupplierResponse> search(ProductSupplierSearchRequest request, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var page = productSupplierRepository.findAll(
-                specification(request),
+                tenantId == null ? specification(request) : specification(request).and((root, query, cb) -> cb.equal(root.get("supplier").get("tenantId"), tenantId)),
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.ASC, "supplierSku").and(Sort.by(Sort.Direction.ASC, "id"))));
         return new PageResponse<>(
@@ -74,15 +79,17 @@ public class ProductSupplierService {
     }
 
     @Transactional(readOnly = true)
-    public ProductSupplierResponse get(UUID id) {
-        return ProductSupplierResponse.from(find(id));
+    public ProductSupplierResponse get(UUID id, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
+        return ProductSupplierResponse.from(tenantId == null ? find(id) : find(id, tenantId));
     }
 
     @Transactional
     public ProductSupplierResponse update(UUID id, ProductSupplierUpdateRequest request, Authentication authentication) {
-        ProductSupplier productSupplier = find(id);
+        UUID tenantId = currentTenantId(authentication);
+        ProductSupplier productSupplier = tenantId == null ? find(id) : find(id, tenantId);
         requireCurrentVersion(productSupplier, request.version());
-        ProductSupplierValues values = values(request);
+        ProductSupplierValues values = values(request, tenantId);
         if (productSupplierRepository.existsByProductIdAndSupplierAndIdNot(values.product().getId(), values.supplier(), id)) {
             throw duplicateAssociation();
         }
@@ -95,7 +102,8 @@ public class ProductSupplierService {
 
     @Transactional
     public ProductSupplierResponse updateStatus(UUID id, ProductSupplierStatusRequest request, Authentication authentication) {
-        ProductSupplier productSupplier = find(id);
+        UUID tenantId = currentTenantId(authentication);
+        ProductSupplier productSupplier = tenantId == null ? find(id) : find(id, tenantId);
         requireCurrentVersion(productSupplier, request.version());
         ProductSupplierResponse before = ProductSupplierResponse.from(productSupplier);
         productSupplier.setActive(request.active());
@@ -104,19 +112,19 @@ public class ProductSupplierService {
         return after;
     }
 
-    private ProductSupplierValues values(ProductSupplierRequest request) {
+    private ProductSupplierValues values(ProductSupplierRequest request, UUID tenantId) {
         return new ProductSupplierValues(
-                findProduct(request.productId()),
-                findSupplier(request.supplierId()),
+                tenantId == null ? findProduct(request.productId()) : findProduct(request.productId(), tenantId),
+                tenantId == null ? findSupplier(request.supplierId()) : findSupplier(request.supplierId(), tenantId),
                 optionalText(request.supplierSku()),
                 request.preferred(),
                 request.active());
     }
 
-    private ProductSupplierValues values(ProductSupplierUpdateRequest request) {
+    private ProductSupplierValues values(ProductSupplierUpdateRequest request, UUID tenantId) {
         return new ProductSupplierValues(
-                findProduct(request.productId()),
-                findSupplier(request.supplierId()),
+                tenantId == null ? findProduct(request.productId()) : findProduct(request.productId(), tenantId),
+                tenantId == null ? findSupplier(request.supplierId()) : findSupplier(request.supplierId(), tenantId),
                 optionalText(request.supplierSku()),
                 request.preferred(),
                 request.active());
@@ -135,14 +143,34 @@ public class ProductSupplierService {
                 .orElseThrow(() -> new NotFoundException("Product supplier not found"));
     }
 
+    private ProductSupplier find(UUID id, UUID tenantId) {
+        return productSupplierRepository.findById(id)
+                .filter(value -> tenantId.equals(value.getSupplier().getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Product supplier not found"));
+    }
+
     private Product findProduct(UUID id) {
         return productRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Product not found"));
+    }
+
+    private Product findProduct(UUID id, UUID tenantId) {
+        return productRepository.findById(id).filter(value -> tenantId.equals(value.getTenantId()))
                 .orElseThrow(() -> new NotFoundException("Product not found"));
     }
 
     private Supplier findSupplier(UUID id) {
         return supplierRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Supplier not found"));
+    }
+
+    private Supplier findSupplier(UUID id, UUID tenantId) {
+        return supplierRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new NotFoundException("Supplier not found"));
+    }
+
+    private UUID currentTenantId(Authentication authentication) {
+        return storeAccessService == null ? null : storeAccessService.currentTenantId(authentication);
     }
 
     private Specification<ProductSupplier> specification(ProductSupplierSearchRequest request) {

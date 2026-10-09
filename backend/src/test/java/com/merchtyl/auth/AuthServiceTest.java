@@ -225,7 +225,8 @@ class AuthServiceTest {
 
         authService.logout(new LogoutRequest("refresh-token"));
 
-        assertThat(token.getRevokedAt()).isNotNull();
+        verify(refreshTokenService).revokeActiveTokensForUser(same(user), any(Instant.class));
+        verify(userRepository).save(same(user));
         ArgumentCaptor<CreateAuditRecordCommand> audit = ArgumentCaptor.forClass(CreateAuditRecordCommand.class);
         verify(auditService).record(audit.capture());
         assertThat(audit.getValue().action()).isEqualTo(AuditAction.LOGOUT);

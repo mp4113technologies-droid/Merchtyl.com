@@ -90,7 +90,7 @@ class ProductControllerAuthorizationTest {
     @Test
     void cashierCannotCreateProductByCallingProtectedApiDirectly() throws Exception {
         mockMvc.perform(post("/api/v1/products")
-                        .with(user("cashier").authorities(
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority("PRODUCT_VIEW"),
                                 new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -127,7 +127,7 @@ class ProductControllerAuthorizationTest {
                 0));
 
         mockMvc.perform(post("/api/v1/products")
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("PRODUCT_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -149,7 +149,7 @@ class ProductControllerAuthorizationTest {
     @Test
     void productListRequiresProductViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/products")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isForbidden());
 
         verify(productService, never()).search(any(), any());
@@ -160,7 +160,7 @@ class ProductControllerAuthorizationTest {
         when(productService.search(any(), any())).thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true, true));
 
         mockMvc.perform(get("/api/v1/products")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray());
 
@@ -173,7 +173,7 @@ class ProductControllerAuthorizationTest {
 
         mockMvc.perform(get("/api/v1/products")
                         .param("includeInactive", "true")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk());
 
         verify(productService).search(argThat(ProductSearchRequest::includeInactive), any());
@@ -188,7 +188,7 @@ class ProductControllerAuthorizationTest {
                         .param("q", "  cOcA  ")
                         .param("storeId", storeId.toString())
                         .param("active", "true")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk());
 
         verify(productService).search(argThat(request -> "  cOcA  ".equals(request.query())
@@ -199,7 +199,7 @@ class ProductControllerAuthorizationTest {
     void productDeleteRequiresDedicatedPermission() throws Exception {
         UUID id=UUID.randomUUID();
         mockMvc.perform(delete("/api/v1/products/{id}",id).param("version","3")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isForbidden());
         verify(productService,never()).delete(any(),anyLong(),any());
     }
@@ -208,7 +208,7 @@ class ProductControllerAuthorizationTest {
     void productManagerWithDeletePermissionCanDelete() throws Exception {
         UUID id=UUID.randomUUID();
         mockMvc.perform(delete("/api/v1/products/{id}",id).param("version","3")
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("PRODUCT_DELETE"))))
                 .andExpect(status().isNoContent());

@@ -144,7 +144,7 @@ final class DomainErrorCatalog {
         if (!candidate.matches("[A-Z][A-Z0-9_]+")) return null;
         Entry known = ERRORS.get(candidate);
         if (known != null) return new Entry(candidate, known.message());
-        if (separator > 0) return new Entry(candidate, raw.substring(separator + 1).trim());
+        if (separator > 0) return new Entry(candidate, "We couldn't complete this action. Please review the information and try again.");
         return new Entry(candidate, "We couldn't complete this action. Please review the information and try again.");
     }
 

@@ -13,12 +13,10 @@ export class PosPrintQueue {
   printMany(jobs: PosPrintJob[]) {
     const batch = this.tail.catch(() => undefined).then(async () => {
       for (const job of jobs) {
-        if (import.meta.env.DEV) console.debug('POS_PRINT_STARTED', { transactionId: job.transactionId, documentType: job.type });
         try {
           await job.print();
         } finally {
           await job.cleanup?.();
-          if (import.meta.env.DEV) console.debug('POS_PRINT_CLEANED_UP', { transactionId: job.transactionId, documentType: job.type });
         }
       }
     });

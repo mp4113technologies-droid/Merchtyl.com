@@ -145,7 +145,7 @@ export function FoodPosPage() {
     if (!current.data || restoredSessionRef.current === current.data.id) return;
     restoredSessionRef.current = current.data.id;
     try {
-      const raw = localStorage.getItem(`merchtyl.food-pos-state:${current.data.id}`);
+      const raw = sessionStorage.getItem(`merchtyl.food-pos-state:${current.data.id}`);
       if (!raw) return;
       const saved = JSON.parse(raw) as { cart?: typeof cart; sale?: Sale | null; discount?: OrderDiscount | null };
       if (Array.isArray(saved.cart)) setCart(saved.cart.map((line,index) => ({...line,key:line.key??`${line.item.id}:restored-${index}`,unitPrice:line.unitPrice??line.item.price,modifierOptionIds:line.modifierOptionIds??[],modifierNames:line.modifierNames??[],componentChoices:line.componentChoices??[],preparationInstructions:line.preparationInstructions??''})));
@@ -157,8 +157,8 @@ export function FoodPosPage() {
   React.useEffect(() => {
     if (!current.data || restoredSessionRef.current !== current.data.id) return;
     const key = `merchtyl.food-pos-state:${current.data.id}`;
-    if (!cart.length && !sale && !discount) localStorage.removeItem(key);
-    else localStorage.setItem(key, JSON.stringify({ cart, sale, discount }));
+    if (!cart.length && !sale && !discount) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, JSON.stringify({ cart, sale, discount }));
   }, [cart, sale, discount, current.data]);
 
   React.useEffect(() => {
@@ -321,7 +321,7 @@ export function FoodPosPage() {
     checkout.reset();
     payment.reset();
     complete.reset();
-    if (current.data) localStorage.removeItem(`merchtyl.food-pos-state:${current.data.id}`);
+    if (current.data) sessionStorage.removeItem(`merchtyl.food-pos-state:${current.data.id}`);
   }
 
   if (currentUser && !permitted) return <Alert severity="error">FOOD_POS_ACCESS is required.</Alert>;

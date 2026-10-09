@@ -140,7 +140,7 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
         if (user == null) {
             auditLoginFailure(null, email, "unknown_user");
-            log.warn("authentication_event event=Failed Login email={} reason=unknown_user", email);
+            log.warn("authentication_event event=Failed Login email=[REDACTED] reason=unknown_user");
             throw badCredentials();
         }
         if (user.isLocked()) {
@@ -170,9 +170,7 @@ public class AuthService {
                         "bad_credentials"));
             }
             auditLoginFailure(user, email, "bad_credentials");
-            log.warn("authentication_event event=Failed Login email={} user_id={} tenant_id={} reason=bad_credentials",
-                    email,
-                    user.getId(),
+            log.warn("authentication_event event=Failed Login email=[REDACTED] user_id=[REDACTED] tenant_id={} reason=bad_credentials",
                     user.getTenantId());
             throw exception;
         }
@@ -197,10 +195,8 @@ public class AuthService {
                     null,
                     Map.of("email", user.getEmail(), "status", "password_change_required"),
                     null));
-            log.info("authentication_event event=First Login Completed status=password_change_required user_id={} tenant_id={} username={}",
-                    user.getId(),
-                    user.getTenantId(),
-                    user.getEmail());
+            log.info("authentication_event event=First Login Completed status=password_change_required user_id=[REDACTED] tenant_id={} username=[REDACTED]",
+                    user.getTenantId());
             return response;
         }
 
@@ -218,10 +214,8 @@ public class AuthService {
                         "roles", roles(user),
                         "status", "success"),
                 null));
-        log.info("authentication_event event=Successful Login user_id={} tenant_id={} username={}",
-                user.getId(),
-                user.getTenantId(),
-                user.getEmail());
+        log.info("authentication_event event=Successful Login user_id=[REDACTED] tenant_id={} username=[REDACTED]",
+                user.getTenantId());
         return response;
     }
 
@@ -266,10 +260,8 @@ public class AuthService {
                 null,
                 Map.of("tenantId", String.valueOf(user.getTenantId()), "status", "completed"),
                 null));
-        log.info("authentication_event event=Password Changed user_id={} tenant_id={} username={}",
-                user.getId(),
-                user.getTenantId(),
-                user.getEmail());
+        log.info("authentication_event event=Password Changed user_id=[REDACTED] tenant_id={} username=[REDACTED]",
+                user.getTenantId());
     }
 
     @Transactional
@@ -298,12 +290,28 @@ public class AuthService {
 
     @Transactional
     public void logout(LogoutRequest request) {
+        logout(request, null);
+    }
+
+    @Transactional
+    public void logout(LogoutRequest request, Authentication authentication) {
         Instant now = Instant.now();
+        if (authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ACCOUNT_SCOPE_PLATFORM".equals(authority.getAuthority()))) {
+            jdbcTemplate.update("""
+                    update platform_users set credentials_invalidated_at=?, updated_at=now(), version=version+1
+                    where lower(email)=lower(?)
+                    """, Timestamp.from(now), authentication.getName());
+            return;
+        }
+        if (request.refreshToken() == null || request.refreshToken().isBlank()) return;
         refreshTokenService.findByRawToken(request.refreshToken())
                 .filter(token -> token.isActive(now))
                 .ifPresent(token -> {
-                    token.revoke(now, null);
                     User user = token.getUser();
+                    refreshTokenService.revokeActiveTokensForUser(user, now);
+                    user.invalidateIssuedCredentials(now);
+                    userRepository.save(user);
                     auditService.record(new CreateAuditRecordCommand(
                             user.getId(),
                             AuditAction.LOGOUT,
@@ -316,10 +324,8 @@ public class AuthService {
                                     "email", user.getEmail(),
                                     "status", "logged_out"),
                             null));
-                    log.info("authentication_event event=Logout user_id={} tenant_id={} username={}",
-                            user.getId(),
-                            user.getTenantId(),
-                            user.getEmail());
+                    log.info("authentication_event event=Logout user_id=[REDACTED] tenant_id={} username=[REDACTED]",
+                            user.getTenantId());
                 });
     }
 
@@ -348,6 +354,42 @@ public class AuthService {
                         })
                         .sorted()
                         .toList());
+    }
+
+    @Transactional
+    public void deleteCurrentAccount(AccountDeletionRequest request, Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw badCredentials();
+        }
+        User user = userRepository.findByEmailIgnoreCase(authentication.getName()).orElseThrow(AuthService::badCredentials);
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw badCredentials();
+        }
+        String previousEmail = user.getEmail();
+        String previousDisplayName = user.getDisplayName();
+        String anonymizedEmail = "deleted+" + user.getId() + "@invalid.local";
+        refreshTokenService.revokeActiveTokensForUser(user, Instant.now());
+        user.anonymizeForDeletion(anonymizedEmail, passwordEncoder.encode(UUID.randomUUID().toString()));
+        userRepository.saveAndFlush(user);
+        if (jdbcTemplate != null) {
+            jdbcTemplate.update("update email_deliveries set recipient = ? where lower(recipient) = lower(?)",
+                    anonymizedEmail, previousEmail);
+            jdbcTemplate.update("update tenant_owner_invitations set email = ?, status = 'REVOKED' where owner_user_id = ?",
+                    anonymizedEmail, user.getId());
+            jdbcTemplate.update("update password_reset_tokens set revoked_at = now(), request_ip = null where user_id = ?",
+                    user.getId());
+            jdbcTemplate.update("update first_login_password_change_tokens set revoked_at = now() where user_id = ? and revoked_at is null",
+                    user.getId());
+            jdbcTemplate.update("""
+                    update audit_records
+                    set before_snapshot = case when before_snapshot is null then null else replace(replace(before_snapshot::text, ?, '[REDACTED]'), ?, '[REDACTED]')::jsonb end,
+                        after_snapshot = case when after_snapshot is null then null else replace(replace(after_snapshot::text, ?, '[REDACTED]'), ?, '[REDACTED]')::jsonb end
+                    where actor_user_id = ? or entity_id = ?
+                    """, previousEmail, previousDisplayName, previousEmail, previousDisplayName, user.getId(), user.getId());
+        }
+        auditService.record(new CreateAuditRecordCommand(
+                null, AuditAction.USER_DEACTIVATED, "USER", user.getId(), null, null,
+                null, Map.of("status", "anonymized"), "self-service account deletion"));
     }
 
     private AuthResponse issueTokenResponse(User user) {

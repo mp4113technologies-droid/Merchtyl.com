@@ -3,7 +3,6 @@ package com.merchtyl.platform.openapi;
 import com.merchtyl.auth.AuthController;
 import com.merchtyl.health.HealthController;
 import com.merchtyl.platform.admin.PlatformAdministrationController;
-import com.merchtyl.platform.testing.TestUserProvisioningController;
 import com.merchtyl.platform.web.CorrelationIdFilter;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -24,10 +23,8 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.tags.Tag;
 import org.springdoc.core.customizers.OperationCustomizer;
 import org.springdoc.core.models.GroupedOpenApi;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
 import org.springframework.core.MethodParameter;
 import org.springframework.web.bind.annotation.RequestHeader;
 
@@ -90,8 +87,7 @@ public class OpenApiConfiguration {
                         tag("Platform Audit", "Platform-scoped audit event search."),
                         tag("Merchant Users", "Tenant-scoped manager and cashier visibility, filtering, creation, status, and update APIs."),
                         tag("Store Assignments", "Tenant-validated multi-store manager and cashier assignment APIs."),
-                        tag("Store Access", "Assigned-store discovery and store-switch validation for tenant users."),
-                        tag("Testing Helpers", "Development and test-only helper APIs. Hidden outside allowed non-production profiles.")));
+                        tag("Store Access", "Assigned-store discovery and store-switch validation for tenant users.")));
     }
 
     @Bean
@@ -231,13 +227,6 @@ public class OpenApiConfiguration {
         return group("Hardware Settings", "/api/v1/devices/**");
     }
 
-    @Bean
-    @Profile({"dev", "local", "test"})
-    @ConditionalOnProperty(prefix = "merchtyl.testing.user-provisioning", name = "enabled", havingValue = "true")
-    GroupedOpenApi testingHelpersApi() {
-        return group("Testing Helpers", "/api/v1/testing/**");
-    }
-
     private static GroupedOpenApi group(String group, String... paths) {
         return GroupedOpenApi.builder()
                 .group(group)
@@ -264,7 +253,6 @@ public class OpenApiConfiguration {
                 && List.of("login", "refresh", "register", "logout").contains(method.getName())
                 || beanType == PlatformAdministrationController.class
                 && List.of("platformLogin", "activateOwner").contains(method.getName())
-                || beanType == TestUserProvisioningController.class
                 || beanType == HealthController.class;
     }
 
@@ -283,7 +271,6 @@ public class OpenApiConfiguration {
                         Map.entry("com.merchtyl.device", "Hardware Settings"),
                         Map.entry("com.merchtyl.security", "Merchant Users"),
                         Map.entry("com.merchtyl.platform.admin", "Platform Administration"),
-                        Map.entry("com.merchtyl.platform.testing", "Testing Helpers"),
                         Map.entry("com.merchtyl.product", "Catalogue"),
                         Map.entry("com.merchtyl.catalogue", "Catalogue"),
                         Map.entry("com.merchtyl.supplier", "Catalogue"),

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.UUID;
+import org.springframework.security.core.Authentication;
 
 @RestController
 @RequestMapping("/api/v1/audit")
@@ -33,7 +34,8 @@ public class AuditController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant createdFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant createdTo,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
         return auditService.search(new AuditSearchRequest(
                 action,
                 entityType,
@@ -44,12 +46,12 @@ public class AuditController {
                 createdFrom,
                 createdTo,
                 page,
-                size));
+                size), authentication);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).AUDIT_VIEW)")
-    AuditRecordResponse get(@PathVariable UUID id) {
-        return auditService.get(id);
+    AuditRecordResponse get(@PathVariable UUID id, Authentication authentication) {
+        return auditService.get(id, authentication);
     }
 }

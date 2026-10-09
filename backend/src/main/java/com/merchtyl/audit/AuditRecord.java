@@ -21,6 +21,9 @@ public class AuditRecord {
     @Column(updatable = false)
     private UUID actorUserId;
 
+    @Column(name = "tenant_id", updatable = false)
+    private UUID tenantId;
+
     @Column(updatable = false, nullable = false, length = 120)
     private String action;
 
@@ -78,6 +81,9 @@ public class AuditRecord {
         this.reason = reason;
         this.correlationId = correlationId;
     }
+
+    void assignTenant(UUID tenantId) { this.tenantId = tenantId; }
+    public UUID getTenantId() { return tenantId; }
 
     @PrePersist
     void prePersist() {

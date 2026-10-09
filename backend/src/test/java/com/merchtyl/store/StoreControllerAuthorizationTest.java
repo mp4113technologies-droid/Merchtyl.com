@@ -75,7 +75,7 @@ class StoreControllerAuthorizationTest {
     @Test
     void storeViewerCannotCreateStore() throws Exception {
         mockMvc.perform(post("/api/v1/stores")
-                        .with(user("cashier").authorities(
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("STORE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -90,7 +90,7 @@ class StoreControllerAuthorizationTest {
         when(storeService.create(any(), any())).thenReturn(response(true, 0));
 
         mockMvc.perform(post("/api/v1/stores")
-                        .with(user("manager").authorities(
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("STORE_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -103,7 +103,7 @@ class StoreControllerAuthorizationTest {
     @Test
     void storeListRequiresViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/stores")
-                        .with(user("cashier").authorities(
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
@@ -123,7 +123,7 @@ class StoreControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/stores")
-                        .with(user("cashier").authorities(
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("STORE_VIEW"))))
                 .andExpect(status().isOk())
@@ -133,7 +133,7 @@ class StoreControllerAuthorizationTest {
     @Test
     void statusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/stores/{id}/status", STORE_ID)
-                        .with(user("cashier").authorities(
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"),
                                 new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY),
                                 new SimpleGrantedAuthority("STORE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)

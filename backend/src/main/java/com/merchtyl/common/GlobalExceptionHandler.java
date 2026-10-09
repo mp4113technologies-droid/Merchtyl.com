@@ -120,11 +120,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({ForbiddenOperationException.class, AccessDeniedException.class})
     ResponseEntity<ApiError> forbidden(RuntimeException exception, HttpServletRequest request) {
-        log.warn("authorization_event event={} user={} tenant={} endpoint={} method={} exception_type={}",
+        log.warn("authorization_event event={} user=[REDACTED] tenant={} endpoint={} method={} exception_type={}",
                 exception.getMessage() != null && exception.getMessage().toLowerCase().contains("tenant")
                         ? "Cross Tenant Access Attempt"
                         : "Access Denied",
-                user(),
                 MDC.get("tenantId"),
                 request.getRequestURI(),
                 request.getMethod(),
@@ -225,10 +224,10 @@ public class GlobalExceptionHandler {
         }
         DatabaseConstraintErrorMapper.Analysis analysis = databaseErrors.analyze(exception, request.getRequestURI());
         DatabaseConstraintErrorMapper.DomainError domain = analysis.domainError();
-        String logMessage = "event=DATABASE_WRITE_FAILED operation={} domain={} exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user={} stack_trace={}";
+        String logMessage = "event=DATABASE_WRITE_FAILED operation={} domain={} exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user=[REDACTED] stack_trace={}";
         Object[] values = {request.getMethod() + " " + request.getRequestURI(), domain.code(), exception.getClass().getName(), analysis.databaseExceptionClass(), analysis.sqlState(), analysis.constraintName(),
-                LogSanitizer.clean(analysis.technicalDetail()), request.getMethod(), request.getRequestURI(),
-                MDC.get(CorrelationIdFilter.MDC_KEY), MDC.get("tenantId"), MDC.get("storeId"), user(),
+                LogSanitizer.maskSensitiveText(analysis.technicalDetail()), request.getMethod(), request.getRequestURI(),
+                MDC.get(CorrelationIdFilter.MDC_KEY), MDC.get("tenantId"), MDC.get("storeId"),
                 LogSanitizer.sanitizedStackTrace(exception)};
         if (domain.expected()) log.warn(logMessage, values); else log.error(logMessage, values);
         return error(domain.status(), domain.code(), domain.message(), request, domain.violations());
@@ -237,31 +236,29 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ApiError> databaseFailure(DataAccessException exception, HttpServletRequest request) {
         DatabaseConstraintErrorMapper.Analysis analysis = databaseErrors.analyze(exception, request.getRequestURI());
-        log.error("database_failure category=database_failure exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user={} stack_trace={}",
+        log.error("database_failure category=database_failure exception_type={} database_exception_type={} sql_state={} constraint_name={} technical_detail={} method={} path={} correlation_id={} tenant={} store={} user=[REDACTED] stack_trace={}",
                 exception.getClass().getName(),
                 analysis.databaseExceptionClass(),
                 analysis.sqlState(),
                 analysis.constraintName(),
-                LogSanitizer.clean(analysis.technicalDetail()),
+                LogSanitizer.maskSensitiveText(analysis.technicalDetail()),
                 request.getMethod(),
                 request.getRequestURI(),
                 MDC.get(CorrelationIdFilter.MDC_KEY),
                 MDC.get("tenantId"),
                 MDC.get("storeId"),
-                user(),
                 LogSanitizer.sanitizedStackTrace(exception));
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "UNEXPECTED_ERROR", DomainErrorCatalog.message("UNEXPECTED_ERROR", null), request, List.of());
     }
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> unexpected(Exception exception, HttpServletRequest request) {
-        log.error("Unhandled request failure method={} path={} correlation_id={} tenant={} store={} user={} exception_type={} stack_trace={}",
+        log.error("Unhandled request failure method={} path={} correlation_id={} tenant={} store={} user=[REDACTED] exception_type={} stack_trace={}",
                 request.getMethod(),
                 request.getRequestURI(),
                 MDC.get(CorrelationIdFilter.MDC_KEY),
                 MDC.get("tenantId"),
                 MDC.get("storeId"),
-                user(),
                 exception.getClass().getName(),
                 LogSanitizer.sanitizedStackTrace(exception));
         return error(
@@ -294,11 +291,6 @@ public class GlobalExceptionHandler {
                 violations,
                 Instant.now());
         return ResponseEntity.status(status).body(body);
-    }
-
-    private static String user() {
-        String username = MDC.get("username");
-        return username == null ? "" : username;
     }
 
     private static String exceptionType(HttpStatus status, String code) {

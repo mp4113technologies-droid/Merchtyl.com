@@ -53,15 +53,15 @@ class AuditControllerAuthorizationTest {
     @Test
     void auditListRequiresAuditViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/audit")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
-        verify(auditService, never()).search(org.mockito.ArgumentMatchers.any());
+        verify(auditService, never()).search(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
     void auditListSupportsPaginationAndFilters() throws Exception {
-        when(auditService.search(org.mockito.ArgumentMatchers.any())).thenReturn(new PageResponse<>(
+        when(auditService.search(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(new PageResponse<>(
                 List.of(new AuditRecordResponse(
                         AUDIT_ID,
                         ACTOR_ID,
@@ -83,7 +83,7 @@ class AuditControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/audit")
-                        .with(user("owner").authorities(new SimpleGrantedAuthority("AUDIT_VIEW")))
+                        .with(user("owner").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("AUDIT_VIEW")))
                         .param("action", "login_success")
                         .param("entityType", "user")
                         .param("entityId", ACTOR_ID.toString())
@@ -100,7 +100,7 @@ class AuditControllerAuthorizationTest {
                 .andExpect(jsonPath("$.totalElements").value(21));
 
         ArgumentCaptor<AuditSearchRequest> request = ArgumentCaptor.forClass(AuditSearchRequest.class);
-        verify(auditService).search(request.capture());
+        verify(auditService).search(request.capture(), org.mockito.ArgumentMatchers.any());
         assertThat(request.getValue().action()).isEqualTo("login_success");
         assertThat(request.getValue().entityType()).isEqualTo("user");
         assertThat(request.getValue().entityId()).isEqualTo(ACTOR_ID);
@@ -113,15 +113,15 @@ class AuditControllerAuthorizationTest {
     @Test
     void auditGetRequiresAuditViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/audit/{id}", AUDIT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REPORT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REPORT_VIEW"))))
                 .andExpect(status().isForbidden());
 
-        verify(auditService, never()).get(org.mockito.ArgumentMatchers.any());
+        verify(auditService, never()).get(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
     void auditViewerCanGetAuditRecord() throws Exception {
-        when(auditService.get(AUDIT_ID)).thenReturn(new AuditRecordResponse(
+        when(auditService.get(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(new AuditRecordResponse(
                 AUDIT_ID,
                 ACTOR_ID,
                 AuditAction.LOGOUT.name(),
@@ -136,7 +136,7 @@ class AuditControllerAuthorizationTest {
                 Instant.parse("2026-07-21T13:00:00Z")));
 
         mockMvc.perform(get("/api/v1/audit/{id}", AUDIT_ID)
-                        .with(user("owner").authorities(new SimpleGrantedAuthority("AUDIT_VIEW"))))
+                        .with(user("owner").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("AUDIT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(AUDIT_ID.toString()))
                 .andExpect(jsonPath("$.action").value(AuditAction.LOGOUT.name()));

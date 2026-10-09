@@ -73,7 +73,7 @@ class RefundControllerAuthorizationTest {
     @Test
     void createRequiresRefundCreatePermission() throws Exception {
         mockMvc.perform(post("/api/v1/refunds")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("REFUND_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REFUND_VIEW")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "refund-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
@@ -94,7 +94,7 @@ class RefundControllerAuthorizationTest {
                 false));
 
         mockMvc.perform(post("/api/v1/refunds")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REFUND_CREATE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REFUND_CREATE")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "refund-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
@@ -107,25 +107,25 @@ class RefundControllerAuthorizationTest {
     @Test
     void readRequiresRefundViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/refunds/{id}", REFUND_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REFUND_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REFUND_CREATE"))))
                 .andExpect(status().isForbidden());
 
-        verify(refundService, never()).get(any());
+        verify(refundService, never()).get(any(), any());
     }
 
     @Test
     void viewerCanReadAndSearchRefunds() throws Exception {
-        when(refundService.get(REFUND_ID)).thenReturn(response());
-        when(refundService.search(any())).thenReturn(new PageResponse<>(List.of(response()), 0, 20, 1, 1, true, true));
+        when(refundService.get(any(), any())).thenReturn(response());
+        when(refundService.search(any(), any())).thenReturn(new PageResponse<>(List.of(response()), 0, 20, 1, 1, true, true));
 
         mockMvc.perform(get("/api/v1/refunds/{id}", REFUND_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("REFUND_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REFUND_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(REFUND_ID.toString()));
 
         mockMvc.perform(get("/api/v1/refunds")
                         .param("returnId", RETURN_ID.toString())
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("REFUND_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REFUND_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].returnId").value(RETURN_ID.toString()));
     }

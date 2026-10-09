@@ -87,6 +87,29 @@ class AuthRateLimitingFilterTest {
     }
 
     @Test
+    void appliesThreePerHourPasswordResetLimit() throws Exception {
+        AuthRateLimitingFilter filter = new AuthRateLimitingFilter(
+                new SecurityProperties(
+                        new SecurityProperties.Cors(List.of()),
+                        new SecurityProperties.RateLimit(true, 5, Duration.ofMinutes(1),
+                                3, Duration.ofHours(1), 5, Duration.ofMinutes(10)),
+                        null),
+                objectMapper,
+                Clock.fixed(Instant.parse("2026-07-29T12:00:00Z"), ZoneOffset.UTC));
+        FilterChain chain = mock(FilterChain.class);
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            filter.doFilter(request("/api/v1/auth/forgot-password"), new MockHttpServletResponse(), chain);
+        }
+        MockHttpServletResponse limited = new MockHttpServletResponse();
+        filter.doFilter(request("/api/v1/auth/forgot-password"), limited, chain);
+
+        verify(chain, times(3)).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat(limited.getStatus()).isEqualTo(429);
+        assertThat(limited.getHeader("Retry-After")).isEqualTo("3600");
+    }
+
+    @Test
     void boundsTrackedRemoteAddressesDuringDistributedTraffic() throws Exception {
         AuthRateLimitingFilter filter = new AuthRateLimitingFilter(
                 new SecurityProperties(

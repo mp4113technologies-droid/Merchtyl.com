@@ -18,7 +18,6 @@ import com.merchtyl.email.EmailProperties;
 import com.merchtyl.email.EmailTemplateCode;
 import com.merchtyl.email.MerchantNotificationEmailEvent;
 import com.merchtyl.email.OwnerInvitationEmailEvent;
-import com.merchtyl.email.OwnerTemporaryCredentialsEmailEvent;
 import com.merchtyl.platform.admin.PlatformDtos.MerchantOnboardingRequest;
 import com.merchtyl.platform.admin.PlatformDtos.MerchantGeographyValidationRequest;
 import com.merchtyl.platform.admin.PlatformDtos.MerchantGeographyValidationResponse;
@@ -343,19 +342,14 @@ public class PlatformAdministrationService {
             completeStage(onboardingId, OnboardingStage.MERCHANT_DETAILS, now);
             completeStage(onboardingId, OnboardingStage.OWNER_ACCOUNT, now);
 
-            String temporaryPassword = temporaryPasswordGenerator.generate();
             Instant temporaryPasswordExpiresAt = now.plus(securityProperties.temporaryPassword().expiry());
-            String temporaryPasswordHash = passwordEncoder.encode(temporaryPassword);
+            String temporaryPasswordHash = passwordEncoder.encode(UUID.randomUUID().toString());
             User owner = new User(ownerEmail, ownerDisplayName, temporaryPasswordHash);
             owner.assignTenant(tenantId);
             owner.issueTemporaryPassword(temporaryPasswordHash, now, temporaryPasswordExpiresAt);
             User savedOwner = userRepository.saveAndFlush(owner);
             assignRole(savedOwner.getId(), RoleName.TENANT_OWNER);
 
-            publishOwnerTemporaryCredentialsEmail(tenantId, tenantCode, request.operatingName(), ownerDisplayName,
-                    savedOwner.getId(), ownerEmail, temporaryPassword, temporaryPasswordExpiresAt,
-                    EmailTemplateCode.MERCHANT_OWNER_TEMPORARY_CREDENTIALS, actor.id(),
-                    "Initial merchant owner temporary credentials email", null);
             CreatedOwnerInvitation invite = createInvitation(tenantId, savedOwner.getId(), ownerEmail, actor.id());
             publishOwnerInvitationEmail(tenantId, request.tenantCode(), request.operatingName(), ownerDisplayName, invite,
                     EmailTemplateCode.MERCHANT_OWNER_ACTIVATION, actor.id(), "Initial merchant owner activation email", null);
@@ -378,8 +372,6 @@ public class PlatformAdministrationService {
             }
             audit(actor.id(), AuditAction.INITIAL_OWNER_CREATED, "USER", savedOwner.getId(), null,
                     Map.of("tenantId", tenantId, "email", ownerEmail), null);
-            audit(actor.id(), AuditAction.TEMPORARY_OWNER_CREDENTIALS_GENERATED, "USER", savedOwner.getId(), null,
-                    Map.of("tenantId", tenantId, "email", ownerEmail, "expiresAt", temporaryPasswordExpiresAt), null);
             audit(actor.id(), AuditAction.OWNER_INVITATION_GENERATED, "TENANT_OWNER_INVITATION", invite.response().invitationId(), null,
                     Map.of("tenantId", tenantId, "ownerUserId", savedOwner.getId(), "email", ownerEmail, "expiresAt", invite.response().expiresAt()), null);
             return getTenant(tenantId);
@@ -852,28 +844,12 @@ public class PlatformAdministrationService {
         if (!owner.isPasswordChangeRequired()) {
             throw new ConflictException("Merchant owner has already completed first-login password change.");
         }
-        String temporaryPassword = temporaryPasswordGenerator.generate();
-        Instant now = Instant.now();
-        Instant expiresAt = now.plus(securityProperties.temporaryPassword().expiry());
-        owner.issueTemporaryPassword(passwordEncoder.encode(temporaryPassword), now, expiresAt);
-        userRepository.saveAndFlush(owner);
-        refreshTokenService.revokeActiveTokensForUser(owner, now);
-        revokeFirstLoginPasswordChangeTokens(owner.getId(), now);
-        publishOwnerTemporaryCredentialsEmail(
-                tenantId,
-                tenant.tenantCode(),
-                tenant.displayName(),
-                owner.getDisplayName(),
-                owner.getId(),
-                owner.getEmail(),
-                temporaryPassword,
-                expiresAt,
-                EmailTemplateCode.MERCHANT_OWNER_TEMPORARY_CREDENTIALS_RESEND,
-                actor.id(),
-                reason,
-                notes);
-        audit(actor.id(), AuditAction.TEMPORARY_CREDENTIALS_REISSUED, "USER", owner.getId(), null,
-                Map.of("tenantId", tenantId, "ownerEmail", owner.getEmail(), "expiresAt", expiresAt), reason);
+        CreatedOwnerInvitation invitation = createInvitation(tenantId, owner.getId(), owner.getEmail(), actor.id());
+        publishOwnerInvitationEmail(tenantId, tenant.tenantCode(), tenant.displayName(), owner.getDisplayName(), invitation,
+                EmailTemplateCode.MERCHANT_OWNER_ACTIVATION, actor.id(), reason, notes);
+        audit(actor.id(), AuditAction.OWNER_INVITATION_GENERATED, "TENANT_OWNER_INVITATION",
+                invitation.response().invitationId(), null,
+                Map.of("tenantId", tenantId, "ownerUserId", owner.getId(), "expiresAt", invitation.response().expiresAt()), reason);
         return ownerActivationStatus(tenantId);
     }
 
@@ -1497,34 +1473,6 @@ public class PlatformAdministrationService {
                 notes));
     }
 
-    private void publishOwnerTemporaryCredentialsEmail(
-            UUID tenantId,
-            String tenantCode,
-            String merchantOperatingName,
-            String ownerName,
-            UUID ownerUserId,
-            String ownerEmail,
-            String temporaryPassword,
-            Instant expiresAt,
-            EmailTemplateCode templateCode,
-            UUID platformActorId,
-            String reason,
-            String notes) {
-        eventPublisher.publishEvent(new OwnerTemporaryCredentialsEmailEvent(
-                tenantId,
-                tenantCode,
-                blankToDefault(merchantOperatingName, tenantCode),
-                ownerUserId,
-                ownerEmail,
-                blankToDefault(ownerName, ownerEmail),
-                temporaryPassword,
-                expiresAt,
-                templateCode,
-                platformActorId,
-                reason,
-                notes));
-    }
-
     private void revokeFirstLoginPasswordChangeTokens(UUID ownerId, Instant revokedAt) {
         jdbcTemplate.update("""
                 update first_login_password_change_tokens
@@ -1786,7 +1734,7 @@ public class PlatformAdministrationService {
         prefix = prefix.substring(0, Math.min(prefix.length(), 24));
         String candidate = prefix;
         int suffix = 1;
-        while (count("select count(*) from tenants where tenant_code = '" + candidate.replace("'", "''") + "'") > 0) {
+        while (count("select count(*) from tenants where tenant_code = ?", candidate) > 0) {
             candidate = prefix + "-" + suffix++;
         }
         return candidate;

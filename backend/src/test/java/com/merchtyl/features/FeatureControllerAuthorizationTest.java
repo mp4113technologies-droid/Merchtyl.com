@@ -51,7 +51,7 @@ class FeatureControllerAuthorizationTest {
     @Test
     void definitionsRequireFeatureViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/features/definitions")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(featureService, never()).listDefinitions();
@@ -62,7 +62,7 @@ class FeatureControllerAuthorizationTest {
         when(featureService.resolve(any(), any())).thenReturn(List.of(resolution(true, FeatureResolutionSource.DEFAULT)));
 
         mockMvc.perform(get("/api/v1/features/resolution")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("FEATURE_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("FEATURE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].definition.code").value("AGE_VERIFICATION"))
                 .andExpect(jsonPath("$[0].enabled").value(true));
@@ -71,7 +71,7 @@ class FeatureControllerAuthorizationTest {
     @Test
     void updateRequiresFeatureManagePermission() throws Exception {
         mockMvc.perform(put("/api/v1/features/AGE_VERIFICATION/deployment")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("FEATURE_VIEW")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("FEATURE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -88,7 +88,7 @@ class FeatureControllerAuthorizationTest {
         when(featureService.updateDeployment(any(), any(), any())).thenReturn(resolution(false, FeatureResolutionSource.TENANT));
 
         mockMvc.perform(put("/api/v1/features/AGE_VERIFICATION/deployment")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("FEATURE_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("FEATURE_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

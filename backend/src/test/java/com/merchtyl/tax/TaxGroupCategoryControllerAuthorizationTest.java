@@ -64,7 +64,7 @@ class TaxGroupCategoryControllerAuthorizationTest {
     @Test
     void taxViewerCannotCreateCategory() throws Exception {
         mockMvc.perform(post("/api/v1/tax/categories")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(categoryJson()))
                 .andExpect(status().isForbidden());
@@ -77,7 +77,7 @@ class TaxGroupCategoryControllerAuthorizationTest {
         when(assignmentService.create(any(), any())).thenReturn(assignmentResponse());
 
         mockMvc.perform(post("/api/v1/tax/product-category-assignments")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("TAX_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -98,22 +98,22 @@ class TaxGroupCategoryControllerAuthorizationTest {
         when(taxCategoryService.search(any(), any())).thenReturn(new PageResponse<>(List.of(categoryResponse()), 0, 20, 1, 1, true, true));
         when(assignmentService.search(any())).thenReturn(new PageResponse<>(List.of(assignmentResponse()), 0, 20, 1, 1, true, true));
 
-        mockMvc.perform(get("/api/v1/tax/groups").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/groups").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("CA-HST"));
-        mockMvc.perform(get("/api/v1/tax/group-components").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/group-components").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/tax/categories").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/categories").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].treatment").value("STANDARD"));
-        mockMvc.perform(get("/api/v1/tax/product-category-assignments").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/product-category-assignments").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk());
     }
 
     @Test
     void groupStatusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/tax/groups/{id}/status", GROUP_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

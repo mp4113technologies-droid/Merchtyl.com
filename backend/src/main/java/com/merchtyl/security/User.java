@@ -1,5 +1,6 @@
 package com.merchtyl.security;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.merchtyl.platform.persistence.BaseUuidEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -118,6 +119,7 @@ public class User extends BaseUuidEntity {
         return displayName;
     }
 
+    @JsonIgnore
     public String getPasswordHash() {
         return passwordHash;
     }
@@ -192,6 +194,7 @@ public class User extends BaseUuidEntity {
         return credentialsDeliveryStatus;
     }
 
+    @JsonIgnore
     public String getPosPinHash() { return posPinHash; }
     public Instant getPosPinUpdatedAt() { return posPinUpdatedAt; }
     public boolean hasPosPin() { return posPinHash != null && !posPinHash.isBlank(); }
@@ -267,6 +270,19 @@ public class User extends BaseUuidEntity {
         this.enabled = false;
     }
 
+    public void anonymizeForDeletion(String anonymizedEmail, String replacementPasswordHash) {
+        this.email = anonymizedEmail;
+        this.displayName = "Deleted user";
+        this.passwordHash = replacementPasswordHash;
+        this.enabled = false;
+        this.locked = true;
+        this.passwordChangeRequired = false;
+        this.posPinHash = null;
+        this.testProvisioningReference = null;
+        this.credentialsDeliveryStatus = null;
+        this.temporaryPasswordExpiresAt = null;
+    }
+
     public void lock() {
         this.locked = true;
     }
@@ -282,5 +298,9 @@ public class User extends BaseUuidEntity {
         changePasswordHash(passwordHash);
         unlock();
         this.passwordResetAt = resetAt == null ? Instant.now() : resetAt;
+    }
+
+    public void invalidateIssuedCredentials(Instant invalidatedAt) {
+        this.passwordResetAt = invalidatedAt == null ? Instant.now() : invalidatedAt;
     }
 }

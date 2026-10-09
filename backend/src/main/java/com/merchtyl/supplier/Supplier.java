@@ -6,11 +6,15 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.util.UUID;
+
 @Entity
 @Table(
         name = "suppliers",
         uniqueConstraints = @UniqueConstraint(name = "uq_suppliers_code", columnNames = "code"))
 public class Supplier extends BaseUuidEntity {
+    @Column(name = "tenant_id")
+    private UUID tenantId;
     @Column(nullable = false, length = 64)
     private String code;
 
@@ -57,6 +61,9 @@ public class Supplier extends BaseUuidEntity {
     public void setActive(boolean active) {
         this.active = active;
     }
+
+    public UUID getTenantId() { return tenantId; }
+    public void assignTenant(UUID tenantId) { this.tenantId = tenantId; }
 
     public String getCode() {
         return code;

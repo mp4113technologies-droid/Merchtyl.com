@@ -92,8 +92,8 @@ class LoggingInfrastructureTest {
         assertThat(output).contains("http_response_completed");
         assertThat(output).contains("SLOW REQUEST");
         assertThat(output).contains("password=********");
-        assertThat(output).contains("Authorization=********");
-        assertThat(output).contains("X-Api-Key=********");
+        assertThat(output).doesNotContain("Authorization=");
+        assertThat(output).doesNotContain("X-Api-Key=");
         assertThat(output).doesNotContain("open-sesame");
         assertThat(output).doesNotContain("raw.jwt.token");
         assertThat(output).doesNotContain("secret-api-key");
@@ -126,6 +126,11 @@ class LoggingInfrastructureTest {
         assertThat(LogSanitizer.maskSensitiveText("password=secret cardNumber=4111111111111111"))
                 .doesNotContain("secret")
                 .doesNotContain("4111111111111111");
+        String credentialUrl = "jdbc:postgresql://user:" + "credential@database.example/app";
+        String providerKey = "re_" + "abcdefghijklmnop";
+        String bearer = "Bearer " + "header.payload.signature";
+        assertThat(LogSanitizer.maskSensitiveText(credentialUrl + " " + providerKey + " " + bearer))
+                .doesNotContain("credential", providerKey, "header.payload.signature");
     }
 
     @Test
@@ -162,7 +167,8 @@ class LoggingInfrastructureTest {
             aspect.logPermissionFailure(joinPoint, false);
 
             assertThat(output).contains("authorization_failure");
-            assertThat(output).contains("cashier@example.test");
+            assertThat(output).contains("user=[REDACTED]");
+            assertThat(output).doesNotContain("cashier@example.test");
             assertThat(output).contains("SALE_CREATE");
         } finally {
             logger.setLevel(previous);

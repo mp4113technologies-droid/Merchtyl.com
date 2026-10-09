@@ -4,10 +4,9 @@ spring:
     # this example profile is selected. Environment variables can still override them.
     import: optional:classpath:application-local.yml
   datasource:
-    # Safe fallback used only when application-local.yml does not provide a datasource.
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/merchtyl}
-    username: ${SPRING_DATASOURCE_USERNAME:merchtyl}
-    password: ${SPRING_DATASOURCE_PASSWORD:merchtyl_dev_password}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
 
 management:
   endpoint:
@@ -24,7 +23,7 @@ logging:
 merchtyl:
   jwt:
     issuer: merchtyl-local
-    secret: ${MERCHTYL_JWT_SECRET:replace-with-a-local-secret-at-least-32-characters}
+    secret: ${MERCHTYL_JWT_SECRET}
   security:
     cors:
       allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1.nip.io:5173,http://localhost:8080

@@ -64,7 +64,7 @@ class TaxComponentRateControllerAuthorizationTest {
     @Test
     void taxViewerCannotCreateRate() throws Exception {
         mockMvc.perform(post("/api/v1/tax/rates")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(rateJson()))
                 .andExpect(status().isForbidden());
@@ -77,7 +77,7 @@ class TaxComponentRateControllerAuthorizationTest {
         when(taxRateService.create(any(), any())).thenReturn(rateResponse());
 
         mockMvc.perform(post("/api/v1/tax/rates")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("TAX_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(rateJson()))
                 .andExpect(status().isCreated())
@@ -92,13 +92,13 @@ class TaxComponentRateControllerAuthorizationTest {
         when(taxComponentService.search(any())).thenReturn(new PageResponse<>(List.of(componentResponse()), 0, 20, 1, 1, true, true));
         when(taxRateService.search(any())).thenReturn(new PageResponse<>(List.of(rateResponse()), 0, 20, 1, 1, true, true));
 
-        mockMvc.perform(get("/api/v1/tax/types").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/types").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("GST"));
-        mockMvc.perform(get("/api/v1/tax/components").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/components").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("GST"));
-        mockMvc.perform(get("/api/v1/tax/rates").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/rates").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].status").value("ACTIVE"));
     }
@@ -106,7 +106,7 @@ class TaxComponentRateControllerAuthorizationTest {
     @Test
     void rateStatusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/tax/rates/{id}/status", RATE_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

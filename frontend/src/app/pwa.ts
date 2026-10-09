@@ -31,8 +31,8 @@ export function registerMerchtylServiceWorker() {
           }
         });
       });
-    }).catch((error) => {
-      console.error('Service worker registration failed', error);
+    }).catch(() => {
+      console.error('Service worker registration failed');
     });
 
     let refreshing = false;

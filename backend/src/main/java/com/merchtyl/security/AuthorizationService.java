@@ -16,25 +16,22 @@ public class AuthorizationService {
 
     public boolean hasPermission(Authentication authentication, PermissionCode permission) {
         Objects.requireNonNull(permission, "permission is required");
-        return authentication != null
-                && authentication.isAuthenticated()
-                && authentication.getAuthorities().stream()
-                .anyMatch(authority -> permission.name().equals(authority.getAuthority()));
+        return hasAuthority(authentication, TENANT_SCOPE_AUTHORITY)
+                && hasRawPermission(authentication, permission);
     }
 
     public boolean hasPlatformPermission(Authentication authentication, PermissionCode permission) {
-        return hasAuthority(authentication, PLATFORM_SCOPE_AUTHORITY) && hasPermission(authentication, permission);
+        return hasAuthority(authentication, PLATFORM_SCOPE_AUTHORITY) && hasRawPermission(authentication, permission);
     }
 
     public boolean hasTenantPermission(Authentication authentication, PermissionCode permission) {
-        return hasAuthority(authentication, TENANT_SCOPE_AUTHORITY) && hasPermission(authentication, permission);
+        return hasPermission(authentication, permission);
     }
 
     public boolean canCreateProduct(Authentication authentication) {
         boolean allowed = hasTenantPermission(authentication, PermissionCode.PRODUCT_CREATE);
-        log.info("product_event event={} actor={} actor_role={} permission={}",
+        log.info("product_event event={} actor=[REDACTED] actor_role={} permission={}",
                 allowed ? "PRODUCT_CREATE_AUTHORIZED" : "PRODUCT_CREATE_DENIED",
-                authentication == null ? null : authentication.getName(),
                 authentication == null ? null : authentication.getAuthorities().stream()
                         .map(authority -> authority.getAuthority())
                         .filter(authority -> authority.startsWith("ROLE_"))
@@ -50,7 +47,15 @@ public class AuthorizationService {
     }
 
     public boolean hasAnyPlatformPermission(Authentication authentication, PermissionCode... permissions) {
-        return hasAuthority(authentication, PLATFORM_SCOPE_AUTHORITY) && hasAnyPermission(authentication, permissions);
+        return hasAuthority(authentication, PLATFORM_SCOPE_AUTHORITY)
+                && Arrays.stream(permissions).anyMatch(permission -> hasRawPermission(authentication, permission));
+    }
+
+    private boolean hasRawPermission(Authentication authentication, PermissionCode permission) {
+        return authentication != null
+                && authentication.isAuthenticated()
+                && authentication.getAuthorities().stream()
+                .anyMatch(authority -> permission.name().equals(authority.getAuthority()));
     }
 
     private boolean hasAuthority(Authentication authentication, String authorityName) {

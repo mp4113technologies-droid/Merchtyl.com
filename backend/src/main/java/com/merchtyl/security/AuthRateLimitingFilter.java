@@ -32,6 +32,9 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
             "/api/v1/auth/reset-password",
             "/api/v1/auth/refresh",
             "/api/v1/auth/first-login/change-password",
+            "/api/v1/platform/auth/login",
+            "/api/v1/platform/admins/activate",
+            "/api/v1/platform/owner-invitations/activate",
             "/api/v1/public/contact");
 
     private final SecurityProperties.RateLimit properties;
@@ -111,11 +114,19 @@ public class AuthRateLimitingFilter extends OncePerRequestFilter {
     }
 
     private int maxAttemptsFor(String path) {
-        return path.equals("/api/v1/public/contact") ? properties.contactMaxAttempts() : properties.authMaxAttempts();
+        if (path.equals("/api/v1/public/contact")) return properties.contactMaxAttempts();
+        if (isPasswordReset(path)) return properties.passwordResetMaxAttempts();
+        return properties.authMaxAttempts();
     }
 
     private Duration windowFor(String path) {
-        return path.equals("/api/v1/public/contact") ? properties.contactWindow() : properties.authWindow();
+        if (path.equals("/api/v1/public/contact")) return properties.contactWindow();
+        if (isPasswordReset(path)) return properties.passwordResetWindow();
+        return properties.authWindow();
+    }
+
+    private static boolean isPasswordReset(String path) {
+        return path.equals("/api/v1/auth/forgot-password") || path.equals("/api/v1/auth/reset-password");
     }
 
     private void cleanExpiredBuckets(Instant now) {

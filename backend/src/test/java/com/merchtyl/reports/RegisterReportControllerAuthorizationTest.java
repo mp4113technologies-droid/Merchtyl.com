@@ -53,7 +53,7 @@ class RegisterReportControllerAuthorizationTest {
     @Test
     void registerReportRequiresReportViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/reports/registers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(registerReportService, never()).summarize(any(), any());
@@ -70,7 +70,7 @@ class RegisterReportControllerAuthorizationTest {
                         .param("status", "CLOSED")
                         .param("dateFrom", "2026-07-01")
                         .param("dateTo", "2026-07-31")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REPORT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REPORT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.openingCash").value(100.00))
                 .andExpect(jsonPath("$.expectedCash").value(383.00))

@@ -61,7 +61,7 @@ class TaxGeographyControllerAuthorizationTest {
     @Test
     void taxViewerCannotCreateCountry() throws Exception {
         mockMvc.perform(post("/api/v1/tax/countries")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(countryJson()))
                 .andExpect(status().isForbidden());
@@ -74,7 +74,7 @@ class TaxGeographyControllerAuthorizationTest {
         when(countryService.create(any(), any())).thenReturn(countryResponse());
 
         mockMvc.perform(post("/api/v1/tax/countries")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("TAX_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(countryJson()))
                 .andExpect(status().isCreated())
@@ -89,15 +89,15 @@ class TaxGeographyControllerAuthorizationTest {
         when(taxJurisdictionService.search(any())).thenReturn(new PageResponse<>(List.of(jurisdictionResponse()), 0, 20, 1, 1, true, true));
 
         mockMvc.perform(get("/api/v1/tax/countries")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("CA"));
         mockMvc.perform(get("/api/v1/tax/administrative-areas")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("NB"));
         mockMvc.perform(get("/api/v1/tax/jurisdictions")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("GST"));
     }
@@ -105,7 +105,7 @@ class TaxGeographyControllerAuthorizationTest {
     @Test
     void statusPatchRequiresTaxManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/tax/jurisdictions/{id}/status", JURISDICTION_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

@@ -1,5 +1,6 @@
 package com.merchtyl.platform.admin;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.merchtyl.security.RoleName;
 
 import java.time.Instant;
@@ -9,7 +10,7 @@ public record PlatformUserAccount(
         UUID id,
         String email,
         String displayName,
-        String passwordHash,
+        @JsonIgnore String passwordHash,
         RoleName role,
         boolean enabled,
         boolean locked,

@@ -50,7 +50,7 @@ class TaxCalculationControllerAuthorizationTest {
         when(taxEngine.calculate(any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/tax/calculate")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson()))
                 .andExpect(status().isOk())
@@ -62,7 +62,7 @@ class TaxCalculationControllerAuthorizationTest {
     @Test
     void calculationRequiresTaxViewPermission() throws Exception {
         mockMvc.perform(post("/api/v1/tax/calculate")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson()))
                 .andExpect(status().isForbidden());

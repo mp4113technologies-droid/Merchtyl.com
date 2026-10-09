@@ -9,6 +9,8 @@ import com.merchtyl.common.NotFoundException;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -27,6 +29,7 @@ public class SupplierService {
     private final SupplierRepository supplierRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    @Autowired private StoreAccessService storeAccessService;
 
     public SupplierService(SupplierRepository supplierRepository, UserRepository userRepository, AuditService auditService) {
         this.supplierRepository = supplierRepository;
@@ -36,21 +39,26 @@ public class SupplierService {
 
     @Transactional
     public SupplierResponse create(SupplierRequest request, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
         SupplierValues values = values(request);
-        if (supplierRepository.existsByCodeIgnoreCase(values.code())) {
+        if (tenantId == null ? supplierRepository.existsByCodeIgnoreCase(values.code())
+                : supplierRepository.existsByTenantIdAndCodeIgnoreCase(tenantId, values.code())) {
             throw duplicateCode();
         }
-        SupplierResponse response = SupplierResponse.from(save(new Supplier(values)));
+        Supplier supplier = new Supplier(values);
+        supplier.assignTenant(tenantId);
+        SupplierResponse response = SupplierResponse.from(save(supplier));
         audit(authentication, AuditAction.SUPPLIER_CREATED, response.id(), null, response);
         return response;
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<SupplierResponse> search(SupplierSearchRequest request) {
+    public PageResponse<SupplierResponse> search(SupplierSearchRequest request, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var page = supplierRepository.findAll(
-                specification(request),
+                tenantId == null ? specification(request) : specification(request).and((root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("tenantId"), tenantId)),
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.ASC, "name").and(Sort.by(Sort.Direction.ASC, "id"))));
         return new PageResponse<>(
@@ -64,16 +72,19 @@ public class SupplierService {
     }
 
     @Transactional(readOnly = true)
-    public SupplierResponse get(UUID id) {
-        return SupplierResponse.from(find(id));
+    public SupplierResponse get(UUID id, Authentication authentication) {
+        UUID tenantId = currentTenantId(authentication);
+        return SupplierResponse.from(tenantId == null ? find(id) : find(id, tenantId));
     }
 
     @Transactional
     public SupplierResponse update(UUID id, SupplierUpdateRequest request, Authentication authentication) {
-        Supplier supplier = find(id);
+        UUID tenantId = currentTenantId(authentication);
+        Supplier supplier = tenantId == null ? find(id) : find(id, tenantId);
         requireCurrentVersion(supplier, request.version());
         SupplierValues values = values(request);
-        if (supplierRepository.existsByCodeIgnoreCaseAndIdNot(values.code(), id)) {
+        if (tenantId == null ? supplierRepository.existsByCodeIgnoreCaseAndIdNot(values.code(), id)
+                : supplierRepository.existsByTenantIdAndCodeIgnoreCaseAndIdNot(tenantId, values.code(), id)) {
             throw duplicateCode();
         }
         SupplierResponse before = SupplierResponse.from(supplier);
@@ -85,7 +96,8 @@ public class SupplierService {
 
     @Transactional
     public SupplierResponse updateStatus(UUID id, SupplierStatusRequest request, Authentication authentication) {
-        Supplier supplier = find(id);
+        UUID tenantId = currentTenantId(authentication);
+        Supplier supplier = tenantId == null ? find(id) : find(id, tenantId);
         requireCurrentVersion(supplier, request.version());
         SupplierResponse before = SupplierResponse.from(supplier);
         supplier.setActive(request.active());
@@ -105,6 +117,15 @@ public class SupplierService {
     private Supplier find(UUID id) {
         return supplierRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Supplier not found"));
+    }
+
+    private Supplier find(UUID id, UUID tenantId) {
+        return supplierRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new NotFoundException("Supplier not found"));
+    }
+
+    private UUID currentTenantId(Authentication authentication) {
+        return storeAccessService == null ? null : storeAccessService.currentTenantId(authentication);
     }
 
     private SupplierValues values(SupplierRequest request) {

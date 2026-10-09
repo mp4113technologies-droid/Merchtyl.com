@@ -36,6 +36,7 @@ describe('Food POS', () => {
   beforeEach(() => {
     const now = Date.now();
     window.localStorage.removeItem(`merchtyl.food-pos-state:${sessionId}`);
+    window.sessionStorage.removeItem(`merchtyl.food-pos-state:${sessionId}`);
     window.localStorage.setItem('merchtyl.session', JSON.stringify({ accessToken: 'token', refreshToken: 'refresh', tokenType: 'Bearer', accessTokenExpiresAt: new Date(now + 900_000).toISOString(), refreshTokenExpiresAt: new Date(now + 86_400_000).toISOString(), userId: 'user', email: 'kitchen@test', displayName: 'Kitchen', roles: ['KITCHEN'] }));
     vi.restoreAllMocks();
   });

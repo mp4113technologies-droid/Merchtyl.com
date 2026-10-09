@@ -39,7 +39,7 @@ public class InitialInventoryWorkbookService {
             writeReference(refs,1,"Brands",brands.findAllByTenantId(store.getTenantId()).stream().filter(Brand::isActive).map(Brand::getName).sorted().toList());
             writeReference(refs,2,"Units",units.findAll().stream().filter(UnitOfMeasure::isActive).map(UnitOfMeasure::getCode).sorted().toList());
             writeReference(refs,3,"Tax Categories",taxes.findAll().stream().filter(TaxCategory::isActive).map(TaxCategory::getName).sorted().toList());
-            writeReference(refs,4,"Suppliers",suppliers.findAll().stream().filter(Supplier::isActive).map(Supplier::getName).sorted().toList());
+            writeReference(refs,4,"Suppliers",suppliers.findAllByTenantId(store.getTenantId()).stream().filter(Supplier::isActive).map(Supplier::getName).sorted().toList());
             addDropdown(setup,workbook,10,0);addDropdown(setup,workbook,11,1);addDropdown(setup,workbook,12,2);addDropdown(setup,workbook,13,3);addDropdown(setup,workbook,14,4);addListDropdown(setup,15,"YES,NO");addListDropdown(setup,16,"YES,NO");
             workbook.setSheetHidden(workbook.getSheetIndex(refs),true);workbook.write(out);return out.toByteArray();
         }catch(IOException e){throw new IllegalStateException("Unable to create inventory template",e);}

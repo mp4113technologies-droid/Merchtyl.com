@@ -296,7 +296,6 @@ export async function printRenderedReceipt(context: ReceiptPrintContext) {
     type: 'RETAIL_RECEIPT',
     print: async () => {
       await afterNextPaint();
-      if (import.meta.env.DEV) console.info('RECEIPT_PRINT_REQUESTED', { saleId: context.saleId, registerId: context.registerId });
       window.print();
     }
   }]);

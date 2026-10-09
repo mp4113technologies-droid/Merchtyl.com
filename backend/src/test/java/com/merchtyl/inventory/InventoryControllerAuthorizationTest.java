@@ -75,7 +75,7 @@ class InventoryControllerAuthorizationTest {
     @Test
     void inventoryViewerCannotRecordStockChange() throws Exception {
         mockMvc.perform(post("/api/v1/inventory/transactions")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CHANGE_JSON))
                 .andExpect(status().isForbidden());
@@ -88,7 +88,7 @@ class InventoryControllerAuthorizationTest {
         when(inventoryService.recordStockChange(any(), any())).thenReturn(transactionResponse());
 
         mockMvc.perform(post("/api/v1/inventory/transactions")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("INVENTORY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CHANGE_JSON))
                 .andExpect(status().isCreated())
@@ -100,7 +100,7 @@ class InventoryControllerAuthorizationTest {
     @Test
     void inventoryCurrentStockRequiresViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/inventory/balances/current")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW")))
                         .param("storeId", STORE_ID.toString())
                         .param("productId", PRODUCT_ID.toString()))
                 .andExpect(status().isForbidden());
@@ -121,14 +121,14 @@ class InventoryControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/inventory/balances/current")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .param("storeId", STORE_ID.toString())
                         .param("productId", PRODUCT_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quantityOnHand").value(5.0000));
 
         mockMvc.perform(get("/api/v1/inventory/transactions")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .param("storeId", STORE_ID.toString())
                         .param("productId", PRODUCT_ID.toString()))
                 .andExpect(status().isOk())
@@ -138,7 +138,7 @@ class InventoryControllerAuthorizationTest {
     @Test
     void inventoryViewerCannotCreateAdjustment() throws Exception {
         mockMvc.perform(post("/api/v1/inventory/adjustments")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(adjustmentJson()))
                 .andExpect(status().isForbidden());
@@ -151,7 +151,7 @@ class InventoryControllerAuthorizationTest {
         when(stockAdjustmentService.create(any(), any())).thenReturn(adjustmentResponse());
 
         mockMvc.perform(post("/api/v1/inventory/adjustments")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("INVENTORY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(adjustmentJson()))
                 .andExpect(status().isCreated())
@@ -172,7 +172,7 @@ class InventoryControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/inventory/adjustments")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .param("storeId", STORE_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].reason").value("Cycle count"));
@@ -181,7 +181,7 @@ class InventoryControllerAuthorizationTest {
     @Test
     void inventoryViewerCannotCreateCount() throws Exception {
         mockMvc.perform(post("/api/v1/inventory/counts")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(stockCountJson()))
                 .andExpect(status().isForbidden());
@@ -203,7 +203,7 @@ class InventoryControllerAuthorizationTest {
                 false));
 
         mockMvc.perform(post("/api/v1/inventory/counts")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("INVENTORY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(stockCountJson()))
                 .andExpect(status().isCreated())
@@ -211,14 +211,14 @@ class InventoryControllerAuthorizationTest {
                 .andExpect(jsonPath("$.status").value("DRAFT"));
 
         mockMvc.perform(post("/api/v1/inventory/counts/00000000-0000-0000-0000-000000000906/review")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("INVENTORY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reviewNotes\":\"Ready\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_REVIEW"));
 
         mockMvc.perform(post("/api/v1/inventory/counts/00000000-0000-0000-0000-000000000906/post")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("INVENTORY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_MANAGE")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "post-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"postNotes\":\"Posted\"}"))
@@ -238,7 +238,7 @@ class InventoryControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/inventory/counts")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("INVENTORY_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("INVENTORY_VIEW")))
                         .param("storeId", STORE_ID.toString()))
                 .andExpect(status().isForbidden());
     }

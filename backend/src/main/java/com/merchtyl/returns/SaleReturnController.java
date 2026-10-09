@@ -37,7 +37,8 @@ public class SaleReturnController {
     PageResponse<ReturnResponse> listForSale(
             @PathVariable UUID saleId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return returnService.search(saleId, null, page, size);
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return returnService.search(saleId, null, page, size, authentication);
     }
 }

@@ -1787,15 +1787,22 @@ export function refreshSession(payload: RefreshPayload) {
   });
 }
 
-export function logout(refreshToken: string) {
+export function logout(accessToken: string, refreshToken?: string | null) {
   return request<void>('/auth/logout', {
     method: 'POST',
     body: JSON.stringify({ refreshToken })
-  });
+  }, accessToken);
 }
 
 export function getCurrentUser(token: string) {
   return request<CurrentUserResponse>('/auth/me', undefined, token);
+}
+
+export function deleteCurrentAccount(token: string, password: string) {
+  return request<void>('/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify({ password })
+  }, token);
 }
 
 export function getPlatformDashboard(token: string) {
@@ -1964,7 +1971,7 @@ export function getEmailProviderStatus(token: string) {
 }
 
 export function sendPlatformTestEmail(token: string, recipient: string) {
-  return request<EmailDelivery>('/platform/email/test', {
+  return request<EmailDelivery>('/platform/email/diagnostics/send', {
     method: 'POST',
     body: JSON.stringify({ recipient })
   }, token);

@@ -71,7 +71,7 @@ class ReturnControllerAuthorizationTest {
     @Test
     void createRequiresReturnCreatePermission() throws Exception {
         mockMvc.perform(post("/api/v1/returns")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("RETURN_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
                 .andExpect(status().isForbidden());
@@ -84,7 +84,7 @@ class ReturnControllerAuthorizationTest {
         when(returnService.create(any(), any())).thenReturn(response(false));
 
         mockMvc.perform(post("/api/v1/returns")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("RETURN_CREATE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
                 .andExpect(status().isCreated())
@@ -92,7 +92,7 @@ class ReturnControllerAuthorizationTest {
                 .andExpect(jsonPath("$.items[0].originalSaleItemId").value(SALE_ITEM_ID.toString()));
 
         mockMvc.perform(post("/api/v1/sales/{saleId}/returns", SALE_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("RETURN_CREATE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -112,31 +112,31 @@ class ReturnControllerAuthorizationTest {
     @Test
     void readRequiresReturnViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/returns/{id}", RETURN_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("RETURN_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_CREATE"))))
                 .andExpect(status().isForbidden());
 
-        verify(returnService, never()).get(any());
+        verify(returnService, never()).get(any(), any());
     }
 
     @Test
     void viewerCanReadAndSearchReturns() throws Exception {
-        when(returnService.get(RETURN_ID)).thenReturn(response(true));
-        when(returnService.search(any(), any(), any(Integer.class), any(Integer.class))).thenReturn(new com.merchtyl.common.PageResponse<>(
+        when(returnService.get(any(), any())).thenReturn(response(true));
+        when(returnService.search(any(), any(), any(Integer.class), any(Integer.class), any())).thenReturn(new com.merchtyl.common.PageResponse<>(
                 List.of(response(false)), 0, 20, 1, 1, true, true));
 
         mockMvc.perform(get("/api/v1/returns/{id}", RETURN_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("RETURN_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fullReturn").value(true));
 
         mockMvc.perform(get("/api/v1/returns")
                         .param("originalSaleId", SALE_ID.toString())
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("RETURN_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(RETURN_ID.toString()));
 
         mockMvc.perform(get("/api/v1/sales/{saleId}/returns", SALE_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("RETURN_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("RETURN_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(RETURN_ID.toString()));
     }

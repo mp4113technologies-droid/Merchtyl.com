@@ -88,7 +88,7 @@ public class PlatformBootstrapRunner implements ApplicationRunner {
                 null,
                 Map.of("email", created.email(), "role", created.role(), "passwordChangeRequired", true),
                 "environment bootstrap"));
-        log.info("Initial Platform Super Admin created for configured email={}", created.email());
+        log.info("Initial Platform Super Admin created for configured email=[REDACTED]");
     }
 
     private static String required(String value, String envName) {

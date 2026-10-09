@@ -16,6 +16,7 @@ import com.merchtyl.sales.SaleRepository;
 import com.merchtyl.sales.SaleStatus;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import jakarta.persistence.OptimisticLockException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -48,6 +49,7 @@ public class ReturnService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final Clock clock;
+    @Autowired private StoreAccessService storeAccessService;
 
     @Autowired
     public ReturnService(
@@ -79,6 +81,7 @@ public class ReturnService {
         User actor = actor(authentication);
         Sale sale = saleRepository.findByIdForUpdate(required(request.originalSaleId(), "originalSaleId"))
                 .orElseThrow(() -> new NotFoundException("Original sale not found"));
+        if (storeAccessService != null) storeAccessService.requireStoreAccess(authentication, sale.getStore().getId());
         requireCompletedSale(sale);
 
         String returnReason = cleanOptional(request.reason());
@@ -113,19 +116,23 @@ public class ReturnService {
     }
 
     @Transactional(readOnly = true)
-    public ReturnResponse get(UUID id) {
+    public ReturnResponse get(UUID id, Authentication authentication) {
         Return returnRecord = returnRepository.findById(required(id, "return id"))
                 .orElseThrow(() -> new NotFoundException("Return not found"));
+        storeAccessService.requireStoreAccess(authentication, returnRecord.getStore().getId());
         return ReturnResponse.from(returnRecord, isFullReturn(returnRecord.getOriginalSale()));
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ReturnResponse> search(UUID originalSaleId, UUID storeId, int page, int size) {
+    public PageResponse<ReturnResponse> search(UUID originalSaleId, UUID storeId, int page, int size, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        if (storeId != null) storeAccessService.requireStoreAccess(authentication, storeId);
         int pageNumber = Math.max(0, page);
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, size));
         var results = returnRepository.findAll(
                 Specification.where(equalUuid("originalSale", "id", originalSaleId))
-                        .and(equalUuid("store", "id", storeId)),
+                        .and(equalUuid("store", "id", storeId))
+                        .and((root, query, cb) -> cb.equal(root.get("store").get("tenantId"), tenantId)),
                 PageRequest.of(pageNumber, pageSize,
                         Sort.by(Sort.Direction.DESC, "occurredAt").and(Sort.by(Sort.Direction.DESC, "id"))));
         return new PageResponse<>(

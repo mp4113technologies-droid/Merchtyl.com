@@ -43,7 +43,8 @@ public class ProductSupplierController {
             @RequestParam(required = false) Boolean preferred,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
         return productSupplierService.search(new ProductSupplierSearchRequest(
                 productId,
                 supplierId,
@@ -51,13 +52,13 @@ public class ProductSupplierController {
                 preferred,
                 active,
                 page,
-                size));
+                size), authentication);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_VIEW)")
-    ProductSupplierResponse get(@PathVariable UUID id) {
-        return productSupplierService.get(id);
+    ProductSupplierResponse get(@PathVariable UUID id, Authentication authentication) {
+        return productSupplierService.get(id, authentication);
     }
 
     @PutMapping("/{id}")

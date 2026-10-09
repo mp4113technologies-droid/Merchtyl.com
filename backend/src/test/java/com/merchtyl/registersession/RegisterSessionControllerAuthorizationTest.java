@@ -85,7 +85,7 @@ class RegisterSessionControllerAuthorizationTest {
     @Test
     void openingRequiresRegisterSessionOpenPermission() throws Exception {
         mockMvc.perform(post("/api/v1/register-sessions/open")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(OPEN_JSON))
                 .andExpect(status().isForbidden());
@@ -98,7 +98,7 @@ class RegisterSessionControllerAuthorizationTest {
         when(registerSessionService.open(any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/register-sessions/open")
-                        .with(user("cashier@example.local").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_OPEN")))
+                        .with(user("cashier@example.local").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_OPEN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(OPEN_JSON))
                 .andExpect(status().isCreated())
@@ -110,7 +110,7 @@ class RegisterSessionControllerAuthorizationTest {
     @Test
     void currentRequiresRegisterSessionViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/register-sessions/current")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_OPEN"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_OPEN"))))
                 .andExpect(status().isForbidden());
 
         verify(registerSessionService, never()).current(any(), any(), any());
@@ -121,7 +121,7 @@ class RegisterSessionControllerAuthorizationTest {
         when(registerSessionService.current(any(), any(), any())).thenReturn(response());
 
         mockMvc.perform(get("/api/v1/register-sessions/current")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
                         .param("deviceId", DEVICE_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deviceId").value(DEVICE_ID.toString()));
@@ -134,7 +134,7 @@ class RegisterSessionControllerAuthorizationTest {
                 Instant.parse("2026-07-21T12:00:00Z"), null, null, null));
 
         mockMvc.perform(get("/api/v1/register-sessions/availability")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
                         .param("registerId", REGISTER_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("IN_USE"))
@@ -145,7 +145,7 @@ class RegisterSessionControllerAuthorizationTest {
     @Test
     void closeRequiresRegisterSessionClosePermission() throws Exception {
         mockMvc.perform(post("/api/v1/register-sessions/{id}/close", SESSION_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CLOSE_JSON))
                 .andExpect(status().isForbidden());
@@ -158,7 +158,7 @@ class RegisterSessionControllerAuthorizationTest {
         when(registerSessionService.close(any(), any(), any())).thenReturn(closedResponse());
 
         mockMvc.perform(post("/api/v1/register-sessions/{id}/close", SESSION_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_CLOSE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_CLOSE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CLOSE_JSON))
                 .andExpect(status().isOk())
@@ -169,7 +169,7 @@ class RegisterSessionControllerAuthorizationTest {
     @Test
     void forceCloseRequiresForceClosePermission() throws Exception {
         mockMvc.perform(post("/api/v1/register-sessions/{id}/force-close", SESSION_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_CLOSE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_CLOSE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(FORCE_CLOSE_JSON))
                 .andExpect(status().isForbidden());
@@ -182,7 +182,7 @@ class RegisterSessionControllerAuthorizationTest {
         when(registerSessionService.forceClose(any(), any(), any())).thenReturn(forceClosedResponse());
 
         mockMvc.perform(post("/api/v1/register-sessions/{id}/force-close", SESSION_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_FORCE_CLOSE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_FORCE_CLOSE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(FORCE_CLOSE_JSON))
                 .andExpect(status().isOk())
@@ -193,7 +193,7 @@ class RegisterSessionControllerAuthorizationTest {
     @Test
     void releaseRequiresReleasePermission() throws Exception {
         mockMvc.perform(post("/api/v1/register-sessions/{id}/release", SESSION_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_TRANSFER")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_TRANSFER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RELEASE_JSON))
                 .andExpect(status().isForbidden());
@@ -206,7 +206,7 @@ class RegisterSessionControllerAuthorizationTest {
         when(registerSessionService.release(any(), any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/register-sessions/{id}/release", SESSION_ID)
-                        .with(user("owner").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_RELEASE")))
+                        .with(user("owner").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_RELEASE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RELEASE_JSON))
                 .andExpect(status().isOk())
@@ -227,7 +227,7 @@ class RegisterSessionControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/register-sessions")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_SESSION_VIEW")))
                         .param("status", "CLOSED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].status").value("CLOSED"));

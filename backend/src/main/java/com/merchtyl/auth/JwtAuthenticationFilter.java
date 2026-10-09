@@ -84,6 +84,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             throw new org.springframework.security.authentication.CredentialsExpiredException("Credentials changed");
                         }
                     });
+                } else if (accountScope == AccountScope.PLATFORM && platformUserRepository != null) {
+                    Instant issuedAt = jwtService.accessIssuedAt(token);
+                    platformUserRepository.credentialsInvalidatedAt(subject).ifPresent(invalidatedAt -> {
+                        if (issuedAt.isBefore(invalidatedAt)) {
+                            throw new org.springframework.security.authentication.CredentialsExpiredException("Credentials changed");
+                        }
+                    });
                 }
                 var authentication = new UsernamePasswordAuthenticationToken(
                         userDetails,

@@ -43,14 +43,15 @@ public class SupplierController {
             @RequestParam(required = false) String email,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return supplierService.search(new SupplierSearchRequest(code, name, contactName, email, active, page, size));
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return supplierService.search(new SupplierSearchRequest(code, name, contactName, email, active, page, size), authentication);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).PRODUCT_VIEW)")
-    SupplierResponse get(@PathVariable UUID id) {
-        return supplierService.get(id);
+    SupplierResponse get(@PathVariable UUID id, Authentication authentication) {
+        return supplierService.get(id, authentication);
     }
 
     @PutMapping("/{id}")

@@ -67,7 +67,7 @@ class CashMovementControllerAuthorizationTest {
     @Test
     void createRequiresCashMovementCreatePermission() throws Exception {
         mockMvc.perform(post("/api/v1/cash-movements")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("CASH_MOVEMENT_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
                 .andExpect(status().isForbidden());
@@ -80,7 +80,7 @@ class CashMovementControllerAuthorizationTest {
         when(cashMovementService.create(any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/cash-movements")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CREATE_JSON))
                 .andExpect(status().isCreated())
@@ -92,7 +92,7 @@ class CashMovementControllerAuthorizationTest {
     @Test
     void historyRequiresCashMovementViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/cash-movements")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE"))))
                 .andExpect(status().isForbidden());
 
         verify(cashMovementService, never()).search(any(), any());
@@ -110,7 +110,7 @@ class CashMovementControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/cash-movements")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("CASH_MOVEMENT_VIEW")))
                         .param("registerSessionId", SESSION_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(MOVEMENT_ID.toString()))
@@ -120,7 +120,7 @@ class CashMovementControllerAuthorizationTest {
     @Test
     void payoutReversalRequiresApprovalPermission() throws Exception {
         mockMvc.perform(post("/api/v1/cash-movements/{id}/reversal", MOVEMENT_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("CASH_MOVEMENT_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Entered twice\"}"))
                 .andExpect(status().isForbidden());
@@ -133,7 +133,7 @@ class CashMovementControllerAuthorizationTest {
         when(cashMovementService.reversePayout(any(), any(), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/v1/cash-movements/{id}/reversal", MOVEMENT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("CASH_MOVEMENT_APPROVE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("CASH_MOVEMENT_APPROVE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Entered twice\"}"))
                 .andExpect(status().isCreated());

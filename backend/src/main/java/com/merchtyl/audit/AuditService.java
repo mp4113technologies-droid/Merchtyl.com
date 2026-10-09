@@ -15,6 +15,9 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import com.merchtyl.security.StoreAccessService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
 import java.util.Locale;
@@ -27,6 +30,7 @@ public class AuditService {
 
     private final AuditRecordRepository auditRecordRepository;
     private final ObjectMapper objectMapper;
+    @Autowired(required = false) private StoreAccessService storeAccessService;
 
     public AuditService(AuditRecordRepository auditRecordRepository, ObjectMapper objectMapper) {
         this.auditRecordRepository = auditRecordRepository;
@@ -46,6 +50,11 @@ public class AuditService {
                 snapshot(command.afterSnapshot()),
                 cleanOptional(command.reason()),
                 correlationId());
+        if (command.actorUserId() != null) {
+            record.assignTenant(auditRecordRepository.tenantIdForUser(command.actorUserId()).orElse(null));
+        } else if (command.storeId() != null) {
+            record.assignTenant(auditRecordRepository.tenantIdForStore(command.storeId()).orElse(null));
+        }
         AuditRecord saved = auditRecordRepository.save(record);
         logBusinessEvent(command);
         return saved;
@@ -69,10 +78,29 @@ public class AuditService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<AuditRecordResponse> search(AuditSearchRequest request, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        if (request.storeId() != null) storeAccessService.requireStoreAccess(authentication, request.storeId());
+        int pageNumber = Math.max(0, request.page());
+        int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
+        var page = auditRecordRepository.findAll(specification(request).and(equalUuid("tenantId", tenantId)),
+                PageRequest.of(pageNumber, pageSize, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"))));
+        return new PageResponse<>(page.getContent().stream().map(AuditRecordResponse::from).toList(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages(), page.isFirst(), page.isLast());
+    }
+
+    @Transactional(readOnly = true)
     public AuditRecordResponse get(UUID id) {
         return auditRecordRepository.findById(id)
                 .map(AuditRecordResponse::from)
                 .orElseThrow(() -> new NotFoundException("Audit record not found"));
+    }
+
+    @Transactional(readOnly = true)
+    public AuditRecordResponse get(UUID id, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        return auditRecordRepository.findById(id).filter(record -> tenantId.equals(record.getTenantId()))
+                .map(AuditRecordResponse::from).orElseThrow(() -> new NotFoundException("Audit record not found"));
     }
 
     private Specification<AuditRecord> specification(AuditSearchRequest request) {
@@ -147,13 +175,11 @@ public class AuditService {
     }
 
     private static void logBusinessEvent(CreateAuditRecordCommand command) {
-        log.info("business_event action={} entity_type={} entity_id={} actor_user_id={} store_id={} register_id={} reason={}",
+        log.info("business_event action={} entity_type={} entity_id={} actor_user_id=[REDACTED] store_id={} register_id={} reason=[REDACTED]",
                 command.action(),
                 LogSanitizer.clean(command.entityType()),
                 command.entityId(),
-                command.actorUserId(),
                 command.storeId(),
-                command.registerId(),
-                LogSanitizer.maskValue("reason", command.reason(), true));
+                command.registerId());
     }
 }

@@ -127,7 +127,7 @@ class SaleControllerAuthorizationTest {
     @Test
     void createDraftRequiresSaleCreatePermission() throws Exception {
         mockMvc.perform(post("/api/v1/sales/drafts")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(DRAFT_JSON))
                 .andExpect(status().isForbidden());
@@ -138,7 +138,7 @@ class SaleControllerAuthorizationTest {
     @Test
     void checkoutRequiresSaleCreatePermission() throws Exception {
         mockMvc.perform(post("/api/v1/sales/checkout")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CHECKOUT_JSON))
                 .andExpect(status().isForbidden());
@@ -150,7 +150,7 @@ class SaleControllerAuthorizationTest {
         when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.PENDING_PAYMENT));
 
         mockMvc.perform(post("/api/v1/sales/checkout")
-                        .with(user("kitchen").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("kitchen").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(FOOD_CHECKOUT_JSON))
                 .andExpect(status().isCreated());
@@ -166,7 +166,7 @@ class SaleControllerAuthorizationTest {
         when(saleService.checkout(any(), any())).thenReturn(response(SaleStatus.PENDING_PAYMENT));
 
         mockMvc.perform(post("/api/v1/sales/checkout")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MIXED_RETAIL_CHECKOUT_JSON))
                 .andExpect(status().isCreated());
@@ -201,14 +201,14 @@ class SaleControllerAuthorizationTest {
                 false));
 
         mockMvc.perform(post("/api/v1/sales/drafts")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(DRAFT_JSON))
                 .andExpect(status().isConflict());
         verify(saleService, never()).createDraft(any(), any());
 
         mockMvc.perform(post("/api/v1/sales/checkout")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CHECKOUT_JSON))
                 .andExpect(status().isCreated())
@@ -216,50 +216,50 @@ class SaleControllerAuthorizationTest {
                 .andExpect(jsonPath("$.estimatedTaxAmount").value(1.50));
 
         mockMvc.perform(post("/api/v1/sales/{id}/items", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(ITEM_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].productId").value(PRODUCT_ID.toString()));
 
         mockMvc.perform(patch("/api/v1/sales/{id}/items/{itemId}/quantity", SALE_ID, ITEM_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"quantity\":3.0000}"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(delete("/api/v1/sales/{id}/items/{itemId}", SALE_ID, ITEM_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/sales/{id}/hold", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("HELD"));
 
         mockMvc.perform(post("/api/v1/sales/{id}/resume", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"));
 
         mockMvc.perform(post("/api/v1/sales/{id}/cancel", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
 
         mockMvc.perform(post("/api/v1/sales/{id}/recalculate", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/sales/{id}/payments", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"method\":\"CASH\",\"amount\":11.50,\"cashTendered\":20.00}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.payments[0].method").value("CASH"));
 
         mockMvc.perform(post("/api/v1/sales/{id}/complete", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE")))
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "complete-key"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
@@ -268,18 +268,18 @@ class SaleControllerAuthorizationTest {
     @Test
     void getRequiresSaleViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/sales/{id}", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isForbidden());
 
-        verify(saleService, never()).get(any());
+        verify(saleService, never()).get(any(), any());
     }
 
     @Test
     void saleViewerCanReadSale() throws Exception {
-        when(saleService.get(SALE_ID)).thenReturn(response(SaleStatus.DRAFT));
+        when(saleService.get(any(), any())).thenReturn(response(SaleStatus.DRAFT));
 
         mockMvc.perform(get("/api/v1/sales/{id}", SALE_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(SALE_ID.toString()));
     }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <conversionRule conversionWord="safeMessage" converterClass="com.merchtyl.logging.RedactedMessageConverter"/>
     <springProperty scope="context" name="jsonEnabled" source="merchtyl.logging.json.enabled" defaultValue="false"/>
     <springProperty scope="context" name="rootLevel" source="logging.level.root" defaultValue="INFO"/>
     <springProperty scope="context" name="merchtylLevel" source="logging.level.com.merchtyl" defaultValue="INFO"/>
@@ -9,7 +10,7 @@
     <springProperty scope="context" name="transactionLevel" source="logging.level.org.springframework.transaction.interceptor" defaultValue="WARN"/>
 
     <property name="TEXT_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [corr=%X{correlationId:-}] [req=%X{requestId:-}] [tenant=%X{tenantId:-}] [store=%X{storeId:-}] [user=%X{username:-}] [userId=%X{userId:-}] [method=%X{httpMethod:-}] [uri=%X{requestUri:-}] [%thread] %logger{36} - %msg%n%ex"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [corr=%X{correlationId:-}] [req=%X{requestId:-}] [tenant=%X{tenantId:-}] [store=%X{storeId:-}] [method=%X{httpMethod:-}] [uri=%X{requestUri:-}] [%thread] %logger{36} - %safeMessage%n%ex"/>
 
     <appender name="TEXT_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -31,8 +32,9 @@
                 <loggerName>
                     <fieldName>logger</fieldName>
                 </loggerName>
-                <message/>
-                <mdc/>
+                <pattern>
+                    <pattern>{"message":"%safeMessage"}</pattern>
+                </pattern>
                 <stackTrace/>
             </providers>
         </encoder>

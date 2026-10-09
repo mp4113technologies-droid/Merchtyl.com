@@ -69,6 +69,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers
+                        .contentTypeOptions(Customizer.withDefaults())
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
                                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                                         + "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
@@ -115,11 +116,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/first-login/change-password",
                                 "/api/v1/platform/auth/login",
                                 "/api/v1/platform/admins/activate",
-                                "/api/v1/platform/owner-invitations/activate",
-                                "/api/v1/testing/users",
-                                "/api/v1/testing/users/batch",
-                                "/api/v1/testing/users/cleanup").permitAll()
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/testing/users").permitAll()
+                                "/api/v1/platform/owner-invitations/activate").permitAll()
                         .requestMatchers(
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
@@ -196,10 +193,7 @@ public class SecurityConfig {
                     request.getMethod(),
                     code);
         } else if (status == HttpStatus.FORBIDDEN) {
-            log.warn("authorization_event event=Access Denied user={} tenant={} permission={} endpoint={} method={}",
-                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() == null
-                            ? ""
-                            : org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName(),
+            log.warn("authorization_event event=Access Denied user=[REDACTED] tenant={} permission={} endpoint={} method={}",
                     MDC.get("tenantId"),
                     "",
                     request.getRequestURI(),

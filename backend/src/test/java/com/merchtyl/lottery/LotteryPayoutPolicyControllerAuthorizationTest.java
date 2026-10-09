@@ -78,7 +78,7 @@ class LotteryPayoutPolicyControllerAuthorizationTest {
     @Test
     void listRequiresLotteryViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/lottery/payout-policies")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(lotteryPayoutPolicyService, never()).search(any());
@@ -96,7 +96,7 @@ class LotteryPayoutPolicyControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/lottery/payout-policies")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].operatorName").value("State Lottery"))
                 .andExpect(jsonPath("$.content[0].status").value("ACTIVE"));
@@ -105,7 +105,7 @@ class LotteryPayoutPolicyControllerAuthorizationTest {
     @Test
     void createRequiresLotteryManagePermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/payout-policies")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(POLICY_JSON))
                 .andExpect(status().isForbidden());
@@ -118,7 +118,7 @@ class LotteryPayoutPolicyControllerAuthorizationTest {
         when(lotteryPayoutPolicyService.create(any(), any())).thenReturn(response(LotteryPayoutPolicyStatus.ACTIVE, 0));
 
         mockMvc.perform(post("/api/v1/lottery/payout-policies")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(POLICY_JSON))
                 .andExpect(status().isCreated())
@@ -129,7 +129,7 @@ class LotteryPayoutPolicyControllerAuthorizationTest {
     @Test
     void statusPatchRequiresLotteryManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/lottery/payout-policies/{id}/status", POLICY_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

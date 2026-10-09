@@ -90,6 +90,11 @@ public final class LogSanitizer {
         for (String field : SENSITIVE_FIELDS) {
             masked = masked.replaceAll("(?i)(" + java.util.regex.Pattern.quote(field) + "\\s*[=:]\\s*)[^\\s,&}]+", "$1" + MASK);
         }
+        masked = masked.replaceAll("(?i)(?:jdbc:)?(?:postgresql|postgres|mongodb(?:\\+srv)?)://[^\\s/@:]+:[^\\s/@]+@", MASK + "@");
+        masked = masked.replaceAll("(?i)\\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9_-]+\\b", MASK);
+        masked = masked.replaceAll("\\bre_[A-Za-z0-9_-]{16,}\\b", MASK);
+        masked = masked.replaceAll("\\bnpg_[A-Za-z0-9_-]+\\b", MASK);
+        masked = masked.replaceAll("(?i)\\bBearer\\s+[A-Za-z0-9._~+/-]+=*", "Bearer " + MASK);
         masked = masked.replaceAll("\\b(?:\\d[ -]*?){13,19}\\b", MASK);
         return masked;
     }

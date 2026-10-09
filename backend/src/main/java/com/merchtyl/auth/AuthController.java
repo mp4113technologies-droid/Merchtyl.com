@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -84,8 +85,8 @@ public class AuthController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Logout by revoking a refresh token", description = "Public endpoint.")
     @ApiResponse(responseCode = "204", description = "Refresh token revoked when present.")
-    void logout(@Valid @RequestBody LogoutRequest request) {
-        authService.logout(request);
+    void logout(@Valid @RequestBody LogoutRequest request, Authentication authentication) {
+        authService.logout(request, authentication);
     }
 
     @PostMapping("/first-login/change-password")
@@ -104,5 +105,12 @@ public class AuthController {
     @Operation(summary = "Get the authenticated user", description = "Requires a valid JWT.")
     CurrentUserResponse me(Authentication authentication) {
         return authService.currentUser(authentication);
+    }
+
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete the authenticated account", description = "Re-authenticates, revokes active credentials, and anonymizes the user's personal profile while retaining non-identifying financial and audit records.")
+    void deleteMe(@Valid @RequestBody AccountDeletionRequest request, Authentication authentication) {
+        authService.deleteCurrentAccount(request, authentication);
     }
 }

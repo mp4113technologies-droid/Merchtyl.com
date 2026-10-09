@@ -63,7 +63,7 @@ class BusinessDayControllerAuthorizationTest {
         mockMvc.perform(post("/api/v1/business-days/open")
                         .contentType("application/json")
                         .content("{\"storeId\":\"" + STORE_ID + "\"}")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_OPEN"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("BUSINESS_DAY_OPEN"))))
                 .andExpect(status().isOk());
 
         verify(businessDayService).open(any(), any());
@@ -74,7 +74,7 @@ class BusinessDayControllerAuthorizationTest {
         mockMvc.perform(post("/api/v1/business-days/open")
                         .contentType("application/json")
                         .content("{\"storeId\":\"" + STORE_ID + "\"}")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isForbidden());
 
         verify(businessDayService, never()).open(any(), any());
@@ -90,7 +90,7 @@ class BusinessDayControllerAuthorizationTest {
                         .param("dateFrom", "2026-07-01")
                         .param("dateTo", "2026-07-31")
                         .param("status", "CLOSED")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("BUSINESS_DAY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(DAY_ID.toString()))
                 .andExpect(jsonPath("$.content[0].status").value("CLOSED"));
@@ -102,7 +102,7 @@ class BusinessDayControllerAuthorizationTest {
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "close-1")
                         .contentType("application/json")
                         .content("{\"version\":0,\"confirmationAccepted\":true}")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("BUSINESS_DAY_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(idempotencyService, never()).execute(any(), any(), any(), any(), any());
@@ -114,7 +114,7 @@ class BusinessDayControllerAuthorizationTest {
         when(businessDayService.previewClosing(DAY_ID)).thenReturn(preview());
 
         mockMvc.perform(get("/api/v1/business-days/{id}/preview", DAY_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.businessDayId").value(DAY_ID.toString()))
                 .andExpect(jsonPath("$.grossSales").value(100.00))
@@ -127,7 +127,7 @@ class BusinessDayControllerAuthorizationTest {
                         .header(IdempotencyService.IDEMPOTENCY_KEY_HEADER, "reopen-1")
                         .contentType("application/json")
                         .content("{\"version\":1,\"reason\":\"Correction\"}")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("BUSINESS_DAY_CLOSE"))))
                 .andExpect(status().isForbidden());
 
         verify(idempotencyService, never()).execute(any(), any(), any(), any(), any());

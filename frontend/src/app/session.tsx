@@ -28,24 +28,30 @@ const refreshLeewayMs = 60_000;
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 function readStoredSession(): AuthResponse | null {
-  const raw = window.localStorage.getItem(storageKey());
+  const key = storageKey();
+  const legacy = window.localStorage.getItem(key);
+  if (legacy) {
+    window.localStorage.removeItem(key);
+    window.sessionStorage.setItem(key, legacy);
+  }
+  const raw = window.sessionStorage.getItem(key);
   if (!raw) {
     return null;
   }
   try {
     return JSON.parse(raw) as AuthResponse;
   } catch {
-    window.localStorage.removeItem(storageKey());
+    window.sessionStorage.removeItem(storageKey());
     return null;
   }
 }
 
 function storeSession(session: AuthResponse | null) {
   if (session) {
-    window.localStorage.setItem(storageKey(), JSON.stringify(session));
+    window.sessionStorage.setItem(storageKey(), JSON.stringify(session));
     return;
   }
-  window.localStorage.removeItem(storageKey());
+  window.sessionStorage.removeItem(storageKey());
 }
 
 type AuthenticatedSession = AuthResponse & {
@@ -162,15 +168,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     const refreshToken = session?.refreshToken ?? null;
+    const accessToken = session?.accessToken ?? null;
     clearSession(false);
-    if (refreshToken) {
+    if (accessToken) {
       try {
-        await logoutRequest(refreshToken);
+        await logoutRequest(accessToken, refreshToken);
       } catch {
         // The client must still end the local session when server logout cannot complete.
       }
     }
-  }, [clearSession, session?.refreshToken]);
+  }, [clearSession, session?.accessToken, session?.refreshToken]);
 
   const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
 

@@ -78,14 +78,14 @@ public class InventoryService {
 
     @Transactional
     public InventoryTransactionResponse recordStockChange(InventoryStockChangeRequest request, Authentication authentication) {
-        log.info("inventory_event event=INVENTORY_STOCK_ADD_REQUESTED store_id={} product_id={} transaction_type={} actor={}",
-                request.storeId(), request.productId(), request.transactionType(), authentication == null ? null : authentication.getName());
+        log.info("inventory_event event=INVENTORY_STOCK_ADD_REQUESTED store_id={} product_id={} transaction_type={} actor=[REDACTED]",
+                request.storeId(), request.productId(), request.transactionType());
         if (storeAccessService != null && requiresInventoryManagement(request.transactionType())) {
             try {
                 storeAccessService.requireProductManagementScope(authentication, java.util.Set.of(request.storeId()));
             } catch (RuntimeException exception) {
-                log.warn("inventory_event event=INVENTORY_STOCK_DENIED store_id={} product_id={} actor={} reason={}",
-                        request.storeId(), request.productId(), authentication == null ? null : authentication.getName(), exception.getMessage());
+                log.warn("inventory_event event=INVENTORY_STOCK_DENIED store_id={} product_id={} actor=[REDACTED] reason=[REDACTED]",
+                        request.storeId(), request.productId());
                 throw exception;
             }
         }

@@ -83,17 +83,13 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     private void logIncomingRequest(HttpServletRequest request) {
         boolean maskSensitive = properties.getMaskSensitive().isEnabled();
         log.info(
-                "http_request_started method={} uri={} query_params={} client_ip={} user_agent={} authenticated_user={} tenant={} store={} execution_start={} headers={}",
+                "http_request_started method={} uri={} query_params={} tenant={} store={} execution_start={}",
                 request.getMethod(),
                 logSafe(request.getRequestURI()),
                 LogSanitizer.maskQueryString(request.getQueryString(), maskSensitive),
-                clientIp(request),
-                LogSanitizer.clean(request.getHeader("User-Agent")),
-                authenticatedUsername(),
                 firstPresent(MDC.get(LoggingMdc.TENANT_ID), request.getHeader("X-Tenant-ID")),
                 firstPresent(MDC.get(LoggingMdc.STORE_ID), request.getHeader("X-Store-ID")),
-                Instant.now(),
-                LogSanitizer.maskedHeaders(request, maskSensitive));
+                Instant.now());
     }
 
     private void logOutgoingResponse(HttpServletRequest request, HttpServletResponse response, long durationMs, int sqlStatements) {
@@ -165,14 +161,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
     private static void updateAuthenticatedMdc() {
         LoggingMdc.putIfNotBlank(LoggingMdc.USERNAME, authenticatedUsername());
-    }
-
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return LogSanitizer.clean(forwarded.split(",")[0]);
-        }
-        return LogSanitizer.clean(request.getRemoteAddr());
     }
 
     private static String attribute(HttpServletRequest request, String name) {

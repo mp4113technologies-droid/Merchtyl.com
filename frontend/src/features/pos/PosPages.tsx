@@ -131,9 +131,7 @@ function posErrorMessage(error: unknown) {
 }
 
 function posScanDebug(stage: string, details?: Record<string, unknown>) {
-  if (import.meta.env.DEV) {
-    console.debug(`[POS SCAN] ${stage}`, details ?? {});
-  }
+  // Intentionally disabled: scan details can contain customer or transaction data.
 }
 
 function money(value: number, currencyCode = 'USD') {
@@ -189,9 +187,7 @@ function roundedMoney(value: number) {
 
 function reportPosTiming(operation: string, startedAt: number) {
   window.requestAnimationFrame(() => {
-    const durationMs = performance.now() - startedAt;
     performance.measure(`pos:${operation}`, { start: startedAt, end: performance.now() });
-    if (import.meta.env.DEV) console.debug(`[POS PERF] ${operation} ${durationMs.toFixed(1)}ms`);
   });
 }
 
@@ -1456,7 +1452,7 @@ export function PosCartPage() {
       setActiveSale(recoveredSale);
       setSearchParams({ saleId: recoveredSale.id });
     }).catch((error) => {
-      console.error('Draft cart recovery failed', error);
+      console.error('Draft cart recovery failed');
     });
   }, [activeSale, current.data, saleId]);
 

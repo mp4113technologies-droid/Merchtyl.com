@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:1/merchtyl_test
-    username: merchtyl_test
-    password: merchtyl_test
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -28,7 +28,7 @@ management:
 
 merchtyl:
   jwt:
-    secret: test-secret-change-this-development-secret
+    secret: ${MERCHTYL_JWT_SECRET}
   security:
     cors:
       allowed-origins: http://localhost:5173

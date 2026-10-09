@@ -51,7 +51,7 @@ class SalesReportControllerAuthorizationTest {
     @Test
     void salesReportRequiresReportViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/reports/sales")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(salesReportService, never()).summarize(any());
@@ -69,7 +69,7 @@ class SalesReportControllerAuthorizationTest {
                         .param("productId", "00000000-0000-0000-0000-000000000105")
                         .param("dateFrom", "2026-07-01")
                         .param("dateTo", "2026-07-31")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REPORT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REPORT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.grossSales").value(100.00))
                 .andExpect(jsonPath("$.payments").value(74.00));

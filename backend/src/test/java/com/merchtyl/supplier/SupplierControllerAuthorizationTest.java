@@ -77,7 +77,7 @@ class SupplierControllerAuthorizationTest {
     @Test
     void productViewerCannotCreateSupplier() throws Exception {
         mockMvc.perform(post("/api/v1/suppliers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(SUPPLIER_JSON))
                 .andExpect(status().isForbidden());
@@ -90,7 +90,7 @@ class SupplierControllerAuthorizationTest {
         when(supplierService.create(any(), any())).thenReturn(supplierResponse());
 
         mockMvc.perform(post("/api/v1/suppliers")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("PRODUCT_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(SUPPLIER_JSON))
                 .andExpect(status().isCreated())
@@ -100,15 +100,15 @@ class SupplierControllerAuthorizationTest {
 
     @Test
     void productViewerCanListSuppliersAndProductSuppliers() throws Exception {
-        when(supplierService.search(any())).thenReturn(supplierPage());
-        when(productSupplierService.search(any())).thenReturn(productSupplierPage());
+        when(supplierService.search(any(), any())).thenReturn(supplierPage());
+        when(productSupplierService.search(any(), any())).thenReturn(productSupplierPage());
 
         mockMvc.perform(get("/api/v1/suppliers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("ACME"));
         mockMvc.perform(get("/api/v1/product-suppliers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].supplierSku").value("ACME-SKU"));
     }
@@ -116,7 +116,7 @@ class SupplierControllerAuthorizationTest {
     @Test
     void supplierStatusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/suppliers/{id}/status", SUPPLIER_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -132,7 +132,7 @@ class SupplierControllerAuthorizationTest {
     @Test
     void productSupplierCreateRequiresManagePermission() throws Exception {
         mockMvc.perform(post("/api/v1/product-suppliers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("PRODUCT_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("PRODUCT_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(PRODUCT_SUPPLIER_JSON))
                 .andExpect(status().isForbidden());

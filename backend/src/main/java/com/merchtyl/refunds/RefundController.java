@@ -52,8 +52,8 @@ public class RefundController {
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).REFUND_VIEW)")
-    RefundResponse get(@PathVariable UUID id) {
-        return refundService.get(id);
+    RefundResponse get(@PathVariable UUID id, Authentication authentication) {
+        return refundService.get(id, authentication);
     }
 
     @GetMapping
@@ -65,7 +65,8 @@ public class RefundController {
             @RequestParam(required = false) UUID storeId,
             @RequestParam(required = false) UUID registerSessionId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return refundService.search(new RefundSearchRequest(originalSaleId, returnId, storeId, registerSessionId, page, size));
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return refundService.search(new RefundSearchRequest(originalSaleId, returnId, storeId, registerSessionId, page, size), authentication);
     }
 }

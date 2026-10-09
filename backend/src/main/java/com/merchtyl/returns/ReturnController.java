@@ -34,8 +34,8 @@ public class ReturnController {
 
     @GetMapping("/{id}")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).RETURN_VIEW)")
-    ReturnResponse get(@PathVariable UUID id) {
-        return returnService.get(id);
+    ReturnResponse get(@PathVariable UUID id, Authentication authentication) {
+        return returnService.get(id, authentication);
     }
 
     @GetMapping
@@ -44,7 +44,8 @@ public class ReturnController {
             @RequestParam(required = false) UUID originalSaleId,
             @RequestParam(required = false) UUID storeId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return returnService.search(originalSaleId, storeId, page, size);
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return returnService.search(originalSaleId, storeId, page, size, authentication);
     }
 }

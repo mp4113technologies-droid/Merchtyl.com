@@ -64,7 +64,7 @@ class DeviceControllerAuthorizationTest {
     @Test
     void deviceViewerCannotRegisterDevice() throws Exception {
         mockMvc.perform(post("/api/v1/devices/register")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("DEVICE_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("DEVICE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(DEVICE_JSON))
                 .andExpect(status().isForbidden());
@@ -77,7 +77,7 @@ class DeviceControllerAuthorizationTest {
         when(deviceService.register(any(), any())).thenReturn(response(true, 0));
 
         mockMvc.perform(post("/api/v1/devices/register")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("DEVICE_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("DEVICE_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(DEVICE_JSON))
                 .andExpect(status().isCreated())
@@ -88,15 +88,15 @@ class DeviceControllerAuthorizationTest {
     @Test
     void deviceListRequiresViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/devices")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
-        verify(deviceService, never()).search(any());
+        verify(deviceService, never()).search(any(), any());
     }
 
     @Test
     void deviceViewerCanListDevices() throws Exception {
-        when(deviceService.search(any())).thenReturn(new PageResponse<>(
+        when(deviceService.search(any(), any())).thenReturn(new PageResponse<>(
                 List.of(response(true, 0)),
                 0,
                 20,
@@ -106,7 +106,7 @@ class DeviceControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/devices")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("DEVICE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("DEVICE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(DEVICE_ID.toString()));
     }
@@ -114,7 +114,7 @@ class DeviceControllerAuthorizationTest {
     @Test
     void statusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/devices/{id}/status", DEVICE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("DEVICE_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("DEVICE_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -129,10 +129,10 @@ class DeviceControllerAuthorizationTest {
 
     @Test
     void deviceViewerCanHeartbeat() throws Exception {
-        when(deviceService.heartbeat(DEVICE_ID)).thenReturn(response(true, 1));
+        when(deviceService.heartbeat(any(), any())).thenReturn(response(true, 1));
 
         mockMvc.perform(post("/api/v1/devices/{id}/heartbeat", DEVICE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("DEVICE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("DEVICE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(1));
     }

@@ -6,7 +6,6 @@ import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -23,21 +22,11 @@ public class AuthorizationLoggingAspect {
         if (allowed) {
             return;
         }
-        Authentication authentication = authentication(joinPoint.getArgs());
-        log.warn("authorization_failure user={} tenant={} permission={} endpoint={} check={}",
-                authentication == null ? "" : authentication.getName(),
+        log.warn("authorization_failure user=[REDACTED] tenant={} permission={} endpoint={} check={}",
                 org.slf4j.MDC.get(LoggingMdc.TENANT_ID),
                 permissions(joinPoint.getArgs()),
                 org.slf4j.MDC.get(LoggingMdc.REQUEST_URI),
                 joinPoint.getSignature().getName());
-    }
-
-    private static Authentication authentication(Object[] args) {
-        return Arrays.stream(args)
-                .filter(Authentication.class::isInstance)
-                .map(Authentication.class::cast)
-                .findFirst()
-                .orElse(null);
     }
 
     private static String permissions(Object[] args) {

@@ -56,7 +56,7 @@ class ReceiptControllerAuthorizationTest {
     @Test
     void receiptRetrievalRequiresSaleViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/sales/{saleId}/receipt", SALE_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_CREATE"))))
                 .andExpect(status().isForbidden());
 
         verify(receiptService, never()).getForSale(any(), any());
@@ -68,13 +68,13 @@ class ReceiptControllerAuthorizationTest {
         when(receiptService.reprintForSale(any(), any())).thenReturn(response(1));
 
         mockMvc.perform(get("/api/v1/sales/{saleId}/receipt", SALE_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.document.brandName").value("Merchtyl"))
                 .andExpect(jsonPath("$.document.items[0].productName").value("Coffee"));
 
         mockMvc.perform(post("/api/v1/sales/{saleId}/receipt/reprint", SALE_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reprintCount").value(1));
     }

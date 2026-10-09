@@ -11,6 +11,7 @@ import com.merchtyl.register.Register;
 import com.merchtyl.register.RegisterRepository;
 import com.merchtyl.security.User;
 import com.merchtyl.security.UserRepository;
+import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +38,7 @@ public class DeviceService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final Clock clock;
+    @Autowired private StoreAccessService storeAccessService;
 
     @Autowired
     public DeviceService(
@@ -71,7 +73,7 @@ public class DeviceService {
 
     @Transactional
     public DeviceResponse register(DeviceRegisterRequest request, Authentication authentication) {
-        DeviceValues values = values(request);
+        DeviceValues values = values(request, authentication);
         if (deviceRepository.existsByDeviceIdentifierIgnoreCase(values.deviceIdentifier())) {
             throw duplicateIdentifier();
         }
@@ -91,12 +93,15 @@ public class DeviceService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<DeviceResponse> search(DeviceSearchRequest request) {
+    public PageResponse<DeviceResponse> search(DeviceSearchRequest request, Authentication authentication) {
+        UUID tenantId = storeAccessService.currentTenantId(authentication);
+        if (request.storeId() != null) storeAccessService.requireStoreAccess(authentication, request.storeId());
         int pageNumber = Math.max(0, request.page());
         int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, request.size()));
         var pageable = PageRequest.of(pageNumber, pageSize,
                 Sort.by(Sort.Direction.DESC, "lastSeenAt").and(Sort.by(Sort.Direction.DESC, "id")));
-        var page = deviceRepository.findAll(specification(request), pageable);
+        var page = deviceRepository.findAll(specification(request).and((root, query, cb) ->
+                cb.equal(root.get("store").get("tenantId"), tenantId)), pageable);
         return new PageResponse<>(
                 page.getContent().stream().map(DeviceResponse::from).toList(),
                 page.getNumber(),
@@ -108,15 +113,18 @@ public class DeviceService {
     }
 
     @Transactional(readOnly = true)
-    public DeviceResponse get(UUID id) {
-        return DeviceResponse.from(find(id));
+    public DeviceResponse get(UUID id, Authentication authentication) {
+        Device device = find(id);
+        storeAccessService.requireStoreAccess(authentication, device.getStore().getId());
+        return DeviceResponse.from(device);
     }
 
     @Transactional
     public DeviceResponse update(UUID id, DeviceUpdateRequest request, Authentication authentication) {
         Device device = find(id);
+        storeAccessService.requireStoreManagement(authentication, device.getStore().getId());
         requireCurrentVersion(device, request.version());
-        DeviceValues values = values(request);
+        DeviceValues values = values(request, authentication);
         if (deviceRepository.existsByDeviceIdentifierIgnoreCaseAndIdNot(values.deviceIdentifier(), id)) {
             throw duplicateIdentifier();
         }
@@ -131,6 +139,7 @@ public class DeviceService {
     @Transactional
     public DeviceResponse updateStatus(UUID id, DeviceStatusRequest request, Authentication authentication) {
         Device device = find(id);
+        storeAccessService.requireStoreManagement(authentication, device.getStore().getId());
         requireCurrentVersion(device, request.version());
 
         DeviceResponse before = DeviceResponse.from(device);
@@ -141,8 +150,9 @@ public class DeviceService {
     }
 
     @Transactional
-    public DeviceResponse heartbeat(UUID id) {
+    public DeviceResponse heartbeat(UUID id, Authentication authentication) {
         Device device = find(id);
+        storeAccessService.requireStoreAccess(authentication, device.getStore().getId());
         device.touch(Instant.now(clock));
         return DeviceResponse.from(save(device));
     }
@@ -160,7 +170,8 @@ public class DeviceService {
                 .orElseThrow(() -> new NotFoundException("Device not found"));
     }
 
-    private DeviceValues values(DeviceRegisterRequest request) {
+    private DeviceValues values(DeviceRegisterRequest request, Authentication authentication) {
+        storeAccessService.requireStoreManagement(authentication, request.storeId());
         Store store = findStore(request.storeId());
         Register register = findRegister(request.registerId());
         validateRegisterStore(store, register);
@@ -173,7 +184,8 @@ public class DeviceService {
                 true);
     }
 
-    private DeviceValues values(DeviceUpdateRequest request) {
+    private DeviceValues values(DeviceUpdateRequest request, Authentication authentication) {
+        storeAccessService.requireStoreManagement(authentication, request.storeId());
         Store store = findStore(request.storeId());
         Register register = findRegister(request.registerId());
         validateRegisterStore(store, register);

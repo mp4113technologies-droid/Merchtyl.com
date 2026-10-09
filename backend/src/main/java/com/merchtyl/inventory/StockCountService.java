@@ -228,7 +228,7 @@ public class StockCountService {
         try {
             response = StockCountResponse.from(stockCountRepository.saveAndFlush(count));
         } catch (DataIntegrityViolationException exception) {
-            log.error("inventory_event event=STOCK_COUNT_SAVE_FAILED store_id={} count_id={}", count.getStore().getId(), count.getId(), exception);
+            log.error("inventory_event event=STOCK_COUNT_SAVE_FAILED store_id={} count_id={} exception_type={}", count.getStore().getId(), count.getId(), exception.getClass().getName());
             throw new ConflictException("We couldn't update the stock count. Please try again.");
         }
         audit(actor, AuditAction.STOCK_COUNT_UPDATED, response.id(), response.storeId(), before, response, response.reference());

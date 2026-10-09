@@ -3,9 +3,9 @@ spring:
     name: merchtyl-backend
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/merchtyl}
-    username: ${SPRING_DATASOURCE_USERNAME:merchtyl}
-    password: ${SPRING_DATASOURCE_PASSWORD:merchtyl_dev_password}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
     hikari:
@@ -61,7 +61,7 @@ logging:
 merchtyl:
   jwt:
     issuer: ${MERCHTYL_JWT_ISSUER:merchtyl-dev}
-    secret: ${MERCHTYL_JWT_SECRET:merchtyl-dev-jwt-secret-2026-change-before-production-9xK7pQ2m}
+    secret: ${MERCHTYL_JWT_SECRET}
     expiration-minutes: ${MERCHTYL_JWT_EXPIRATION_MINUTES:60}
     refresh-expiration-days: ${MERCHTYL_JWT_REFRESH_EXPIRATION_DAYS:14}
   security:
@@ -69,8 +69,10 @@ merchtyl:
       allowed-origins: ${ALLOWED_ORIGINS:${MERCHTYL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080}}
     rate-limit:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
-      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
+      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:5}
       auth-window: ${MERCHTYL_RATE_LIMIT_AUTH_WINDOW:1m}
+      password-reset-max-attempts: ${MERCHTYL_RATE_LIMIT_PASSWORD_RESET_MAX_ATTEMPTS:3}
+      password-reset-window: ${MERCHTYL_RATE_LIMIT_PASSWORD_RESET_WINDOW:1h}
     temporary-password:
       length: ${MERCHTYL_TEMPORARY_PASSWORD_LENGTH:20}
       expiry-hours: ${MERCHTYL_TEMPORARY_PASSWORD_EXPIRY_HOURS:24}
@@ -79,7 +81,7 @@ merchtyl:
       max-failed-attempts: ${MERCHTYL_LOGIN_MAX_FAILED_ATTEMPTS:3}
       account-lock-email-enabled: ${MERCHTYL_ACCOUNT_LOCK_EMAIL_ENABLED:true}
     password-reset:
-      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:30}
+      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:15}
       forgot-max-per-hour: ${MERCHTYL_PASSWORD_RESET_FORGOT_MAX_PER_HOUR:5}
       admin-max-per-hour: ${MERCHTYL_PASSWORD_RESET_ADMIN_MAX_PER_HOUR:5}
   platform:
@@ -99,8 +101,8 @@ merchtyl:
   testing:
     user-provisioning:
       enabled: ${MERCHTYL_TEST_USER_PROVISIONING_ENABLED:true}
-      key: ${MERCHTYL_TEST_USER_PROVISIONING_KEY:merchtyl-local-test-key}
-      default-user-password: ${MERCHTYL_TEST_DEFAULT_USER_PASSWORD:Test1234!}
+      key: ${MERCHTYL_TEST_USER_PROVISIONING_KEY:}
+      default-user-password: ${MERCHTYL_TEST_DEFAULT_USER_PASSWORD:}
   email:
     provider: ${MERCHTYL_EMAIL_PROVIDER:console}
     from-address: ${MERCHTYL_EMAIL_FROM_ADDRESS:}

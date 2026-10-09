@@ -64,7 +64,7 @@ class RegisterControllerAuthorizationTest {
     @Test
     void registerViewerCannotCreateRegister() throws Exception {
         mockMvc.perform(post("/api/v1/registers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(REGISTER_JSON))
                 .andExpect(status().isForbidden());
@@ -77,7 +77,7 @@ class RegisterControllerAuthorizationTest {
         when(registerService.create(any(), any())).thenReturn(response(true, 0));
 
         mockMvc.perform(post("/api/v1/registers")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REGISTER_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(REGISTER_JSON))
                 .andExpect(status().isCreated())
@@ -89,7 +89,7 @@ class RegisterControllerAuthorizationTest {
     @Test
     void registerListRequiresViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/registers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(registerService, never()).search(any(), any());
@@ -107,7 +107,7 @@ class RegisterControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/registers")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(REGISTER_ID.toString()));
     }
@@ -115,7 +115,7 @@ class RegisterControllerAuthorizationTest {
     @Test
     void statusPatchRequiresManagePermission() throws Exception {
         mockMvc.perform(patch("/api/v1/registers/{id}/status", REGISTER_ID)
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("REGISTER_VIEW")))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REGISTER_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

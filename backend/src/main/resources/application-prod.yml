@@ -45,6 +45,7 @@ management:
 server:
   port: ${PORT:${SERVER_PORT:8080}}
   address: 0.0.0.0
+  forward-headers-strategy: framework
 
 merchtyl:
   jwt:
@@ -58,8 +59,10 @@ merchtyl:
       allowed-origin-patterns: ${MERCHTYL_CORS_ALLOWED_ORIGIN_PATTERNS:}
     rate-limit:
       enabled: ${MERCHTYL_RATE_LIMIT_ENABLED:true}
-      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:20}
+      auth-max-attempts: ${MERCHTYL_RATE_LIMIT_AUTH_MAX_ATTEMPTS:5}
       auth-window: ${MERCHTYL_RATE_LIMIT_AUTH_WINDOW:1m}
+      password-reset-max-attempts: ${MERCHTYL_RATE_LIMIT_PASSWORD_RESET_MAX_ATTEMPTS:3}
+      password-reset-window: ${MERCHTYL_RATE_LIMIT_PASSWORD_RESET_WINDOW:1h}
     temporary-password:
       length: ${MERCHTYL_TEMPORARY_PASSWORD_LENGTH:20}
       expiry-hours: ${MERCHTYL_TEMPORARY_PASSWORD_EXPIRY_HOURS:24}
@@ -68,7 +71,7 @@ merchtyl:
       max-failed-attempts: ${MERCHTYL_LOGIN_MAX_FAILED_ATTEMPTS:3}
       account-lock-email-enabled: ${MERCHTYL_ACCOUNT_LOCK_EMAIL_ENABLED:true}
     password-reset:
-      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:30}
+      token-expiry-minutes: ${MERCHTYL_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:15}
       forgot-max-per-hour: ${MERCHTYL_PASSWORD_RESET_FORGOT_MAX_PER_HOUR:5}
       admin-max-per-hour: ${MERCHTYL_PASSWORD_RESET_ADMIN_MAX_PER_HOUR:5}
   platform:
@@ -122,10 +125,10 @@ merchtyl:
 
 springdoc:
   api-docs:
-    enabled: ${SWAGGER_API_DOCS_ENABLED:true}
+    enabled: ${SWAGGER_API_DOCS_ENABLED:false}
     path: /v3/api-docs
   swagger-ui:
-    enabled: ${SWAGGER_UI_ENABLED:true}
+    enabled: ${SWAGGER_UI_ENABLED:false}
     path: /swagger-ui.html
     operations-sorter: method
     tags-sorter: alpha

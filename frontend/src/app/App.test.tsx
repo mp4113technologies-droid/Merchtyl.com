@@ -238,7 +238,7 @@ describe('App authentication', () => {
     expect(screen.getAllByText('owner@example.local')).not.toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/login', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/me', expect.anything());
-    expect(window.localStorage.getItem('merchtyl.session')).toContain('refresh-token');
+    expect(window.sessionStorage.getItem('merchtyl.session')).toContain('refresh-token');
   });
 
   it('allows a platform administrator to sign in from the main login page', async () => {
@@ -283,7 +283,7 @@ describe('App authentication', () => {
     expect(await screen.findByRole('heading', { name: 'Platform' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/login', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/platform/auth/login', expect.objectContaining({ method: 'POST' }));
-    expect(window.localStorage.getItem('merchtyl.session')).toContain('PLATFORM_SUPER_ADMIN');
+    expect(window.sessionStorage.getItem('merchtyl.session')).toContain('PLATFORM_SUPER_ADMIN');
   });
 
   it('logs out and revokes the refresh token', async () => {
@@ -485,7 +485,7 @@ describe('App authentication', () => {
     render(<App initialEntries={['/']} />);
 
     expect(await screen.findByRole('heading', { name: 'Owner dashboard' })).toBeInTheDocument();
-    expect(window.localStorage.getItem('merchtyl.session')).toContain('new-refresh-token');
+    expect(window.sessionStorage.getItem('merchtyl.session')).toContain('new-refresh-token');
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/refresh', expect.objectContaining({ method: 'POST' }));
   });
 

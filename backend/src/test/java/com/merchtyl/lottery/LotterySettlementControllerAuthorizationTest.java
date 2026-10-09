@@ -54,7 +54,7 @@ class LotterySettlementControllerAuthorizationTest {
     @Test
     void listRequiresLotteryViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/lottery/settlements")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(lotterySettlementService, never()).search(any());
@@ -72,7 +72,7 @@ class LotterySettlementControllerAuthorizationTest {
                 true));
 
         mockMvc.perform(get("/api/v1/lottery/settlements")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].status").value("CALCULATED"))
                 .andExpect(jsonPath("$.content[0].expectedSettlement").value(34.00));
@@ -81,7 +81,7 @@ class LotterySettlementControllerAuthorizationTest {
     @Test
     void approveRequiresSettlementApprovePermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/settlements/{id}/approve", SETTLEMENT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -98,7 +98,7 @@ class LotterySettlementControllerAuthorizationTest {
         when(lotterySettlementService.approve(any(), any(), any())).thenReturn(response(LotterySettlementStatus.APPROVED));
 
         mockMvc.perform(post("/api/v1/lottery/settlements/{id}/approve", SETTLEMENT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_SETTLEMENT_APPROVE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_SETTLEMENT_APPROVE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -113,7 +113,7 @@ class LotterySettlementControllerAuthorizationTest {
     @Test
     void postRequiresSettlementPostPermission() throws Exception {
         mockMvc.perform(post("/api/v1/lottery/settlements/{id}/post", SETTLEMENT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_SETTLEMENT_APPROVE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_SETTLEMENT_APPROVE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -130,7 +130,7 @@ class LotterySettlementControllerAuthorizationTest {
         when(lotterySettlementService.reopen(any(), any(), any())).thenReturn(response(LotterySettlementStatus.REOPENED));
 
         mockMvc.perform(post("/api/v1/lottery/settlements/{id}/reopen", SETTLEMENT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("LOTTERY_SETTLEMENT_APPROVE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_SETTLEMENT_APPROVE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

@@ -57,12 +57,12 @@ class TaxRuleControllerAuthorizationTest {
         when(taxRuleService.search(any())).thenReturn(new PageResponse<>(List.of(ruleResponse()), 0, 20, 1, 1, true, true));
         when(taxRuleService.evaluate(any(), any())).thenReturn(evaluationResponse());
 
-        mockMvc.perform(get("/api/v1/tax/rules").with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW"))))
+        mockMvc.perform(get("/api/v1/tax/rules").with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].code").value("STANDARD"));
 
         mockMvc.perform(post("/api/v1/tax/rules/evaluate")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -78,13 +78,13 @@ class TaxRuleControllerAuthorizationTest {
     @Test
     void taxViewerCannotCreateOrDeactivateRules() throws Exception {
         mockMvc.perform(post("/api/v1/tax/rules")
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(ruleJson()))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(patch("/api/v1/tax/rules/{id}/status", RULE_ID)
-                        .with(user("viewer").authorities(new SimpleGrantedAuthority("TAX_VIEW")))
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_VIEW")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -103,7 +103,7 @@ class TaxRuleControllerAuthorizationTest {
         when(taxRuleService.create(any(), any())).thenReturn(ruleResponse());
 
         mockMvc.perform(post("/api/v1/tax/rules")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("TAX_MANAGE")))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("TAX_MANAGE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(ruleJson()))
                 .andExpect(status().isCreated())

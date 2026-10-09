@@ -11,25 +11,25 @@ Merchtyl is a browser-based retail commerce and point of sale platform.
 
 ## Local development
 
-The backend defaults to the `local` Spring profile. Local machine settings live in the Git-ignored `backend/src/main/resources/application-local.yml`; copy `backend/src/main/resources/application-local.example.yml` when setting up a new checkout. No environment variables are required for the checked-out local configuration, but its configured PostgreSQL database must be available:
+The backend defaults to the `local` Spring profile. Local machine settings live in the Git-ignored `backend/src/main/resources/application-local.yml`; copy `backend/src/main/resources/application-local.example.yml` when setting up a new checkout, then provide the variables listed in `.env.example` through your shell or secret manager.
 
 | Setting | Development default |
 | --- | --- |
-| Database URL | `jdbc:postgresql://localhost:55432/merchtyl` |
-| Database user | `merchtyl` |
-| Database password | `merchtyl_dev_password` |
+| Database URL | `SPRING_DATASOURCE_URL` |
+| Database user | `SPRING_DATASOURCE_USERNAME` |
+| Database password | `SPRING_DATASOURCE_PASSWORD` |
 | Backend port | `8080` |
 | Swagger UI | enabled at `/swagger-ui.html` |
-| Test provisioning | enabled for `local` with `X-Merchtyl-Test-Key: merchtyl-local-test-key` |
+| Test provisioning | controlled by `MERCHTYL_TEST_USER_PROVISIONING_ENABLED` and `MERCHTYL_TEST_USER_PROVISIONING_KEY` |
 
 Create the local database/user if needed:
 
 ```bash
 mkdir -p .local/postgres
-/Library/PostgreSQL/18/bin/initdb -D .local/postgres/data -U merchtyl --pwfile=<(printf 'merchtyl_dev_password')
+/Library/PostgreSQL/18/bin/initdb -D .local/postgres/data -U "$SPRING_DATASOURCE_USERNAME" --pwfile=<(printf '%s' "$SPRING_DATASOURCE_PASSWORD")
 printf "port = 55432\nlisten_addresses = 'localhost'\n" >> .local/postgres/data/postgresql.conf
 /Library/PostgreSQL/18/bin/pg_ctl -D .local/postgres/data -l .local/postgres/postgres.log start
-/Library/PostgreSQL/18/bin/createdb 'postgresql://merchtyl:merchtyl_dev_password@localhost:55432/postgres' merchtyl
+/Library/PostgreSQL/18/bin/createdb "$POSTGRES_ADMIN_URL" merchtyl
 ```
 
 Run the backend with the local profile:
@@ -42,9 +42,9 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 The same settings can still be overridden from the shell when needed:
 
 ```bash
-SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:5433/merchtyl' \
-SPRING_DATASOURCE_USERNAME=merchtyl \
-SPRING_DATASOURCE_PASSWORD='merchtyl_dev_password' \
+SPRING_DATASOURCE_URL="$SPRING_DATASOURCE_URL" \
+SPRING_DATASOURCE_USERNAME="$SPRING_DATASOURCE_USERNAME" \
+SPRING_DATASOURCE_PASSWORD="$SPRING_DATASOURCE_PASSWORD" \
 SPRING_PROFILES_ACTIVE=local \
 mvn spring-boot:run
 ```
@@ -186,15 +186,11 @@ The sender address must be authorized by the configured Resend account. Resend a
 
 ### Development security users
 
-The `local` and legacy `dev` profiles seed development-only security users into the configured development database after Flyway has applied the security schema:
+When local test provisioning is explicitly enabled, its authorization key and default user password must be supplied through `MERCHTYL_TEST_USER_PROVISIONING_KEY` and `MERCHTYL_TEST_DEFAULT_USER_PASSWORD`. Do not reuse these credentials outside local development.
 
-| Email | Role | Password |
-| --- | --- | --- |
-| `owner@example.local` | `OWNER` | `OwnerDev!2026` |
-| `manager@example.local` | `MANAGER` | `ManagerDev!2026` |
-| `cashier@example.local` | `CASHIER` | `CashierDev!2026` |
+## Secret rotation warning
 
-These accounts are for local and development environments only. Do not use the seeded passwords in production.
+Secrets previously hardcoded in this repository may remain recoverable from Git history, forks, caches, build artifacts, and deployment logs. Rotate every previously committed or shared database credential, JWT signing secret, API key, OAuth secret, and access token immediately; deleting or replacing the current file does not revoke an exposed credential.
 
 Run the frontend:
 

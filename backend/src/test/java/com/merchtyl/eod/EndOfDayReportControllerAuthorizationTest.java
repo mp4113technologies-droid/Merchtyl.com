@@ -54,7 +54,7 @@ class EndOfDayReportControllerAuthorizationTest {
     @Test
     void cashierCannotViewReports() throws Exception {
         mockMvc.perform(get("/api/v1/end-of-day-reports")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("BUSINESS_DAY_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("BUSINESS_DAY_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(businessDayService, never()).searchReports(any());
@@ -67,7 +67,7 @@ class EndOfDayReportControllerAuthorizationTest {
         mockMvc.perform(get("/api/v1/end-of-day-reports")
                         .param("reportNumber", "MAIN-2026")
                         .param("status", "CLOSED")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("END_OF_DAY_REPORT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("END_OF_DAY_REPORT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].reportNumber").value("MAIN-2026-07-29-R1"));
     }
@@ -75,7 +75,7 @@ class EndOfDayReportControllerAuthorizationTest {
     @Test
     void exportRequiresExportPermission() throws Exception {
         mockMvc.perform(get("/api/v1/end-of-day-reports/{id}/export/csv", REPORT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("END_OF_DAY_REPORT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("END_OF_DAY_REPORT_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(businessDayService, never()).exportCsv(eq(REPORT_ID), any());
@@ -87,7 +87,7 @@ class EndOfDayReportControllerAuthorizationTest {
         when(businessDayService.exportCsv(eq(REPORT_ID), any())).thenReturn("# summary\nmetric,value\n");
 
         mockMvc.perform(get("/api/v1/end-of-day-reports/{id}/export/csv", REPORT_ID)
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("END_OF_DAY_REPORT_EXPORT"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("END_OF_DAY_REPORT_EXPORT"))))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("text/csv"))
                 .andExpect(content().string("# summary\nmetric,value\n"));

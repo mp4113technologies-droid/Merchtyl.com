@@ -51,7 +51,7 @@ class LotteryReportControllerAuthorizationTest {
     @Test
     void lotteryReportRequiresReportViewPermission() throws Exception {
         mockMvc.perform(get("/api/v1/reports/lottery")
-                        .with(user("cashier").authorities(new SimpleGrantedAuthority("LOTTERY_VIEW"))))
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("LOTTERY_VIEW"))))
                 .andExpect(status().isForbidden());
 
         verify(lotteryReportService, never()).summarize(any());
@@ -68,7 +68,7 @@ class LotteryReportControllerAuthorizationTest {
                         .param("cashierId", "00000000-0000-0000-0000-000000000504")
                         .param("dateFrom", "2026-07-01")
                         .param("dateTo", "2026-07-31")
-                        .with(user("manager").authorities(new SimpleGrantedAuthority("REPORT_VIEW"))))
+                        .with(user("manager").authorities(new SimpleGrantedAuthority("ACCOUNT_SCOPE_TENANT"), new SimpleGrantedAuthority("REPORT_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sales").value(120.00))
                 .andExpect(jsonPath("$.payouts").value(40.00))
