@@ -839,6 +839,9 @@ export type EndOfDayReport = {
   depositsCollected: number;
   depositPayouts: number;
   netDeposits: number;
+  cashbackPaid?: number;
+  cashbackFees?: number;
+  cashbackCount?: number;
   transactionCount: number;
   averageTransactionValue: number;
   highestTransactionValue: number;
@@ -914,6 +917,9 @@ export type Store = {
   kitchenDisplayName?: string | null;
   kitchenUsersCount?: number;
   defaultTillFloat?: number | null;
+  cashbackEnabled?: boolean;
+  cashbackFeeType?: 'FIXED' | 'PERCENTAGE';
+  cashbackFeeValue?: number;
 };
 
 export type StoreCapability = 'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY';
@@ -1708,6 +1714,9 @@ export type SalesReport = {
   depositPayouts?: number;
   netDeposits?: number;
   refundedContainerDeposits?: number;
+  cashbackPaid?: number;
+  cashbackFees?: number;
+  cashbackCount?: number;
   saleCount: number;
   refundCount: number;
   paymentBreakdown: SalesReportPaymentBreakdown[];
@@ -1824,6 +1833,7 @@ export type CashLedgerSourceType =
   | 'LOTTERY_SALE_CASH'
   | 'LOTTERY_PAYOUT_CASH'
   | 'DEPOSIT_PAYOUT'
+  | 'CASHBACK_PAYOUT'
   | 'LOTTERY_PAYOUT_REVERSAL'
   | 'LOTTERY_SALE_CANCELLATION_CASH'
   | 'CASH_REFUND'
@@ -1844,6 +1854,7 @@ export type CashLedgerBreakdown = {
   retailChange: number;
   retailRefunds: number;
   depositPayouts: number;
+  cashbackPayouts?: number;
   lotteryCashSales: number;
   lotteryPayouts: number;
   payoutReversals: number;
@@ -1911,6 +1922,9 @@ export type RegisterReportRow = {
   retailCash: number;
   retailCashReceived: number;
   retailChange: number;
+  cashbackPaid?: number;
+  cashbackFees?: number;
+  cashbackCount?: number;
   lotteryCash: number;
   lotteryCashSales: number;
   lotteryPayouts: number;
@@ -1947,6 +1961,9 @@ export type RegisterReport = {
   retailCash: number;
   retailCashReceived: number;
   retailChange: number;
+  cashbackPaid?: number;
+  cashbackFees?: number;
+  cashbackCount?: number;
   lotteryCash: number;
   lotteryCashSales: number;
   lotteryPayouts: number;
@@ -2131,6 +2148,10 @@ export type Sale = {
   discountReason?: string | null;
   estimatedTaxAmount: number;
   totalAmount: number;
+  cashbackAmount?: number;
+  cashbackFeeType?: 'FIXED' | 'PERCENTAGE' | null;
+  cashbackFeeValue?: number | null;
+  cashbackFeeAmount?: number;
   heldAt: string | null;
   cancelledAt: string | null;
   completedBy: string | null;
@@ -2345,6 +2366,8 @@ export type ReceiptDocument = {
   taxSummaries: ReceiptTaxSummary[];
   taxAmount: number;
   totalAmount: number;
+  cashbackAmount?: number;
+  cashbackFeeAmount?: number;
   cashRoundingAdjustment?: number;
   cashTotal?: number;
   payments: ReceiptPayment[];

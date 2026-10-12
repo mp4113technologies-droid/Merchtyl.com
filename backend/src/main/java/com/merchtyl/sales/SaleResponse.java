@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import com.merchtyl.store.CashbackFeeType;
 
 public record SaleResponse(
         UUID id,
@@ -28,6 +29,10 @@ public record SaleResponse(
         String discountReason,
         BigDecimal estimatedTaxAmount,
         BigDecimal totalAmount,
+        BigDecimal cashbackAmount,
+        CashbackFeeType cashbackFeeType,
+        BigDecimal cashbackFeeValue,
+        BigDecimal cashbackFeeAmount,
         Instant heldAt,
         Instant cancelledAt,
         UUID completedBy,
@@ -61,7 +66,7 @@ public record SaleResponse(
             Instant createdAt, Instant updatedAt, long version) {
         this(id, storeId, registerId, registerSessionId, createdBy, customerId, status, businessDate,
                 saleChannel, null, currencyCode, pricesIncludeTax, subtotalAmount, discountAmount, null, null, null, null, null,
-                estimatedTaxAmount, totalAmount, heldAt, cancelledAt, completedBy, completedAt, items,
+                estimatedTaxAmount, totalAmount, BigDecimal.ZERO.setScale(2), null, null, BigDecimal.ZERO.setScale(2), heldAt, cancelledAt, completedBy, completedAt, items,
                 payments, paidAmount, balanceDue, changeDue, paymentComplete,
                 paymentComplete ? PickupOrderPaymentStatus.PAID : paidAmount.signum() > 0
                         ? PickupOrderPaymentStatus.PARTIALLY_PAID : PickupOrderPaymentStatus.UNPAID,
@@ -95,6 +100,10 @@ public record SaleResponse(
                 sale.getDiscountDefinitionId(), sale.getDiscountName(), sale.getDiscountType(), sale.getDiscountValue(), sale.getDiscountReason(),
                 sale.getEstimatedTaxAmount(),
                 sale.getTotalAmount(),
+                sale.getCashbackAmount(),
+                sale.getCashbackFeeType(),
+                sale.getCashbackFeeValue(),
+                sale.getCashbackFeeAmount(),
                 sale.getHeldAt(),
                 sale.getCancelledAt(),
                 sale.getCompletedBy() == null ? null : sale.getCompletedBy().getId(),

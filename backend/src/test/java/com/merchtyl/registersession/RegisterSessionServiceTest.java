@@ -48,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -487,6 +488,20 @@ class RegisterSessionServiceTest {
         assertThat(response.status()).isEqualTo(RegisterSessionStatus.OPEN);
         assertThat(response.expectedCash()).isEqualByComparingTo("130.50");
         assertThat(response.reconciliation().totalIn()).isEqualByComparingTo("10.00");
+    }
+
+    @Test
+    void currentFallbackReusesAuthenticatedUser() {
+        RegisterSession session = new RegisterSession(
+                store, register, device, cashier, new BigDecimal("25.00"), NOW);
+        when(registerSessionRepository.findFirstByAssignedCashier_IdAndStatusInOrderByOpenedAtDesc(
+                cashier.getId(), List.of(RegisterSessionStatus.OPEN, RegisterSessionStatus.CLOSING)))
+                .thenReturn(Optional.of(session));
+
+        RegisterSessionResponse response = service.current(null, "browser:missing", authentication("ROLE_CASHIER"));
+
+        assertThat(response).isNotNull();
+        verify(userRepository, times(1)).findByEmailIgnoreCase("cashier@example.local");
     }
 
     @Test

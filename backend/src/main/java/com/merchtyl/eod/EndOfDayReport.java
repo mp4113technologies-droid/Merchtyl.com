@@ -82,6 +82,15 @@ public class EndOfDayReport extends BaseUuidEntity {
     @Column(nullable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal netDeposits;
 
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashbackPaid;
+
+    @Column(nullable = false, updatable = false, precision = 12, scale = 2)
+    private BigDecimal cashbackFees;
+
+    @Column(nullable = false, updatable = false)
+    private long cashbackCount;
+
     @Column(nullable = false, updatable = false)
     private long transactionCount;
 
@@ -187,6 +196,9 @@ public class EndOfDayReport extends BaseUuidEntity {
         this.depositsCollected = totals.depositsCollected();
         this.depositPayouts = totals.depositPayouts();
         this.netDeposits = totals.netDeposits();
+        this.cashbackPaid = totals.cashbackPaid();
+        this.cashbackFees = totals.cashbackFees();
+        this.cashbackCount = totals.cashbackCount();
         this.transactionCount = totals.transactionCount();
         this.averageTransactionValue = totals.averageTransactionValue();
         this.highestTransactionValue = totals.highestTransactionValue();
@@ -300,6 +312,9 @@ public class EndOfDayReport extends BaseUuidEntity {
     public BigDecimal getDepositsCollected() { return depositsCollected; }
 
     public BigDecimal getDepositPayouts() { return depositPayouts; }
+    public BigDecimal getCashbackPaid() { return cashbackPaid; }
+    public BigDecimal getCashbackFees() { return cashbackFees; }
+    public long getCashbackCount() { return cashbackCount; }
 
     public BigDecimal getNetDeposits() { return netDeposits; }
 

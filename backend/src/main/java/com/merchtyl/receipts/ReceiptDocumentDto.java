@@ -27,6 +27,8 @@ public record ReceiptDocumentDto(
         List<ReceiptTaxSummaryDto> taxSummaries,
         BigDecimal taxAmount,
         BigDecimal totalAmount,
+        BigDecimal cashbackAmount,
+        BigDecimal cashbackFeeAmount,
         BigDecimal cashRoundingAdjustment,
         BigDecimal cashTotal,
         List<ReceiptPaymentDto> payments,
@@ -45,7 +47,7 @@ public record ReceiptDocumentDto(
             BigDecimal cashTendered, BigDecimal changeDue) {
         this(brandName, brandTagline, store, register, cashier, receiptNumber, saleId, saleNumber,
                 businessDate, completedAt, currencyCode, items, subtotalAmount, BigDecimal.ZERO.setScale(2), discountAmount, taxSummaries,
-                taxAmount, totalAmount, BigDecimal.ZERO.setScale(2), totalAmount, payments, cashTendered, changeDue,
+                taxAmount, totalAmount, BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), totalAmount, payments, cashTendered, changeDue,
                 BigDecimal.ZERO.setScale(2), null, null);
     }
     public ReceiptDocumentDto(String brandName,String brandTagline,ReceiptStoreDto store,ReceiptRegisterDto register,
@@ -54,6 +56,6 @@ public record ReceiptDocumentDto(
             BigDecimal discountAmount,List<ReceiptTaxSummaryDto> taxSummaries,BigDecimal taxAmount,BigDecimal totalAmount,
             List<ReceiptPaymentDto> payments,BigDecimal cashTendered,BigDecimal changeDue,String tokenNumber) {
         this(brandName,brandTagline,store,register,cashier,receiptNumber,saleId,saleNumber,businessDate,completedAt,
-                currencyCode,items,subtotalAmount,BigDecimal.ZERO.setScale(2),discountAmount,taxSummaries,taxAmount,totalAmount,BigDecimal.ZERO.setScale(2),totalAmount,payments,cashTendered,changeDue,BigDecimal.ZERO.setScale(2),tokenNumber,null);
+                currencyCode,items,subtotalAmount,BigDecimal.ZERO.setScale(2),discountAmount,taxSummaries,taxAmount,totalAmount,BigDecimal.ZERO.setScale(2),BigDecimal.ZERO.setScale(2),BigDecimal.ZERO.setScale(2),totalAmount,payments,cashTendered,changeDue,BigDecimal.ZERO.setScale(2),tokenNumber,null);
     }
 }

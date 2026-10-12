@@ -48,6 +48,7 @@ import com.merchtyl.security.UserRepository;
 import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.store.Store;
 import com.merchtyl.store.StoreCapability;
+import com.merchtyl.store.CashbackFeeType;
 import com.merchtyl.eod.BusinessDay;
 import com.merchtyl.tax.IncludedPriceBehavior;
 import com.merchtyl.tax.TaxCalculationRequest;
@@ -188,6 +189,83 @@ class SaleServiceTest {
         when(saleRepository.saveAndFlush(any(Sale.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(taxEngine.calculate(any(TaxCalculationRequest.class), any())).thenReturn(taxResponse(new BigDecimal("10.00"), new BigDecimal("1.50"), new BigDecimal("11.50")));
         when(foodOrderTokenService.nextToken(registerSession)).thenReturn("1045");
+    }
+
+    @Test
+    void cashbackPercentageFeeIsCalculatedFromPrincipalAndSnapshotted() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.isCashbackEnabled()).thenReturn(true);
+        when(store.getCashbackFeeType()).thenReturn(CashbackFeeType.PERCENTAGE);
+        when(store.getCashbackFeeValue()).thenReturn(new BigDecimal("2.5000"));
+
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(
+                SESSION_ID, "POS", List.of(), null, new BigDecimal("33.00")), cashierAuth());
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.cashbackAmount()).isEqualByComparingTo("33.00");
+        assertThat(response.cashbackFeeValue()).isEqualByComparingTo("2.5000");
+        assertThat(response.cashbackFeeAmount()).isEqualByComparingTo("0.83");
+        assertThat(response.totalAmount()).isEqualByComparingTo("33.83");
+    }
+
+    @Test
+    void cashbackIsRejectedWhenStoreSettingIsDisabled() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.isCashbackEnabled()).thenReturn(false);
+
+        assertThatThrownBy(() -> service.checkout(new SaleCheckoutRequest(
+                SESSION_ID, "POS", List.of(), null, new BigDecimal("20.00")), cashierAuth()))
+                .isInstanceOf(BadRequestException.class).hasMessage("CASHBACK_NOT_ENABLED");
+    }
+
+    @Test
+    void cashbackCompletionRequiresDebitAndAvailableTillCash() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.isCashbackEnabled()).thenReturn(true);
+        when(store.getCashbackFeeType()).thenReturn(CashbackFeeType.FIXED);
+        when(store.getCashbackFeeValue()).thenReturn(new BigDecimal("2.0000"));
+        SaleResponse response = service.checkout(new SaleCheckoutRequest(
+                SESSION_ID, "POS", List.of(), null, new BigDecimal("50.00")), cashierAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        when(registerSessionRepository.findByIdForUpdate(SESSION_ID)).thenReturn(Optional.of(registerSession));
+        when(cashLedgerService.expectedCash(registerSession)).thenReturn(new BigDecimal("40.00"));
+
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, response.totalAmount(), null, null, null), cashierAuth());
+
+        assertThatThrownBy(() -> service.complete(sale.getId(), cashier, cashierAuth()))
+                .isInstanceOf(ConflictException.class).hasMessage("INSUFFICIENT_CASH_FOR_CASHBACK");
+        verify(cashLedgerService, never()).append(any(CashLedgerEntryCommand.class));
+    }
+
+    @Test
+    void cashbackOnlySaleCompletesAndPostsOneCashbackLedgerMovement() {
+        when(register.getType()).thenReturn(RegisterType.RETAIL);
+        when(store.isCashbackEnabled()).thenReturn(true);
+        when(store.getCashbackFeeType()).thenReturn(CashbackFeeType.FIXED);
+        when(store.getCashbackFeeValue()).thenReturn(BigDecimal.ZERO.setScale(4));
+        SaleResponse checkout = service.checkout(new SaleCheckoutRequest(
+                SESSION_ID, "POS", List.of(), null, new BigDecimal("20.00")), cashierAuth());
+        ArgumentCaptor<Sale> saved = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).saveAndFlush(saved.capture());
+        Sale sale = saved.getValue();
+        when(saleRepository.findByIdForUpdate(sale.getId())).thenReturn(Optional.of(sale));
+        when(registerSessionRepository.findByIdForUpdate(SESSION_ID)).thenReturn(Optional.of(registerSession));
+        when(cashLedgerService.expectedCash(registerSession)).thenReturn(new BigDecimal("444.00"));
+
+        service.recordPayment(sale.getId(), new SalePaymentRequest(
+                PaymentMethod.DEBIT, checkout.totalAmount(), null, null, null), cashierAuth());
+        SaleResponse completed = service.complete(sale.getId(), cashier, cashierAuth());
+
+        assertThat(completed.status()).isEqualTo(SaleStatus.COMPLETED);
+        ArgumentCaptor<CashLedgerEntryCommand> ledger = ArgumentCaptor.forClass(CashLedgerEntryCommand.class);
+        verify(cashLedgerService, times(1)).append(ledger.capture());
+        assertThat(ledger.getValue().sourceType()).isEqualTo(CashLedgerSourceType.CASHBACK_PAYOUT);
+        assertThat(ledger.getValue().direction()).isEqualTo(CashLedgerDirection.OUT);
+        assertThat(ledger.getValue().amount()).isEqualByComparingTo("20.00");
     }
 
     @Test

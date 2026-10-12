@@ -181,6 +181,8 @@ public class ReceiptService {
                 taxSummaries,
                 sale.getEstimatedTaxAmount(),
                 sale.getTotalAmount(),
+                sale.getCashbackAmount(),
+                sale.getCashbackFeeAmount(),
                 cashRoundingAdjustment,
                 cashTotal,
                 sale.getPayments().stream()

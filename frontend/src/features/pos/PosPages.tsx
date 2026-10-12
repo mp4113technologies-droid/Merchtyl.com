@@ -251,6 +251,31 @@ function DepositPayoutDialog({ open, currencyCode, onClose, onSubmit }: {
   </Dialog>;
 }
 
+function CashbackDialog({ open, currencyCode, feeType, feeValue, initialAmount, onClose, onSubmit }: {
+  open: boolean; currencyCode: string; feeType: 'FIXED' | 'PERCENTAGE'; feeValue: number; initialAmount: number | null;
+  onClose: () => void; onSubmit: (amount: number) => void;
+}) {
+  const [amount, setAmount] = React.useState('');
+  React.useEffect(() => { if (open) setAmount(initialAmount?.toFixed(2) ?? ''); }, [open, initialAmount]);
+  const numericAmount = Number(amount);
+  const valid = Number.isFinite(numericAmount) && numericAmount > 0 && /^\d+(\.\d{1,2})?$/.test(amount);
+  const fee = valid ? roundedMoney(feeType === 'FIXED' ? feeValue : numericAmount * feeValue / 100) : 0;
+  return <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+    <Box component="form" onSubmit={(event) => { event.preventDefault(); if (valid) onSubmit(numericAmount); }}>
+      <DialogTitle>Cash Back</DialogTitle>
+      <DialogContent sx={{ pt: '8px !important' }}><Stack spacing={1.5}>
+        <TextField autoFocus fullWidth required label="Cash Back Amount" value={amount} onChange={(event) => setAmount(event.target.value)} type="number" inputProps={{ min: 0.01, step: 0.01, inputMode: 'decimal' }} InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} />
+        <Stack direction="row" spacing={1}>{[20, 40, 50, 100].map(value => <Button key={value} variant="outlined" onClick={() => setAmount(value.toFixed(2))}>{money(value, currencyCode)}</Button>)}</Stack>
+        <Divider />
+        <Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Configured fee</Typography><Typography>{feeType === 'PERCENTAGE' ? `${feeValue}% — ` : ''}{money(fee, currencyCode)}</Typography></Stack>
+        <Stack direction="row" justifyContent="space-between"><Typography>Customer receives</Typography><Typography fontWeight={700}>{money(valid ? numericAmount : 0, currencyCode)}</Typography></Stack>
+        <Stack direction="row" justifyContent="space-between"><Typography>Added to Debit charge</Typography><Typography fontWeight={700}>{money((valid ? numericAmount : 0) + fee, currencyCode)}</Typography></Stack>
+      </Stack></DialogContent>
+      <DialogActions><Button onClick={onClose}>Cancel</Button><Button type="submit" variant="contained" disabled={!valid}>Add Cash Back</Button></DialogActions>
+    </Box>
+  </Dialog>;
+}
+
 const payoutReasons = [
   ['VENDOR_PAYMENT', 'Vendor Payment'], ['PETTY_CASH', 'Petty Cash'], ['STORE_EXPENSE', 'Store Expense'],
   ['EMPLOYEE_REIMBURSEMENT', 'Employee Reimbursement'], ['OTHER', 'Other']
@@ -711,7 +736,7 @@ export function PaymentDialog({
 
   React.useEffect(() => {
     if (open) {
-      setMethod('CASH');
+      setMethod((sale?.cashbackAmount ?? 0) > 0 ? 'DEBIT' : 'CASH');
       setAmount(balanceDue > 0 ? balanceDue.toFixed(2) : '');
       setCashReceivedCents(0);
       setManualCashInput('0.00');
@@ -729,8 +754,13 @@ export function PaymentDialog({
     ? Math.max(0, cashReceivedCents - cashDueCents) / 100
     : 0;
   const validation = (() => {
-    if (!sale || sale.items.length === 0) {
+    if (!sale || (sale.items.length === 0 && !(sale.cashbackAmount && sale.cashbackAmount > 0))) {
       return 'Add at least one item before taking payment.';
+    }
+    const cashbackDebitRequired = (sale.cashbackAmount ?? 0) + (sale.cashbackFeeAmount ?? 0);
+    const recordedDebit = sale.payments.filter(payment => payment.method === 'DEBIT').reduce((sum, payment) => sum + payment.amount, 0);
+    if (cashbackDebitRequired > recordedDebit && method !== 'DEBIT') {
+      return `Cash Back requires at least ${money(cashbackDebitRequired - recordedDebit, currencyCode)} more in Debit tender.`;
     }
     if (!Number.isFinite(appliedAmount) || appliedAmount <= 0) {
       return 'Payment amount must be greater than zero.';
@@ -891,6 +921,10 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
               <Typography variant="body2">{money(tax.taxAmount, receipt.currencyCode)}</Typography>
             </Stack>
           ))}
+          {(receipt.cashbackAmount ?? 0) > 0 ? <>
+            <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Cash Back</Typography><Typography variant="body2">{money(receipt.cashbackAmount ?? 0, receipt.currencyCode)}</Typography></Stack>
+            <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Cash Back Fee</Typography><Typography variant="body2">{money(receipt.cashbackFeeAmount ?? 0, receipt.currencyCode)}</Typography></Stack>
+          </> : null}
           <Stack direction="row" justifyContent="space-between">
             <Typography fontWeight={700}>Total</Typography>
             <Typography fontWeight={700}>{money(receipt.totalAmount, receipt.currencyCode)}</Typography>
@@ -918,6 +952,7 @@ function ReceiptPreview({ receipt, widthMm }: { receipt: ReceiptDocument; widthM
             <Typography fontWeight={700}>{money(receipt.cashDueToCustomer ?? 0, receipt.currencyCode)}</Typography>
           </Stack>
         ) : null}
+        {(receipt.cashbackAmount ?? 0) > 0 ? <Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Cash Given</Typography><Typography fontWeight={700}>{money(receipt.cashbackAmount ?? 0, receipt.currencyCode)}</Typography></Stack> : null}
         <Typography textAlign="center" variant="body2">Thank you</Typography>
         <CustomerReceiptFooter />
       </Stack>
@@ -1150,6 +1185,8 @@ export function PosCartPage() {
   const [printingReceipt, setPrintingReceipt] = React.useState(false);
   const [lotteryAction, setLotteryAction] = React.useState<'SOLD' | 'WIN' | null>(null);
   const [depositPayoutOpen, setDepositPayoutOpen] = React.useState(false);
+  const [cashbackOpen, setCashbackOpen] = React.useState(false);
+  const [cashbackAmount, setCashbackAmount] = React.useState<number | null>(null);
   const [cashPayoutOpen, setCashPayoutOpen] = React.useState(false);
   const [recordedPayout, setRecordedPayout] = React.useState<CashMovement | null>(null);
   const payoutPrintRef = React.useRef<HTMLElement | null>(null);
@@ -1371,6 +1408,15 @@ export function PosCartPage() {
     setDepositPayoutOpen(false);
   }
 
+  function applyCashback(amount: number | null) {
+    cartRevisionRef.current += 1;
+    setCashbackAmount(amount);
+    setCashbackOpen(false);
+    setActiveSale(null);
+    setPaymentDialogOpen(false);
+    recalculateMutation.reset();
+  }
+
   function addLocalItem(item: SaleItem) {
     changeCart(items => {
       const existing = !item.lineType || item.lineType === 'CATALOG_PRODUCT'
@@ -1428,6 +1474,8 @@ export function PosCartPage() {
     closeCustomItem();
     setLotteryAction(null);
     setDepositPayoutOpen(false);
+    setCashbackOpen(false);
+    setCashbackAmount(null);
     setLotteryNotice(null);
     setPayoutConfirmationOpen(false);
     setReceiptPrintError(null);
@@ -1585,7 +1633,7 @@ export function PosCartPage() {
 
   const recalculateMutation = useMutation({
     mutationFn: async () => {
-      if (!current.data || cartItems.length === 0) throw new Error('Cart is empty');
+      if (!current.data || (cartItems.length === 0 && cashbackAmount == null)) throw new Error('Cart is empty');
       const epoch = transactionEpochRef.current;
       const revision = cartRevisionRef.current;
       const sale = await checkoutSaleCart(await getValidAccessToken(), {
@@ -1595,7 +1643,8 @@ export function PosCartPage() {
           : item.lineType === 'LOTTERY_SOLD' || item.lineType === 'LOTTERY_WIN' || item.lineType === 'DEPOSIT_PAYOUT'
             ? { lineType: item.lineType, unitPrice: item.unitPrice, quantity: item.quantity }
           : { lineType: 'CATALOG_PRODUCT' as const, productId: item.productId ?? undefined, variantId: item.variantId ?? undefined, quantity: item.quantity, ageVerified: item.ageVerified }),
-        discount: discount ? (discount.definitionId ? {discountDefinitionId:discount.definitionId}:{type:discount.type,value:discount.value,reason:discount.reason||undefined}) : undefined
+        discount: discount ? (discount.definitionId ? {discountDefinitionId:discount.definitionId}:{type:discount.type,value:discount.value,reason:discount.reason||undefined}) : undefined,
+        cashbackAmount: cashbackAmount ?? undefined
       });
       return { sale, revision, epoch };
     },
@@ -1954,6 +2003,7 @@ export function PosCartPage() {
                   {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => openCustomItem('TAXABLE')}>Taxable Custom Item</Button> : null}
                   {currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Button size="small" variant="outlined" startIcon={<AddCircleOutlineIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => openCustomItem('NON_TAXABLE')}>Non-Taxable Custom Item</Button> : null}
                   {currentUser?.permissions?.includes('POS_DEPOSIT_PAYOUT') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setDepositPayoutOpen(true)}>Deposit Payout</Button> : null}
+                  {store?.cashbackEnabled ? <Button size="small" variant="outlined" color="success" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setCashbackOpen(true)}>{cashbackAmount == null ? 'Cash Back' : 'Edit Cash Back'}</Button> : null}
                   {lotteryEnabled && currentUser?.permissions?.includes('LOTTERY_SALE_RECORD') ? <Button size="small" variant="outlined" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setLotteryAction('SOLD')}>Lottery Sold</Button> : null}
                   {lotteryEnabled && currentUser?.permissions?.includes('LOTTERY_PAYOUT_RECORD') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={cartLocked} sx={posActionButtonSx} onClick={() => setLotteryAction('WIN')}>Lottery Win</Button> : null}
                   {currentUser?.permissions?.includes('CASH_MOVEMENT_CREATE') ? <Button size="small" variant="outlined" color="warning" startIcon={<PaymentsOutlinedIcon />} disabled={Boolean(current.data?.tillSecured) || cashPayoutMutation.isPending} sx={posActionButtonSx} onClick={() => { cashPayoutMutation.reset(); setCashPayoutOpen(true); }}>Payout</Button> : null}
@@ -1984,6 +2034,7 @@ export function PosCartPage() {
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
               <CompactIdentitySummary session={current.data} store={store} register={register} device={device} />
               <TotalsPanel sale={activeSale} currencyCode={currencyCode} provisionalSubtotal={provisionalSubtotal} discount={discountPricingError ? null : discount} automaticPromotion={discount?undefined:automaticPromotion} />
+              {cashbackAmount != null ? <Paper variant="outlined" sx={{ p: 1.25, borderColor: 'success.main' }}><Stack spacing={0.5}><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Cash Back</Typography><Typography>{money(cashbackAmount, currencyCode)}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => setCashbackOpen(true)}>Edit</Button><Button size="small" color="error" onClick={() => applyCashback(null)}>Remove</Button></Stack></Stack></Paper> : null}
               <Paper variant="outlined" sx={{ p: 1.25, borderRadius: posTokens.radius.card }}>
                 <Stack spacing={0.75}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="subtitle2" sx={{ color: posTokens.colors.navy }}>Discount</Typography><Chip label={discountPricingError ? 'NOT APPLICABLE' : discount ? (activeSale ? 'APPLIED' : 'SELECTED') : automaticPromotion ? 'AUTO' : 'NONE'} size="small" color={discountPricingError ? 'error' : discount||automaticPromotion ? 'primary' : 'default'} variant="outlined" /></Stack>
@@ -2015,7 +2066,7 @@ export function PosCartPage() {
                     size="small"
                     variant="contained"
                     startIcon={<PaymentOutlinedIcon />}
-                    disabled={cartItems.length === 0 || busy || Boolean(activeSale?.paymentComplete)}
+                    disabled={(cartItems.length === 0 && cashbackAmount == null) || busy || Boolean(activeSale?.paymentComplete)}
                     onClick={() => {
                       checkoutClickStartedAtRef.current = performance.now();
                       if (activeSale) {
@@ -2027,7 +2078,7 @@ export function PosCartPage() {
                   >
                     {recalculateMutation.isPending ? 'Calculating total…' : activeSale ? 'Take payment' : 'Checkout'}
                   </Button>
-                  {!activeSale && cartItems.length > 0 ? <Typography variant="caption" color="text.secondary">Checkout calculates the authoritative total before payment.</Typography> : null}
+                  {!activeSale && (cartItems.length > 0 || cashbackAmount != null) ? <Typography variant="caption" color="text.secondary">Checkout calculates the authoritative total before payment.</Typography> : null}
                 </Stack>
               </Paper>
             </Box>
@@ -2057,6 +2108,7 @@ export function PosCartPage() {
         onSubmit={(amount) => lotteryAction && addLotteryItem(lotteryAction, amount)}
       />
       <DepositPayoutDialog open={depositPayoutOpen} currencyCode={currencyCode} onClose={() => setDepositPayoutOpen(false)} onSubmit={addDepositPayout} />
+      <CashbackDialog open={cashbackOpen} currencyCode={currencyCode} feeType={store?.cashbackFeeType ?? 'FIXED'} feeValue={store?.cashbackFeeValue ?? 0} initialAmount={cashbackAmount} onClose={() => setCashbackOpen(false)} onSubmit={amount => applyCashback(amount)} />
       <CashPayoutDialog open={cashPayoutOpen} currencyCode={currencyCode} expectedCash={current.data?.expectedCash ?? 0} busy={cashPayoutMutation.isPending} error={cashPayoutMutation.error} onClose={() => setCashPayoutOpen(false)} onSubmit={(value) => cashPayoutMutation.mutate(value)} />
       <Dialog open={recordedPayout !== null} onClose={() => setRecordedPayout(null)} fullWidth maxWidth="xs">
         <DialogTitle>Payout Recorded</DialogTitle>

@@ -56,6 +56,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConflictException.class)
     ResponseEntity<ApiError> conflict(ConflictException exception, HttpServletRequest request) {
         DomainMessage domain = domainMessage(exception.getMessage());
+        log.warn("event=REQUEST_CONFLICT code={} reason={} exception_type={} method={} path={} correlation_id={}",
+                domain == null ? "REQUEST_CONFLICT" : domain.code(), LogSanitizer.clean(exception.getMessage()),
+                exception.getClass().getName(), request.getMethod(), request.getRequestURI(),
+                MDC.get(CorrelationIdFilter.MDC_KEY));
         if (domain != null) return error(HttpStatus.CONFLICT, domain.code(), domain.message(), request, domainViolations(domain));
         return error(HttpStatus.CONFLICT, "REQUEST_CONFLICT", DomainErrorCatalog.message("REQUEST_CONFLICT", exception.getMessage()), request, List.of());
     }

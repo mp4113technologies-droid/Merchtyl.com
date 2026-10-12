@@ -372,6 +372,9 @@ export type StorePayload = {
   capabilities: Array<'RETAIL' | 'FOOD_SERVICE' | 'LOTTERY'>;
   kitchenDisplayName?: string;
   defaultTillFloat?: number | null;
+  cashbackEnabled: boolean;
+  cashbackFeeType: 'FIXED' | 'PERCENTAGE';
+  cashbackFeeValue: number;
 };
 
 export type StoreUpdatePayload = StorePayload & {
@@ -942,6 +945,7 @@ export type SaleCheckoutPayload = {
     value?: number;
     reason?: string;
   };
+  cashbackAmount?: number;
 };
 
 export type SaleUpdateQuantityPayload = {
@@ -1546,6 +1550,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   PAYMENT_AMOUNT_INVALID: 'Enter a valid payment amount.',
   PAYMENT_AMOUNT_EXCEEDS_REMAINING: 'Payment amount cannot exceed the remaining balance.',
   SALE_ALREADY_FULLY_PAID: 'This sale is already fully paid.',
+  SALE_REQUIRES_ITEM_OR_CASHBACK: 'Add an item or Cash Back before completing this sale.',
+  PAYMENT_INCOMPLETE: 'The sale has not been fully paid.',
+  REGISTER_SESSION_NOT_ACTIVE: 'Your register shift is no longer active.',
+  BUSINESS_DAY_CLOSED: 'The Business Day has been closed. Start or reopen the appropriate Business Day before continuing.',
+  CASHBACK_NOT_ENABLED: 'Cash Back is not enabled for this store.',
+  CASHBACK_REQUIRES_SUFFICIENT_DEBIT: 'Cash Back must be paid using Debit.',
+  INSUFFICIENT_CASH_FOR_CASHBACK: 'This till does not have enough cash for the requested Cash Back.',
   CONCURRENT_MODIFICATION: 'This information was updated by someone else. Refresh the page and try again.',
   RECORD_UPDATED_BY_ANOTHER_USER: 'This information was updated by someone else. Refresh the page and try again.',
   VALIDATION_FAILED: 'Please review the highlighted fields and correct the information.',

@@ -77,6 +77,10 @@ public class StoreAccessService {
         if (!isTenantActive(user.getTenantId())) {
             return false;
         }
+        return canAccessActiveTenantStore(user, storeId);
+    }
+
+    private boolean canAccessActiveTenantStore(User user, UUID storeId) {
         Store store = storeRepository.findById(storeId).orElse(null);
         if (store == null || store.getTenantId() == null || !store.getTenantId().equals(user.getTenantId())) {
             return false;
@@ -121,7 +125,7 @@ public class StoreAccessService {
             throw new BadRequestException("storeId is required");
         }
         User actor = currentTenantUser(authentication);
-        if (!canAccessStore(actor.getId(), storeId)) {
+        if (!canAccessActiveTenantStore(actor, storeId)) {
             auditDenied(actor, storeId, "User is not assigned to this store");
             throw new ForbiddenOperationException("User is not assigned to this store");
         }

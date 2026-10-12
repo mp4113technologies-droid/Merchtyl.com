@@ -36,7 +36,10 @@ public record StoreResponse(
         boolean foodServiceEnabled,
         String kitchenDisplayName,
         long kitchenUsersCount,
-        BigDecimal defaultTillFloat
+        BigDecimal defaultTillFloat,
+        boolean cashbackEnabled,
+        CashbackFeeType cashbackFeeType,
+        BigDecimal cashbackFeeValue
 ) {
     public StoreResponse(UUID id, String code, String name, String legalName, String countryCode, UUID countryId,
                          String administrativeAreaCode, String administrativeDivisionCode, UUID administrativeDivisionId,
@@ -47,7 +50,8 @@ public record StoreResponse(
         this(id, code, name, legalName, countryCode, countryId, administrativeAreaCode, administrativeDivisionCode,
                 administrativeDivisionId, address, phone, email, currencyCode, currencyId, locale, timezone, timezoneId,
                 timezoneName, taxRegionId, taxRegionCode, pricesIncludeTax, negativeStockAllowed, active, createdAt,
-                updatedAt, version, Set.of(StoreCapability.RETAIL), false, null, 0, null);
+                updatedAt, version, Set.of(StoreCapability.RETAIL), false, null, 0, null,
+                false, CashbackFeeType.FIXED, BigDecimal.ZERO.setScale(4));
     }
     static StoreResponse from(Store store) {
         return new StoreResponse(
@@ -77,7 +81,8 @@ public record StoreResponse(
                 store.getCreatedAt(),
                 store.getUpdatedAt(),
                 store.getVersion(), store.getCapabilities(), store.isFoodServiceEnabled(), store.getKitchenDisplayName(), 0,
-                store.getDefaultTillFloat());
+                store.getDefaultTillFloat(), store.isCashbackEnabled(), store.getCashbackFeeType(),
+                store.getCashbackFeeValue());
     }
 
     StoreResponse withKitchenUsersCount(long count) {
@@ -85,6 +90,6 @@ public record StoreResponse(
                 administrativeDivisionCode, administrativeDivisionId, address, phone, email, currencyCode, currencyId,
                 locale, timezone, timezoneId, timezoneName, taxRegionId, taxRegionCode, pricesIncludeTax,
                 negativeStockAllowed, active, createdAt, updatedAt, version, capabilities, foodServiceEnabled,
-                kitchenDisplayName, count, defaultTillFloat);
+                kitchenDisplayName, count, defaultTillFloat, cashbackEnabled, cashbackFeeType, cashbackFeeValue);
     }
 }

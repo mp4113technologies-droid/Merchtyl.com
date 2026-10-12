@@ -44,7 +44,7 @@ export function ReconciliationBreakdown({ session, currencyCode = 'USD', contain
   const rows = [
     ['Opening cash', '+', reconciliation.openingCash], ['Retail cash received', '+', reconciliation.retailCashReceived],
     ['Retail change', '-', reconciliation.retailChange], ['Retail refunds', '-', reconciliation.retailRefunds],
-    ['Deposit payouts', '-', reconciliation.depositPayouts],
+    ['Deposit payouts', '-', reconciliation.depositPayouts], ['Cash Back', '-', reconciliation.cashbackPayouts ?? 0],
     ['Lottery cash sales', '+', reconciliation.lotteryCashSales], ['Lottery payouts', '-', reconciliation.lotteryPayouts],
     ['Payout reversals', '+', reconciliation.payoutReversals], ['Lottery sale cancellations', '-', reconciliation.lotterySaleCancellations],
     ['Other cash in', '+', reconciliation.otherCashIn], ['Other cash out', '-', reconciliation.otherCashOut]

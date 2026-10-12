@@ -51,11 +51,7 @@ public class ServiceExecutionLoggingAspect {
         String key = joinPoint.getSignature().getDeclaringType().getSimpleName() + "." + joinPoint.getSignature().getName();
         String operation = IMPORTANT_OPERATIONS.get(key);
         long started = System.nanoTime();
-        if (operation == null) {
-            log.debug("service_execution START service={} method={}",
-                    joinPoint.getSignature().getDeclaringType().getSimpleName(),
-                    joinPoint.getSignature().getName());
-        } else {
+        if (operation != null) {
             log.info("business_operation START operation={} service_method={}", operation, key);
         }
         try {

@@ -769,6 +769,9 @@ public class BusinessDayService {
                 totals.depositsCollected(),
                 totals.depositPayouts(),
                 totals.netDeposits(),
+                totals.cashbackPaid(),
+                totals.cashbackFees(),
+                totals.cashbackCount(),
                 totals.transactionCount(),
                 totals.averageTransactionValue(),
                 totals.highestTransactionValue(),
@@ -984,6 +987,10 @@ public class BusinessDayService {
                 .map(item -> item.getUnitPrice().multiply(item.getQuantity()))
                 .reduce(moneyZero(), BigDecimal::add));
         BigDecimal netDeposits = money(depositsCollected.subtract(depositPayouts));
+        BigDecimal cashbackPaid = money(sales.stream().map(Sale::getCashbackAmount).reduce(moneyZero(), BigDecimal::add));
+        BigDecimal cashbackFees = money(sales.stream().map(Sale::getCashbackFeeAmount).reduce(moneyZero(), BigDecimal::add));
+        long cashbackCount = sales.stream().filter(Sale::hasCashback).count();
+        grossSales = money(grossSales.add(cashbackFees));
         BigDecimal refundTotal = money(sum(refunds, Refund::getTotalAmount));
         BigDecimal refundSubtotal = money(sum(refunds, Refund::getSubtotalAmount));
         BigDecimal refundTax = money(sum(refunds, Refund::getTaxAmount));
@@ -1034,6 +1041,7 @@ public class BusinessDayService {
         BigDecimal voidTotal = money(sum(voidedSales, Sale::getTotalAmount));
         EndOfDayReportTotals totals = new EndOfDayReportTotals(grossSales, netSales, discounts, refundTotal, voidTotal,
                 money(saleTax.subtract(refundTax)), depositsCollected, depositPayouts, netDeposits,
+                cashbackPaid, cashbackFees, cashbackCount,
                 transactionCount, averageTransaction, highest, lowest, itemsSold, averageBasketSize,
                 initialOpeningCash, cashBeforeFinalSettlement, cashRemovedFromTills, cashRetainedInTills,
                 expectedCash, countedCash, variance, day.getStore().getCurrencyCode());

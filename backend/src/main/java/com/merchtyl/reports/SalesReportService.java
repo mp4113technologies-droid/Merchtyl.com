@@ -68,8 +68,16 @@ public class SalesReportService {
                             item.getProduct() == null || item.getProduct().getCategory() == null ? null : item.getProduct().getCategory().getId(),
                             filters))
                     .toList();
-            if (matchingItems.isEmpty()) {
+            boolean productFiltered = filters.productId() != null || filters.categoryId() != null;
+            if (matchingItems.isEmpty() && (productFiltered || !sale.hasCashback())) {
                 continue;
+            }
+            if (!productFiltered && sale.hasCashback()) {
+                totals.cashbackPaid = totals.cashbackPaid.add(sale.getCashbackAmount());
+                totals.cashbackFees = totals.cashbackFees.add(sale.getCashbackFeeAmount());
+                totals.cashbackCount++;
+                totals.grossSales = totals.grossSales.add(sale.getCashbackFeeAmount());
+                totals.nonTaxableSales = totals.nonTaxableSales.add(sale.getCashbackFeeAmount());
             }
             BigDecimal includedTotal = moneyZero();
             for (SaleItem item : matchingItems) {
@@ -92,7 +100,7 @@ public class SalesReportService {
                 else totals.nonTaxableSales = totals.nonTaxableSales.add(merchandiseNet);
                 includedTotal = includedTotal.add(money(item.getLineTotal()));
             }
-            BigDecimal ratio = ratio(includedTotal, sale.getTotalAmount());
+            BigDecimal ratio = productFiltered ? ratio(includedTotal, sale.getTotalAmount()) : BigDecimal.ONE.setScale(8);
             for (Payment payment : sale.getPayments()) {
                 PaymentTotals methodTotals = paymentTotals.computeIfAbsent(payment.getMethod(), ignored -> new PaymentTotals());
                 methodTotals.collected = methodTotals.collected.add(money(payment.getAmount()).multiply(ratio));
@@ -178,6 +186,9 @@ public class SalesReportService {
                 money(totals.depositPayouts),
                 money(totals.containerDeposits.subtract(totals.depositPayouts)),
                 money(totals.refundedContainerDeposits),
+                money(totals.cashbackPaid),
+                money(totals.cashbackFees),
+                totals.cashbackCount,
                 sales.size(),
                 refundCount,
                 breakdown,
@@ -342,6 +353,9 @@ public class SalesReportService {
         private BigDecimal refundTax = moneyZero();
         private BigDecimal taxableSales = moneyZero();
         private BigDecimal nonTaxableSales = moneyZero();
+        private BigDecimal cashbackPaid = moneyZero();
+        private BigDecimal cashbackFees = moneyZero();
+        private long cashbackCount;
     }
 
     private static final class PaymentTotals {

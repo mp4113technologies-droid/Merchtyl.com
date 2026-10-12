@@ -103,6 +103,14 @@ class ErrorHandlingAndCorrelationIdTest {
     }
 
     @Test
+    void cashbackConflictKeepsActionableDomainCode() throws Exception {
+        mockMvc.perform(get("/test/insufficient-cashback"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSUFFICIENT_CASH_FOR_CASHBACK"))
+                .andExpect(jsonPath("$.message").value("This till does not have enough cash for the requested Cash Back."));
+    }
+
+    @Test
     void paymentDomainErrorsKeepStableCodeAndCorrelationId() throws Exception {
         mockMvc.perform(get("/test/payment-overage")
                         .header(CorrelationIdFilter.HEADER_NAME, "payment-correlation"))
@@ -142,6 +150,11 @@ class ErrorHandlingAndCorrelationIdTest {
         @GetMapping("/conflict")
         void conflict() {
             throw new ConflictException("Resource already exists");
+        }
+
+        @GetMapping("/insufficient-cashback")
+        void insufficientCashback() {
+            throw new ConflictException("INSUFFICIENT_CASH_FOR_CASHBACK");
         }
 
         @GetMapping("/forbidden")

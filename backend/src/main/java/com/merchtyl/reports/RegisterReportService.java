@@ -12,6 +12,7 @@ import com.merchtyl.security.StoreAccessService;
 import com.merchtyl.security.User;
 import com.merchtyl.sales.SalesClassification;
 import com.merchtyl.sales.SalesClassificationService;
+import com.merchtyl.sales.SaleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -45,6 +46,8 @@ public class RegisterReportService {
     private SalesClassificationService salesClassificationService;
     @Autowired(required = false)
     private RegisterBusinessDayCashStateRepository registerBusinessDayCashStateRepository;
+    @Autowired
+    private SaleRepository saleRepository;
 
     @Autowired
     public RegisterReportService(
@@ -109,6 +112,9 @@ public class RegisterReportService {
                 sum(rows, RegisterReportRow::retailCash),
                 sum(rows, RegisterReportRow::retailCashReceived),
                 sum(rows, RegisterReportRow::retailChange),
+                sum(rows, RegisterReportRow::cashbackPaid),
+                sum(rows, RegisterReportRow::cashbackFees),
+                rows.stream().mapToLong(RegisterReportRow::cashbackCount).sum(),
                 sum(rows, RegisterReportRow::lotteryCash),
                 sum(rows, RegisterReportRow::lotteryCashSales),
                 sum(rows, RegisterReportRow::lotteryPayouts),
@@ -197,6 +203,9 @@ public class RegisterReportService {
                 retailCash,
                 money(breakdown.retailCashReceived()),
                 money(breakdown.retailChange()),
+                money(breakdown.cashbackPayouts()),
+                saleRepository == null ? moneyZero() : money(saleRepository.sumCashbackFeesByRegisterSessionId(session.getId())),
+                saleRepository == null ? 0 : saleRepository.countCashbackByRegisterSessionId(session.getId()),
                 lotteryCash,
                 money(breakdown.lotteryCashSales()),
                 money(breakdown.lotteryPayouts()),

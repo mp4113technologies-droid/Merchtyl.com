@@ -25,6 +25,9 @@ record StoreValues(
         boolean pricesIncludeTax,
         boolean negativeStockAllowed,
         boolean active,
-        BigDecimal defaultTillFloat
+        BigDecimal defaultTillFloat,
+        boolean cashbackEnabled,
+        CashbackFeeType cashbackFeeType,
+        BigDecimal cashbackFeeValue
 ) {
 }

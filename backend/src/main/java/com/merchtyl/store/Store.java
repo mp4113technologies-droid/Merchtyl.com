@@ -88,6 +88,16 @@ public class Store extends BaseUuidEntity {
     @Column(name = "default_till_float", precision = 12, scale = 2)
     private BigDecimal defaultTillFloat;
 
+    @Column(name = "cashback_enabled", nullable = false)
+    private boolean cashbackEnabled;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cashback_fee_type", nullable = false, length = 16)
+    private CashbackFeeType cashbackFeeType = CashbackFeeType.FIXED;
+
+    @Column(name = "cashback_fee_value", nullable = false, precision = 12, scale = 4)
+    private BigDecimal cashbackFeeValue = BigDecimal.ZERO.setScale(4);
+
     @Column(name = "tenant_id")
     private UUID tenantId;
 
@@ -244,6 +254,16 @@ public class Store extends BaseUuidEntity {
         this.autoPrintScheduledKitchenTickets = autoPrintScheduled;
         this.scheduledKitchenPrintLeadMinutes = leadMinutes;
     }
+
+    void configureCashback(boolean enabled, CashbackFeeType feeType, BigDecimal feeValue) {
+        this.cashbackEnabled = enabled;
+        this.cashbackFeeType = feeType;
+        this.cashbackFeeValue = feeValue;
+    }
+
+    public boolean isCashbackEnabled() { return cashbackEnabled; }
+    public CashbackFeeType getCashbackFeeType() { return cashbackFeeType; }
+    public BigDecimal getCashbackFeeValue() { return cashbackFeeValue; }
 
     public String getCode() {
         return code;

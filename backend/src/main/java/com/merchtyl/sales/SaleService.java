@@ -48,6 +48,7 @@ import com.merchtyl.tax.TaxCalculationRequest;
 import com.merchtyl.tax.TaxCalculationResponse;
 import com.merchtyl.tax.TaxEngine;
 import com.merchtyl.tax.TaxCategoryRepository;
+import com.merchtyl.store.CashbackFeeType;
 import jakarta.persistence.OptimisticLockException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -209,6 +210,26 @@ public class SaleService {
                         : session.getBusinessDay().getBusinessDate(),
                 cleanOptional(request.saleChannel()), session.getStore().getCurrencyCode(),
                 session.getStore().isPricesIncludeTax(), SaleStatus.PENDING_PAYMENT);
+
+        if (request.items().isEmpty() && request.cashbackAmount() == null) {
+            throw new BadRequestException("SALE_REQUIRES_ITEM_OR_CASHBACK");
+        }
+        if (request.cashbackAmount() != null) {
+            if (session.getRegister().getType() != RegisterType.RETAIL) {
+                throw new BadRequestException("CASHBACK_REQUIRES_RETAIL_REGISTER");
+            }
+            if (!session.getStore().isCashbackEnabled()) {
+                throw new BadRequestException("CASHBACK_NOT_ENABLED");
+            }
+            BigDecimal cashbackAmount = normalizeMoney(request.cashbackAmount(), "cashbackAmount");
+            if (cashbackAmount.signum() <= 0) throw new BadRequestException("CASHBACK_AMOUNT_INVALID");
+            CashbackFeeType feeType = session.getStore().getCashbackFeeType();
+            BigDecimal feeValue = session.getStore().getCashbackFeeValue();
+            BigDecimal feeAmount = feeType == CashbackFeeType.FIXED
+                    ? money(feeValue)
+                    : money(cashbackAmount.multiply(feeValue).divide(new BigDecimal("100"), 8, RoundingMode.HALF_UP));
+            sale.applyCashbackSnapshot(cashbackAmount, feeType, feeValue, feeAmount);
+        }
 
         List<DiscountEngine.Line> discountLines=new java.util.ArrayList<>();
         List<DiscountEngine.PromotionLine> promotionLines=new java.util.ArrayList<>();
@@ -852,13 +873,22 @@ public class SaleService {
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
         requirePayableCheckout(sale);
         requireOpenRegisterSession(sale);
-        if (sale.getItems().isEmpty()) {
-            throw new ConflictException("Sale must have at least one item before completion");
+        if (sale.getItems().isEmpty() && !sale.hasCashback()) {
+            throw new ConflictException("SALE_REQUIRES_ITEM_OR_CASHBACK");
         }
 
         sale.getItems().stream().filter(SaleItem::isCatalogProduct)
                 .forEach(item -> saleItemHandlerRegistry.validate(item.validationRequest()));
         requireSufficientPayments(sale);
+        requireCashbackDebit(sale);
+        if (sale.hasCashback()) {
+            registerSessionRepository.findByIdForUpdate(sale.getRegisterSession().getId())
+                    .orElseThrow(() -> new ConflictException("REGISTER_SESSION_NOT_FOUND"));
+            BigDecimal availableCash = cashLedgerService.expectedCash(sale.getRegisterSession());
+            if (availableCash.compareTo(sale.getCashbackAmount()) < 0) {
+                throw new ConflictException("INSUFFICIENT_CASH_FOR_CASHBACK");
+            }
+        }
         long validated = System.nanoTime();
 
         Instant completedAt = Instant.now(clock);
@@ -893,7 +923,7 @@ public class SaleService {
         Sale sale = findSaleForUpdate(saleId);
         validateUserCanUseSession(actor, sale.getRegisterSession(), authentication);
         requirePayableCheckout(sale);
-        if (sale.getItems().isEmpty() || sale.getTotalAmount().signum() <= 0) {
+        if ((sale.getItems().isEmpty() && !sale.hasCashback()) || sale.getTotalAmount().signum() <= 0) {
             throw new ConflictException("Sale must have a payable total before recording payment");
         }
 
@@ -1042,7 +1072,9 @@ public class SaleService {
             tax = tax.add(taxResponse.taxAmount());
             total = total.add(taxResponse.grossAmount()).add(depositTotal);
         }
-        sale.setTotals(money(subtotal), money(discount), money(tax), money(total));
+        BigDecimal cashbackCharge = sale.hasCashback()
+                ? sale.getCashbackAmount().add(sale.getCashbackFeeAmount()) : moneyZero();
+        sale.setTotals(money(subtotal), money(discount), money(tax), money(total.add(cashbackCharge)));
     }
 
     private Sale findSale(UUID id) {
@@ -1147,18 +1179,31 @@ public class SaleService {
 
     private static void requireOpenRegisterSession(Sale sale) {
         if (sale.getRegisterSession().getStatus() != RegisterSessionStatus.OPEN) {
-            throw new ConflictException("Register session is not open");
+            throw new ConflictException("REGISTER_SESSION_NOT_ACTIVE");
         }
         if (sale.getRegisterSession().isTillSecured()) {
             throw new ConflictException("TILL_SECURED");
+        }
+        if (sale.getRegisterSession().getBusinessDay() != null
+                && !sale.getRegisterSession().isBusinessDayOperational()) {
+            throw new ConflictException("BUSINESS_DAY_CLOSED");
         }
     }
 
     private static void requireSufficientPayments(Sale sale) {
         if (sale.getTotalAmount().signum() <= 0) return;
         if (paidAmount(sale).compareTo(sale.getTotalAmount()) < 0) {
-            throw new ConflictException("Sale has insufficient payments");
+            throw new ConflictException("PAYMENT_INCOMPLETE");
         }
+    }
+
+    private static void requireCashbackDebit(Sale sale) {
+        if (!sale.hasCashback()) return;
+        BigDecimal required = money(sale.getCashbackAmount().add(sale.getCashbackFeeAmount()));
+        BigDecimal debit = money(sale.getPayments().stream()
+                .filter(payment -> payment.getMethod() == PaymentMethod.DEBIT)
+                .map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
+        if (debit.compareTo(required) < 0) throw new ConflictException("CASHBACK_REQUIRES_SUFFICIENT_DEBIT");
     }
 
     private static void requireNoPayments(Sale sale) {
@@ -1196,6 +1241,13 @@ public class SaleService {
     }
 
     private void appendCashLedgerEntries(Sale sale, User actor, Instant completedAt) {
+        if (sale.hasCashback()) {
+            cashLedgerService.append(new CashLedgerEntryCommand(
+                    sale.getStore(), sale.getRegister(), sale.getRegisterSession(),
+                    CashLedgerSourceType.CASHBACK_PAYOUT, sale.getId(), CashLedgerDirection.OUT,
+                    sale.getCashbackAmount(), sale.getCurrencyCode(), sale.getBusinessDate(), completedAt, actor,
+                    operationId(sale.getId(), "cashback-payout", sale.getId()), "Cash Back"));
+        }
         if (sale.getTotalAmount().signum() < 0) {
             appendNetCashPayout(sale, actor, completedAt);
         }

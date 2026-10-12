@@ -5,6 +5,7 @@ import com.merchtyl.register.Register;
 import com.merchtyl.registersession.RegisterSession;
 import com.merchtyl.security.User;
 import com.merchtyl.store.Store;
+import com.merchtyl.store.CashbackFeeType;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -110,6 +111,19 @@ public class Sale extends BaseUuidEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;
 
+    @Column(name = "cashback_amount", precision = 12, scale = 2)
+    private BigDecimal cashbackAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cashback_fee_type", length = 16)
+    private CashbackFeeType cashbackFeeType;
+
+    @Column(name = "cashback_fee_value", precision = 12, scale = 4)
+    private BigDecimal cashbackFeeValue;
+
+    @Column(name = "cashback_fee_amount", precision = 12, scale = 2)
+    private BigDecimal cashbackFeeAmount;
+
     @Column
     private Instant heldAt;
 
@@ -204,6 +218,13 @@ public class Sale extends BaseUuidEntity {
         this.totalAmount = totalAmount;
     }
 
+    void applyCashbackSnapshot(BigDecimal amount, CashbackFeeType feeType, BigDecimal feeValue, BigDecimal feeAmount) {
+        this.cashbackAmount = amount;
+        this.cashbackFeeType = feeType;
+        this.cashbackFeeValue = feeValue;
+        this.cashbackFeeAmount = feeAmount;
+    }
+
     void applyDiscountSnapshot(UUID definitionId, String name, SaleAdjustmentType type, BigDecimal value, String reason) {
         this.discountDefinitionId=definitionId; this.discountName=name; this.discountType=type; this.discountValue=value; this.discountReason=reason;
     }
@@ -271,6 +292,12 @@ public class Sale extends BaseUuidEntity {
     public void markRefundStatus(boolean fullyRefunded) {
         this.status = fullyRefunded ? SaleStatus.REFUNDED : SaleStatus.PARTIALLY_REFUNDED;
     }
+
+    public boolean hasCashback() { return cashbackAmount != null && cashbackAmount.signum() > 0; }
+    public BigDecimal getCashbackAmount() { return cashbackAmount == null ? moneyZero() : cashbackAmount; }
+    public CashbackFeeType getCashbackFeeType() { return cashbackFeeType; }
+    public BigDecimal getCashbackFeeValue() { return cashbackFeeValue; }
+    public BigDecimal getCashbackFeeAmount() { return cashbackFeeAmount == null ? moneyZero() : cashbackFeeAmount; }
 
     private void resequenceItems() {
         for (int index = 0; index < items.size(); index++) {

@@ -751,6 +751,7 @@ function ClosingPreview({ preview }: { preview: EndOfDayClosingPreview }) {
       <ReportTable title="Payment preview" rows={<SimpleTable headers={['Method', 'Collected', 'Refunded', 'Net']} rows={preview.payments.map((row) => [row.paymentMethod, money(row.collected, preview.currencyCode), money(row.refunded, preview.currencyCode), money(row.net, preview.currencyCode)])} />} />
       <ReportTable title="Tax preview" rows={<SimpleTable headers={['Component', 'Taxable', 'Collected', 'Refunded', 'Net']} rows={preview.taxes.map((row) => [row.componentCode, money(row.taxableSales, preview.currencyCode), money(row.taxCollected, preview.currencyCode), money(row.taxRefunded, preview.currencyCode), money(row.netTaxCollected, preview.currencyCode)])} />} />
       <ReportTable title="Deposits preview" rows={<SimpleTable headers={['Deposits Collected', 'Deposit Payouts', 'Net Deposits']} rows={[[money(preview.depositsCollected, preview.currencyCode), money(preview.depositPayouts, preview.currencyCode), money(preview.netDeposits, preview.currencyCode)]]} />} />
+      <ReportTable title="Cash Back preview" rows={<SimpleTable headers={['Transactions', 'Cash Back Paid', 'Cash Back Fees']} rows={[[String(preview.cashbackCount ?? 0), money(preview.cashbackPaid ?? 0, preview.currencyCode), money(preview.cashbackFees ?? 0, preview.currencyCode)]]} />} />
       <ReportTable title="Category Sales by Tax Treatment" rows={<SimpleTable headers={['Category', 'Tax Treatment', 'Qty', 'Sales Before Tax', 'Tax']} rows={categoryRows(preview)} emptyMessage="No retail merchandise sales." />} />
       <ReportTable title="Cashier preview" rows={<SimpleTable headers={['Cashier', 'Transactions', 'Net sales', 'Cash handled']} rows={preview.cashiers.map((row) => [row.cashierName, String(row.transactionCount), money(row.netSales, preview.currencyCode), money(row.cashHandled, preview.currencyCode)])} />} />
       <ReportTable title="Exception preview" rows={<SimpleTable headers={['Type', 'Count', 'Amount']} rows={preview.exceptions.map((row) => [row.exceptionType, String(row.count), money(row.totalAmount, preview.currencyCode)])} />} />
@@ -954,6 +955,11 @@ export function EndOfDayReportDetailPage() {
         ['Cash', money(payment('CASH'), data.currencyCode)], ['Debit', money(payment('DEBIT'), data.currencyCode)],
         ['Credit', money(payment('CREDIT'), data.currencyCode)], ['Gift Card', money(payment('GIFT_CARD'), data.currencyCode)],
         ['Other', money(otherPayments, data.currencyCode)], ['Net Payments', money(data.payments.reduce((sum, row) => sum + row.net, 0), data.currencyCode)]
+      ]} />
+      <SummarySection title="Cash Back" rows={[
+        ['Cash Back Transactions', String(data.cashbackCount ?? 0)],
+        ['Cash Back Paid', money(data.cashbackPaid ?? 0, data.currencyCode)],
+        ['Cash Back Fees', money(data.cashbackFees ?? 0, data.currencyCode)]
       ]} />
       <SummarySection title="Lottery summary" empty={!data.lottery} rows={data.lottery ? [
         ['Total Lottery Sold', money(data.lottery.lotterySales, data.currencyCode)],

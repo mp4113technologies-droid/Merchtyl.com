@@ -17,6 +17,9 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class StoreAccessServiceTest {
@@ -106,6 +109,25 @@ class StoreAccessServiceTest {
                 authentication, Set.of(STORE_ID, OTHER_STORE_ID)))
                 .isInstanceOf(com.merchtyl.common.ForbiddenOperationException.class)
                 .hasMessage("PRODUCT_STORE_ACCESS_DENIED");
+    }
+
+    @Test
+    void requireStoreAccessReusesValidatedActorAndChecksTenantOnce() {
+        User owner = tenantUser("owner@example.local");
+        Store store = tenantStore(STORE_ID, TENANT_ID);
+        var authentication = new UsernamePasswordAuthenticationToken(
+                owner.getEmail(), "n/a",
+                List.of(new SimpleGrantedAuthority(AuthorizationService.TENANT_SCOPE_AUTHORITY)));
+        when(platformAdministrationService.tenantStatus(TENANT_ID)).thenReturn(Optional.of(TenantStatus.ACTIVE));
+        when(userRepository.findByEmailIgnoreCase(owner.getEmail())).thenReturn(Optional.of(owner));
+        when(storeRepository.findById(STORE_ID)).thenReturn(Optional.of(store));
+        when(userRoleRepository.findByUser(owner)).thenReturn(List.of(
+                new UserRole(owner, new Role(RoleName.TENANT_OWNER, "Owner", true))));
+
+        service.requireStoreAccess(authentication, STORE_ID);
+
+        verify(userRepository, never()).findById(owner.getId());
+        verify(platformAdministrationService, times(1)).tenantStatus(TENANT_ID);
     }
 
     private static User tenantUser(String email) {

@@ -99,10 +99,13 @@ const storeSchema = z.object({
   ,capabilities: z.array(z.enum(['RETAIL', 'FOOD_SERVICE', 'LOTTERY'])).min(1, 'Select at least one operation'),
   kitchenDisplayName: z.string().max(180, 'Kitchen name must be 180 characters or fewer').optional()
   ,defaultTillFloat: z.string().refine((value) => value === '' || (/^\d+(\.\d{1,2})?$/.test(value) && Number(value) >= 0), 'Enter a non-negative amount with up to 2 decimals')
+  ,cashbackEnabled: z.boolean()
+  ,cashbackFeeType: z.enum(['FIXED', 'PERCENTAGE'])
+  ,cashbackFeeValue: z.string().refine((value) => /^\d+(\.\d{1,4})?$/.test(value) && Number(value) >= 0 && Number(value) <= 100, 'Enter a value from 0 to 100 with up to 4 decimals')
 });
 
 type StoreFormValues = z.infer<typeof storeSchema>;
-type StoreTextFieldName = Exclude<keyof StoreFormValues, 'pricesIncludeTax' | 'negativeStockAllowed' | 'active' | 'capabilities'>;
+type StoreTextFieldName = Exclude<keyof StoreFormValues, 'pricesIncludeTax' | 'negativeStockAllowed' | 'active' | 'capabilities' | 'cashbackEnabled'>;
 
 const emptyStoreForm: StoreFormValues = {
   code: '',
@@ -123,6 +126,9 @@ const emptyStoreForm: StoreFormValues = {
   capabilities: ['RETAIL'],
   kitchenDisplayName: ''
   ,defaultTillFloat: ''
+  ,cashbackEnabled: false
+  ,cashbackFeeType: 'FIXED'
+  ,cashbackFeeValue: '0'
 };
 
 function canViewStores(roles: UserRole[]) {
@@ -153,6 +159,9 @@ function storeFormValues(store: Store): StoreFormValues {
     capabilities: store.capabilities ?? ['RETAIL'],
     kitchenDisplayName: store.kitchenDisplayName ?? ''
     ,defaultTillFloat: store.defaultTillFloat == null ? '' : store.defaultTillFloat.toFixed(2)
+    ,cashbackEnabled: store.cashbackEnabled ?? false
+    ,cashbackFeeType: store.cashbackFeeType ?? 'FIXED'
+    ,cashbackFeeValue: String(store.cashbackFeeValue ?? 0)
   };
 }
 
@@ -192,6 +201,9 @@ function cleanPayload(values: StoreFormValues): StorePayload {
     capabilities: values.capabilities,
     kitchenDisplayName: values.capabilities.includes('FOOD_SERVICE') ? optionalText(values.kitchenDisplayName) : undefined,
     defaultTillFloat: values.defaultTillFloat === '' ? null : Number(values.defaultTillFloat)
+    ,cashbackEnabled: values.cashbackEnabled
+    ,cashbackFeeType: values.cashbackFeeType
+    ,cashbackFeeValue: Number(values.cashbackFeeValue)
   };
 }
 
@@ -440,6 +452,22 @@ function StoreForm({
         )} />
         {capabilities.includes('FOOD_SERVICE') ? <Box sx={{ mt: 2 }}><TextInput control={form.control} name="kitchenDisplayName" label="Kitchen / Food Service Name" disabled={disabled} /></Box> : null}
         {pricingPreview.data ? <Alert severity={capabilities.includes('FOOD_SERVICE')?'warning':'info'} sx={{mt:2}}>{capabilities.includes('FOOD_SERVICE')?'This location includes the Food Service add-on. ':''}Additional Store: {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(pricingPreview.data.additionalStoreMonthlyPrice)}/month. {pricingPreview.data.capabilityCharges.map(charge=>`${charge.description}: +${new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(charge.monthlyPricePerStore)} / ${charge.billingUnit.replace('PER_','').toLowerCase()} / month. `)}Estimated Monthly Subscription: {new Intl.NumberFormat(undefined,{style:'currency',currency:pricingPreview.data.currency}).format(pricingPreview.data.estimatedMonthlySubscription)}.</Alert>:null}
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="h6">Cash Back</Typography>
+        <Typography color="text.secondary">Allow customers to receive cash from the till when paying by Debit.</Typography>
+        <Controller name="cashbackEnabled" control={form.control} render={({ field }) => (
+          <FormControlLabel control={<Switch checked={field.value} disabled={disabled} onChange={(_, checked) => field.onChange(checked)} />} label="Enable Cash Back" />
+        )} />
+        {form.watch('cashbackEnabled') ? <Stack spacing={2} sx={{ mt: 1, maxWidth: 480 }}>
+          <Controller name="cashbackFeeType" control={form.control} render={({ field }) => (
+            <TextField {...field} select label="Fee Type" disabled={disabled}><MenuItem value="FIXED">Fixed amount</MenuItem><MenuItem value="PERCENTAGE">Percentage</MenuItem></TextField>
+          )} />
+          <Controller name="cashbackFeeValue" control={form.control} render={({ field, fieldState }) => (
+            <TextField {...field} label="Cash Back Fee" type="number" disabled={disabled} error={Boolean(fieldState.error)} helperText={fieldState.error?.message ?? 'Set the fee to 0 to offer Cash Back at no charge.'} inputProps={{ min: 0, max: form.watch('cashbackFeeType') === 'PERCENTAGE' ? 100 : undefined, step: '0.01' }} InputProps={{ endAdornment: form.watch('cashbackFeeType') === 'PERCENTAGE' ? <span>%</span> : <span>{currencyCode}</span> }} />
+          )} />
+        </Stack> : null}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>

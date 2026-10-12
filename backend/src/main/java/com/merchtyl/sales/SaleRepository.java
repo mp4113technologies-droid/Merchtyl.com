@@ -17,6 +17,7 @@ import java.util.List;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 public interface SaleRepository extends JpaRepository<Sale, UUID>, JpaSpecificationExecutor<Sale> {
     @EntityGraph(attributePaths = {"store", "register", "registerSession", "createdBy", "completedBy", "items"})
@@ -48,4 +49,13 @@ public interface SaleRepository extends JpaRepository<Sale, UUID>, JpaSpecificat
     @EntityGraph(attributePaths = {"store", "register", "registerSession", "createdBy", "completedBy", "items"})
     @Query("select sale from Sale sale where sale.id = :id")
     Optional<Sale> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("select coalesce(sum(s.cashbackAmount), 0) from Sale s where s.registerSession.id = :sessionId and s.status in (com.merchtyl.sales.SaleStatus.COMPLETED, com.merchtyl.sales.SaleStatus.PARTIALLY_REFUNDED, com.merchtyl.sales.SaleStatus.REFUNDED)")
+    BigDecimal sumCashbackPaidByRegisterSessionId(@Param("sessionId") UUID sessionId);
+
+    @Query("select coalesce(sum(s.cashbackFeeAmount), 0) from Sale s where s.registerSession.id = :sessionId and s.status in (com.merchtyl.sales.SaleStatus.COMPLETED, com.merchtyl.sales.SaleStatus.PARTIALLY_REFUNDED, com.merchtyl.sales.SaleStatus.REFUNDED)")
+    BigDecimal sumCashbackFeesByRegisterSessionId(@Param("sessionId") UUID sessionId);
+
+    @Query("select count(s) from Sale s where s.registerSession.id = :sessionId and s.cashbackAmount is not null and s.status in (com.merchtyl.sales.SaleStatus.COMPLETED, com.merchtyl.sales.SaleStatus.PARTIALLY_REFUNDED, com.merchtyl.sales.SaleStatus.REFUNDED)")
+    long countCashbackByRegisterSessionId(@Param("sessionId") UUID sessionId);
 }

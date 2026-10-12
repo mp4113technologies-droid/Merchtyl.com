@@ -553,6 +553,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="row"><span>${escapeHtml(receipt.discountName || 'Discount')}</span><strong>${receipt.discountAmount > 0 ? '-' : ''}${formatMoney(receipt.discountAmount, receipt.currencyCode)}</strong></div>
     ${(receipt.containerDepositTotal ?? 0) > 0 ? `<div class="row"><span>Container Deposits</span><strong>${formatMoney(receipt.containerDepositTotal ?? 0, receipt.currencyCode)}</strong></div>` : ''}
     ${taxRows}
+    ${(receipt.cashbackAmount ?? 0) > 0 ? `<div class="rule"></div><div class="row"><span>Cash Back</span><strong>${formatMoney(receipt.cashbackAmount ?? 0, receipt.currencyCode)}</strong></div><div class="row"><span>Cash Back Fee</span><strong>${formatMoney(receipt.cashbackFeeAmount ?? 0, receipt.currencyCode)}</strong></div>` : ''}
     <div class="row total"><span>Total</span><strong>${formatMoney(receipt.totalAmount, receipt.currencyCode)}</strong></div>
     ${(receipt.cashRoundingAdjustment ?? 0) !== 0 ? `<div class="row"><span>Cash rounding</span><strong>${formatSignedMoney(receipt.cashRoundingAdjustment ?? 0, receipt.currencyCode)}</strong></div>
     <div class="row total"><span>Cash total</span><strong>${formatMoney(receipt.cashTotal ?? receipt.totalAmount, receipt.currencyCode)}</strong></div>` : ''}
@@ -561,6 +562,7 @@ function receiptBodyHtml(receipt: ReceiptDocument) {
     <div class="row"><span>Cash tendered</span><strong>${formatMoney(receipt.cashTendered, receipt.currencyCode)}</strong></div>
     <div class="row"><span>Change</span><strong>${formatMoney(receipt.changeDue, receipt.currencyCode)}</strong></div>
     ${(receipt.cashDueToCustomer ?? 0) > 0 ? `<div class="row total"><span>Cash due to customer</span><strong>${formatMoney(receipt.cashDueToCustomer ?? 0, receipt.currencyCode)}</strong></div>` : ''}
+    ${(receipt.cashbackAmount ?? 0) > 0 ? `<div class="row total"><span>Cash Given</span><strong>${formatMoney(receipt.cashbackAmount ?? 0, receipt.currencyCode)}</strong></div>` : ''}
     <div class="rule"></div>
     ${receipt.tokenNumber ? `<div class="token">ORDER ${escapeHtml(receipt.tokenNumber)}</div>` : ''}
     <div class="center">Thank you</div>

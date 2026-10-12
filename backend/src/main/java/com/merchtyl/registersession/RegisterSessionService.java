@@ -262,7 +262,7 @@ public class RegisterSessionService {
     @Transactional(readOnly = true)
     public RegisterSessionResponse current(UUID deviceId, String deviceIdentifier, Authentication authentication) {
         User actor = currentUser(authentication);
-        return currentSession(deviceId, deviceIdentifier, authentication)
+        return currentSession(deviceId, deviceIdentifier, actor)
                 .filter(session -> canViewCurrent(session, actor, authentication))
                 .map(session -> RegisterSessionResponse.from(session, cashLedgerService.breakdown(session),
                         salesClassificationService == null
@@ -746,7 +746,7 @@ public class RegisterSessionService {
         return search(request, specification(request));
     }
 
-    private java.util.Optional<RegisterSession> currentSession(UUID deviceId, String deviceIdentifier, Authentication authentication) {
+    private java.util.Optional<RegisterSession> currentSession(UUID deviceId, String deviceIdentifier, User actor) {
         if (deviceId != null) {
             return registerSessionRepository.findFirstByDevice_IdAndStatusInOrderByOpenedAtDesc(deviceId, CURRENT_STATUSES);
         }
@@ -757,8 +757,7 @@ public class RegisterSessionService {
                 return deviceSession;
             }
         }
-        User cashier = currentUser(authentication);
-        return registerSessionRepository.findFirstByAssignedCashier_IdAndStatusInOrderByOpenedAtDesc(cashier.getId(), CURRENT_STATUSES);
+        return registerSessionRepository.findFirstByAssignedCashier_IdAndStatusInOrderByOpenedAtDesc(actor.getId(), CURRENT_STATUSES);
     }
 
     private RegisterSession save(RegisterSession session) {

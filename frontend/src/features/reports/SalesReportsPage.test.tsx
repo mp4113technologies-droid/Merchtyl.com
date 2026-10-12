@@ -246,7 +246,7 @@ describe('Sales reports page', () => {
     expect(screen.getByText('$290.10')).toBeInTheDocument();
     expect(screen.getAllByText('$3,114.87')).not.toHaveLength(0);
     const summaryGrid = screen.getByTestId('sales-summary-grid');
-    expect(summaryGrid.querySelectorAll(':scope > [data-summary-card]')).toHaveLength(13);
+    expect(summaryGrid.querySelectorAll(':scope > [data-summary-card]')).toHaveLength(15);
     for (const key of ['taxable-sales', 'non-taxable-sales', 'tax-collected', 'merchandise-net-sales']) {
       const item = summaryGrid.querySelector(`[data-summary-card="${key}"]`);
       expect(item?.parentElement).toBe(summaryGrid);
@@ -299,7 +299,7 @@ describe('Sales reports page', () => {
     });
     render(<App initialEntries={['/reports/sales']} />);
     expect(await screen.findByRole('status', { name: 'Loading sales report' })).toBeInTheDocument();
-    expect(screen.getByTestId('sales-summary-grid').querySelectorAll(':scope > [data-summary-card]')).toHaveLength(13);
+    expect(screen.getByTestId('sales-summary-grid').querySelectorAll(':scope > [data-summary-card]')).toHaveLength(15);
   });
 
   it('shows a report error without rendering failed metrics as zero', async () => {
@@ -314,8 +314,8 @@ describe('Sales reports page', () => {
     const unavailableValues = await screen.findAllByText('Unavailable', {}, { timeout: 5_000 });
     const errorGrid = screen.getByTestId('sales-summary-grid');
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(errorGrid.querySelectorAll(':scope > [data-summary-card]')).toHaveLength(13);
-    expect(unavailableValues).toHaveLength(13);
+    expect(errorGrid.querySelectorAll(':scope > [data-summary-card]')).toHaveLength(15);
+    expect(unavailableValues).toHaveLength(15);
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
   });
 });

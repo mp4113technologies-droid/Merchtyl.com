@@ -9,6 +9,7 @@ public record CashLedgerBreakdownResponse(
         BigDecimal retailChange,
         BigDecimal retailRefunds,
         BigDecimal depositPayouts,
+        BigDecimal cashbackPayouts,
         BigDecimal lotteryCashSales,
         BigDecimal lotteryPayouts,
         BigDecimal payoutReversals,
@@ -25,7 +26,7 @@ public record CashLedgerBreakdownResponse(
             BigDecimal lotteryPayouts, BigDecimal payoutReversals, BigDecimal lotterySaleCancellations,
             BigDecimal otherCashIn, BigDecimal otherCashOut, BigDecimal totalIn, BigDecimal totalOut,
             BigDecimal expectedCash, List<CashLedgerSourceBreakdownResponse> sourceBreakdown) {
-        this(openingCash, retailCashReceived, retailChange, retailRefunds, BigDecimal.ZERO.setScale(2),
+        this(openingCash, retailCashReceived, retailChange, retailRefunds, BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2),
                 lotteryCashSales, lotteryPayouts, payoutReversals, lotterySaleCancellations, otherCashIn,
                 otherCashOut, totalIn, totalOut, expectedCash, sourceBreakdown);
     }

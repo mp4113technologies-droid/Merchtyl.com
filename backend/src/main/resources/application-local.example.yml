@@ -4,10 +4,10 @@ spring:
     # this example profile is selected. Environment variables can still override them.
     import: optional:classpath:application-local.yml
   datasource:
-    # Safe fallback used only when application-local.yml does not provide a datasource.
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/merchtyl}
-    username: ${SPRING_DATASOURCE_USERNAME:merchtyl}
-    password: ${SPRING_DATASOURCE_PASSWORD:merchtyl_dev_password}
+    # Neon development database. Environment variables can still override these values.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://ep-holy-forest-au795cxk-pooler.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require}
+    username: ${SPRING_DATASOURCE_USERNAME:neondb_owner}
+    password: ${SPRING_DATASOURCE_PASSWORD:npg_Ji0gpIVLs9Yb}
 
 management:
   endpoint:

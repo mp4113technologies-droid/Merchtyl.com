@@ -112,6 +112,7 @@ public class CashLedgerService {
         BigDecimal retailChange = total(entries, CashLedgerSourceType.SALE_CHANGE_GIVEN, CashLedgerDirection.OUT);
         BigDecimal retailRefunds = total(entries, CashLedgerSourceType.CASH_REFUND, CashLedgerDirection.OUT);
         BigDecimal depositPayouts = total(entries, CashLedgerSourceType.DEPOSIT_PAYOUT, CashLedgerDirection.OUT);
+        BigDecimal cashbackPayouts = total(entries, CashLedgerSourceType.CASHBACK_PAYOUT, CashLedgerDirection.OUT);
         BigDecimal lotteryCashSales = total(entries, CashLedgerSourceType.LOTTERY_SALE_CASH, CashLedgerDirection.IN);
         BigDecimal lotteryPayouts = total(entries, CashLedgerSourceType.LOTTERY_PAYOUT_CASH, CashLedgerDirection.OUT);
         BigDecimal payoutReversals = total(entries, CashLedgerSourceType.LOTTERY_PAYOUT_REVERSAL, CashLedgerDirection.IN);
@@ -156,6 +157,7 @@ public class CashLedgerService {
                 retailChange,
                 retailRefunds,
                 depositPayouts,
+                cashbackPayouts,
                 lotteryCashSales,
                 lotteryPayouts,
                 payoutReversals,
@@ -240,7 +242,7 @@ public class CashLedgerService {
         switch (sourceType) {
             case SESSION_OPENING_FLOAT, SALE_CASH_RECEIPT, LOTTERY_SALE_CASH, LOTTERY_PAYOUT_REVERSAL,
                     TILL_RESTORE -> requireDirection(sourceType, direction, CashLedgerDirection.IN);
-            case SALE_CHANGE_GIVEN, LOTTERY_PAYOUT_CASH, LOTTERY_SALE_CANCELLATION_CASH, DEPOSIT_PAYOUT, CASH_REFUND,
+            case SALE_CHANGE_GIVEN, LOTTERY_PAYOUT_CASH, LOTTERY_SALE_CANCELLATION_CASH, DEPOSIT_PAYOUT, CASHBACK_PAYOUT, CASH_REFUND,
                     SESSION_CLOSE_TILL_REMOVAL -> requireDirection(sourceType, direction, CashLedgerDirection.OUT);
             case CASH_MOVEMENT, SESSION_CLOSE_ADJUSTMENT -> {
             }

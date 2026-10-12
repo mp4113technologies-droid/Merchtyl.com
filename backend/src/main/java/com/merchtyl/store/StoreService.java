@@ -102,6 +102,7 @@ public class StoreService {
                 values.negativeStockAllowed(),
                 values.active());
         store.configureDefaultTillFloat(values.defaultTillFloat());
+        store.configureCashback(values.cashbackEnabled(), values.cashbackFeeType(), values.cashbackFeeValue());
         UUID tenantId = currentTenantId(authentication);
         activateNewEntitlements(tenantId, Set.of(), request.capabilities());
         store.assignTenant(tenantId);
@@ -190,6 +191,7 @@ public class StoreService {
         UUID tenantId = currentTenantId(authentication);
         activateNewEntitlements(tenantId, previousCapabilities, request.capabilities());
         store.update(values);
+        store.configureCashback(values.cashbackEnabled(), values.cashbackFeeType(), values.cashbackFeeValue());
         store.configureOperations(validCapabilities(request.capabilities()), kitchenDisplayName(request.name(), request.capabilities(), request.kitchenDisplayName()));
         StoreResponse after = response(save(store));
         deactivateRemovedEntitlements(tenantId, id, previousCapabilities, after.capabilities());
@@ -311,7 +313,9 @@ public class StoreService {
                 geography.taxRegion().getCode(),
                 request.pricesIncludeTax(),
                 request.negativeStockAllowed(),
-                request.active(), normalizeTillFloat(request.defaultTillFloat()));
+                request.active(), normalizeTillFloat(request.defaultTillFloat()), request.cashbackEnabled(),
+                normalizeCashbackFeeType(request.cashbackEnabled(), request.cashbackFeeType()),
+                normalizeCashbackFeeValue(request.cashbackEnabled(), request.cashbackFeeType(), request.cashbackFeeValue()));
     }
 
     private StoreValues values(StoreUpdateRequest request, Authentication authentication) {
@@ -350,7 +354,9 @@ public class StoreService {
                 geography.taxRegion().getCode(),
                 request.pricesIncludeTax(),
                 request.negativeStockAllowed(),
-                request.active(), normalizeTillFloat(request.defaultTillFloat()));
+                request.active(), normalizeTillFloat(request.defaultTillFloat()), request.cashbackEnabled(),
+                normalizeCashbackFeeType(request.cashbackEnabled(), request.cashbackFeeType()),
+                normalizeCashbackFeeValue(request.cashbackEnabled(), request.cashbackFeeType(), request.cashbackFeeValue()));
     }
 
     private StoreGeographySelection validateGeography(
@@ -568,6 +574,26 @@ public class StoreService {
             return value.setScale(2, RoundingMode.UNNECESSARY);
         } catch (ArithmeticException exception) {
             throw new BadRequestException("defaultTillFloat may include no more than 2 decimal places");
+        }
+    }
+
+    private static CashbackFeeType normalizeCashbackFeeType(boolean enabled, CashbackFeeType value) {
+        if (enabled && value == null) throw new BadRequestException("CASHBACK_FEE_TYPE_REQUIRED");
+        return value == null ? CashbackFeeType.FIXED : value;
+    }
+
+    private static BigDecimal normalizeCashbackFeeValue(boolean enabled, CashbackFeeType type, BigDecimal value) {
+        if (enabled && value == null) throw new BadRequestException("CASHBACK_FEE_VALUE_REQUIRED");
+        BigDecimal normalized = value == null ? BigDecimal.ZERO : value;
+        if (normalized.signum() < 0) throw new BadRequestException("CASHBACK_FEE_VALUE_INVALID");
+        CashbackFeeType resolvedType = type == null ? CashbackFeeType.FIXED : type;
+        if (resolvedType == CashbackFeeType.PERCENTAGE && normalized.compareTo(new BigDecimal("100")) > 0) {
+            throw new BadRequestException("CASHBACK_PERCENTAGE_TOO_HIGH");
+        }
+        try {
+            return normalized.setScale(4, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException exception) {
+            throw new BadRequestException("CASHBACK_FEE_VALUE_PRECISION_INVALID");
         }
     }
 

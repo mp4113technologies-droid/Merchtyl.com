@@ -29,6 +29,9 @@ public record StoreRequest(
         boolean active,
         @NotEmpty Set<StoreCapability> capabilities,
         @Size(max = 180) String kitchenDisplayName,
-        @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal defaultTillFloat
+        @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal defaultTillFloat,
+        boolean cashbackEnabled,
+        CashbackFeeType cashbackFeeType,
+        @DecimalMin("0.0000") @Digits(integer = 8, fraction = 4) BigDecimal cashbackFeeValue
 ) {
 }

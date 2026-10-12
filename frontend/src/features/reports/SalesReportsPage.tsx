@@ -114,6 +114,8 @@ function reportCsvRows(report: SalesReport) {
     ['Container deposits', report.containerDeposits ?? 0],
     ['Deposit payouts', report.depositPayouts ?? 0],
     ['Net deposits', report.netDeposits ?? 0],
+    ['Cash Back paid', report.cashbackPaid ?? 0],
+    ['Cash Back fees', report.cashbackFees ?? 0],
     ['Refunded container deposits', report.refundedContainerDeposits ?? 0],
     ['Taxes', report.taxes],
     ['Taxable Sales', report.taxableSales ?? 0],
@@ -169,6 +171,8 @@ function SummaryGrid({ data, loading = false, unavailable = false }: { data?: Sa
       {card('container-deposits', 'Container deposits', data?.containerDeposits ?? 0)}
       {card('deposit-payouts', 'Deposit payouts', data?.depositPayouts ?? 0, 'warning')}
       {card('net-deposits', 'Net deposits', data?.netDeposits ?? 0)}
+      {card('cashback-paid', 'Cash Back Paid', data?.cashbackPaid ?? 0, 'warning', `${data?.cashbackCount ?? 0} transaction(s)`)}
+      {card('cashback-fees', 'Cash Back Fees', data?.cashbackFees ?? 0, 'positive')}
       {card('refunded-container-deposits', 'Refunded container deposits', data?.refundedContainerDeposits ?? 0, 'warning')}
     </Grid>
   );
