@@ -2178,6 +2178,26 @@ export type Sale = {
 
 export type SaleListResponse = PageResponse<Sale>;
 
+export type InvoiceHistorySummary = {
+  saleId: string;
+  receiptNumber: string;
+  completedAt: string;
+  saleType: 'RETAIL' | 'FOOD_SERVICE';
+  storeId: string;
+  storeName: string;
+  registerId: string;
+  registerCode: string;
+  cashierName: string;
+  customerName: string | null;
+  orderNumber: string | null;
+  totalAmount: number;
+  currencyCode: string;
+  paymentSummary: PaymentMethod | 'SPLIT';
+  status: 'COMPLETED' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+};
+
+export type InvoiceHistoryListResponse = PageResponse<InvoiceHistorySummary>;
+
 export type ReturnItem = {
   id: string;
   originalSaleItemId: string;

@@ -20,6 +20,7 @@ import com.merchtyl.lottery.LotterySaleService;
 import com.merchtyl.refunds.RefundController;
 import com.merchtyl.refunds.RefundService;
 import com.merchtyl.sales.SaleController;
+import com.merchtyl.receipts.InvoiceHistoryService;
 import com.merchtyl.sales.SaleService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -99,6 +100,9 @@ class OpenApiDocumentationTest {
 
     @MockBean
     SaleService saleService;
+
+    @MockBean
+    InvoiceHistoryService invoiceHistoryService;
 
     @MockBean
     RefundService refundService;

@@ -2791,6 +2791,15 @@ export function listSales(token: string, params: SaleSearchParams = {}) {
   return request<SaleListResponse>(`/sales${queryString(params)}`, undefined, token);
 }
 
+export function listInvoiceHistory(token: string, params: {
+  storeId?: string;
+  invoiceNumber?: string;
+  page?: number;
+  size?: number;
+} = {}) {
+  return request<import('./types').InvoiceHistoryListResponse>(`/sales/invoices${queryString(params)}`, undefined, token);
+}
+
 export function getSalesReport(token: string, params: SalesReportParams = {}) {
   return request<SalesReport>(`/reports/sales${queryString(params)}`, undefined, token);
 }

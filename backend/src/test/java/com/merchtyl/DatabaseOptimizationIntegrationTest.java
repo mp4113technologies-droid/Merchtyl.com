@@ -38,6 +38,9 @@ class DatabaseOptimizationIntegrationTest {
         assertThat(indexes).contains(
                 "idx_sales_report_filters",
                 "idx_sales_search_updated_id",
+                "idx_sales_invoice_history",
+                "idx_receipts_number_upper_pattern",
+                "idx_receipts_history_generated_sale",
                 "idx_cash_movements_search_occurred_id",
                 "idx_lottery_payouts_reserved_cash",
                 "uq_security_users_email_lower",

@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,6 +45,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.merchtyl.receipts.InvoiceHistoryService;
 
 @SpringBootTest(classes = SaleControllerAuthorizationTest.TestApplication.class)
 @AutoConfigureMockMvc
@@ -123,6 +126,9 @@ class SaleControllerAuthorizationTest {
 
     @MockBean
     SaleService saleService;
+
+    @MockBean
+    InvoiceHistoryService invoiceHistoryService;
 
     @Test
     void createDraftRequiresSaleCreatePermission() throws Exception {
@@ -282,6 +288,28 @@ class SaleControllerAuthorizationTest {
                         .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(SALE_ID.toString()));
+    }
+
+    @Test
+    void invoiceHistoryRequiresSaleViewPermission() throws Exception {
+        mockMvc.perform(get("/api/v1/sales/invoices")
+                        .with(user("cashier").authorities(new SimpleGrantedAuthority("SALE_CREATE"))))
+                .andExpect(status().isForbidden());
+
+        verify(invoiceHistoryService, never()).search(any(), any(), any(Integer.class), any(Integer.class), any());
+    }
+
+    @Test
+    void saleViewerCanSearchInvoiceHistoryWithDefaultPageSize() throws Exception {
+        when(invoiceHistoryService.search(any(), any(), any(Integer.class), any(Integer.class), any()))
+                .thenReturn(new com.merchtyl.common.PageResponse<>(List.of(), 0, 10, 0, 0, true, true));
+
+        mockMvc.perform(get("/api/v1/sales/invoices")
+                        .with(user("viewer").authorities(new SimpleGrantedAuthority("SALE_VIEW"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(10));
+
+        verify(invoiceHistoryService).search(isNull(), isNull(), eq(0), eq(10), any());
     }
 
     private static SaleResponse response(SaleStatus status) {

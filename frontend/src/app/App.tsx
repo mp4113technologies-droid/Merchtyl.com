@@ -107,6 +107,7 @@ import { PosDeviceGuard } from '../features/pos/PosDeviceGuard';
 import { DiscountDefinitionsPage } from '../features/discounts/DiscountDefinitionsPage';
 import { FoodMenuPage } from '../features/foodmenu/FoodMenuPage';
 import { NewReturnPage, ReturnDetailPage, ReturnsPage } from '../features/returns/ReturnPages';
+import { InvoiceHistoryPage } from '../features/invoices/InvoiceHistoryPage';
 import { RegisterReportsPage } from '../features/reports/RegisterReportsPage';
 import { SalesReportsPage } from '../features/reports/SalesReportsPage';
 import { LotteryReportsPage } from '../features/reports/LotteryReportsPage';
@@ -552,6 +553,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       { label: 'Retail POS', to: '/pos', icon: <PointOfSaleOutlinedIcon />, visible: retailPosVisible, desktopOnly: true },
       { label: 'Restaurant POS', to: '/pos/food', icon: <RestaurantIcon />, visible: foodPosVisible, desktopOnly: true },
       { label: 'Held Sales', to: '/pos/held-sales', icon: <PauseCircleOutlineIcon />, visible: canViewRegisters },
+      { label: 'Invoice History', to: '/invoice-history', icon: <ReceiptLongOutlinedIcon />, visible: permissions.includes('SALE_VIEW') },
       { label: 'Returns', to: '/returns', icon: <ReceiptLongOutlinedIcon />, visible: canViewRegisters },
       { label: 'Discounts', to: '/discounts', icon: <ConfirmationNumberOutlinedIcon />, visible: permissions.includes('DISCOUNT_VIEW') }
     ] },
@@ -889,6 +891,7 @@ function AppRoutes() {
           <Route path="/register/cash-movements" element={<CashMovementPage />} />
           <Route path="/register/history" element={<RegisterHistoryPage />} />
           <Route path="/returns" element={<ReturnsPage />} />
+          <Route path="/invoice-history" element={<InvoiceHistoryPage />} />
           <Route path="/returns/new" element={<NewReturnPage />} />
           <Route path="/returns/:id" element={<ReturnDetailPage />} />
           <Route path="/users" element={<UsersPage />} />

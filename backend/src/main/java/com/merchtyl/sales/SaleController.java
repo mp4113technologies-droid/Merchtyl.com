@@ -3,6 +3,8 @@ package com.merchtyl.sales;
 import com.merchtyl.common.PageResponse;
 import com.merchtyl.idempotency.IdempotencyResult;
 import com.merchtyl.idempotency.IdempotencyService;
+import com.merchtyl.receipts.InvoiceHistoryService;
+import com.merchtyl.receipts.InvoiceHistorySummary;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -33,9 +35,11 @@ import java.util.List;
 @Tag(name = "Sales", description = "Point-of-sale drafts, line items, payments, and idempotent sale completion.")
 public class SaleController {
     private final SaleService saleService;
+    private final InvoiceHistoryService invoiceHistoryService;
 
-    public SaleController(SaleService saleService) {
+    public SaleController(SaleService saleService, InvoiceHistoryService invoiceHistoryService) {
         this.saleService = saleService;
+        this.invoiceHistoryService = invoiceHistoryService;
     }
 
     @PostMapping("/drafts")
@@ -72,6 +76,18 @@ public class SaleController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return saleService.search(new SaleSearchRequest(storeId, registerId, registerSessionId, createdBy, status, page, size));
+    }
+
+    @GetMapping("/invoices")
+    @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_VIEW)")
+    @Operation(summary = "Search invoice history", description = "Returns completed customer invoices newest first, scoped to the authenticated tenant and authorized stores.")
+    PageResponse<InvoiceHistorySummary> invoices(
+            @RequestParam(required = false) UUID storeId,
+            @RequestParam(required = false) String invoiceNumber,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Authentication authentication) {
+        return invoiceHistoryService.search(storeId, invoiceNumber, page, size, authentication);
     }
 
     @PostMapping("/{id}/items")
