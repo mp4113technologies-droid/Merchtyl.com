@@ -200,12 +200,35 @@ function roundCashPayable(value: number, currencyCode: string) {
   return Math.round((value * 100) / 5) * 5 / 100;
 }
 
-function completionKey() {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-  return `complete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function completionKey(saleId: string) {
+  const storageKey = `merchtyl.pos.completion-key.${saleId}`;
+  const existing = window.localStorage.getItem(storageKey);
+  if (existing) return existing;
+  const key = globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID()
+    : `complete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  window.localStorage.setItem(storageKey, key);
+  return key;
 }
+
+function clearCompletionKey(saleId: string) {
+  window.localStorage.removeItem(`merchtyl.pos.completion-key.${saleId}`);
+}
+
+function paymentKey(saleId: string) {
+  const storageKey = `merchtyl.pos.payment-key.${saleId}`;
+  const existing = window.localStorage.getItem(storageKey);
+  if (existing) return existing;
+  const key = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  window.localStorage.setItem(storageKey, key);
+  return key;
+}
+
+function clearPaymentKey(saleId: string) {
+  window.localStorage.removeItem(`merchtyl.pos.payment-key.${saleId}`);
+}
+
+type CheckoutPhase = 'CART' | 'CHECKOUT_CREATING' | 'PAYMENT_PENDING' | 'PAYMENT_POSTING' | 'SALE_COMPLETING' | 'COMPLETED' | 'FAILED';
 
 function LotteryAmountDialog({ open, mode, currencyCode, busy, error, onClose, onSubmit }: {
   open: boolean; mode: 'SOLD' | 'WIN'; currencyCode: string; busy: boolean; error?: string;
@@ -1192,7 +1215,10 @@ export function PosCartPage() {
   const payoutPrintRef = React.useRef<HTMLElement | null>(null);
   const [lotteryNotice, setLotteryNotice] = React.useState<string | null>(null);
   const [payoutConfirmationOpen, setPayoutConfirmationOpen] = React.useState(false);
+  const [checkoutPhase, setCheckoutPhase] = React.useState<CheckoutPhase>('CART');
   const completionKeyRef = React.useRef<string | null>(null);
+  const automaticCompletionSaleIdRef = React.useRef<string | null>(null);
+  const autoFinalizeRequestedRef = React.useRef(false);
   const automaticPrintSaleIdRef = React.useRef<string | null>(null);
   const autoPrintedReceiptRef = React.useRef<string | null>(null);
   const recoveryCheckedRef = React.useRef(false);
@@ -1277,6 +1303,17 @@ export function PosCartPage() {
 
   React.useEffect(() => {
     if (saleId && saleQuery.data?.id === saleId) {
+      if (saleQuery.data.status === 'COMPLETED') {
+        clearCompletionKey(saleQuery.data.id);
+        clearPaymentKey(saleQuery.data.id);
+        completionKeyRef.current = null;
+        setCheckoutPhase('COMPLETED');
+      } else if (isPendingCheckoutStatus(saleQuery.data.status)
+          && saleQuery.data.payments.length > 0
+          && saleQuery.data.paymentComplete) {
+        autoFinalizeRequestedRef.current = true;
+        setCheckoutPhase('SALE_COMPLETING');
+      }
       setCartItems(saleQuery.data.items);
       rememberSale(saleQuery.data);
     }
@@ -1480,7 +1517,10 @@ export function PosCartPage() {
     setPayoutConfirmationOpen(false);
     setReceiptPrintError(null);
     setDraftRecovered(false);
+    setCheckoutPhase('CART');
     completionKeyRef.current = null;
+    automaticCompletionSaleIdRef.current = null;
+    autoFinalizeRequestedRef.current = false;
     automaticPrintSaleIdRef.current = null;
     autoPrintedReceiptRef.current = null;
     void clearDraftCartRecovery();
@@ -1498,11 +1538,17 @@ export function PosCartPage() {
       if (!record) {
         return;
       }
-      const recoveredSale = saleFromDraftCartRecord(record);
       setDraftRecovered(true);
-      setCartItems(recoveredSale.items);
-      setActiveSale(recoveredSale);
-      setSearchParams({ saleId: recoveredSale.id });
+      setCheckoutPhase(record.paymentComplete ? 'SALE_COMPLETING' : 'PAYMENT_PENDING');
+      // The persisted record is only a pointer. Automatic finalization waits for
+      // getSale to confirm recorded payments and paymentComplete authoritatively.
+      autoFinalizeRequestedRef.current = false;
+      if (!record.paymentComplete) {
+        const recoveredSale = saleFromDraftCartRecord(record);
+        setCartItems(recoveredSale.items);
+        setActiveSale(recoveredSale);
+      }
+      setSearchParams({ saleId: record.saleId });
     }).catch((error) => {
       console.error('Draft cart recovery failed', error);
     });
@@ -1632,6 +1678,7 @@ export function PosCartPage() {
   });
 
   const recalculateMutation = useMutation({
+    onMutate: () => setCheckoutPhase('CHECKOUT_CREATING'),
     mutationFn: async () => {
       if (!current.data || (cartItems.length === 0 && cashbackAmount == null)) throw new Error('Cart is empty');
       const epoch = transactionEpochRef.current;
@@ -1652,6 +1699,7 @@ export function PosCartPage() {
       if (epoch !== transactionEpochRef.current || revision !== cartRevisionRef.current) return;
       setCartItems(sale.items);
       rememberSale(sale);
+      setCheckoutPhase(sale.paymentComplete ? 'SALE_COMPLETING' : 'PAYMENT_PENDING');
       if (openPaymentAfterQuoteRef.current && sale.totalAmount > 0) {
         openPaymentAfterQuoteRef.current = false;
         setPaymentDialogOpen(true);
@@ -1661,7 +1709,7 @@ export function PosCartPage() {
         }
       }
     },
-    onError: () => { openPaymentAfterQuoteRef.current = false; }
+    onError: () => { openPaymentAfterQuoteRef.current = false; setCheckoutPhase('FAILED'); }
   });
 
   function requestAuthoritativeCheckout(openPayment: boolean) {
@@ -1697,23 +1745,31 @@ export function PosCartPage() {
   });
 
   const paymentMutation = useMutation({
+    onMutate: () => setCheckoutPhase('PAYMENT_POSTING'),
     mutationFn: async (payment: { method: PaymentMethod; amount: number; cashTendered?: number; reference?: string; notes?: string }) => {
       if (!activeSale) {
         throw new Error('No active sale');
       }
       const epoch = transactionEpochRef.current;
       const requestedSaleId = activeSale.id;
-      const sale = await recordSalePayment(await getValidAccessToken(), requestedSaleId, payment);
+      const sale = await recordSalePayment(await getValidAccessToken(), requestedSaleId, payment, paymentKey(requestedSaleId));
       return { sale, epoch, requestedSaleId };
     },
     onSuccess: ({ sale, epoch, requestedSaleId }) => {
       if (epoch !== transactionEpochRef.current || sale.id !== requestedSaleId) return;
       rememberSale(sale);
+      clearPaymentKey(requestedSaleId);
       setPaymentDialogOpen(!sale.paymentComplete);
+      setCheckoutPhase(sale.paymentComplete ? 'SALE_COMPLETING' : 'PAYMENT_PENDING');
+      autoFinalizeRequestedRef.current = sale.paymentComplete;
       if (paymentStartedAtRef.current !== null) {
         reportPosTiming('record-payment', paymentStartedAtRef.current);
         paymentStartedAtRef.current = null;
       }
+    },
+    onError: (error) => {
+      setCheckoutPhase('FAILED');
+      if (activeSale && error instanceof ApiClientError) clearPaymentKey(activeSale.id);
     }
   });
 
@@ -1722,30 +1778,52 @@ export function PosCartPage() {
       if (!activeSale) {
         throw new Error('No active sale');
       }
-      const key = completionKeyRef.current ?? completionKey();
+      setCheckoutPhase('SALE_COMPLETING');
+      const key = completionKeyRef.current ?? completionKey(activeSale.id);
       completionKeyRef.current = key;
       const epoch = transactionEpochRef.current;
       const requestedSaleId = activeSale.id;
       const sale = await completeSale(await getValidAccessToken(), requestedSaleId, key);
+      if (sale.status !== 'COMPLETED') {
+        throw new Error('SALE_COMPLETION_NOT_CONFIRMED');
+      }
       return { sale, epoch, requestedSaleId };
     },
     onSuccess: ({ sale, epoch, requestedSaleId }) => {
       if (epoch !== transactionEpochRef.current || sale.id !== requestedSaleId) return;
       completionKeyRef.current = null;
+      clearCompletionKey(requestedSaleId);
       automaticPrintSaleIdRef.current = sale.id;
       setPaymentDialogOpen(false);
       setPayoutConfirmationOpen(false);
       rememberSale(sale);
+      setCheckoutPhase('COMPLETED');
       void queryClient.invalidateQueries({ queryKey: ['sales'], refetchType: 'none' });
       if (completionStartedAtRef.current !== null) {
         reportPosTiming('complete-sale', completionStartedAtRef.current);
         completionStartedAtRef.current = null;
       }
     },
-    onError: () => {
-      completionKeyRef.current = null;
+    onError: (error) => {
+      setCheckoutPhase('FAILED');
+      // A response proves the attempt failed and may safely use a new key on retry.
+      // A transport error is ambiguous: retain the key so a server-side success is replayed.
+      if (activeSale && error instanceof ApiClientError) {
+        clearCompletionKey(activeSale.id);
+        completionKeyRef.current = null;
+      }
     }
   });
+
+  React.useEffect(() => {
+    if (!autoFinalizeRequestedRef.current || !activeSale || activeSale.status === 'COMPLETED'
+      || activeSale.payments.length === 0 || !activeSale.paymentComplete || completeMutation.isPending) return;
+    if (automaticCompletionSaleIdRef.current === activeSale.id) return;
+    autoFinalizeRequestedRef.current = false;
+    automaticCompletionSaleIdRef.current = activeSale.id;
+    completionStartedAtRef.current = performance.now();
+    completeMutation.mutate();
+  }, [activeSale, completeMutation.isPending]);
 
   const reprintReceiptMutation = useMutation({
     mutationFn: async () => {
@@ -1790,6 +1868,8 @@ export function PosCartPage() {
   const pageError = current.error ?? saleQuery.error ?? barcodeError
     ?? (discount ? null : recalculateMutation.error) ?? holdMutation.error ?? cancelMutation.error
     ?? (paymentDialogOpen ? null : paymentMutation.error) ?? completeMutation.error;
+  const paidFinalizationFailed = checkoutPhase === 'FAILED' && Boolean(activeSale?.paymentComplete)
+    && activeSale?.status !== 'COMPLETED' && Boolean(completeMutation.error);
 
   React.useEffect(() => {
     scannerRef.current = new KeyboardWedgeScanner({ ...scannerPreferences, duplicatePreventionMs: 0 });
@@ -1865,13 +1945,18 @@ export function PosCartPage() {
       ) : null}
       {(pageError || inventoryWarning || (draftRecovered && isPendingCheckoutStatus(activeSale?.status)) || unknownBarcode) ? (
         <Box sx={{ flexShrink: 0, maxHeight: 54, overflowY: 'auto' }}>
-          {pageError ? <Alert severity="error" sx={{ py: 0 }}>{posErrorMessage(pageError)}</Alert> : null}
+          {pageError ? <Alert severity="error" sx={{ py: 0 }}>{paidFinalizationFailed
+            ? "Payment was recorded, but the sale could not be finalized. Retry completion; do not rescan or take payment again."
+            : posErrorMessage(pageError)}</Alert> : null}
           {!pageError && inventoryWarning ? <Alert severity="warning" onClose={() => setInventoryWarning(null)} sx={{ py: 0 }}>{inventoryWarning}</Alert> : null}
           {!pageError && !inventoryWarning && draftRecovered && isPendingCheckoutStatus(activeSale?.status) ? <Alert severity="success" onClose={() => setDraftRecovered(false)} sx={{ py: 0 }}>Checkout recovered after refresh.</Alert> : null}
           {!pageError && !inventoryWarning && !(draftRecovered && isPendingCheckoutStatus(activeSale?.status)) && unknownBarcode ? <Alert severity="warning" sx={{ py: 0 }} action={currentUser?.permissions?.includes('POS_CUSTOM_ITEM') ? <Stack direction="row" spacing={0.5}><Button size="small" onClick={() => openCustomItem('TAXABLE')}>Taxable Custom Item</Button><Button size="small" onClick={() => openCustomItem('NON_TAXABLE')}>Non-Taxable Custom Item</Button></Stack> : undefined}>{`No product was found for barcode ${unknownBarcode}.`}</Alert> : null}
         </Box>
       ) : null}
       {lotteryNotice ? <Alert severity="success" onClose={() => setLotteryNotice(null)} sx={{ py: 0 }}>{lotteryNotice}</Alert> : null}
+      {checkoutPhase === 'SALE_COMPLETING' && activeSale?.paymentComplete && activeSale.status !== 'COMPLETED'
+        ? <Alert severity="info" sx={{ py: 0 }}>Payment received. Finalizing sale…</Alert>
+        : null}
 
       {current.data ? (
         activeSale?.status === 'COMPLETED' ? (
@@ -2084,7 +2169,7 @@ export function PosCartPage() {
             </Box>
             <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
               <Button fullWidth size="small" variant="outlined" disabled={!activeSale || cartLocked} onClick={() => cancelMutation.mutate()} sx={{ bgcolor: posTokens.colors.card }}>Cancel draft</Button>
-              <Button fullWidth size="small" variant="contained" color={activeSale && activeSale.totalAmount < 0 ? 'warning' : 'primary'} disabled={!activeSale?.paymentComplete || completeMutation.isPending || busy} onClick={() => { if (completeMutation.isPending) return; if (activeSale && activeSale.totalAmount < 0) setPayoutConfirmationOpen(true); else { completionStartedAtRef.current = performance.now(); completeMutation.mutate(); } }}>{completeMutation.isPending ? 'Completing sale...' : activeSale && activeSale.totalAmount < 0 ? `Pay out ${money(Math.abs(activeSale.totalAmount), currencyCode)} cash` : 'Complete sale'}</Button>
+              <Button fullWidth size="small" variant="contained" color={activeSale && activeSale.totalAmount < 0 ? 'warning' : 'primary'} disabled={!activeSale?.paymentComplete || completeMutation.isPending || busy} onClick={() => { if (completeMutation.isPending) return; if (activeSale && activeSale.totalAmount < 0) setPayoutConfirmationOpen(true); else { completionStartedAtRef.current = performance.now(); completeMutation.mutate(); } }}>{completeMutation.isPending ? 'Completing sale...' : activeSale && activeSale.totalAmount < 0 ? `Pay out ${money(Math.abs(activeSale.totalAmount), currencyCode)} cash` : paidFinalizationFailed ? 'Retry completion' : 'Complete sale'}</Button>
             </Stack>
           </Stack>
         </Box>

@@ -1658,6 +1658,26 @@ class SaleServiceTest {
                 any());
     }
 
+    @Test
+    void recordPaymentIdempotentlyDelegatesWithTenderFingerprint() {
+        IdempotencyResult expected = new IdempotencyResult(
+                IdempotencyState.COMPLETED, 200, "application/json", "{\"id\":\"sale\"}", false);
+        when(idempotencyService.execute(any(), any(), any(), any(), any())).thenReturn(expected);
+        SalePaymentRequest request = new SalePaymentRequest(
+                PaymentMethod.CASH, new BigDecimal("11.50"), new BigDecimal("20.00"), null, null);
+
+        IdempotencyResult result = service.recordPaymentIdempotently(
+                UUID.randomUUID(), request, "payment-key", cashierAuth());
+
+        assertThat(result).isEqualTo(expected);
+        verify(idempotencyService).execute(
+                org.mockito.Mockito.eq(cashier.getId()),
+                org.mockito.Mockito.eq("POST /api/v1/sales/{id}/payments"),
+                org.mockito.Mockito.eq("payment-key"),
+                org.mockito.Mockito.contains("CASH"),
+                any());
+    }
+
     private Sale draftSale() {
         return new Sale(
                 store,

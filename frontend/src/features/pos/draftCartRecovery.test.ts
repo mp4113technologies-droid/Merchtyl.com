@@ -124,11 +124,16 @@ describe('draft cart recovery', () => {
     expect(saleFromDraftCartRecord(record!).status).toBe('PENDING_PAYMENT');
   });
 
-  it('does not create recovery records for paid or completed sales', async () => {
+  it('keeps paid pending sales recoverable and clears completed sales', async () => {
     await saveDraftCartRecovery(sale());
     await saveDraftCartRecovery(sale({ payments: [payment()], paidAmount: 10.35, balanceDue: 0, paymentComplete: true }));
 
-    expect(await loadDraftCartRecovery(sessionId)).toBeNull();
+    expect(await loadDraftCartRecovery(sessionId)).toEqual(expect.objectContaining({
+      saleId,
+      paidAmount: 10.35,
+      balanceDue: 0,
+      paymentComplete: true
+    }));
 
     await saveDraftCartRecovery(sale());
     await saveDraftCartRecovery(sale({

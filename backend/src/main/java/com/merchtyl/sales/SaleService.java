@@ -84,6 +84,7 @@ public class SaleService {
     private static final int QUANTITY_SCALE = 4;
     private static final int MAX_PAGE_SIZE = 100;
     private static final String COMPLETE_ENDPOINT = "POST /api/v1/sales/{id}/complete";
+    private static final String PAYMENT_ENDPOINT = "POST /api/v1/sales/{id}/payments";
     private static final String SALE_REFERENCE_TYPE = "SALE";
 
     private final SaleRepository saleRepository;
@@ -332,6 +333,8 @@ public class SaleService {
         }
         SaleResponse response = SaleResponse.from(saved);
         audit(actor, AuditAction.SALE_CHECKOUT_STARTED, response, "checkout cart items=" + request.items().size());
+        log.info("business_event event=SALE_CHECKOUT_CREATED sale_id={} register_session_id={} payment_count=0 correlation_id={}",
+                response.id(), response.registerSessionId(), MDC.get("correlationId"));
         long finished = System.nanoTime();
         log.debug("pos_checkout_timing sale={} lines={} context_ms={} resolve_lines_ms={} totals_ms={} persist_ms={} response_audit_ms={} total_ms={}",
                 response.id(), request.items().size(), elapsedMs(started, contextResolved), elapsedMs(contextResolved, linesResolved),
@@ -857,12 +860,26 @@ public class SaleService {
     public IdempotencyResult completeIdempotently(UUID saleId, String idempotencyKey, Authentication authentication) {
         User actor = actor(authentication);
         String requestBody = "{\"saleId\":\"" + saleId + "\"}";
-        return idempotencyService.execute(actor.getId(), COMPLETE_ENDPOINT, idempotencyKey, requestBody, () -> {
-            SaleResponse response = transactions.execute(status -> complete(saleId, actor, authentication));
-            return new IdempotencyOperationResponse(
-                    200,
-                    MediaType.APPLICATION_JSON_VALUE,
-                    responseBody(response));
+        log.info("business_event event=SALE_COMPLETION_STARTED sale_id={} correlation_id={}", saleId, MDC.get("correlationId"));
+        try {
+            return idempotencyService.execute(actor.getId(), COMPLETE_ENDPOINT, idempotencyKey, requestBody, () -> {
+                SaleResponse response = transactions.execute(status -> complete(saleId, actor, authentication));
+                return new IdempotencyOperationResponse(200, MediaType.APPLICATION_JSON_VALUE, responseBody(response));
+            });
+        } catch (RuntimeException exception) {
+            log.warn("business_event event=SALE_COMPLETION_FAILED sale_id={} error_code={} correlation_id={}",
+                    saleId, exception.getClass().getSimpleName(), MDC.get("correlationId"));
+            throw exception;
+        }
+    }
+
+    public IdempotencyResult recordPaymentIdempotently(UUID saleId, SalePaymentRequest request,
+            String idempotencyKey, Authentication authentication) {
+        User actor = actor(authentication);
+        String requestBody = responseBody(request);
+        return idempotencyService.execute(actor.getId(), PAYMENT_ENDPOINT, idempotencyKey, requestBody, () -> {
+            SaleResponse response = transactions.execute(status -> recordPayment(saleId, request, authentication));
+            return new IdempotencyOperationResponse(200, MediaType.APPLICATION_JSON_VALUE, responseBody(response));
         });
     }
 
@@ -908,6 +925,8 @@ public class SaleService {
         SaleResponse response = SaleResponse.from(save(sale));
         long persisted = System.nanoTime();
         audit(actor, AuditAction.SALE_COMPLETED, response, null);
+        log.info("business_event event=SALE_COMPLETION_SUCCEEDED sale_id={} register_session_id={} payment_count={} correlation_id={}",
+                saleId, response.registerSessionId(), response.payments().size(), MDC.get("correlationId"));
         long finished = System.nanoTime();
         log.debug("pos_complete_timing sale={} lines={} validate_ms={} inventory_ledger_ms={} persist_ms={} audit_ms={} total_ms={}",
                 saleId, items.size(), elapsedMs(started, validated), elapsedMs(validated, financialPostingFinished),
@@ -986,6 +1005,8 @@ public class SaleService {
         SaleResponse response = SaleResponse.from(save(sale));
         long persisted = System.nanoTime();
         audit(actor, AuditAction.SALE_PAYMENT_RECORDED, response, method.name());
+        log.info("business_event event=PAYMENT_POSTED sale_id={} register_session_id={} payment_count={} correlation_id={}",
+                saleId, response.registerSessionId(), response.payments().size(), MDC.get("correlationId"));
         long finished = System.nanoTime();
         log.debug("pos_payment_timing sale={} method={} validate_ms={} persist_ms={} audit_ms={} total_ms={}",
                 saleId, method, elapsedMs(started, validated), elapsedMs(validated, persisted),
@@ -1459,7 +1480,7 @@ public class SaleService {
         }
     }
 
-    private String responseBody(SaleResponse response) {
+    String responseBody(Object response) {
         try {
             return objectMapper.writeValueAsString(response);
         } catch (JsonProcessingException exception) {

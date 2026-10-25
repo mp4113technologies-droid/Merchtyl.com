@@ -2913,9 +2913,10 @@ export function recalculateSale(token: string, id: string) {
   }, token);
 }
 
-export function recordSalePayment(token: string, id: string, payload: SalePaymentPayload) {
+export function recordSalePayment(token: string, id: string, payload: SalePaymentPayload, idempotencyKey?: string) {
   return request<Sale>(`/sales/${id}/payments`, {
     method: 'POST',
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     body: JSON.stringify(payload)
   }, token);
 }

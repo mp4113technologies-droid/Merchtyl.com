@@ -42,7 +42,9 @@ export type DraftCartRecoveryRecord = {
   discountAmount: number;
   estimatedTaxAmount: number;
   totalAmount: number;
+  paidAmount: number;
   balanceDue: number;
+  paymentComplete: boolean;
   items: DraftCartLine[];
   updatedAt: string;
   version: number;
@@ -62,7 +64,7 @@ class DraftCartRecoveryDatabase extends Dexie {
 export const draftCartRecoveryDatabase = new DraftCartRecoveryDatabase();
 
 export function draftCartRecordFromSale(sale: Sale): DraftCartRecoveryRecord | null {
-  if (!isPendingCheckoutStatus(sale.status) || sale.payments.length > 0) {
+  if (!isPendingCheckoutStatus(sale.status)) {
     return null;
   }
 
@@ -83,7 +85,9 @@ export function draftCartRecordFromSale(sale: Sale): DraftCartRecoveryRecord | n
     discountAmount: sale.discountAmount,
     estimatedTaxAmount: sale.estimatedTaxAmount,
     totalAmount: sale.totalAmount,
+    paidAmount: sale.paidAmount,
     balanceDue: sale.balanceDue,
+    paymentComplete: sale.paymentComplete,
     items: sale.items.map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -137,10 +141,10 @@ export function saleFromDraftCartRecord(record: DraftCartRecoveryRecord): Sale {
       completedProductCapabilities: null
     })),
     payments: [],
-    paidAmount: 0,
+    paidAmount: record.paidAmount ?? 0,
     balanceDue: record.balanceDue,
     changeDue: 0,
-    paymentComplete: false,
+    paymentComplete: record.paymentComplete ?? false,
     createdAt: record.updatedAt,
     updatedAt: record.updatedAt,
     version: record.version

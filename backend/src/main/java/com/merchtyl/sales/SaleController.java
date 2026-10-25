@@ -200,8 +200,15 @@ public class SaleController {
 
     @PostMapping("/{id}/payments")
     @PreAuthorize("@authorizationService.hasPermission(authentication, T(com.merchtyl.security.PermissionCode).SALE_CREATE)")
-    SaleResponse recordPayment(@PathVariable UUID id, @Valid @RequestBody SalePaymentRequest request, Authentication authentication) {
-        return saleService.recordPayment(id, request, authentication);
+    ResponseEntity<?> recordPayment(@PathVariable UUID id, @Valid @RequestBody SalePaymentRequest request,
+            @RequestHeader(value = IdempotencyService.IDEMPOTENCY_KEY_HEADER, required = false) String idempotencyKey,
+            Authentication authentication) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.ok(saleService.recordPayment(id, request, authentication));
+        }
+        IdempotencyResult result = saleService.recordPaymentIdempotently(id, request, idempotencyKey, authentication);
+        return ResponseEntity.status(result.status()).contentType(MediaType.parseMediaType(result.contentType()))
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed())).body(result.body());
     }
 
     @PostMapping("/{id}/complete")

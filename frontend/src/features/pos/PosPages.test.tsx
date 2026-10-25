@@ -1606,7 +1606,6 @@ describe('POS pages', () => {
     expect(screen.getAllByText('$5.75').length).toBeGreaterThan(0);
     expect(screen.getAllByText('$2.00').length).toBeGreaterThan(0);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
     expect(await screen.findByRole('button', { name: 'Completing sale...' })).toBeDisabled();
     expect(completeCalls).toHaveLength(1);
     expect(completeCalls[0].get('Idempotency-Key')).toBeTruthy();
@@ -1745,15 +1744,151 @@ describe('POS pages', () => {
 
     render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Complete sale' }));
-    expect(await screen.findByText("We couldn't complete this action because the information conflicts with the current state. Refresh and try again.")).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Complete sale' })).toBeEnabled();
+    expect(await screen.findByText('Payment was recorded, but the sale could not be finalized. Retry completion; do not rescan or take payment again.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry completion' })).toBeEnabled();
     expect(print).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Retry completion' }));
     expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
     expect(completeAttempts).toBe(2);
     await waitFor(() => expect(print).toHaveBeenCalledOnce());
+  });
+
+  it('does not auto-complete an authoritative partial payment', async () => {
+    const partial = {
+      ...saleWithPayments([payment('DEBIT', 40)]),
+      subtotalAmount: 100,
+      totalAmount: 100,
+      paidAmount: 40,
+      balanceDue: 60,
+      paymentComplete: false
+    } as Sale;
+    let completeAttempts = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(partial);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`)) {
+        completeAttempts += 1;
+        return jsonResponse({}, 500);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+
+    expect(await screen.findByRole('button', { name: 'Take payment' })).toBeEnabled();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(completeAttempts).toBe(0);
+    expect(screen.queryByRole('heading', { name: 'Sale complete' })).not.toBeInTheDocument();
+  });
+
+  it('auto-completes exactly once after the second split tender', async () => {
+    const firstPayment = payment('CASH', 40, 40, 0, cashPaymentId);
+    const partial = {
+      ...saleWithPayments([firstPayment]), subtotalAmount: 100, totalAmount: 100,
+      paidAmount: 40, balanceDue: 60, paymentComplete: false
+    } as Sale;
+    const debitPayment = payment('DEBIT', 60);
+    const fullyPaid = {
+      ...partial, payments: [firstPayment, debitPayment], paidAmount: 100,
+      balanceDue: 0, paymentComplete: true
+    } as Sale;
+    const completed = {
+      ...fullyPaid, status: 'COMPLETED' as const, completedBy: cashierId,
+      completedAt: '2026-07-21T12:08:00Z'
+    };
+    let paymentWrites = 0;
+    let completeAttempts = 0;
+    let receiptReads = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(partial);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/payments`) && init?.method === 'POST') {
+        paymentWrites += 1;
+        return jsonResponse(fullyPaid);
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') {
+        completeAttempts += 1;
+        return jsonResponse(completed);
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`) && init?.method === undefined) {
+        receiptReads += 1;
+        return jsonResponse(receipt());
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Take payment' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Debit' }));
+    await userEvent.clear(screen.getByRole('spinbutton', { name: 'Payment amount' }));
+    await userEvent.type(screen.getByRole('spinbutton', { name: 'Payment amount' }), '60');
+    await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
+    await waitFor(() => expect(receiptReads).toBe(1));
+    expect(paymentWrites).toBe(1);
+    expect(completeAttempts).toBe(1);
+  });
+
+  it('reuses the completion key after a lost response', async () => {
+    const fullyPaid = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]);
+    const completed = saleWithPayments(fullyPaid.payments, 'COMPLETED');
+    const keys: string[] = [];
+    let attempts = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(fullyPaid);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`) && init?.method === 'POST') {
+        attempts += 1;
+        keys.push(new Headers(init.headers).get('Idempotency-Key') ?? '');
+        return attempts === 1 ? Promise.reject(new TypeError('Failed to fetch')) : jsonResponse(completed);
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`)) return jsonResponse(receipt());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={[`/pos?saleId=${saleId}`]} />);
+    expect(await screen.findByText('Payment was recorded, but the sale could not be finalized. Retry completion; do not rescan or take payment again.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry completion' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it('recovers an already-completed authoritative sale and clears recovery keys', async () => {
+    const fullyPaid = saleWithPayments([payment('CASH', 5.75, 10, 4.25, cashPaymentId)]);
+    const completed = saleWithPayments(fullyPaid.payments, 'COMPLETED');
+    await saveDraftCartRecovery(fullyPaid);
+    window.localStorage.setItem(`merchtyl.pos.completion-key.${saleId}`, 'persisted-completion-key');
+    let completionWrites = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const common = commonApi(input);
+      if (common) return common;
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}`) && init?.method !== 'POST') return jsonResponse(completed);
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/complete`)) {
+        completionWrites += 1;
+        return jsonResponse(completed);
+      }
+      if (url.pathname.endsWith(`/api/v1/sales/${saleId}/receipt`)) return jsonResponse(receipt());
+      return jsonResponse({}, 404);
+    });
+
+    render(<App initialEntries={['/pos']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Sale complete' })).toBeInTheDocument();
+    await waitFor(async () => expect(await loadDraftCartRecovery(sessionId)).toBeNull());
+    expect(window.localStorage.getItem(`merchtyl.pos.completion-key.${saleId}`)).toBeNull();
+    expect(completionWrites).toBe(0);
   });
 
   it('previews receipts, prints configured copies, and reprints through the backend', async () => {
@@ -1927,7 +2062,6 @@ describe('POS pages', () => {
       await userEvent.click(await screen.findByRole('button', { name: 'Exact' }));
       await userEvent.click(screen.getByRole('button', { name: 'Record payment' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-      await userEvent.click(screen.getByRole('button', { name: 'Complete sale' }));
       const newSale = await screen.findByRole('button', { name: 'New sale' });
       await waitFor(() => expect(print).toHaveBeenCalledTimes(order));
       await userEvent.click(newSale);
